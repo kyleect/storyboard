@@ -12,21 +12,26 @@ import {
   Text,
   Textarea,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import type { ContentBlock, Message } from "@harness/core";
-import { api, type SessionDetail } from "../api";
+import type { ContentBlock, Message, Usage } from "@harness/core";
+import { api, type Choices, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
 import { ModelPicker } from "./ModelPicker";
+import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
 
 interface ShownMessage {
   id: string;
   message: Message;
   model: string | null;
+  reasoningEffort: string | null;
   streaming: boolean;
+  /** Running token count while streaming. */
+  usage?: Usage | undefined;
 }
 
 export function Chat() {
@@ -34,6 +39,10 @@ export function Chat() {
   const detail = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.getSession(sessionId),
+  });
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
   });
   useSessionEvents(sessionId, detail.data);
   const live = useLive((s) => s.runs[sessionId]);
@@ -47,19 +56,29 @@ export function Chat() {
       message: err.message,
     });
   const queryClient = useQueryClient();
-  const chosenModel = detail.data?.session.model ?? undefined;
-  const setModel = useMutation({
-    mutationFn: (model: string | null) => api.setSessionModel(sessionId, model),
-    onSuccess: (session) => {
+  const session = detail.data?.session;
+  const choices: Choices = {
+    ...(session?.model ? { model: session.model } : {}),
+    ...(session?.reasoning_effort
+      ? { reasoningEffort: session.reasoning_effort }
+      : {}),
+  };
+
+  const setChoices = useMutation({
+    mutationFn: (c: {
+      model?: string | null;
+      reasoningEffort?: string | null;
+    }) => api.setSessionChoices(sessionId, c),
+    onSuccess: (updated) => {
       queryClient.setQueryData<SessionDetail>(["session", sessionId], (old) =>
-        old ? { ...old, session } : old,
+        old ? { ...old, session: updated } : old,
       );
     },
     onError,
   });
   const send = useMutation({
     mutationFn: (content: string) =>
-      api.sendMessage(sessionId, content, chosenModel),
+      api.sendMessage(sessionId, content, choices),
     onSuccess: () => {
       setDraft("");
       // Shows the stored user message.
@@ -68,11 +87,24 @@ export function Chat() {
     onError,
   });
   const cont = useMutation({
-    mutationFn: () => api.continueLast(sessionId, chosenModel),
+    mutationFn: () => api.continueLast(sessionId, choices),
     onError,
   });
   const cancel = useMutation({
     mutationFn: (runId: string) => api.cancelRun(runId),
+    onError,
+  });
+  const stopThinking = useMutation({
+    mutationFn: (runId: string) => api.endReasoning(runId),
+    onSuccess: (result) => {
+      if (!result.ok) {
+        notifications.show({
+          color: "yellow",
+          title: "Could not stop the reasoning",
+          message: result.message ?? "llama-server refused.",
+        });
+      }
+    },
     onError,
   });
 
@@ -80,27 +112,29 @@ export function Chat() {
   if (detail.isError) return <Alert color="red">{detail.error.message}</Alert>;
 
   // Stored messages, with the in-flight one replacing or following them.
+  const liveShown: ShownMessage | undefined = live
+    ? {
+        id: live.messageId,
+        message: { role: "assistant", content: [...live.content] },
+        model: live.model,
+        reasoningEffort: live.reasoningEffort,
+        streaming: true,
+        usage: live.usage,
+      }
+    : undefined;
   const shown: ShownMessage[] = detail.data.messages.map((m) =>
-    live && m.id === live.messageId
-      ? {
-          id: m.id,
-          message: { role: "assistant", content: [...live.content] },
-          model: live.model,
-          streaming: true,
-        }
-      : { ...m, streaming: false },
+    liveShown && m.id === liveShown.id ? liveShown : { ...m, streaming: false },
   );
-  if (live && !shown.some((m) => m.id === live.messageId)) {
-    shown.push({
-      id: live.messageId,
-      message: { role: "assistant", content: [...live.content] },
-      model: live.model,
-      streaming: true,
-    });
+  if (liveShown && !shown.some((m) => m.id === liveShown.id)) {
+    shown.push(liveShown);
   }
-  // A user message sent before its run's first event arrives.
-  const busy = !!live || send.isPending || cont.isPending || setModel.isPending;
+  const busy =
+    !!live || send.isPending || cont.isPending || setChoices.isPending;
   const last = shown.at(-1);
+  const reasoningNow = live?.content.at(-1)?.type === "reasoning";
+  // The model whose levels the reasoning picker shows.
+  const levelsModel =
+    detail.data.session.model || settings.data?.effective.model || undefined;
 
   return (
     <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
@@ -120,21 +154,42 @@ export function Chat() {
         </Stack>
       </ScrollArea>
 
-      <Group gap="xs" justify="space-between">
-        <ModelPicker
-          value={detail.data.session.model}
-          onChange={(model) => setModel.mutate(model)}
-          disabled={setModel.isPending}
-        />
+      <Group gap="xs" justify="space-between" align="flex-start">
+        <Group gap="xs" align="flex-start">
+          <ModelPicker
+            value={detail.data.session.model}
+            onChange={(model) => setChoices.mutate({ model })}
+            disabled={setChoices.isPending}
+          />
+          <ReasoningPicker
+            model={levelsModel}
+            value={detail.data.session.reasoning_effort}
+            onChange={(reasoningEffort) =>
+              setChoices.mutate({ reasoningEffort })
+            }
+            disabled={setChoices.isPending}
+          />
+        </Group>
         {live ? (
-          <Button
-            color="red"
-            variant="light"
-            onClick={() => cancel.mutate(live.runId)}
-            loading={cancel.isPending}
-          >
-            Cancel
-          </Button>
+          <Group gap="xs">
+            {reasoningNow && (
+              <Button
+                variant="light"
+                onClick={() => stopThinking.mutate(live.runId)}
+                loading={stopThinking.isPending}
+              >
+                Stop thinking
+              </Button>
+            )}
+            <Button
+              color="red"
+              variant="light"
+              onClick={() => cancel.mutate(live.runId)}
+              loading={cancel.isPending}
+            >
+              Cancel
+            </Button>
+          </Group>
         ) : (
           <Button
             variant="light"
@@ -177,7 +232,13 @@ export function Chat() {
   );
 }
 
-function MessageView({ message, model, streaming }: ShownMessage) {
+function MessageView({
+  message,
+  model,
+  reasoningEffort,
+  streaming,
+  usage,
+}: ShownMessage) {
   if (message.role === "user") {
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
@@ -209,23 +270,44 @@ function MessageView({ message, model, streaming }: ShownMessage) {
             {model}
           </Badge>
         )}
+        {reasoningEffort && (
+          <Badge size="xs" variant="light" color="grape" tt="none">
+            reasoning: {effortLabel(reasoningEffort)}
+          </Badge>
+        )}
         {streaming && <Loader size="xs" type="dots" />}
       </Group>
       <Stack gap="xs">
         {message.content.map((block, i) => (
-          <BlockView key={i} block={block} />
+          <BlockView
+            key={i}
+            block={block}
+            // Only the block being written right now shows a live preview.
+            live={streaming && i === message.content.length - 1}
+            usage={usage}
+          />
         ))}
       </Stack>
     </Paper>
   );
 }
 
-function BlockView({ block }: { block: ContentBlock }) {
+function BlockView({
+  block,
+  live,
+  usage,
+}: {
+  block: ContentBlock;
+  live: boolean;
+  usage: Usage | undefined;
+}) {
   switch (block.type) {
     case "text":
       return <Text style={{ whiteSpace: "pre-wrap" }}>{block.text}</Text>;
     case "reasoning":
-      return (
+      return live ? (
+        <LiveReasoning text={block.text} usage={usage} />
+      ) : (
         <Spoiler
           maxHeight={48}
           showLabel="Show reasoning"
@@ -248,4 +330,53 @@ function BlockView({ block }: { block: ContentBlock }) {
         </Code>
       );
   }
+}
+
+/**
+ * Reasoning still being written: collapsed to its latest line and the
+ * running token count, with the full text one click away.
+ */
+function LiveReasoning({
+  text,
+  usage,
+}: {
+  text: string;
+  usage: Usage | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const latest =
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .at(-1) ?? "";
+  return (
+    <Stack gap={2}>
+      <Group gap="xs">
+        <Text size="xs" c="dimmed">
+          Reasoning…
+          {usage ? ` ${usage.completionTokens} tokens` : ""}
+        </Text>
+        <UnstyledButton onClick={() => setOpen((o) => !o)}>
+          <Text size="xs" c="blue">
+            {open ? "Hide" : "Show all"}
+          </Text>
+        </UnstyledButton>
+      </Group>
+      {open ? (
+        <Text
+          size="sm"
+          c="dimmed"
+          fs="italic"
+          style={{ whiteSpace: "pre-wrap" }}
+        >
+          {text}
+        </Text>
+      ) : (
+        <Text size="sm" c="dimmed" fs="italic" lineClamp={1}>
+          {latest}
+        </Text>
+      )}
+    </Stack>
+  );
 }

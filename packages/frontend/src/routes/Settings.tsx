@@ -18,7 +18,12 @@ export function Settings() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
   const form = useForm<SettingsShape>({
-    initialValues: { llamaServerUrl: "", model: "", port: 0 },
+    initialValues: {
+      llamaServerUrl: "",
+      model: "",
+      reasoningEffort: "",
+      port: 0,
+    },
     validate: {
       llamaServerUrl: (v) =>
         /^https?:\/\/.+/.test(v) ? null : "Must be an http(s) URL",
@@ -72,6 +77,14 @@ export function Settings() {
             "Default for sessions with no model chosen. Sent as `model` (router mode). Leave empty to omit."
           }
           {...form.getInputProps("model")}
+        />
+        <TextInput
+          label="Default reasoning effort"
+          description={
+            envNote("reasoningEffort") ??
+            "For sessions with none chosen. Empty: not sent (the server decides). `none`: reasoning off. Otherwise a level the model supports, such as `low`."
+          }
+          {...form.getInputProps("reasoningEffort")}
         />
         <NumberInput
           label="Backend port"

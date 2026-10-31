@@ -6,6 +6,7 @@ import {
   applyMessageEvent,
   type ContentBlock,
   type HarnessEvent,
+  type Usage,
 } from "@harness/core";
 import { eventsUrl, type SessionDetail } from "./api";
 
@@ -18,8 +19,11 @@ export interface LiveRun {
   runId: string;
   messageId: string;
   model: string | null;
+  reasoningEffort: string | null;
   continuing: boolean;
   content: readonly ContentBlock[];
+  /** The latest running token count from the stream. */
+  usage?: Usage;
 }
 
 interface LiveState {
@@ -63,8 +67,11 @@ export function useSessionEvents(
     live.set(sessionId, snapshot ?? undefined);
 
     const source = new EventSource(eventsUrl(sessionId, detail.lastEventId));
-    // run.started carries the model; message.started follows it.
-    const runModels = new Map<string, string | null>();
+    // run.started carries the choices; message.started follows it.
+    const runInfo = new Map<
+      string,
+      { model: string | null; reasoningEffort: string | null }
+    >();
     source.onopen = () => useLive.getState().setConnected(sessionId, true);
     source.onerror = () => useLive.getState().setConnected(sessionId, false);
     source.onmessage = (msg: MessageEvent<string>) => {
@@ -73,7 +80,10 @@ export function useSessionEvents(
 
       switch (event.type) {
         case "run.started":
-          runModels.set(event.runId, event.data.model ?? null);
+          runInfo.set(event.runId, {
+            model: event.data.model ?? null,
+            reasoningEffort: event.data.reasoningEffort ?? null,
+          });
           break;
         case "message.started": {
           const cached = queryClient.getQueryData<SessionDetail>([
@@ -86,7 +96,8 @@ export function useSessionEvents(
           state.set(sessionId, {
             runId: event.runId,
             messageId: event.data.messageId,
-            model: runModels.get(event.runId) ?? null,
+            model: runInfo.get(event.runId)?.model ?? null,
+            reasoningEffort: runInfo.get(event.runId)?.reasoningEffort ?? null,
             continuing: event.data.continuing ?? false,
             content:
               event.data.continuing && existing?.message.role === "assistant"
@@ -114,10 +125,19 @@ export function useSessionEvents(
             });
           break;
         default:
-          state.update(sessionId, (run) => ({
-            ...run,
-            content: applyMessageEvent(run.content, run.messageId, event),
-          }));
+          state.update(sessionId, (run) => {
+            const usage =
+              (event.type === "text.delta" ||
+                event.type === "reasoning.delta") &&
+              event.data.usage
+                ? event.data.usage
+                : run.usage;
+            return {
+              ...run,
+              content: applyMessageEvent(run.content, run.messageId, event),
+              ...(usage ? { usage } : {}),
+            };
+          });
       }
     };
 

@@ -1,3 +1,4 @@
+import type { RunControl } from "./control.js";
 import type { Message, TokenInfo, ToolDefinition, Usage } from "./messages.js";
 
 /** Sampling settings passed through to the model server. */
@@ -18,6 +19,13 @@ export interface ChatRequest {
   messages: Message[];
   tools?: ToolDefinition[];
   sampling?: Sampling;
+  /**
+   * Passed to the server as `reasoning_effort`: "none" turns reasoning off;
+   * any other value (for example "low") goes to the chat template.
+   */
+  reasoningEffort?: string;
+  /** Lets the caller end reasoning while the response streams. */
+  control?: RunControl;
 }
 
 /** A raw request: plain text continued with no chat template. */

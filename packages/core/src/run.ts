@@ -91,6 +91,9 @@ export async function runSingleCall(
       kind: "single",
       ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
       ...(request.model ? { model: request.model } : {}),
+      ...(request.reasoningEffort
+        ? { reasoningEffort: request.reasoningEffort }
+        : {}),
     },
   });
   emit({

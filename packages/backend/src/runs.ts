@@ -1,6 +1,8 @@
 import {
   buildMessageContent,
+  RunControl,
   runSingleCall,
+  type ControlResult,
   type AssistantMessage,
   type ChatRequest,
   type ContentBlock,
@@ -9,7 +11,13 @@ import {
   type StoredEvent,
 } from "@harness/core";
 import type { Settings } from "./settings.js";
-import type { Store } from "./store.js";
+import type { Generation, Store } from "./store.js";
+
+/** Choices sent with a message or continue; they become the session's. */
+export interface RunChoices {
+  model?: string;
+  reasoningEffort?: string;
+}
 
 export class RunError extends Error {
   constructor(
@@ -27,10 +35,11 @@ interface ActiveRun {
   runId: string;
   sessionId: string;
   messageId: string;
-  model: string | null;
+  generation: Generation;
   /** The stored content the run started from (when continuing). */
   initial: readonly ContentBlock[];
   controller: AbortController;
+  control: RunControl;
   done: Promise<void>;
 }
 
@@ -40,6 +49,7 @@ export interface Snapshot {
     runId: string;
     messageId: string;
     model: string | null;
+    reasoningEffort: string | null;
     continuing: boolean;
     content: ContentBlock[];
   } | null;
@@ -83,16 +93,16 @@ export class RunManager {
   }
 
   /**
-   * Adds a user message and starts a run that answers it. A `model` becomes
-   * the session's chosen model before the run starts.
+   * Adds a user message and starts a run that answers it. The choices become
+   * the session's before the run starts.
    */
   sendMessage(
     sessionId: string,
     content: string,
-    model?: string,
+    choices: RunChoices = {},
   ): { runId: string } {
     this.requireIdle(sessionId);
-    if (model !== undefined) this.store.setSessionModel(sessionId, model);
+    this.store.setSessionChoices(sessionId, choices);
     this.store.addMessage(
       sessionId,
       this.newId(),
@@ -103,17 +113,24 @@ export class RunManager {
   }
 
   /**
-   * Continues the last assistant message (assistant prefill). A `model`
-   * becomes the session's chosen model before the run starts.
+   * Continues the last assistant message (assistant prefill). The choices
+   * become the session's before the run starts.
    */
-  continueLast(sessionId: string, model?: string): { runId: string } {
+  continueLast(sessionId: string, choices: RunChoices = {}): { runId: string } {
     this.requireIdle(sessionId);
     const last = this.store.listMessages(sessionId).at(-1);
     if (!last || last.message.role !== "assistant") {
       throw new RunError("The last message is not an assistant message.", 409);
     }
-    if (model !== undefined) this.store.setSessionModel(sessionId, model);
+    this.store.setSessionChoices(sessionId, choices);
     return this.start(sessionId, { messageId: last.id, message: last.message });
+  }
+
+  /** Asks the model to stop reasoning and answer. */
+  async endReasoning(runId: string): Promise<ControlResult> {
+    const run = this.active.get(runId);
+    if (!run) return { ok: false, message: "The run is not active." };
+    return run.control.endReasoning();
   }
 
   cancel(runId: string): boolean {
@@ -134,7 +151,8 @@ export class RunManager {
       activeRun: {
         runId: run.runId,
         messageId: run.messageId,
-        model: run.model,
+        model: run.generation.model,
+        reasoningEffort: run.generation.reasoningEffort,
         continuing: run.initial.length > 0,
         content: buildMessageContent(
           this.store.runEvents(run.runId),
@@ -177,7 +195,7 @@ export class RunManager {
           run.message_id,
           { role: "assistant", content },
           this.now(),
-          run.model,
+          { model: run.model, reasoningEffort: run.reasoning_effort },
         );
       }
       this.store.insertEvent({
@@ -216,13 +234,22 @@ export class RunManager {
     const settings = this.options.settings();
     const runId = this.newId();
     const messageId = continuing?.messageId ?? this.newId();
-    // The session's chosen model, else the default setting. Empty: not sent.
-    const model =
-      this.store.getSession(sessionId)?.model || settings.model || null;
+    // The session's choices, else the default settings. Empty: not sent.
+    const session = this.store.getSession(sessionId);
+    const generation: Generation = {
+      model: session?.model || settings.model || null,
+      reasoningEffort:
+        session?.reasoning_effort || settings.reasoningEffort || null,
+    };
+    const control = new RunControl();
     const request: ChatRequest = {
       kind: "chat",
       messages: this.store.listMessages(sessionId).map((m) => m.message),
-      ...(model ? { model } : {}),
+      control,
+      ...(generation.model ? { model: generation.model } : {}),
+      ...(generation.reasoningEffort
+        ? { reasoningEffort: generation.reasoningEffort }
+        : {}),
     };
     this.store.createRun({
       id: runId,
@@ -230,7 +257,7 @@ export class RunManager {
       kind: "single",
       messageId,
       now: this.now(),
-      model,
+      generation,
     });
 
     const controller = new AbortController();
@@ -267,7 +294,7 @@ export class RunManager {
             messageId,
             result.message,
             this.now(),
-            model,
+            generation,
           );
         }
         const status =
@@ -303,9 +330,10 @@ export class RunManager {
       runId,
       sessionId,
       messageId,
-      model,
+      generation,
       initial: continuing?.message.content ?? [],
       controller,
+      control,
       done: Promise.resolve(),
     };
     this.active.set(runId, run);

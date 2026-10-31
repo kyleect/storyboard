@@ -19,6 +19,8 @@ export interface Reply {
   status?: number;
   /** Used when status is not 200. */
   errorBody?: unknown;
+  /** A plain JSON answer instead of an event stream. */
+  json?: unknown;
   frames?: Frame[];
 }
 
@@ -104,6 +106,12 @@ export class FakeLlamaServer {
       res
         .writeHead(status, { "content-type": "application/json" })
         .end(JSON.stringify(reply.errorBody ?? {}));
+      return;
+    }
+    if (reply.json !== undefined) {
+      res
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify(reply.json));
       return;
     }
     res.writeHead(200, { "content-type": "text/event-stream" });

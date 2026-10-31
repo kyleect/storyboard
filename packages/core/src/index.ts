@@ -6,3 +6,5 @@ export * from "./run.js";
 export * from "./llama-server/adapter.js";
 export * from "./message-state.js";
 export * from "./llama-server/models.js";
+export * from "./control.js";
+export * from "./llama-server/props.js";

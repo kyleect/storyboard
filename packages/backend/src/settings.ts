@@ -11,6 +11,11 @@ export const Settings = z.object({
   llamaServerUrl: z.url(),
   /** Model name sent in `model` (router mode). Empty: not sent. */
   model: z.string(),
+  /**
+   * Default `reasoning_effort` for sessions with none chosen. Empty: not
+   * sent; "none": reasoning off; otherwise a level such as "low".
+   */
+  reasoningEffort: z.string(),
   port: z.number().int().min(0).max(65535),
 });
 export type Settings = z.infer<typeof Settings>;
@@ -18,12 +23,14 @@ export type Settings = z.infer<typeof Settings>;
 export const DEFAULTS: Settings = {
   llamaServerUrl: "http://127.0.0.1:8080",
   model: "",
+  reasoningEffort: "",
   port: 4317,
 };
 
 const ENV: Record<keyof Settings, string> = {
   llamaServerUrl: "HARNESS_LLAMA_URL",
   model: "HARNESS_MODEL",
+  reasoningEffort: "HARNESS_REASONING_EFFORT",
   port: "HARNESS_PORT",
 };
 

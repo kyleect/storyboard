@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  getReasoningLevels,
   listLlamaServerModels,
   type ModelInfo,
   type StoredEvent,
@@ -29,10 +30,27 @@ export interface ServerOptions {
   env?: NodeJS.ProcessEnv;
   /** Defaults to asking the configured llama-server. */
   listModels?: () => Promise<ModelInfo[]>;
+  /** Defaults to asking the configured llama-server. */
+  reasoningLevels?: (model: string | undefined) => Promise<string[]>;
 }
 
 const IdParams = z.object({ id: z.string() });
 const ModelName = z.string().min(1);
+/** "none" turns reasoning off; other values go to the chat template. */
+const Effort = z.string().min(1);
+const Choices = z.object({
+  model: ModelName.optional(),
+  reasoningEffort: Effort.optional(),
+});
+
+/** Drops undefined fields (exactOptionalPropertyTypes). */
+function defined<T extends object>(
+  o: T,
+): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  return Object.fromEntries(
+    Object.entries(o).filter(([, v]) => v !== undefined),
+  ) as { [K in keyof T]?: Exclude<T[K], undefined> };
+}
 
 export function buildServer(options: ServerOptions): FastifyInstance {
   const { store, runs } = options;
@@ -41,12 +59,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const now = options.now ?? (() => new Date().toISOString());
   const env = options.env ?? process.env;
   const expected = Buffer.from(options.token);
+  const llamaUrl = () => readSettings(store.db, env).effective.llamaServerUrl;
+  const reasoningLevels =
+    options.reasoningLevels ??
+    ((model: string | undefined) => getReasoningLevels(llamaUrl(), model));
   const listModels =
-    options.listModels ??
-    (() =>
-      listLlamaServerModels(
-        readSettings(store.db, env).effective.llamaServerUrl,
-      ));
+    options.listModels ?? (() => listLlamaServerModels(llamaUrl()));
 
   const app = Fastify({
     // Event streams never end on their own; close them on shutdown.
@@ -136,30 +154,65 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     };
   });
 
-  /** Changes the session's chosen model; null returns it to the default. */
+  /**
+   * The reasoning effort levels a model's chat template supports, read
+   * without loading the model. 502 when llama-server cannot say (for
+   * example, the model is not loaded).
+   */
+  app.get("/api/models/reasoning-levels", async (req, reply) => {
+    const { model } = z
+      .object({ model: ModelName.optional() })
+      .parse(req.query);
+    try {
+      return { levels: await reasoningLevels(model) };
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * Changes the session's choices. A field left out is unchanged; null
+   * returns it to the default from Settings.
+   */
   app.patch("/api/sessions/:id", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const { model } = z.object({ model: ModelName.nullable() }).parse(req.body);
+    const choices = z
+      .object({
+        model: ModelName.nullable().optional(),
+        reasoningEffort: Effort.nullable().optional(),
+      })
+      .refine((c) => c.model !== undefined || c.reasoningEffort !== undefined, {
+        message: "Nothing to change",
+      })
+      .parse(req.body);
     if (!store.getSession(id))
       return reply.code(404).send({ error: "Session not found." });
-    store.setSessionModel(id, model);
+    store.setSessionChoices(id, defined(choices));
     return store.getSession(id);
   });
 
   app.post("/api/sessions/:id/messages", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const { content, model } = z
-      .object({ content: z.string().min(1), model: ModelName.optional() })
-      .parse(req.body);
-    return reply.code(202).send(runs.sendMessage(id, content, model));
+    const { content, ...choices } = Choices.extend({
+      content: z.string().min(1),
+    }).parse(req.body);
+    return reply
+      .code(202)
+      .send(runs.sendMessage(id, content, defined(choices)));
   });
 
   app.post("/api/sessions/:id/continue", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const { model } = z
-      .object({ model: ModelName.optional() })
-      .parse(req.body ?? {});
-    return reply.code(202).send(runs.continueLast(id, model));
+    const choices = Choices.parse(req.body ?? {});
+    return reply.code(202).send(runs.continueLast(id, defined(choices)));
+  });
+
+  /** Asks the model to stop reasoning and answer. */
+  app.post("/api/runs/:id/end-reasoning", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    return runs.endReasoning(id);
   });
 
   app.post("/api/runs/:id/cancel", async (req, reply) => {

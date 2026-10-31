@@ -1,11 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  LlamaServerAdapter,
+  RunControl,
   ScriptedModel,
   type HarnessEvent,
   type ModelInfo,
   type ScriptStep,
 } from "@harness/core";
+import { chatChunk, FakeLlamaServer } from "@harness/core/testing";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
@@ -204,6 +207,7 @@ describe("a chat turn", () => {
     expect(model.requests[0]).toEqual({
       kind: "chat",
       messages: [{ role: "user", content: "Hi" }],
+      control: expect.any(RunControl),
     });
   });
 
@@ -292,6 +296,7 @@ describe("continue", () => {
         { role: "user", content: "Story" },
         { role: "assistant", content: [{ type: "text", text: "Once upon" }] },
       ],
+      control: expect.any(RunControl),
     });
     expect(got[1]?.event).toMatchObject({
       type: "message.started",
@@ -307,6 +312,7 @@ describe("continue", () => {
           content: [{ type: "text", text: "Once upon a time" }],
         },
         model: null,
+        reasoningEffort: null,
       },
     ]);
   });
@@ -699,6 +705,199 @@ describe("model selection", () => {
     ).toBe(400);
     expect(
       (await api(app, "PATCH", "/api/sessions/nope", { model: "a" })).status,
+    ).toBe(404);
+  });
+});
+
+describe("reasoning", () => {
+  const text: ScriptStep[] = [{ type: "text", text: "ok" }];
+
+  async function turn(
+    app: FastifyInstance,
+    runs: RunManager,
+    id: string,
+    body: Record<string, unknown>,
+  ) {
+    const res = await api(app, "POST", `/api/sessions/${id}/messages`, body);
+    expect(res.status).toBe(202);
+    await waitIdle(runs, res.body.runId as string);
+    return res.body.runId as string;
+  }
+
+  it("sends a message's effort, remembers it, and records it", async () => {
+    const { app, runs, store, model } = await setup([text, text]);
+    const id = await newSession(app);
+
+    const runId = await turn(app, runs, id, {
+      content: "1",
+      reasoningEffort: "none",
+    });
+    expect(model.requests[0]).toMatchObject({ reasoningEffort: "none" });
+    expect(store.getSession(id)?.reasoning_effort).toBe("none");
+    expect(store.getRun(runId)?.reasoning_effort).toBe("none");
+    expect(store.runEvents(runId)[0]).toMatchObject({
+      type: "run.started",
+      data: { reasoningEffort: "none" },
+    });
+    expect(store.listMessages(id).at(-1)?.reasoningEffort).toBe("none");
+
+    await turn(app, runs, id, { content: "2" });
+    expect(model.requests[1]).toMatchObject({ reasoningEffort: "none" });
+  });
+
+  it("uses the default from Settings unless the session chose one", async () => {
+    const { app, runs, t, model } = await setup([text, text, text, text]);
+    writeSettings(t.db, { reasoningEffort: "low" });
+    const id = await newSession(app);
+
+    await turn(app, runs, id, { content: "1" });
+    expect(model.requests[0]).toMatchObject({ reasoningEffort: "low" });
+
+    await api(app, "PATCH", `/api/sessions/${id}`, { reasoningEffort: "high" });
+    await turn(app, runs, id, { content: "2" });
+    expect(model.requests[1]).toMatchObject({ reasoningEffort: "high" });
+
+    // Changing only the model leaves the effort alone.
+    await api(app, "PATCH", `/api/sessions/${id}`, { model: "m" });
+    await turn(app, runs, id, { content: "3" });
+    expect(model.requests[2]).toMatchObject({
+      model: "m",
+      reasoningEffort: "high",
+    });
+
+    await api(app, "PATCH", `/api/sessions/${id}`, { reasoningEffort: null });
+    await turn(app, runs, id, { content: "4" });
+    expect(model.requests[3]).toMatchObject({
+      model: "m",
+      reasoningEffort: "low",
+    });
+  });
+
+  it("sends no effort when neither the session nor Settings has one", async () => {
+    const { app, runs, model } = await setup([text]);
+    const id = await newSession(app);
+    await turn(app, runs, id, { content: "1" });
+    expect(model.requests[0]).not.toHaveProperty("reasoningEffort");
+  });
+
+  it("rejects an empty change", async () => {
+    const { app } = await setup([]);
+    const id = await newSession(app);
+    expect((await api(app, "PATCH", `/api/sessions/${id}`, {})).status).toBe(
+      400,
+    );
+    expect(
+      (await api(app, "PATCH", `/api/sessions/${id}`, { reasoningEffort: "" }))
+        .status,
+    ).toBe(400);
+  });
+
+  it("lets HARNESS_REASONING_EFFORT override the stored default", async () => {
+    const { t } = await setup([]);
+    writeSettings(t.db, { reasoningEffort: "low" });
+    const view = readSettings(t.db, { HARNESS_REASONING_EFFORT: "none" });
+    expect(view.effective.reasoningEffort).toBe("none");
+    expect(view.overriddenByEnv).toEqual({
+      reasoningEffort: "HARNESS_REASONING_EFFORT",
+    });
+  });
+
+  it("reports a model's reasoning levels", async () => {
+    const asked: (string | undefined)[] = [];
+    const t = tempDatabase();
+    const store = new Store(t.db);
+    const runs = new RunManager({
+      store,
+      settings: () => DEFAULTS,
+      model: () => new ScriptedModel([]),
+    });
+    const app = buildServer({
+      store,
+      runs,
+      token: TOKEN,
+      env: {},
+      reasoningLevels: async (m) => {
+        asked.push(m);
+        if (m === "unloaded") throw new Error("model is not loaded");
+        return ["low", "high"];
+      },
+    });
+    cleanups.push(t.cleanup, () => app.close());
+
+    const ok = await api(app, "GET", "/api/models/reasoning-levels?model=qwen");
+    expect(ok.body).toEqual({ levels: ["low", "high"] });
+    const bad = await api(
+      app,
+      "GET",
+      "/api/models/reasoning-levels?model=unloaded",
+    );
+    expect(bad.status).toBe(502);
+    expect(bad.body).toEqual({ error: "model is not loaded" });
+    await api(app, "GET", "/api/models/reasoning-levels");
+    expect(asked).toEqual(["qwen", "unloaded", undefined]);
+  });
+});
+
+describe("stop thinking", () => {
+  it("ends reasoning through llama-server's control endpoint", async () => {
+    const llama = new FakeLlamaServer();
+    const llamaUrl = await llama.start();
+    llama.reply(
+      {
+        frames: [
+          chatChunk({ role: "assistant", content: null }),
+          chatChunk({ reasoning_content: "Hmm" }),
+          { hang: true },
+        ],
+      },
+      { json: { success: true } },
+    );
+    const t = tempDatabase();
+    const store = new Store(t.db);
+    const runs = new RunManager({
+      store,
+      settings: () => ({
+        ...DEFAULTS,
+        model: "qwen",
+        llamaServerUrl: llamaUrl,
+      }),
+      model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
+    });
+    const app = buildServer({ store, runs, token: TOKEN, env: {} });
+    cleanups.push(
+      t.cleanup,
+      () => app.close(),
+      () => llama.stop(),
+    );
+
+    const id = await newSession(app);
+    const { body } = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Hi",
+    });
+    const runId = body.runId as string;
+    await expect
+      .poll(() =>
+        store.runEvents(runId).some((e) => e.type === "reasoning.delta"),
+      )
+      .toBe(true);
+
+    const ended = await api(app, "POST", `/api/runs/${runId}/end-reasoning`);
+    expect(ended.body).toEqual({ ok: true });
+    expect(llama.requests[0]?.body).toMatchObject({ reasoning_control: true });
+    expect(llama.requests[1]).toMatchObject({
+      path: "/v1/chat/completions/control",
+      body: { id: "chatcmpl-test", action: "reasoning_end", model: "qwen" },
+    });
+
+    await api(app, "POST", `/api/runs/${runId}/cancel`);
+    await waitIdle(runs, runId);
+    const after = await api(app, "POST", `/api/runs/${runId}/end-reasoning`);
+    expect(after.body).toEqual({
+      ok: false,
+      message: "The run is not active.",
+    });
+    expect(
+      (await api(app, "POST", "/api/runs/nope/end-reasoning")).status,
     ).toBe(404);
   });
 });

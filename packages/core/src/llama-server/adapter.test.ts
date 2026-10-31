@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { HarnessEvent } from "../events.js";
 import type { ModelChunk, ModelRequest } from "../model.js";
+import { RunControl } from "../control.js";
 import { runSingleCall } from "../run.js";
 import { LlamaServerAdapter, LlamaServerError } from "./adapter.js";
 import {
@@ -76,6 +77,7 @@ describe("chat completions", () => {
       model: "qwen",
       stream: true,
       stream_options: { include_usage: true },
+      timings_per_token: true,
       temperature: 0.7,
       top_p: 0.9,
       top_k: 40,
@@ -274,6 +276,111 @@ describe("chat completions", () => {
 
     expect(chunks).toEqual([{ type: "text", text: "Once" }]);
     await expect.poll(() => server.clientClosed).toBe(true);
+  });
+});
+
+describe("reasoning", () => {
+  it("sends the reasoning effort", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({ kind: "chat", messages: [], reasoningEffort: "none" });
+    expect(server.requests[0]?.body).toMatchObject({
+      reasoning_effort: "none",
+    });
+    expect(server.requests[0]?.body).not.toHaveProperty("reasoning_control");
+  });
+
+  it("ends reasoning through the control endpoint while streaming", async () => {
+    server.reply(
+      {
+        frames: [
+          chatChunk({ role: "assistant", content: null }),
+          chatChunk({ reasoning_content: "Thinking" }),
+          { hang: true },
+        ],
+      },
+      { json: { success: true } },
+    );
+    const control = new RunControl();
+    const controller = new AbortController();
+    const before = await control.endReasoning();
+
+    for await (const c of adapter.stream(
+      { kind: "chat", model: "qwen", messages: [], control },
+      controller.signal,
+    )) {
+      if (c.type === "reasoning") {
+        expect(await control.endReasoning()).toEqual({ ok: true });
+        controller.abort();
+      }
+    }
+
+    expect(before.ok).toBe(false);
+    expect(server.requests[0]?.body).toMatchObject({ reasoning_control: true });
+    expect(server.requests[1]).toMatchObject({
+      method: "POST",
+      path: "/v1/chat/completions/control",
+      body: { id: "chatcmpl-test", action: "reasoning_end", model: "qwen" },
+    });
+    // Unbound once the response is over.
+    expect((await control.endReasoning()).ok).toBe(false);
+  });
+
+  it("reports the server refusing to end reasoning", async () => {
+    server.reply(
+      {
+        frames: [chatChunk({ reasoning_content: "x" }), { hang: true }],
+      },
+      {
+        json: {
+          success: false,
+          message: "reasoning control not enabled for this completion",
+        },
+      },
+    );
+    const control = new RunControl();
+    const controller = new AbortController();
+    let result;
+    for await (const c of adapter.stream(
+      { kind: "chat", messages: [], control },
+      controller.signal,
+    )) {
+      if (c.type === "reasoning") {
+        result = await control.endReasoning();
+        controller.abort();
+      }
+    }
+    expect(result).toEqual({
+      ok: false,
+      message: "reasoning control not enabled for this completion",
+    });
+    expect(server.requests[1]?.body).not.toHaveProperty("model");
+  });
+
+  it("turns per-chunk timings into a running token count", async () => {
+    const withTimings = (delta: Record<string, unknown>, n: number) =>
+      sse({
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, finish_reason: null, delta }],
+        timings: { cache_n: 2, prompt_n: 3, predicted_n: n },
+      });
+    server.reply({
+      frames: [
+        withTimings({ reasoning_content: "a" }, 1),
+        withTimings({ reasoning_content: "b" }, 2),
+        chatChunk({}, "stop"),
+        chatUsage(5, 2),
+        DONE,
+      ],
+    });
+    expect(await collect({ kind: "chat", messages: [] })).toEqual([
+      { type: "usage", usage: { promptTokens: 5, completionTokens: 1 } },
+      { type: "reasoning", text: "a" },
+      { type: "usage", usage: { promptTokens: 5, completionTokens: 2 } },
+      { type: "reasoning", text: "b" },
+      { type: "usage", usage: { promptTokens: 5, completionTokens: 2 } },
+      { type: "finish", reason: "stop" },
+    ]);
   });
 });
 

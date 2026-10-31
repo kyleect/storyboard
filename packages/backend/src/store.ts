@@ -14,13 +14,23 @@ export interface SessionRow {
   created_at: string;
   /** The session's chosen model; null means the default setting. */
   model: string | null;
+  /** The session's chosen reasoning effort; null means the default. */
+  reasoning_effort: string | null;
 }
 
-export interface StoredMessage {
+/** What a run sent to the model server; null where nothing was sent. */
+export interface Generation {
+  model: string | null;
+  reasoningEffort: string | null;
+}
+
+const NO_GENERATION: Generation = { model: null, reasoningEffort: null };
+
+export interface StoredMessage extends Generation {
   id: string;
   message: Message;
-  /** For assistant messages: the model of the run that last wrote it. */
-  model: string | null;
+  // For assistant messages, `model` and `reasoningEffort` are those of the
+  // run that last wrote the message.
 }
 
 export type RunStatus =
@@ -37,6 +47,7 @@ export interface RunRow {
   usage: string | null;
   error: string | null;
   model: string | null;
+  reasoning_effort: string | null;
 }
 
 interface EventRow {
@@ -65,27 +76,46 @@ export class Store {
     this.db
       .prepare("INSERT INTO sessions (id, title, created_at) VALUES (?, ?, ?)")
       .run(id, title, now);
-    return { id, title, created_at: now, model: null };
+    return {
+      id,
+      title,
+      created_at: now,
+      model: null,
+      reasoning_effort: null,
+    };
   }
 
   listSessions(): SessionRow[] {
     return this.db
       .prepare(
-        "SELECT id, title, created_at, model FROM sessions ORDER BY created_at DESC",
+        "SELECT id, title, created_at, model, reasoning_effort FROM sessions ORDER BY created_at DESC",
       )
       .all() as SessionRow[];
   }
 
   getSession(id: string): SessionRow | undefined {
     return this.db
-      .prepare("SELECT id, title, created_at, model FROM sessions WHERE id = ?")
+      .prepare(
+        "SELECT id, title, created_at, model, reasoning_effort FROM sessions WHERE id = ?",
+      )
       .get(id) as SessionRow | undefined;
   }
 
-  setSessionModel(id: string, model: string | null) {
-    this.db
-      .prepare("UPDATE sessions SET model = ? WHERE id = ?")
-      .run(model, id);
+  /** Sets the session's choices; a field left out is not changed. */
+  setSessionChoices(
+    id: string,
+    choices: { model?: string | null; reasoningEffort?: string | null },
+  ) {
+    if (choices.model !== undefined) {
+      this.db
+        .prepare("UPDATE sessions SET model = ? WHERE id = ?")
+        .run(choices.model, id);
+    }
+    if (choices.reasoningEffort !== undefined) {
+      this.db
+        .prepare("UPDATE sessions SET reasoning_effort = ? WHERE id = ?")
+        .run(choices.reasoningEffort, id);
+    }
   }
 
   addMessage(
@@ -93,29 +123,47 @@ export class Store {
     id: string,
     message: Message,
     now: string,
-    model: string | null = null,
+    generation: Generation = NO_GENERATION,
   ) {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, message, created_at, model)
-         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?)`,
+        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort)
+         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?)`,
       )
-      .run(id, sessionId, sessionId, JSON.stringify(message), now, model);
+      .run(
+        id,
+        sessionId,
+        sessionId,
+        JSON.stringify(message),
+        now,
+        generation.model,
+        generation.reasoningEffort,
+      );
   }
 
-  /** Inserts the message, or replaces it (and its model) if the id exists. */
+  /**
+   * Inserts the message, or replaces it (with its model and effort) if the
+   * id exists.
+   */
   saveMessage(
     sessionId: string,
     id: string,
     message: Message,
     now: string,
-    model: string | null = null,
+    generation: Generation = NO_GENERATION,
   ) {
     const updated = this.db
-      .prepare("UPDATE messages SET message = ?, model = ? WHERE id = ?")
-      .run(JSON.stringify(message), model, id);
+      .prepare(
+        "UPDATE messages SET message = ?, model = ?, reasoning_effort = ? WHERE id = ?",
+      )
+      .run(
+        JSON.stringify(message),
+        generation.model,
+        generation.reasoningEffort,
+        id,
+      );
     if (updated.changes === 0)
-      this.addMessage(sessionId, id, message, now, model);
+      this.addMessage(sessionId, id, message, now, generation);
   }
 
   getMessage(id: string): Message | undefined {
@@ -128,17 +176,19 @@ export class Store {
   listMessages(sessionId: string): StoredMessage[] {
     const rows = this.db
       .prepare(
-        "SELECT id, message, model FROM messages WHERE session_id = ? ORDER BY seq",
+        "SELECT id, message, model, reasoning_effort FROM messages WHERE session_id = ? ORDER BY seq",
       )
       .all(sessionId) as {
       id: string;
       message: string;
       model: string | null;
+      reasoning_effort: string | null;
     }[];
     return rows.map((r) => ({
       id: r.id,
       message: Message.parse(JSON.parse(r.message)),
       model: r.model,
+      reasoningEffort: r.reasoning_effort,
     }));
   }
 
@@ -148,12 +198,13 @@ export class Store {
     kind: string;
     messageId: string;
     now: string;
-    model?: string | null;
+    generation?: Generation;
   }) {
+    const generation = run.generation ?? NO_GENERATION;
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, message_id, status, started_at, model)
-         VALUES (?, ?, ?, ?, 'running', ?, ?)`,
+        `INSERT INTO runs (id, session_id, kind, message_id, status, started_at, model, reasoning_effort)
+         VALUES (?, ?, ?, ?, 'running', ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -161,7 +212,8 @@ export class Store {
         run.kind,
         run.messageId,
         run.now,
-        run.model ?? null,
+        generation.model,
+        generation.reasoningEffort,
       );
   }
 

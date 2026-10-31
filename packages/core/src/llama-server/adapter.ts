@@ -1,3 +1,4 @@
+import type { ControlResult } from "../control.js";
 import type { Message, TokenInfo } from "../messages.js";
 import type {
   ChatRequest,
@@ -68,9 +69,17 @@ export class LlamaServerAdapter implements ModelAdapter {
       messages: request.messages.map(toOpenAiMessage),
       stream: true,
       stream_options: { include_usage: true },
+      // Timings on every chunk give a live token count.
+      timings_per_token: true,
       ...sampling(request.sampling, "max_tokens"),
     };
     if (request.model !== undefined) body.model = request.model;
+    if (request.reasoningEffort !== undefined) {
+      body.reasoning_effort = request.reasoningEffort;
+    }
+    // Lets /v1/chat/completions/control end reasoning early. llama-server
+    // only arms it when the model's template has reasoning tags.
+    if (request.control) body.reasoning_control = true;
     if (request.tools && request.tools.length > 0) {
       body.tools = request.tools.map((t) => ({
         type: "function",
@@ -90,49 +99,79 @@ export class LlamaServerAdapter implements ModelAdapter {
       { id: string; name: string; arguments: string }
     >();
     let finish: ModelChunk | undefined;
+    let responseId: string | undefined;
 
-    for await (const data of readSseData(res)) {
-      if (data === "[DONE]") break;
-      const chunk = parseJson(data);
-      if (chunk.error !== undefined) throw serverError(chunk.error);
+    try {
+      for await (const data of readSseData(res)) {
+        if (data === "[DONE]") break;
+        const chunk = parseJson(data);
+        if (chunk.error !== undefined) throw serverError(chunk.error);
 
-      if (chunk.usage) {
-        yield {
-          type: "usage",
-          usage: {
-            promptTokens: chunk.usage.prompt_tokens,
-            completionTokens: chunk.usage.completion_tokens,
-          },
-        };
-      }
+        if (request.control && !responseId && typeof chunk.id === "string") {
+          const id = chunk.id;
+          responseId = id;
+          request.control.bindEndReasoning(() =>
+            this.endReasoning(id, request.model),
+          );
+        }
 
-      const choice = chunk.choices?.[0];
-      if (!choice) continue;
-      const delta = choice.delta ?? {};
+        if (chunk.usage) {
+          yield {
+            type: "usage",
+            usage: {
+              promptTokens: chunk.usage.prompt_tokens,
+              completionTokens: chunk.usage.completion_tokens,
+            },
+          };
+        }
 
-      if (
-        typeof delta.reasoning_content === "string" &&
-        delta.reasoning_content
-      ) {
-        yield { type: "reasoning", text: delta.reasoning_content };
-      }
-      if (typeof delta.content === "string" && delta.content) {
-        yield { type: "text", text: delta.content };
-      }
-      for (const tc of delta.tool_calls ?? []) {
-        const call = calls.get(tc.index) ?? { id: "", name: "", arguments: "" };
-        if (tc.id) call.id = tc.id;
-        if (tc.function?.name) call.name += tc.function.name;
-        if (tc.function?.arguments) call.arguments += tc.function.arguments;
-        calls.set(tc.index, call);
-      }
+        // Running count while streaming (timings_per_token). The usage chunk
+        // at the end has the final numbers.
+        if (!chunk.usage && chunk.timings?.predicted_n !== undefined) {
+          yield {
+            type: "usage",
+            usage: {
+              promptTokens:
+                (chunk.timings.cache_n ?? 0) + (chunk.timings.prompt_n ?? 0),
+              completionTokens: chunk.timings.predicted_n,
+            },
+          };
+        }
 
-      if (choice.finish_reason) {
-        finish = {
-          type: "finish",
-          reason: toFinishReason(choice.finish_reason),
-        };
+        const choice = chunk.choices?.[0];
+        if (!choice) continue;
+        const delta = choice.delta ?? {};
+
+        if (
+          typeof delta.reasoning_content === "string" &&
+          delta.reasoning_content
+        ) {
+          yield { type: "reasoning", text: delta.reasoning_content };
+        }
+        if (typeof delta.content === "string" && delta.content) {
+          yield { type: "text", text: delta.content };
+        }
+        for (const tc of delta.tool_calls ?? []) {
+          const call = calls.get(tc.index) ?? {
+            id: "",
+            name: "",
+            arguments: "",
+          };
+          if (tc.id) call.id = tc.id;
+          if (tc.function?.name) call.name += tc.function.name;
+          if (tc.function?.arguments) call.arguments += tc.function.arguments;
+          calls.set(tc.index, call);
+        }
+
+        if (choice.finish_reason) {
+          finish = {
+            type: "finish",
+            reason: toFinishReason(choice.finish_reason),
+          };
+        }
       }
+    } finally {
+      request.control?.bindEndReasoning(undefined);
     }
 
     for (const [index, call] of [...calls].sort((a, b) => a[0] - b[0])) {
@@ -191,6 +230,43 @@ export class LlamaServerAdapter implements ModelAdapter {
         };
         break;
       }
+    }
+  }
+
+  /** POST /v1/chat/completions/control with action "reasoning_end". */
+  private async endReasoning(
+    id: string,
+    model: string | undefined,
+  ): Promise<ControlResult> {
+    try {
+      const res = await this.fetch(
+        this.baseUrl + "/v1/chat/completions/control",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id,
+            action: "reasoning_end",
+            ...(model !== undefined ? { model } : {}),
+          }),
+        },
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+        error?: { message?: string };
+      };
+      if (!res.ok) {
+        return {
+          ok: false,
+          message: body.error?.message ?? `llama-server returned ${res.status}`,
+        };
+      }
+      return body.success
+        ? { ok: true }
+        : { ok: false, message: body.message ?? "llama-server refused" };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
     }
   }
 
@@ -303,7 +379,13 @@ function toTokenInfo(probs: unknown): TokenInfo[] | undefined {
 
 /* Loose shapes of what llama-server streams; validated by use. */
 interface StreamChunk {
+  id?: string;
   error?: unknown;
+  timings?: {
+    cache_n?: number;
+    prompt_n?: number;
+    predicted_n?: number;
+  };
   usage?: { prompt_tokens: number; completion_tokens: number };
   choices?: {
     finish_reason?: string | null;

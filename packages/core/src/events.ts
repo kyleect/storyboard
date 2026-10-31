@@ -20,6 +20,8 @@ export const RunStarted = event(
     parentRunId: z.string().optional(),
     /** The model name sent to the server, when one is set. */
     model: z.string().optional(),
+    /** The reasoning effort sent to the server, when one is set. */
+    reasoningEffort: z.string().optional(),
   }),
 );
 

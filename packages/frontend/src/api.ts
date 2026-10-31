@@ -1,4 +1,4 @@
-import type { ContentBlock, Message } from "@harness/core";
+import type { ContentBlock, ControlResult, Message } from "@harness/core";
 
 /*
  * Talks to the backend. The token arrives once in the URL fragment
@@ -65,6 +65,8 @@ export interface Session {
   created_at: string;
   /** The session's chosen model; null means the default setting. */
   model: string | null;
+  /** The session's chosen reasoning effort; null means the default. */
+  reasoning_effort: string | null;
 }
 
 export interface StoredMessage {
@@ -72,6 +74,8 @@ export interface StoredMessage {
   message: Message;
   /** For assistant messages: the model of the run that last wrote it. */
   model: string | null;
+  /** For assistant messages: the effort of the run that last wrote it. */
+  reasoningEffort: string | null;
 }
 
 export interface SessionDetail {
@@ -82,6 +86,7 @@ export interface SessionDetail {
     runId: string;
     messageId: string;
     model: string | null;
+    reasoningEffort: string | null;
     continuing: boolean;
     content: ContentBlock[];
   } | null;
@@ -90,6 +95,7 @@ export interface SessionDetail {
 export interface Settings {
   llamaServerUrl: string;
   model: string;
+  reasoningEffort: string;
   port: number;
 }
 
@@ -105,27 +111,40 @@ export interface ModelInfo {
   status?: string;
 }
 
+/** Sent with a message or continue; they become the session's choices. */
+export interface Choices {
+  model?: string;
+  reasoningEffort?: string;
+}
+
 export const api = {
   listModels: () => request<ModelInfo[]>("GET", "/api/models"),
-  setSessionModel: (id: string, model: string | null) =>
-    request<Session>("PATCH", `/api/sessions/${id}`, { model }),
+  /** A field left out is unchanged; null returns it to the default. */
+  setSessionChoices: (
+    id: string,
+    choices: { model?: string | null; reasoningEffort?: string | null },
+  ) => request<Session>("PATCH", `/api/sessions/${id}`, choices),
+  reasoningLevels: (model: string | undefined) =>
+    request<{ levels: string[] }>(
+      "GET",
+      `/api/models/reasoning-levels${
+        model ? `?model=${encodeURIComponent(model)}` : ""
+      }`,
+    ),
+  endReasoning: (runId: string) =>
+    request<ControlResult>("POST", `/api/runs/${runId}/end-reasoning`),
   listSessions: () => request<Session[]>("GET", "/api/sessions"),
   createSession: (title?: string) =>
     request<Session>("POST", "/api/sessions", title ? { title } : {}),
   getSession: (id: string) =>
     request<SessionDetail>("GET", `/api/sessions/${id}`),
-  sendMessage: (id: string, content: string, model?: string) =>
-    request<{ runId: string }>(
-      "POST",
-      `/api/sessions/${id}/messages`,
-      model ? { content, model } : { content },
-    ),
-  continueLast: (id: string, model?: string) =>
-    request<{ runId: string }>(
-      "POST",
-      `/api/sessions/${id}/continue`,
-      model ? { model } : {},
-    ),
+  sendMessage: (id: string, content: string, choices: Choices) =>
+    request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
+      content,
+      ...choices,
+    }),
+  continueLast: (id: string, choices: Choices) =>
+    request<{ runId: string }>("POST", `/api/sessions/${id}/continue`, choices),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>("POST", `/api/runs/${runId}/cancel`),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),

@@ -142,7 +142,7 @@ describe("loadMigrations", () => {
     expect(() => loadMigrations(t.dir)).toThrow(/Badly named/);
   });
 
-  it("adds model columns to a database created before them", () => {
+  it("adds model and reasoning columns to a database created before them", () => {
     db = new Database(":memory:");
     const all = loadMigrations(MIGRATIONS_DIR);
     migrate(
@@ -153,17 +153,18 @@ describe("loadMigrations", () => {
       "INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T')",
     ).run();
 
-    expect(migrate(db, all)).toEqual([2]);
+    expect(migrate(db, all)).toEqual([2, 3]);
     expect(
-      db.prepare("SELECT model FROM sessions WHERE id = 's'").get(),
-    ).toEqual({
-      model: null,
-    });
+      db
+        .prepare("SELECT model, reasoning_effort FROM sessions WHERE id = 's'")
+        .get(),
+    ).toEqual({ model: null, reasoning_effort: null });
     for (const table of ["sessions", "messages", "runs"]) {
       const cols = (
         db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
       ).map((c) => c.name);
       expect(cols).toContain("model");
+      expect(cols).toContain("reasoning_effort");
     }
   });
 

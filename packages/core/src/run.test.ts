@@ -228,6 +228,14 @@ describe("runSingleCall", () => {
     });
   });
 
+  it("reports the reasoning effort on run.started", async () => {
+    const { events, ctx, model } = setup([{ type: "text", text: "x" }]);
+    await runSingleCall(model, { ...request, reasoningEffort: "low" }, ctx);
+    expect(events[0]).toMatchObject({
+      data: { model: "test-model", reasoningEffort: "low" },
+    });
+  });
+
   it("records the parent run when nested", async () => {
     const { events, ctx, model } = setup([{ type: "text", text: "x" }]);
     await runSingleCall(model, request, { ...ctx, parentRunId: "run-0" });
