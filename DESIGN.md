@@ -11,7 +11,7 @@
 
 Story Harness is a desktop application for writing short stories with locally hosted language models. This document covers the base harness: the runtime that sends prompts to a model, streams output to the UI, runs tools, and exposes the extension points a story-writing layer will build on. The story layer itself is out of scope.
 
-The UI stack (Tauri, React, Mantine), the language (TypeScript), and the initial model server (llama.cpp's `llama-server`) are decided. Fifteen architecture questions remain open and are laid out in section 7 with their options and trade-offs.
+The UI stack (Tauri, React, Mantine), the language (TypeScript), and the initial model server (llama.cpp's `llama-server`) are decided. Several architecture questions remain open and are laid out in section 7 with their options and trade-offs.
 
 ## 2. Background and motivation
 
@@ -140,13 +140,23 @@ Rationale for each decision is to be filled in.
 
 ### 6.10 Transport: local HTTP with streaming (D3)
 
-**Decision:** The UI talks to the harness process over local HTTP, with server output streamed using server-sent events (SSE). Commands, including cancelling a run, are ordinary HTTP requests.
+**Decision:** The UI talks to the harness process over local HTTP, with server output streamed using server-sent events (SSE). Commands, including cancelling a run, are ordinary HTTP requests. The stream's auth token is passed in the URL.
 **Rationale:** To be filled in.
 
 ### 6.11 Database access: SQL with migrations, no ORM (D16, D17)
 
 **Decision:** The database layer uses SQL queries and versioned schema migrations, not an ORM. The migration tool is open (D17).
 **Rationale:** To be filled in.
+
+### 6.12 SQLite driver: better-sqlite3-multiple-ciphers, SQLCipher-compatible mode (D16)
+
+**Decision:** The database uses `better-sqlite3-multiple-ciphers` in its SQLCipher-compatible mode, so databases can be read with SQLCipher tools.
+**Rationale:** To be filled in. Stated: SQLCipher is preferred, and the library "seems solid".
+
+### 6.13 Encryption key supplied through an environment variable (D18)
+
+**Decision:** The database key is supplied through an environment variable. It is never passed as a command-line argument.
+**Rationale:** To be filled in. Stated: the whole system runs on localhost.
 
 ## 7. Open decisions
 
@@ -162,22 +172,11 @@ Decided: Node, shipped self-contained. See 6.9. The packaging mechanism is D15.
 
 ### D3. UI-to-harness transport
 
-Decided: local HTTP with SSE streaming (6.10).
+Decided: local HTTP with SSE streaming, and the stream's auth token in the URL (6.10).
 
 Reattaching to a run in progress (R10) uses SSE's event IDs: each event carries an ID, and a reconnecting client sends the last ID it received. The harness must keep events with IDs, in memory or persisted (D13).
 
-The browser `EventSource` API cannot set request headers, so the auth token has to reach the stream another way. This is the one open question, and the options differ:
-
-|                            | Token in the URL                                                                     | Cookie                                                                                                                                                                                                                                                                            | Reading the stream with `fetch`                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| How it works               | `EventSource` opens `/events?token=...`                                              | The server sets a cookie after an authenticated request; the browser sends it on the stream                                                                                                                                                                                       | The client uses `fetch` and sets `Authorization: Bearer ...`, then parses the SSE frames itself                  |
-| Reconnect and replay (R10) | Built into `EventSource`, including sending the last event ID                        | Built into `EventSource`                                                                                                                                                                                                                                                          | Written by hand: reconnect, send the last event ID, parse frames. Small libraries for this exist; none evaluated |
-| Token exposure             | The token appears in the URL and can end up in logs; low risk on localhost, but real | Not in the URL; stored in the browser                                                                                                                                                                                                                                             | Never in the URL; same header as every other request                                                             |
-| Complications              | None beyond logging                                                                  | The UI and the harness are different origins (the Tauri origin or the Vite dev server versus `127.0.0.1:<port>`), so cross-origin cookie rules and CORS with credentials apply; browsers send cookies automatically, which adds request-forgery concerns that header tokens avoid | None in the UI. A CLI client can set headers freely in every option                                              |
-
-Open question:
-
-- URL token, cookie or `fetch` streaming?
+Consequence: a token in the URL can end up in logs, so the server must not log query strings.
 
 ### D4. HTTP framework
 
@@ -352,7 +351,7 @@ Open questions:
 
 ### D16. SQLite driver and encryption (R11)
 
-Leading option: `better-sqlite3-multiple-ciphers`. Preference stated for SQLCipher; license is not a constraint. Stock SQLite does not encrypt, and `node:sqlite` uses Node's bundled SQLite, which has no encryption options. SQLCipher is a build of SQLite that replaces the stock library; it is not a loadable extension. The Node packages found ([comparison article](https://codenote.net/en/posts/electron-encrypted-sqlite-libraries-comparison/), a third-party source):
+Decided: `better-sqlite3-multiple-ciphers` in SQLCipher-compatible mode (6.12). License is not a constraint. Stock SQLite does not encrypt, and `node:sqlite` uses Node's bundled SQLite, which has no encryption options. SQLCipher is a build of SQLite that replaces the stock library; it is not a loadable extension. The Node packages found ([comparison article](https://codenote.net/en/posts/electron-encrypted-sqlite-libraries-comparison/), a third-party source):
 
 | Option                            | Encryption engine                                          | Status and caveats                                                                                                                                                                                        |
 | --------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -363,13 +362,12 @@ Leading option: `better-sqlite3-multiple-ciphers`. Preference stated for SQLCiph
 
 It is a native addon, so it interacts with D15 (tabled).
 
-Prior art: an earlier project that used SQLCipher was named as a reference, but its repository could not be read while drafting.
+The library sets the SQLCipher mode with settings applied before the key each time the database is opened (`cipher='sqlcipher'` and `legacy=4`, per its README).
 
-Open questions:
+Prior art: an earlier project that used SQLCipher was named as a reference; its repository could not be read, and it was set aside.
 
-- Confirm `better-sqlite3-multiple-ciphers` as the choice?
-- SQLCipher-compatible mode (readable by `sqlcipher` tools) or the library's default cipher?
-- Must the database be opened with external tools?
+Open question:
+
 - Which platforms must have working prebuilt binaries (D11)?
 
 ### D17. Migrations and query layer (6.11)
@@ -396,7 +394,7 @@ Open questions:
 
 ### D18. Encryption key management (R11)
 
-Threat model: anyone who acquires the database file must not be able to read it. The key therefore has to live somewhere other than the database file and anything copied with it.
+Decided: environment variable (6.13). Threat model: anyone who acquires the database file must not be able to read it. The key therefore has to live somewhere other than the database file and anything copied with it.
 
 | Option                                                                                                   | Holds up when                                                                                                        | Does not hold up when                                                                                                                                                                                  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -407,8 +405,10 @@ Threat model: anyone who acquires the database file must not be able to read it.
 
 Open questions:
 
-- Which key sources should the harness support: one, or several with a precedence order (ties to the layered configuration in D12)?
-- Must it work unattended and in CI?
+- What is the variable called?
+- What happens on first run, when no database exists: does the user supply a key, or does the harness generate one and show it once?
+- What happens if the variable is missing: refuse to start, or prompt?
+- Must it work unattended and in CI? (An environment variable does.)
 
 ## 8. Future work
 
