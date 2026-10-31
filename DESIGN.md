@@ -153,10 +153,11 @@ Rationale for each decision is to be filled in.
 **Decision:** The database uses `better-sqlite3-multiple-ciphers` in its SQLCipher-compatible mode, so databases can be read with SQLCipher tools.
 **Rationale:** To be filled in. Stated: SQLCipher is preferred, and the library "seems solid".
 
-### 6.13 Encryption key supplied through an environment variable (D18)
+### 6.13 Encryption key: owner-only key file, with an environment-variable override (D18)
 
-**Decision:** The database key is supplied through an environment variable. It is never passed as a command-line argument.
-**Rationale:** To be filled in. Stated: the whole system runs on localhost.
+**Decision:** The database key is read from a key file that only the user's account can read. An environment variable can override the file. The key is never passed as a command-line argument. Only the backend process reads the key (6.20).
+**Replaces:** an earlier decision to supply the key through an environment variable alone. That was changed after the finding that, on macOS, an app launched from the Dock or Finder does not inherit variables from the shell profile.
+**Rationale:** To be filled in. Stated (for the earlier choice): the whole system runs on localhost. macOS Keychain was considered and not chosen; see D18.
 
 ### 6.14 HTTP framework: Fastify (D4)
 
@@ -176,6 +177,38 @@ Rationale for each decision is to be filled in.
 **Decision:** The harness calls `/v1/chat/completions` for agent-style chat, tool calls, JSON-constrained results and continuing a message by prefill. It also calls a raw-prompt endpoint for raw continuation (continuing plain text with no chat template). Which raw-prompt endpoint (native `/completion` or `/v1/completions`) is open.
 **Rationale:** To be filled in. Stated: agent-style chat with tool use; a "continue" action on a message; raw continuation "would be very useful in many cases"; constrained JSON results for use outside the chat (webview or CLI).
 **Environment (stated):** The application connects to a `llama-server` that the user runs; it does not start or stop it. The server runs in router mode. One model is in use at a time. Only llama.cpp is supported; other OpenAI-compatible servers are not a goal.
+
+### 6.17 Execution model: single call, agent loop and pipeline, nestable (D6)
+
+**Decision:** The base supports all three patterns: a single model call, an agent loop (the model calls tools repeatedly until it stops), and a pipeline (a fixed sequence of steps, each a model call or code). A pipeline step can run an agent loop, and an agent loop can run a pipeline. Tool calling is required in the base.
+
+- A run has a maximum number of loop iterations; the limit is configurable.
+- A malformed tool call is returned to the model as an error so it can retry; it does not fail the run.
+- Tools can individually be marked as requiring the user's approval before they run.
+
+**Rationale:** To be filled in. Stated: the whole project is an agent harness, so all patterns are wanted; agent-style chat with tool usage.
+
+### 6.18 Persistence: SQLite holds transcripts, session state, run events and run history (D7)
+
+**Decision:** The encrypted SQLite database (R11, 6.12) stores, for the base: session transcripts (messages, tool calls, tool results, reasoning text), per-session state, run events, and run history (timings and token usage). An export step is acceptable: nothing has to be readable as plain files.
+**Rationale:** To be filled in.
+
+### 6.19 Backend lifetime: keeps running in the background with a tray icon (D14)
+
+**Decision:** Closing the window does not stop the app or the backend. The app stays alive with no window, shown by a tray icon, and quitting from the tray stops the app and the backend. A running generation survives a window reload and a window close; it is not required to survive quitting the app.
+**Rationale:** To be filled in. Stated: closing the window must not stop a running generation.
+**Mechanism (from Tauri's source, not built or run):** When the last window is destroyed Tauri requests an exit and exits unless the application calls `prevent_exit` ([`tauri-runtime-wry`](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-runtime-wry/src/lib.rs), [`app.rs`](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri/src/app.rs)). The shell plugin kills the processes it spawned when the app exits ([`lib.rs`](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/shell/src/lib.rs)). The tray needs Tauri's `tray-icon` feature ([docs](https://v2.tauri.app/learn/system-tray/)).
+
+### 6.20 One shared backend for the app and the CLI (D14)
+
+**Decision:** The desktop app and the CLI use one backend. Whichever starts first starts it if it is not already running; the other connects to it. The backend stops only by an explicit stop (quitting from the tray, or a stop command); it does not stop on its own.
+**Rationale:** To be filled in. Stated: "Connects to the app's backend or starts the backend if it's not running. The app would then connect to the CLI's backend if that's the case."
+**Consequences, not yet designed:**
+
+- The backend cannot be a plain child of either front end. The shell plugin kills every process it spawned when the app exits ([source](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/shell/src/lib.rs)), so the backend has to be started detached. How is not researched.
+- A second front end needs a way to find the running backend (for example a stored port and token); the token cannot be generated fresh at every launch.
+- Two front ends starting at the same time must not start two backends on one database. The mechanism is not researched.
+- Because only the backend opens the database, only the backend process needs the encryption key.
 
 ## 7. Open decisions
 
@@ -243,6 +276,8 @@ Open question:
 
 ### D6. Execution model
 
+Decided: all three patterns, nestable, with an iteration limit, error-and-retry for malformed tool calls, and per-tool approval (6.17). Options as considered:
+
 | Option      | Description                                                          |
 | ----------- | -------------------------------------------------------------------- |
 | Single call | One model request per action; application code decides the next step |
@@ -252,10 +287,9 @@ Open question:
 
 Tool-calling quality varies widely across local models.
 
-Open questions:
+Answered: tool calling is required in the base.
 
-- Is tool calling required in the base?
-- Where do parameters act: prompt text, sampling settings, grammars, post-generation checks? Which of these must the base support generically?
+Not answered: where story parameters act (prompt text, sampling settings, grammars, post-generation checks) and which of these the base supports generically. This depends on the story layer, which is out of scope for the base.
 
 ### D7. Persistence
 
@@ -268,9 +302,11 @@ Open questions:
 
 R8 (resumable sessions) means sessions must be persisted, so the "None in the base" option no longer fits. R11 refers to a SQLite database, so SQLite is treated as the intended store; what it holds is still open.
 
-Open question:
+Decided: SQLite, holding transcripts, per-session state, run events and run history; an export step is acceptable (6.18).
 
-- What must be persisted (outputs, transcripts, parameter sets, run history), and must it be human-readable?
+Not asked, still open: whether settings live in the database or in a file (see the configuration decision), and what the story layer saves (story text, parameter sets, presets). The story layer would add its own tables through migrations.
+
+Saving run events lets the interface replay missed events even after the backend restarts (R10, D13).
 
 ### D8. Schema and validation library
 
@@ -321,9 +357,10 @@ Open question:
 
 ### D11. Platforms and distribution
 
+Answered: the target operating system is macOS (stated). The tray icon's Linux limitation (tray click events are not emitted) therefore does not apply. The database driver ships prebuilt binaries for macOS on Intel and Apple Silicon (D16).
+
 Open questions:
 
-- Target operating systems: Windows, macOS, Linux?
 - Installers and auto-update, or run from source initially?
 - Is fully offline operation required?
 
@@ -366,10 +403,16 @@ R7 says a generation survives a UI reload or close. How long the backend process
 
 Sharing a database file between the desktop app and a CLI only needs the same file and the same key. Sharing a live session, with the CLI attaching to a run the desktop app started, needs one harness process serving both, which is the third option. This is desirable but not a requirement for now.
 
-Open questions:
+Answered:
 
-- Which events must a run survive: window reload, window close, app quit?
-- If the process is killed mid-generation, must the run resume mid-stream, or is it enough that the session continues from the last completed message?
+- A running generation must survive a window reload and a window close. Surviving an app quit was not selected.
+- If the process crashes mid-generation, the session continues from saved partial text: the partial text of a reply is saved as it streams, so the user can continue it. The server's continue-by-prefill feature (6.16) can continue a saved assistant message, but not one that contains tool calls.
+
+Decided: the second option, background with a tray icon (6.19). Autostart at login is not wanted; the user asked whether the backend can start when the desktop app or the CLI starts. Tauri's sidecar mechanism can start the backend when the app starts ([sidecar docs](https://v2.tauri.app/develop/sidecar/)); the CLI case is below.
+
+Not researched: how a tray-only app behaves on macOS (for example hiding the Dock icon), and how two backends are prevented from opening the same database at once.
+
+Decided: one shared backend for the app and the CLI, stopped only explicitly (6.20).
 
 ### D15. Runtime distribution: Node single executable or installed runtime
 
@@ -473,7 +516,7 @@ Still open:
 
 ### D18. Encryption key management (R11)
 
-Decided: environment variable (6.13). Threat model: anyone who acquires the database file must not be able to read it. The key therefore has to live somewhere other than the database file and anything copied with it.
+Decided: owner-only key file with an environment-variable override (6.13); this replaced an earlier environment-variable-only choice. Threat model: anyone who acquires the database file must not be able to read it. The key therefore has to live somewhere other than the database file and anything copied with it.
 
 | Option                                                                                                   | Holds up when                                                                                                        | Does not hold up when                                                                                                                                                                                  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -482,11 +525,16 @@ Decided: environment variable (6.13). Threat model: anyone who acquires the data
 | Key in an environment variable                                                                           | The database file alone is copied                                                                                    | The home directory or a disk image is copied, if the variable is set in a plain-text file such as `.bashrc`: any process running as that user can read that file, as can anyone holding a backup of it | Better than a command-line argument, which other users can see in process listings. A running process's environment is readable by other processes of the same user (on Linux, through `/proc`)                                                                                                                                                                                                                                                         |
 | Key in a file with owner-only permissions                                                                | The database file alone is copied                                                                                    | The home directory or a disk image is copied                                                                                                                                                           | Same exposure as `.bashrc`, but kept out of shell startup files; can be placed outside synced or backed-up folders                                                                                                                                                                                                                                                                                                                                      |
 
+macOS and the key (stated platform: macOS). An app launched from the Dock or Finder does not inherit environment variables from the shell profile ([macOS guide](https://cloudstreet-dev.github.io/macOS-and-Unix/part3-shell/environment-variables.html), a single third-party source). A backend started by the app would not see the key unless the variable is set with `launchctl` or the app is launched from a terminal. With one shared backend (6.20), only the backend needs the key.
+
+macOS Keychain, as an alternative source: each keychain item has an access control list of trusted apps. An app not on the list is prompted with Deny, Allow or Always Allow; Always Allow adds it to the list ([Apple: Access Control Lists](https://developer.apple.com/documentation/security/access-control-lists)). So an app and a CLI can read the same item; the first access by an app not on the list prompts the user. Not researched: how a Node-launched process is identified in the list, and whether an update to the backend binary prompts again. `@napi-rs/keyring` 2.1.2 (2026-10-19) lists prebuilt macOS x64 and arm64 packages.
+
 Open questions:
 
-- What is the variable called?
-- What happens on first run, when no database exists: does the user supply a key, or does the harness generate one and show it once?
-- What happens if the variable is missing: refuse to start, or prompt?
+- Where is the key file, and what is it called?
+- What is the override variable called?
+- What happens on first run, when no database exists: does the harness generate a key and write the file, or does the user supply one?
+- What happens if neither the file nor the variable is present: refuse to start, or prompt?
 - Must it work unattended and in CI? (An environment variable does.)
 - What does the variable hold: a passphrase, or a raw 64-digit hex key? A passphrase runs the 256,000-iteration KDF each time the database is opened.
 - Is key rotation needed? The driver supports it with `rekey`; Chitter supports it.
