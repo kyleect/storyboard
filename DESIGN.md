@@ -89,6 +89,8 @@ Requests flow left to right; output streams back along the same path. The story 
 
 The harness process can be started in two ways. The desktop app launches it as a bundled helper program (Tauri calls this a sidecar), or a user runs it directly from a terminal as a command-line tool (CLI). Both run the same harness core. Whether they are one binary with two modes or two binaries is open (D15).
 
+**Update:** There is no CLI for now. The core, backend and frontend stay decoupled so a CLI or other front end can be added later. The text in this document that mentions a CLI describes that possible later addition, except where marked.
+
 ## 6. Design decisions (made)
 
 Rationale for each decision is to be filled in.
@@ -125,7 +127,7 @@ Rationale for each decision is to be filled in.
 
 ### 6.7 Layered configuration
 
-**Decision:** Configuration is read from several sources: command-line arguments, environment variables, settings stored in the SQLite database, and defaults. Precedence, highest first: command-line arguments, environment variables, stored settings, defaults. The settings needed to open the database (the database path and the key file location) cannot be stored in it, so they come from elsewhere; where is open in D12. The UI may change settings, and it saves them to the database.
+**Decision:** Configuration is read from several sources: command-line arguments, environment variables, settings stored in the SQLite database, and defaults. Precedence, highest first: command-line arguments, environment variables, stored settings, defaults. The settings needed to open the database (the database path and the key file location) cannot be stored in it, so they come from environment variables, with command-line arguments able to override them. The UI may change settings, and it saves them to the database.
 **Rationale:** _To be filled in._
 
 ### 6.8 Harness runs as a separate TypeScript process (D1)
@@ -202,6 +204,7 @@ Rationale for each decision is to be filled in.
 ### 6.20 One shared backend for the app and the CLI (D14)
 
 **Decision:** The desktop app and the CLI use one backend. Whichever starts first starts it if it is not already running; the other connects to it. The backend stops only by an explicit stop (quitting from the tray, or a stop command); it does not stop on its own.
+**Update:** There is no CLI for now, so only the desktop app starts the backend. The backend is kept as decided: a detached background process with a tray icon, stopped only explicitly. Another front end, such as a later CLI, would connect to it the same way.
 **Rationale:** To be filled in. Stated: "Connects to the app's backend or starts the backend if it's not running. The app would then connect to the CLI's backend if that's the case."
 **Consequences, not yet designed:**
 
@@ -371,13 +374,46 @@ Layered configuration is decided (6.7). Answered:
 - Stored settings (everything except the database path and key file location) live in the SQLite database.
 - Precedence: command-line arguments, then environment variables, then stored settings, then defaults.
 - The UI may change settings, and it saves them to the database.
-- If a config file is used, its format is TOML.
+- The database path and key file location come from environment variables. There is no config file, so the TOML format answer no longer applies.
+- No llama-server API key setting (llama.cpp runs without one).
+
+Candidate settings, not confirmed. Bootstrap (environment variable):
+
+- Database path
+- Key file location
+
+Stored in the database:
+
+- llama-server base URL
+- Default model name for router mode
+- Backend port
+- Log level
+- Default loop limit
+- Request timeout
+- Default sampling parameters (temperature, top-p, top-k, min-p, repeat penalty, seed)
+- Default max tokens per response
+- Context size to assume when counting tokens
+- Stream responses on or off
+- Tool approval defaults (per tool, from the execution model)
+- Autostart with macOS login
+- Show tray icon / Dock icon
+- Theme (light, dark, system)
+
+Command-line arguments (answered before the CLI was dropped; with no CLI for now, these apply to a later CLI, and whether the backend itself accepts arguments is open):
+
+- Bootstrap overrides: `--db-path`, `--key-file`, `--config`.
+- Stored-setting overrides (for example `--port`, `--log-level`, `--llama-url`) are temporary and apply at backend start only. They are not saved to the database. If the backend is already running, a client's arguments for stored settings are ignored.
+- No `config set` command; saved changes are made in the UI.
+- Both the app and the CLI start the backend if it is not running.
+- The CLI has subcommands to manage the backend (for example start, stop, status), for when the tray icon is not working. The exact subcommands are not yet defined.
+- Client commands (run, chat, sessions) were not selected in the question. Whether they exist is open.
 
 Open questions:
 
-- The database path and key file location cannot be in the database. Do they come from environment variables and command-line arguments only, or also from a TOML config file? If a file, where does it live on macOS?
-- Which settings exist? Candidates, not confirmed: llama-server base URL, optional llama-server API key, default model name for router mode, backend port, log level, default loop limit.
-- With one shared backend, which command-line arguments apply: those of the process that started the backend, or those of each client?
+- Environment variable names and defaults for the database path and key file location. A GUI app on macOS does not inherit shell-profile variables (see the key decision), so what does the app use when they are unset?
+- With no CLI, the tray icon is the only way to stop the backend. What happens if the tray icon is not working?
+- Does the backend accept command-line arguments, or only environment variables? The app starts it, so the app would pass them.
+- Exact backend management subcommands and client commands belong to a later CLI.
 
 ### D13. Streamed event contract
 
