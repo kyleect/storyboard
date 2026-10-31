@@ -399,12 +399,20 @@ Migrations must run inside the shipped application, so an in-process tool is the
 | Flyway                                  | Supports SQLite; its command line bundles a Java runtime ([requirements](https://documentation.red-gate.com/flyway/getting-started-with-flyway/system-requirements/command-line-and-api-requirements))                                                                                                                                                 |
 | Drizzle Kit                             | Part of an ORM, which 6.11 excludes                                                                                                                                                                                                                                                                                                                    |
 
-Open questions:
+Stated requirements:
 
-- Must migrations be plain `.sql` files?
-- Must they run automatically when the harness starts?
-- Forward-only, or with down migrations?
-- Raw driver calls only, or a typed query builder (not an ORM) on top?
+- Queries are raw SQL through the driver; no query builder.
+- Migrations are plain `.sql` files, not TypeScript.
+- Each applied migration's checksum is stored, and a changed file is detected.
+- Down (reversible) migrations are not required.
+- Migrations are expected to run during development. Stated: not wanted on a shipped app. What happens when a shipped app finds a database older than its schema is not yet settled.
+
+Still open:
+
+- Which migration tool, or a hand-written runner. A hand-written runner would have to implement file ordering, the history table, checksum checks, failure handling, concurrent starts (a CLI and the desktop app on one database) and baselining. No Node tool found so far combines plain SQL files, SQLite and checksums.
+- Behavior when a stored checksum does not match: refuse to run, and whether an explicit repair command exists.
+- Embedding the migrations in the bundle, or shipping them as files. Depends on D15.
+- Behavior on a shipped app whose database is behind the schema (automatic, explicit command only, or none yet).
 
 ### D18. Encryption key management (R11)
 
