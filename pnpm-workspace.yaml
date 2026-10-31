@@ -1,0 +1,13 @@
+packages:
+  - packages/*
+
+onlyBuiltDependencies:
+  - esbuild
+
+# Ships prebuilt N-API binaries for macOS, Linux and Windows; its build
+# script (a node-gyp compile) is not needed.
+ignoredBuiltDependencies:
+  - better-sqlite3-multiple-ciphers
+
+patchedDependencies:
+  better-sqlite3-multiple-ciphers@13.0.3: patches/better-sqlite3-multiple-ciphers@13.0.3.patch

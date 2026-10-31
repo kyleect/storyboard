@@ -1,0 +1,159 @@
+import Database from "better-sqlite3-multiple-ciphers";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  appliedMigrations,
+  checksum,
+  loadMigrations,
+  migrate,
+  MigrationError,
+  repairMigration,
+  type Migration,
+} from "./migrate.js";
+import { MIGRATIONS_DIR, tempDatabase, tempDir } from "./test-helpers.js";
+
+let db: Database.Database;
+let cleanup: () => void = () => {};
+afterEach(() => {
+  if (db?.open) db.close();
+  cleanup();
+});
+
+const m1: Migration = { version: 1, name: "one", sql: "CREATE TABLE a (x);" };
+const m2: Migration = { version: 2, name: "two", sql: "CREATE TABLE b (x);" };
+
+const tables = () =>
+  (
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      .all() as { name: string }[]
+  ).map((r) => r.name);
+
+describe("migrate", () => {
+  it("applies pending migrations in order and records checksums", () => {
+    db = new Database(":memory:");
+    expect(migrate(db, [m2, m1], () => "T")).toEqual([1, 2]);
+    expect(tables()).toEqual(["a", "b", "schema_migrations"]);
+    expect(appliedMigrations(db)).toEqual([
+      { version: 1, name: "one", checksum: checksum(m1.sql), applied_at: "T" },
+      { version: 2, name: "two", checksum: checksum(m2.sql), applied_at: "T" },
+    ]);
+  });
+
+  it("applies only new migrations on later runs", () => {
+    db = new Database(":memory:");
+    migrate(db, [m1]);
+    expect(migrate(db, [m1, m2])).toEqual([2]);
+    expect(migrate(db, [m1, m2])).toEqual([]);
+  });
+
+  it("refuses to run when an applied file changed, with diagnostics", () => {
+    db = new Database(":memory:");
+    migrate(db, [m1], () => "2026-10-31T00:00:00Z");
+    const changed = { ...m1, sql: "CREATE TABLE a (x, y);" };
+
+    let error: unknown;
+    try {
+      migrate(db, [changed, m2]);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(MigrationError);
+    const e = error as MigrationError;
+    expect(e.message).toContain("0001_one.sql");
+    expect(e.message).toContain(checksum(m1.sql));
+    expect(e.message).toContain(checksum(changed.sql));
+    expect(e.message).toContain("2026-10-31T00:00:00Z");
+    expect(e.details).toMatchObject({
+      version: 1,
+      storedChecksum: checksum(m1.sql),
+      currentChecksum: checksum(changed.sql),
+      appliedAt: "2026-10-31T00:00:00Z",
+    });
+    // Nothing else ran.
+    expect(tables()).not.toContain("b");
+  });
+
+  it("runs again after the change is repaired", () => {
+    db = new Database(":memory:");
+    migrate(db, [m1]);
+    const changed = { ...m1, sql: "CREATE TABLE a (x); -- comment" };
+    expect(() => migrate(db, [changed])).toThrow(MigrationError);
+
+    expect(repairMigration(db, [changed], 1)).toEqual({
+      previous: checksum(m1.sql),
+      current: checksum(changed.sql),
+    });
+    expect(migrate(db, [changed, m2])).toEqual([2]);
+  });
+
+  it("rolls back a failing migration and records nothing for it", () => {
+    db = new Database(":memory:");
+    const bad: Migration = {
+      version: 2,
+      name: "bad",
+      sql: "CREATE TABLE c (x); INSERT INTO missing VALUES (1);",
+    };
+    expect(() => migrate(db, [m1, bad])).toThrow(
+      /0002_bad\.sql failed: no such table: missing/,
+    );
+    expect(tables()).toEqual(["a", "schema_migrations"]);
+    expect(appliedMigrations(db).map((m) => m.version)).toEqual([1]);
+  });
+
+  it("refuses when an applied migration's file is missing", () => {
+    db = new Database(":memory:");
+    migrate(db, [m1, m2]);
+    expect(() => migrate(db, [m1])).toThrow(
+      /2 \(two\) is recorded .* file is missing/,
+    );
+  });
+
+  it("refuses two migrations with the same version", () => {
+    db = new Database(":memory:");
+    expect(() => migrate(db, [m1, { ...m2, version: 1 }])).toThrow(
+      /share version 1/,
+    );
+  });
+});
+
+describe("loadMigrations", () => {
+  it("reads NNNN_name.sql files in numeric order", () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const dir = join(t.dir, "m");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "0010_ten.sql"), "SELECT 10;");
+    writeFileSync(join(dir, "0002_two.sql"), "SELECT 2;");
+    writeFileSync(join(dir, "README.md"), "ignored");
+    expect(loadMigrations(dir).map((m) => [m.version, m.name])).toEqual([
+      [2, "two"],
+      [10, "ten"],
+    ]);
+  });
+
+  it("rejects a badly named file", () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    writeFileSync(join(t.dir, "init.sql"), "");
+    expect(() => loadMigrations(t.dir)).toThrow(/Badly named/);
+  });
+
+  it("applies the project's migrations to an encrypted database", () => {
+    const t = tempDatabase();
+    db = t.db;
+    cleanup = t.cleanup;
+    expect(tables()).toEqual([
+      "events",
+      "messages",
+      "runs",
+      "schema_migrations",
+      "sessions",
+      "settings",
+    ]);
+    expect(migrate(db, loadMigrations(MIGRATIONS_DIR))).toEqual([]);
+  });
+});
