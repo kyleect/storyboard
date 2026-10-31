@@ -176,7 +176,7 @@ Rationale for each decision is to be filled in.
 
 ### 6.16 llama-server API: chat completions plus a raw-prompt endpoint (D5)
 
-**Decision:** The harness calls `/v1/chat/completions` for agent-style chat, tool calls, JSON-constrained results and continuing a message by prefill. It also calls a raw-prompt endpoint for raw continuation (continuing plain text with no chat template). Which raw-prompt endpoint (native `/completion` or `/v1/completions`) is open.
+**Decision:** The harness calls `/v1/chat/completions` for agent-style chat, tool calls, JSON-constrained results and continuing a message by prefill. It also calls a raw-prompt endpoint for raw continuation (continuing plain text with no chat template). The raw-prompt endpoint is the native `/completion`, chosen so token-level extras (token IDs, probabilities, timings) are available.
 **Rationale:** To be filled in. Stated: agent-style chat with tool use; a "continue" action on a message; raw continuation "would be very useful in many cases"; constrained JSON results for use outside the chat (webview or CLI).
 **Environment (stated):** The application connects to a `llama-server` that the user runs; it does not start or stop it. The server runs in router mode. One model is in use at a time. Only llama.cpp is supported; other OpenAI-compatible servers are not a goal.
 
@@ -258,7 +258,7 @@ Not verified: OpenAPI generation, testing support, and the star counts for Expre
 
 ### D5. llama-server API surface
 
-Decided: chat completions plus a raw-prompt endpoint (6.16). Open: which raw-prompt endpoint. Findings are from llama.cpp's documentation and source (master); no live server was run, so none of this is tested end to end.
+Decided: chat completions plus the native `/completion` for raw continuation (6.16). Findings are from llama.cpp's documentation and source (master); no live server was run, so none of this is tested end to end.
 
 | Endpoint               | Findings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -273,9 +273,7 @@ Also present, not evaluated: `/v1/responses` and an Anthropic-style `/v1/message
 
 References: [llama-server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md), [function-calling doc](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md), [`server-common.cpp`](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-common.cpp), [`server.cpp`](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server.cpp), [`server-models.cpp`](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-models.cpp), [assistant prefill PR](https://github.com/ggml-org/llama.cpp/pull/13174).
 
-Open question:
-
-- Native `/completion` or `/v1/completions` for raw continuation? Both accept the same sampler settings; they differ in request and response shape.
+Answered: native `/completion` for raw continuation, because token-level extras are wanted. Both endpoints accept the same sampler settings; they differ in request and response shape.
 
 ### D6. Execution model
 
@@ -344,7 +342,7 @@ Open questions:
 
 ### D9. Frontend libraries beyond Mantine
 
-Open: bundler (Tauri documents Vite for React), state management (React state, Zustand, TanStack Query, Redux), routing (none, React Router, TanStack Router), and additional Mantine packages (form, notifications, modals, others).
+Decided: bundler is Vite; state management is Zustand for UI state plus TanStack Query for backend data; routing is TanStack Router; additional Mantine packages are `@mantine/form`, `@mantine/notifications` and `@mantine/modals`.
 
 Open question:
 
@@ -352,7 +350,7 @@ Open question:
 
 ### D10. Repository structure and tooling
 
-Open: single package or workspace; package manager (npm, pnpm, Yarn, Bun); test runner (Vitest, Jest, node:test, bun test); lint and format (ESLint with Prettier, or Biome).
+Decided: a workspace of packages (separate packages for core, backend and frontend); pnpm; Vitest; ESLint with Prettier. Package names and layout are not yet defined.
 
 Open question:
 
@@ -433,10 +431,58 @@ During a run, the harness core emits a sequence of typed events (for example: ru
 
 R10 (reattach) requires events to have IDs and to be retained, in memory or persisted, so a reconnecting UI can receive what it missed.
 
-Open questions:
+Persistence of events is already covered: 6.18 stores run events in the database, which also serves reattach (R10).
 
-- Custom events or an existing protocol?
-- Should events be persisted so runs can be replayed or inspected?
+**Proposed contract (drafted by Claude for review; not approved).** Custom events, defined as Zod schemas in the harness core and sent as SSE.
+
+Envelope on every event: `id` (increasing, used as the SSE event ID), `runId`, `sessionId`, `time`, `type`, `data`.
+
+| Event                           | Data                                                          |
+| ------------------------------- | ------------------------------------------------------------- |
+| `run.started`                   | kind (single call, loop, pipeline), `parentRunId` when nested |
+| `step.started`, `step.finished` | a loop iteration or pipeline step: index, name                |
+| `message.started`               | `messageId`, role                                             |
+| `text.delta`                    | `messageId`, text                                             |
+| `reasoning.delta`               | `messageId`, text                                             |
+| `message.finished`              | `messageId`, finish reason, token usage and timings           |
+| `tool.called`                   | `callId`, tool name, arguments                                |
+| `tool.malformed`                | `callId`, error (sent back to the model, run continues)       |
+| `tool.approval_requested`       | `callId`, tool name, arguments                                |
+| `tool.approval_resolved`        | `callId`, approved or denied                                  |
+| `tool.result`                   | `callId`, result or error                                     |
+| `run.finished`                  | reason (stop, iteration limit, cancelled), usage              |
+| `run.failed`                    | error                                                         |
+
+Commands are ordinary HTTP requests: start a run, cancel a run, approve or deny a tool call. A reconnecting client sends `Last-Event-ID` and receives the stored events after it.
+
+Answered: token-level extras from `/completion` (probabilities, token IDs) ride on `text.delta` as an optional field, so they arrive in the same event as the text. Stated: "Same response".
+
+Prior art read from source (not run):
+
+- llama.cpp `server-task.cpp` (master): a streamed partial result carries `content`, `tokens`, and `completion_probabilities` when probabilities are requested; the OpenAI-shaped partial carries `logprobs.content`. The README's streaming note says only `content`, `tokens` and `stop` are returned until the end, which does not match the source. A non-streamed response carries `completion_probabilities` for the whole completion ([`server-task.cpp`](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-task.cpp)).
+- Pi (`earendil-works/pi`; the `badlogic/pi-mono` files read were identical). In-process agent events (`packages/agent/src/types.ts`): `agent_start`/`agent_end`, `turn_start`/`turn_end` (a turn is one assistant response plus its tool calls and results), `message_start`/`message_update`/`message_end`, `tool_execution_start`/`tool_execution_update`/`tool_execution_end` (with `durationMs`). In process, `message_update` carries the whole partial message. Tool approval at that level is a `beforeToolCall` hook. No logprobs field was found in its types ([`agent/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/src/types.ts), [`ai/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts)).
+- Pi's JSON and RPC wire format (`packages/coding-agent/docs/json.md`, `rpc.md`, `rpc-extension-ui.md`): newline-delimited JSON; commands carry an optional `id` that responses repeat. On the wire `message_update` is delta-only (the cumulative message and every `partial` snapshot are removed so stream size stays linear) and carries the latest cumulative `usage` plus an `assistantMessageEvent` (`text_start`/`text_delta`/`text_end`, `thinking_*`, `toolcall_start`/`toolcall_delta`/`toolcall_end`, each with `contentIndex`; `*_end` events carry the authoritative content, and `message_end` carries the authoritative final message). Other events: `agent_settled` (Pi will not continue on its own after retries, compaction or queued messages), `queue_update` (steering and follow-up queues), `auto_retry_start`/`auto_retry_end`, `compaction_start`/`compaction_end`, `tool_execution_update` with a `partialResult`. User interaction (select, confirm, input, editor) is a request event with an `id` that the client answers with a response carrying the same `id`, or a cancel ([`json.md`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/json.md), [`rpc.md`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md), [`rpc-extension-ui.md`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-extension-ui.md)).
+
+- Hermes Agent (`NousResearch/hermes-agent`, Python; docs `website/docs/developer-guide/programmatic-integration.md` and `user-guide/features/api-server.md`, read, not run). Two transports. (1) A JSON-RPC gateway over stdio or WebSocket with events `message.delta`, `message.complete`, `tool.start`, `tool.generating`, `tool.complete`, `gateway.ready`, `request.cancel`. Approvals and questions are JSON-RPC requests from the server to the client with an id, answered by a response with the same id; a withdrawn question emits `request.cancel`. A client advertises that it answers them with `client.capabilities`. Several clients can attach to one live session and all receive the events. On reconnect, `session.resume` returns `inflight` (the user prompt and assistant text streamed so far, a streaming flag, error fields) and `open_requests` (still-open questions); `session.events.since` is also listed. (2) An HTTP runs API: `POST /v1/runs`, `GET /v1/runs/{id}` for polling, `GET /v1/runs/{id}/events` as SSE, `POST /v1/runs/{id}/approval`, plus stop and steer routes. Run SSE events include `tool.started` (tool, a preview of the arguments), `tool.completed` (tool, duration in seconds, error flag, a result preview redacted for secrets and cut to 500 characters), `message.delta`, `message.interim`, `approval.request`, `subagent.start`, `subagent.complete`, and terminal `run.completed`, `run.failed`, `run.cancelled`, `run.interrupted`. A run active at gateway shutdown is persisted as `interrupted`. All SSE streams send a `: keepalive` comment after 10 idle seconds. Unconsumed event buffers expire after five minutes. Per-tool events from subagents are deliberately not forwarded ("high-volume UI noise").
+
+Answered: "Lets start with that." The suggestions made after reading Pi and Hermes are the starting contract, to be revised once a prototype shows what is wrong with it:
+
+1. Delta-only events with a `contentIndex`; `*_end` events carry the complete content and the final message is authoritative, so the UI replaces what it built from deltas. Token extras ride on `text.delta`.
+2. A `tool.update` event for partial tool output.
+3. On shutdown, runs that are active are stored as interrupted, with a terminal `run.interrupted` status.
+4. A keepalive SSE comment after 10 idle seconds.
+5. On reattach, the client gets a snapshot (the in-flight message so far and open approval requests) and then the events after `Last-Event-ID`.
+6. Approval stays as a request and an answer sharing an `id`; a `request.cancel` event withdraws a request when its run is cancelled.
+7. Cumulative `usage` on each message update.
+8. Steering, retry and compaction events are left out of the base.
+9. A nested run sends one start and one complete event to the UI, not its per-tool events.
+10. Tool-result previews in the live stream are truncated and redacted; full results stay in the database.
+
+Not yet decided: the retention of old events; whether the nesting identifies sub-runs by `parentRunId` alone.
+
+Open question:
+
+- Does the proposed contract look right, or what should change?
 
 ### D14. Backend lifetime
 
@@ -554,11 +600,13 @@ Stated requirements:
 - Down (reversible) migrations are not required.
 - Migrations are expected to run during development. Stated: not wanted on a shipped app. What happens when a shipped app finds a database older than its schema is not yet settled.
 
-Still open:
+Decided: a hand-written runner. It has to implement file ordering, the history table, checksum checks, failure handling, concurrent starts and baselining; with one backend and no CLI for now, concurrent starts are less likely but a second front end may add them later. Whether sqlx-cli is used to author migrations was not asked.
 
-- Which migration tool, or a hand-written runner. A hand-written runner would have to implement file ordering, the history table, checksum checks, failure handling, concurrent starts (a CLI and the desktop app on one database) and baselining. No Node tool found so far combines plain SQL files, SQLite and checksums.
-- Behavior when a stored checksum does not match: refuse to run, and whether an explicit repair command exists.
-- Embedding the migrations in the bundle, or shipping them as files. Depends on D15.
+Answered:
+
+- When a stored checksum does not match the file, the runner refuses to run. An explicit repair command exists. The refusal must report enough diagnostics to debug why it happened (which migration, the stored and current checksums, and when it was applied).
+- A shipped app whose database is behind its schema migrates automatically on start, before serving requests. This replaces the earlier statement that migrations are not wanted on a shipped app; confirmed when asked.
+- Migrations are embedded in the bundle.
 - Behavior on a shipped app whose database is behind the schema (automatic, explicit command only, or none yet).
 
 ### D18. Encryption key management (R11)
