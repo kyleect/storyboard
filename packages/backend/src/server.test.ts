@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ScriptedModel,
   type HarnessEvent,
+  type ModelInfo,
   type ScriptStep,
 } from "@harness/core";
 import { RunManager } from "./runs.js";
@@ -20,7 +21,11 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function setup(scripts: ScriptStep[][], keepaliveMs?: number) {
+async function setup(
+  scripts: ScriptStep[][],
+  keepaliveMs?: number,
+  listModels?: () => Promise<ModelInfo[]>,
+) {
   const t = tempDatabase();
   const store = new Store(t.db);
   const model = new ScriptedModel(scripts);
@@ -35,6 +40,7 @@ async function setup(scripts: ScriptStep[][], keepaliveMs?: number) {
     token: TOKEN,
     env: {},
     ...(keepaliveMs ? { keepaliveMs } : {}),
+    ...(listModels ? { listModels } : {}),
   });
   const base = await app.listen({ host: "127.0.0.1", port: 0 });
   cleanups.push(t.cleanup, () => app.close());
@@ -43,7 +49,7 @@ async function setup(scripts: ScriptStep[][], keepaliveMs?: number) {
 
 async function api(
   app: FastifyInstance,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "PATCH",
   url: string,
   body?: unknown,
 ) {
@@ -300,6 +306,7 @@ describe("continue", () => {
           role: "assistant",
           content: [{ type: "text", text: "Once upon a time" }],
         },
+        model: null,
       },
     ]);
   });
@@ -548,5 +555,150 @@ describe("settings", () => {
     expect(() => readSettings(t.db, { HARNESS_PORT: "abc" })).toThrow(
       /HARNESS_PORT/,
     );
+  });
+});
+
+describe("model selection", () => {
+  const text: ScriptStep[] = [{ type: "text", text: "ok" }];
+
+  async function turn(
+    app: FastifyInstance,
+    runs: RunManager,
+    id: string,
+    body: Record<string, unknown>,
+    path = "messages",
+  ) {
+    const res = await api(app, "POST", `/api/sessions/${id}/${path}`, body);
+    expect(res.status).toBe(202);
+    await waitIdle(runs, res.body.runId as string);
+    return res.body.runId as string;
+  }
+
+  it("lists llama-server's models", async () => {
+    const { app } = await setup([], undefined, async () => [
+      { id: "a", status: "loaded" },
+      { id: "b", status: "unloaded" },
+    ]);
+    const res = await app.inject({ url: "/api/models", headers: auth });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      { id: "a", status: "loaded" },
+      { id: "b", status: "unloaded" },
+    ]);
+  });
+
+  it("reports llama-server being unreachable as 502", async () => {
+    const { app } = await setup([], undefined, () =>
+      Promise.reject(new Error("connect ECONNREFUSED")),
+    );
+    const res = await app.inject({ url: "/api/models", headers: auth });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({
+      error: expect.stringContaining("ECONNREFUSED"),
+    });
+  });
+
+  it("uses a message's model, remembers it for the session, and records it", async () => {
+    const { app, runs, store, model } = await setup([text, text]);
+    const id = await newSession(app);
+
+    const runId = await turn(app, runs, id, { content: "1", model: "qwen" });
+    expect(model.requests[0]).toMatchObject({ model: "qwen" });
+    expect(store.getSession(id)?.model).toBe("qwen");
+    expect(store.getRun(runId)?.model).toBe("qwen");
+    expect(store.runEvents(runId)[0]).toMatchObject({
+      type: "run.started",
+      data: { model: "qwen" },
+    });
+    expect(store.listMessages(id).map((m) => m.model)).toEqual([null, "qwen"]);
+
+    // The next message without a model uses the session's choice.
+    await turn(app, runs, id, { content: "2" });
+    expect(model.requests[1]).toMatchObject({ model: "qwen" });
+  });
+
+  it("prefers the session's model over the default setting", async () => {
+    const { app, runs, t, model } = await setup([text, text, text]);
+    writeSettings(t.db, { model: "default-model" });
+    const id = await newSession(app);
+
+    await turn(app, runs, id, { content: "1" });
+    expect(model.requests[0]).toMatchObject({ model: "default-model" });
+
+    const patched = await api(app, "PATCH", `/api/sessions/${id}`, {
+      model: "chosen",
+    });
+    expect(patched.body).toMatchObject({ id, model: "chosen" });
+    await turn(app, runs, id, { content: "2" });
+    expect(model.requests[1]).toMatchObject({ model: "chosen" });
+
+    // null returns the session to the default.
+    await api(app, "PATCH", `/api/sessions/${id}`, { model: null });
+    await turn(app, runs, id, { content: "3" });
+    expect(model.requests[2]).toMatchObject({ model: "default-model" });
+  });
+
+  it("sends no model when neither the session nor the setting has one", async () => {
+    const { app, runs, store, model } = await setup([text]);
+    const id = await newSession(app);
+    const runId = await turn(app, runs, id, { content: "1" });
+    expect(model.requests[0]).not.toHaveProperty("model");
+    expect(store.getRun(runId)?.model).toBeNull();
+  });
+
+  it("continues with a different model and records it on the message", async () => {
+    const { app, runs, store, model } = await setup([
+      [{ type: "text", text: "Once" }],
+      [{ type: "text", text: " more" }],
+    ]);
+    const id = await newSession(app);
+    await turn(app, runs, id, { content: "1", model: "first" });
+    await turn(app, runs, id, { model: "second" }, "continue");
+
+    expect(model.requests[1]).toMatchObject({ model: "second" });
+    expect(store.listMessages(id).at(-1)).toMatchObject({
+      message: { content: [{ type: "text", text: "Once more" }] },
+      model: "second",
+    });
+    expect(store.getSession(id)?.model).toBe("second");
+  });
+
+  it("includes the model in the in-flight snapshot", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { app, runs } = await setup([
+      [
+        { type: "text", text: "a" },
+        { type: "wait", until: gate },
+      ],
+    ]);
+    const id = await newSession(app);
+    const { body } = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "1",
+      model: "qwen",
+    });
+    const s = await api(app, "GET", `/api/sessions/${id}`);
+    expect(s.body.activeRun).toMatchObject({ model: "qwen" });
+    release();
+    await waitIdle(runs, body.runId as string);
+  });
+
+  it("rejects an empty model name and unknown sessions", async () => {
+    const { app } = await setup([]);
+    const id = await newSession(app);
+    expect(
+      (await api(app, "PATCH", `/api/sessions/${id}`, { model: "" })).status,
+    ).toBe(400);
+    expect(
+      (
+        await api(app, "POST", `/api/sessions/${id}/messages`, {
+          content: "x",
+          model: "",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await api(app, "PATCH", "/api/sessions/nope", { model: "a" })).status,
+    ).toBe(404);
   });
 });

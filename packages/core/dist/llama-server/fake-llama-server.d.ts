@@ -14,6 +14,7 @@ export interface Reply {
     frames?: Frame[];
 }
 export interface RecordedRequest {
+    method: string;
     path: string;
     body: unknown;
 }
@@ -22,8 +23,14 @@ export declare class FakeLlamaServer {
     /** Set when a client disconnects during a `hang`. */
     clientClosed: boolean;
     private readonly replies;
+    private readonly gets;
     private server;
-    /** Queue replies; each request takes the next one. */
+    /**
+     * Answer every GET of `path` (query string ignored) with JSON. GETs without
+     * an answer get 404.
+     */
+    onGet(path: string, body: unknown, status?: number): this;
+    /** Queue replies for POSTs; each POST takes the next one. */
     reply(...replies: Reply[]): this;
     start(): Promise<string>;
     stop(): Promise<void>;

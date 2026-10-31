@@ -23,6 +23,7 @@ export interface Reply {
 }
 
 export interface RecordedRequest {
+  method: string;
   path: string;
   body: unknown;
 }
@@ -32,9 +33,19 @@ export class FakeLlamaServer {
   /** Set when a client disconnects during a `hang`. */
   clientClosed = false;
   private readonly replies: Reply[] = [];
+  private readonly gets = new Map<string, { status: number; body: unknown }>();
   private server: Server | undefined;
 
-  /** Queue replies; each request takes the next one. */
+  /**
+   * Answer every GET of `path` (query string ignored) with JSON. GETs without
+   * an answer get 404.
+   */
+  onGet(path: string, body: unknown, status = 200): this {
+    this.gets.set(path, { status, body });
+    return this;
+  }
+
+  /** Queue replies for POSTs; each POST takes the next one. */
   reply(...replies: Reply[]): this {
     this.replies.push(...replies);
     return this;
@@ -47,9 +58,25 @@ export class FakeLlamaServer {
       req.on("data", (c: string) => (raw += c));
       req.on("end", () => {
         this.requests.push({
+          method: req.method ?? "",
           path: req.url ?? "",
           body: JSON.parse(raw || "null"),
         });
+        if (req.method === "GET") {
+          const answer = this.gets.get((req.url ?? "").split("?")[0] ?? "");
+          res
+            .writeHead(answer?.status ?? 404, {
+              "content-type": "application/json",
+            })
+            .end(
+              JSON.stringify(
+                answer?.body ?? {
+                  error: { code: 404, message: "Not Found" },
+                },
+              ),
+            );
+          return;
+        }
         const reply = this.replies.shift();
         if (!reply) {
           res.writeHead(500).end("FakeLlamaServer: no reply queued");

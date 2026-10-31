@@ -196,6 +196,14 @@ describe("runSingleCall", () => {
             data: { reason: "cancelled" },
         });
     });
+    it("reports the model on run.started", async () => {
+        const { events, ctx, model } = setup([{ type: "text", text: "x" }]);
+        await runSingleCall(model, request, ctx);
+        expect(events[0]).toMatchObject({
+            type: "run.started",
+            data: { kind: "single", model: "test-model" },
+        });
+    });
     it("records the parent run when nested", async () => {
         const { events, ctx, model } = setup([{ type: "text", text: "x" }]);
         await runSingleCall(model, request, { ...ctx, parentRunId: "run-0" });

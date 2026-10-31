@@ -4,8 +4,17 @@ export class FakeLlamaServer {
     /** Set when a client disconnects during a `hang`. */
     clientClosed = false;
     replies = [];
+    gets = new Map();
     server;
-    /** Queue replies; each request takes the next one. */
+    /**
+     * Answer every GET of `path` (query string ignored) with JSON. GETs without
+     * an answer get 404.
+     */
+    onGet(path, body, status = 200) {
+        this.gets.set(path, { status, body });
+        return this;
+    }
+    /** Queue replies for POSTs; each POST takes the next one. */
     reply(...replies) {
         this.replies.push(...replies);
         return this;
@@ -17,9 +26,21 @@ export class FakeLlamaServer {
             req.on("data", (c) => (raw += c));
             req.on("end", () => {
                 this.requests.push({
+                    method: req.method ?? "",
                     path: req.url ?? "",
                     body: JSON.parse(raw || "null"),
                 });
+                if (req.method === "GET") {
+                    const answer = this.gets.get((req.url ?? "").split("?")[0] ?? "");
+                    res
+                        .writeHead(answer?.status ?? 404, {
+                        "content-type": "application/json",
+                    })
+                        .end(JSON.stringify(answer?.body ?? {
+                        error: { code: 404, message: "Not Found" },
+                    }));
+                    return;
+                }
                 const reply = this.replies.shift();
                 if (!reply) {
                     res.writeHead(500).end("FakeLlamaServer: no reply queued");

@@ -13,6 +13,7 @@ export declare const RunStarted: z.ZodObject<{
             pipeline: "pipeline";
         }>;
         parentRunId: z.ZodOptional<z.ZodString>;
+        model: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>;
 }, z.core.$strip>;
 export declare const StepStarted: z.ZodObject<{
@@ -90,8 +91,8 @@ export declare const ReasoningEnd: z.ZodObject<{
     }, z.core.$strip>;
 }, z.core.$strip>;
 export declare const FinishReason: z.ZodEnum<{
-    error: "error";
     length: "length";
+    error: "error";
     stop: "stop";
     tool_calls: "tool_calls";
     cancelled: "cancelled";
@@ -118,8 +119,8 @@ export declare const MessageFinished: z.ZodObject<{
             }, z.core.$strip>], "type">>;
         }, z.core.$strip>;
         finishReason: z.ZodEnum<{
-            error: "error";
             length: "length";
+            error: "error";
             stop: "stop";
             tool_calls: "tool_calls";
             cancelled: "cancelled";
@@ -225,6 +226,7 @@ export declare const EventBody: z.ZodDiscriminatedUnion<[z.ZodObject<{
             pipeline: "pipeline";
         }>;
         parentRunId: z.ZodOptional<z.ZodString>;
+        model: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"step.started">;
@@ -311,8 +313,8 @@ export declare const EventBody: z.ZodDiscriminatedUnion<[z.ZodObject<{
             }, z.core.$strip>], "type">>;
         }, z.core.$strip>;
         finishReason: z.ZodEnum<{
-            error: "error";
             length: "length";
+            error: "error";
             stop: "stop";
             tool_calls: "tool_calls";
             cancelled: "cancelled";
@@ -410,6 +412,7 @@ export declare const HarnessEvent: z.ZodIntersection<z.ZodObject<{
             pipeline: "pipeline";
         }>;
         parentRunId: z.ZodOptional<z.ZodString>;
+        model: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"step.started">;
@@ -496,8 +499,8 @@ export declare const HarnessEvent: z.ZodIntersection<z.ZodObject<{
             }, z.core.$strip>], "type">>;
         }, z.core.$strip>;
         finishReason: z.ZodEnum<{
-            error: "error";
             length: "length";
+            error: "error";
             stop: "stop";
             tool_calls: "tool_calls";
             cancelled: "cancelled";
@@ -596,6 +599,7 @@ export declare const StoredEvent: z.ZodIntersection<z.ZodObject<{
             pipeline: "pipeline";
         }>;
         parentRunId: z.ZodOptional<z.ZodString>;
+        model: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"step.started">;
@@ -682,8 +686,8 @@ export declare const StoredEvent: z.ZodIntersection<z.ZodObject<{
             }, z.core.$strip>], "type">>;
         }, z.core.$strip>;
         finishReason: z.ZodEnum<{
-            error: "error";
             length: "length";
+            error: "error";
             stop: "stop";
             tool_calls: "tool_calls";
             cancelled: "cancelled";

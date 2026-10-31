@@ -142,6 +142,31 @@ describe("loadMigrations", () => {
     expect(() => loadMigrations(t.dir)).toThrow(/Badly named/);
   });
 
+  it("adds model columns to a database created before them", () => {
+    db = new Database(":memory:");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version === 1),
+    );
+    db.prepare(
+      "INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T')",
+    ).run();
+
+    expect(migrate(db, all)).toEqual([2]);
+    expect(
+      db.prepare("SELECT model FROM sessions WHERE id = 's'").get(),
+    ).toEqual({
+      model: null,
+    });
+    for (const table of ["sessions", "messages", "runs"]) {
+      const cols = (
+        db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+      ).map((c) => c.name);
+      expect(cols).toContain("model");
+    }
+  });
+
   it("applies the project's migrations to an encrypted database", () => {
     const t = tempDatabase();
     db = t.db;

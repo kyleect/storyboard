@@ -27,6 +27,7 @@ interface ActiveRun {
   runId: string;
   sessionId: string;
   messageId: string;
+  model: string | null;
   /** The stored content the run started from (when continuing). */
   initial: readonly ContentBlock[];
   controller: AbortController;
@@ -38,6 +39,7 @@ export interface Snapshot {
   activeRun: {
     runId: string;
     messageId: string;
+    model: string | null;
     continuing: boolean;
     content: ContentBlock[];
   } | null;
@@ -80,9 +82,17 @@ export class RunManager {
     };
   }
 
-  /** Adds a user message and starts a run that answers it. */
-  sendMessage(sessionId: string, content: string): { runId: string } {
+  /**
+   * Adds a user message and starts a run that answers it. A `model` becomes
+   * the session's chosen model before the run starts.
+   */
+  sendMessage(
+    sessionId: string,
+    content: string,
+    model?: string,
+  ): { runId: string } {
     this.requireIdle(sessionId);
+    if (model !== undefined) this.store.setSessionModel(sessionId, model);
     this.store.addMessage(
       sessionId,
       this.newId(),
@@ -92,13 +102,17 @@ export class RunManager {
     return this.start(sessionId, null);
   }
 
-  /** Continues the last assistant message (assistant prefill). */
-  continueLast(sessionId: string): { runId: string } {
+  /**
+   * Continues the last assistant message (assistant prefill). A `model`
+   * becomes the session's chosen model before the run starts.
+   */
+  continueLast(sessionId: string, model?: string): { runId: string } {
     this.requireIdle(sessionId);
     const last = this.store.listMessages(sessionId).at(-1);
     if (!last || last.message.role !== "assistant") {
       throw new RunError("The last message is not an assistant message.", 409);
     }
+    if (model !== undefined) this.store.setSessionModel(sessionId, model);
     return this.start(sessionId, { messageId: last.id, message: last.message });
   }
 
@@ -120,6 +134,7 @@ export class RunManager {
       activeRun: {
         runId: run.runId,
         messageId: run.messageId,
+        model: run.model,
         continuing: run.initial.length > 0,
         content: buildMessageContent(
           this.store.runEvents(run.runId),
@@ -162,6 +177,7 @@ export class RunManager {
           run.message_id,
           { role: "assistant", content },
           this.now(),
+          run.model,
         );
       }
       this.store.insertEvent({
@@ -200,10 +216,13 @@ export class RunManager {
     const settings = this.options.settings();
     const runId = this.newId();
     const messageId = continuing?.messageId ?? this.newId();
+    // The session's chosen model, else the default setting. Empty: not sent.
+    const model =
+      this.store.getSession(sessionId)?.model || settings.model || null;
     const request: ChatRequest = {
       kind: "chat",
       messages: this.store.listMessages(sessionId).map((m) => m.message),
-      ...(settings.model ? { model: settings.model } : {}),
+      ...(model ? { model } : {}),
     };
     this.store.createRun({
       id: runId,
@@ -211,6 +230,7 @@ export class RunManager {
       kind: "single",
       messageId,
       now: this.now(),
+      model,
     });
 
     const controller = new AbortController();
@@ -247,6 +267,7 @@ export class RunManager {
             messageId,
             result.message,
             this.now(),
+            model,
           );
         }
         const status =
@@ -282,6 +303,7 @@ export class RunManager {
       runId,
       sessionId,
       messageId,
+      model,
       initial: continuing?.message.content ?? [],
       controller,
       done: Promise.resolve(),

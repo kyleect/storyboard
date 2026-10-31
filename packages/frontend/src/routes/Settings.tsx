@@ -66,10 +66,10 @@ export function Settings() {
           {...form.getInputProps("llamaServerUrl")}
         />
         <TextInput
-          label="Model"
+          label="Default model"
           description={
             envNote("model") ??
-            "Sent as `model` (router mode). Leave empty to omit."
+            "Default for sessions with no model chosen. Sent as `model` (router mode). Leave empty to omit."
           }
           {...form.getInputProps("model")}
         />

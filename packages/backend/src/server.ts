@@ -1,7 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { StoredEvent } from "@harness/core";
+import {
+  listLlamaServerModels,
+  type ModelInfo,
+  type StoredEvent,
+} from "@harness/core";
 import { RunError, type RunManager } from "./runs.js";
 import { readSettings, writeSettings } from "./settings.js";
 import type { Store } from "./store.js";
@@ -23,9 +27,12 @@ export interface ServerOptions {
   newId?: () => string;
   now?: () => string;
   env?: NodeJS.ProcessEnv;
+  /** Defaults to asking the configured llama-server. */
+  listModels?: () => Promise<ModelInfo[]>;
 }
 
 const IdParams = z.object({ id: z.string() });
+const ModelName = z.string().min(1);
 
 export function buildServer(options: ServerOptions): FastifyInstance {
   const { store, runs } = options;
@@ -34,6 +41,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const now = options.now ?? (() => new Date().toISOString());
   const env = options.env ?? process.env;
   const expected = Buffer.from(options.token);
+  const listModels =
+    options.listModels ??
+    (() =>
+      listLlamaServerModels(
+        readSettings(store.db, env).effective.llamaServerUrl,
+      ));
 
   const app = Fastify({
     // Event streams never end on their own; close them on shutdown.
@@ -87,6 +100,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return readSettings(store.db, env);
   });
 
+  /** The models llama-server offers, for the model picker. */
+  app.get("/api/models", async (_req, reply) => {
+    try {
+      return await listModels();
+    } catch (err) {
+      return reply.code(502).send({
+        error: `Could not list models from llama-server: ${(err as Error).message}`,
+      });
+    }
+  });
+
   app.get("/api/sessions", async () => store.listSessions());
 
   app.post("/api/sessions", async (req, reply) => {
@@ -112,17 +136,30 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     };
   });
 
+  /** Changes the session's chosen model; null returns it to the default. */
+  app.patch("/api/sessions/:id", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { model } = z.object({ model: ModelName.nullable() }).parse(req.body);
+    if (!store.getSession(id))
+      return reply.code(404).send({ error: "Session not found." });
+    store.setSessionModel(id, model);
+    return store.getSession(id);
+  });
+
   app.post("/api/sessions/:id/messages", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const { content } = z
-      .object({ content: z.string().min(1) })
+    const { content, model } = z
+      .object({ content: z.string().min(1), model: ModelName.optional() })
       .parse(req.body);
-    return reply.code(202).send(runs.sendMessage(id, content));
+    return reply.code(202).send(runs.sendMessage(id, content, model));
   });
 
   app.post("/api/sessions/:id/continue", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    return reply.code(202).send(runs.continueLast(id));
+    const { model } = z
+      .object({ model: ModelName.optional() })
+      .parse(req.body ?? {});
+    return reply.code(202).send(runs.continueLast(id, model));
   });
 
   app.post("/api/runs/:id/cancel", async (req, reply) => {

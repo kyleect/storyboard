@@ -17,6 +17,7 @@ import { eventsUrl, type SessionDetail } from "./api";
 export interface LiveRun {
   runId: string;
   messageId: string;
+  model: string | null;
   continuing: boolean;
   content: readonly ContentBlock[];
 }
@@ -62,6 +63,8 @@ export function useSessionEvents(
     live.set(sessionId, snapshot ?? undefined);
 
     const source = new EventSource(eventsUrl(sessionId, detail.lastEventId));
+    // run.started carries the model; message.started follows it.
+    const runModels = new Map<string, string | null>();
     source.onopen = () => useLive.getState().setConnected(sessionId, true);
     source.onerror = () => useLive.getState().setConnected(sessionId, false);
     source.onmessage = (msg: MessageEvent<string>) => {
@@ -69,6 +72,9 @@ export function useSessionEvents(
       const state = useLive.getState();
 
       switch (event.type) {
+        case "run.started":
+          runModels.set(event.runId, event.data.model ?? null);
+          break;
         case "message.started": {
           const cached = queryClient.getQueryData<SessionDetail>([
             "session",
@@ -80,6 +86,7 @@ export function useSessionEvents(
           state.set(sessionId, {
             runId: event.runId,
             messageId: event.data.messageId,
+            model: runModels.get(event.runId) ?? null,
             continuing: event.data.continuing ?? false,
             content:
               event.data.continuing && existing?.message.role === "assistant"

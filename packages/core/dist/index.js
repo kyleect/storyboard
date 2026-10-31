@@ -5,4 +5,5 @@ export * from "./fake-model.js";
 export * from "./run.js";
 export * from "./llama-server/adapter.js";
 export * from "./message-state.js";
+export * from "./llama-server/models.js";
 //# sourceMappingURL=index.js.map

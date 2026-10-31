@@ -50,6 +50,7 @@ export async function runSingleCall(model, request, ctx) {
         data: {
             kind: "single",
             ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
+            ...(request.model ? { model: request.model } : {}),
         },
     });
     emit({

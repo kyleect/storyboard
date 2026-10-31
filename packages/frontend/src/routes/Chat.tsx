@@ -18,12 +18,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ContentBlock, Message } from "@harness/core";
-import { api } from "../api";
+import { api, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
+import { ModelPicker } from "./ModelPicker";
 
 interface ShownMessage {
   id: string;
   message: Message;
+  model: string | null;
   streaming: boolean;
 }
 
@@ -45,8 +47,19 @@ export function Chat() {
       message: err.message,
     });
   const queryClient = useQueryClient();
+  const chosenModel = detail.data?.session.model ?? undefined;
+  const setModel = useMutation({
+    mutationFn: (model: string | null) => api.setSessionModel(sessionId, model),
+    onSuccess: (session) => {
+      queryClient.setQueryData<SessionDetail>(["session", sessionId], (old) =>
+        old ? { ...old, session } : old,
+      );
+    },
+    onError,
+  });
   const send = useMutation({
-    mutationFn: (content: string) => api.sendMessage(sessionId, content),
+    mutationFn: (content: string) =>
+      api.sendMessage(sessionId, content, chosenModel),
     onSuccess: () => {
       setDraft("");
       // Shows the stored user message.
@@ -55,7 +68,7 @@ export function Chat() {
     onError,
   });
   const cont = useMutation({
-    mutationFn: () => api.continueLast(sessionId),
+    mutationFn: () => api.continueLast(sessionId, chosenModel),
     onError,
   });
   const cancel = useMutation({
@@ -72,6 +85,7 @@ export function Chat() {
       ? {
           id: m.id,
           message: { role: "assistant", content: [...live.content] },
+          model: live.model,
           streaming: true,
         }
       : { ...m, streaming: false },
@@ -80,11 +94,12 @@ export function Chat() {
     shown.push({
       id: live.messageId,
       message: { role: "assistant", content: [...live.content] },
+      model: live.model,
       streaming: true,
     });
   }
   // A user message sent before its run's first event arrives.
-  const busy = !!live || send.isPending || cont.isPending;
+  const busy = !!live || send.isPending || cont.isPending || setModel.isPending;
   const last = shown.at(-1);
 
   return (
@@ -105,7 +120,12 @@ export function Chat() {
         </Stack>
       </ScrollArea>
 
-      <Group gap="xs">
+      <Group gap="xs" justify="space-between">
+        <ModelPicker
+          value={detail.data.session.model}
+          onChange={(model) => setModel.mutate(model)}
+          disabled={setModel.isPending}
+        />
         {live ? (
           <Button
             color="red"
@@ -157,7 +177,7 @@ export function Chat() {
   );
 }
 
-function MessageView({ message, streaming }: ShownMessage) {
+function MessageView({ message, model, streaming }: ShownMessage) {
   if (message.role === "user") {
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
@@ -184,6 +204,11 @@ function MessageView({ message, streaming }: ShownMessage) {
         <Text size="xs" c="dimmed">
           Assistant
         </Text>
+        {model && (
+          <Badge size="xs" variant="light" color="gray" tt="none">
+            {model}
+          </Badge>
+        )}
         {streaming && <Loader size="xs" type="dots" />}
       </Group>
       <Stack gap="xs">

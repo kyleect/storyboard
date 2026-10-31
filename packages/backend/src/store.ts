@@ -12,11 +12,15 @@ export interface SessionRow {
   id: string;
   title: string;
   created_at: string;
+  /** The session's chosen model; null means the default setting. */
+  model: string | null;
 }
 
 export interface StoredMessage {
   id: string;
   message: Message;
+  /** For assistant messages: the model of the run that last wrote it. */
+  model: string | null;
 }
 
 export type RunStatus =
@@ -32,6 +36,7 @@ export interface RunRow {
   ended_at: string | null;
   usage: string | null;
   error: string | null;
+  model: string | null;
 }
 
 interface EventRow {
@@ -60,38 +65,57 @@ export class Store {
     this.db
       .prepare("INSERT INTO sessions (id, title, created_at) VALUES (?, ?, ?)")
       .run(id, title, now);
-    return { id, title, created_at: now };
+    return { id, title, created_at: now, model: null };
   }
 
   listSessions(): SessionRow[] {
     return this.db
       .prepare(
-        "SELECT id, title, created_at FROM sessions ORDER BY created_at DESC",
+        "SELECT id, title, created_at, model FROM sessions ORDER BY created_at DESC",
       )
       .all() as SessionRow[];
   }
 
   getSession(id: string): SessionRow | undefined {
     return this.db
-      .prepare("SELECT id, title, created_at FROM sessions WHERE id = ?")
+      .prepare("SELECT id, title, created_at, model FROM sessions WHERE id = ?")
       .get(id) as SessionRow | undefined;
   }
 
-  addMessage(sessionId: string, id: string, message: Message, now: string) {
+  setSessionModel(id: string, model: string | null) {
     this.db
-      .prepare(
-        `INSERT INTO messages (id, session_id, seq, message, created_at)
-         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?)`,
-      )
-      .run(id, sessionId, sessionId, JSON.stringify(message), now);
+      .prepare("UPDATE sessions SET model = ? WHERE id = ?")
+      .run(model, id);
   }
 
-  /** Inserts the message, or replaces it if the id exists. */
-  saveMessage(sessionId: string, id: string, message: Message, now: string) {
+  addMessage(
+    sessionId: string,
+    id: string,
+    message: Message,
+    now: string,
+    model: string | null = null,
+  ) {
+    this.db
+      .prepare(
+        `INSERT INTO messages (id, session_id, seq, message, created_at, model)
+         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?)`,
+      )
+      .run(id, sessionId, sessionId, JSON.stringify(message), now, model);
+  }
+
+  /** Inserts the message, or replaces it (and its model) if the id exists. */
+  saveMessage(
+    sessionId: string,
+    id: string,
+    message: Message,
+    now: string,
+    model: string | null = null,
+  ) {
     const updated = this.db
-      .prepare("UPDATE messages SET message = ? WHERE id = ?")
-      .run(JSON.stringify(message), id);
-    if (updated.changes === 0) this.addMessage(sessionId, id, message, now);
+      .prepare("UPDATE messages SET message = ?, model = ? WHERE id = ?")
+      .run(JSON.stringify(message), model, id);
+    if (updated.changes === 0)
+      this.addMessage(sessionId, id, message, now, model);
   }
 
   getMessage(id: string): Message | undefined {
@@ -104,12 +128,17 @@ export class Store {
   listMessages(sessionId: string): StoredMessage[] {
     const rows = this.db
       .prepare(
-        "SELECT id, message FROM messages WHERE session_id = ? ORDER BY seq",
+        "SELECT id, message, model FROM messages WHERE session_id = ? ORDER BY seq",
       )
-      .all(sessionId) as { id: string; message: string }[];
+      .all(sessionId) as {
+      id: string;
+      message: string;
+      model: string | null;
+    }[];
     return rows.map((r) => ({
       id: r.id,
       message: Message.parse(JSON.parse(r.message)),
+      model: r.model,
     }));
   }
 
@@ -119,13 +148,21 @@ export class Store {
     kind: string;
     messageId: string;
     now: string;
+    model?: string | null;
   }) {
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, message_id, status, started_at)
-         VALUES (?, ?, ?, ?, 'running', ?)`,
+        `INSERT INTO runs (id, session_id, kind, message_id, status, started_at, model)
+         VALUES (?, ?, ?, ?, 'running', ?, ?)`,
       )
-      .run(run.id, run.sessionId, run.kind, run.messageId, run.now);
+      .run(
+        run.id,
+        run.sessionId,
+        run.kind,
+        run.messageId,
+        run.now,
+        run.model ?? null,
+      );
   }
 
   endRun(

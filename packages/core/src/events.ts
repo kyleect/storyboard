@@ -18,6 +18,8 @@ export const RunStarted = event(
   z.object({
     kind: RunKind,
     parentRunId: z.string().optional(),
+    /** The model name sent to the server, when one is set. */
+    model: z.string().optional(),
   }),
 );
 

@@ -63,11 +63,15 @@ export interface Session {
   id: string;
   title: string;
   created_at: string;
+  /** The session's chosen model; null means the default setting. */
+  model: string | null;
 }
 
 export interface StoredMessage {
   id: string;
   message: Message;
+  /** For assistant messages: the model of the run that last wrote it. */
+  model: string | null;
 }
 
 export interface SessionDetail {
@@ -77,6 +81,7 @@ export interface SessionDetail {
   activeRun: {
     runId: string;
     messageId: string;
+    model: string | null;
     continuing: boolean;
     content: ContentBlock[];
   } | null;
@@ -94,18 +99,33 @@ export interface SettingsView {
   overriddenByEnv: Partial<Record<keyof Settings, string>>;
 }
 
+export interface ModelInfo {
+  id: string;
+  /** Router mode only, for example "loaded" or "unloaded". */
+  status?: string;
+}
+
 export const api = {
+  listModels: () => request<ModelInfo[]>("GET", "/api/models"),
+  setSessionModel: (id: string, model: string | null) =>
+    request<Session>("PATCH", `/api/sessions/${id}`, { model }),
   listSessions: () => request<Session[]>("GET", "/api/sessions"),
   createSession: (title?: string) =>
     request<Session>("POST", "/api/sessions", title ? { title } : {}),
   getSession: (id: string) =>
     request<SessionDetail>("GET", `/api/sessions/${id}`),
-  sendMessage: (id: string, content: string) =>
-    request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
-      content,
-    }),
-  continueLast: (id: string) =>
-    request<{ runId: string }>("POST", `/api/sessions/${id}/continue`),
+  sendMessage: (id: string, content: string, model?: string) =>
+    request<{ runId: string }>(
+      "POST",
+      `/api/sessions/${id}/messages`,
+      model ? { content, model } : { content },
+    ),
+  continueLast: (id: string, model?: string) =>
+    request<{ runId: string }>(
+      "POST",
+      `/api/sessions/${id}/continue`,
+      model ? { model } : {},
+    ),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>("POST", `/api/runs/${runId}/cancel`),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),

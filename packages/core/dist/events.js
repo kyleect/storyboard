@@ -11,6 +11,8 @@ export const RunKind = z.enum(["single", "loop", "pipeline"]);
 export const RunStarted = event("run.started", z.object({
     kind: RunKind,
     parentRunId: z.string().optional(),
+    /** The model name sent to the server, when one is set. */
+    model: z.string().optional(),
 }));
 export const StepStarted = event("step.started", z.object({ index: z.number().int(), name: z.string().optional() }));
 export const StepFinished = event("step.finished", z.object({ index: z.number().int(), name: z.string().optional() }));
