@@ -15,8 +15,8 @@ Design decisions live in the project's design document (`claude/base-design.md`)
 
 - Node 22.12 or later, pnpm 10.
 - A running `llama-server`. In router mode, pick a model in each session's
-  model picker, or set a default model in Settings. Reasoning effort works the
-  same way.
+  model picker, or set a default model in Settings. Picking a model in a session
+  asks the router to load it. Reasoning effort works the same way.
 
 ## Run (development)
 
@@ -28,7 +28,10 @@ pnpm dev:frontend    # terminal 2
 
 The backend prints `Frontend (dev): http://localhost:5173/#token=...`.
 Open that address. The token is moved out of the address bar and kept for the
-browser tab.
+browser tab. It is stored in `<data dir>/api.token`, so it stays the same when
+the backend restarts (for example when `tsx watch` reloads it): an open page
+reconnects on its own and the printed link keeps working. Delete that file to
+get a new token.
 
 ### Backend environment variables
 

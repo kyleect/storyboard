@@ -132,9 +132,9 @@ export function Chat() {
     !!live || send.isPending || cont.isPending || setChoices.isPending;
   const last = shown.at(-1);
   const reasoningNow = live?.content.at(-1)?.type === "reasoning";
+  const defaults = settings.data?.effective;
   // The model whose levels the reasoning picker shows.
-  const levelsModel =
-    detail.data.session.model || settings.data?.effective.model || undefined;
+  const levelsModel = detail.data.session.model || defaults?.model || undefined;
 
   return (
     <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
@@ -159,6 +159,13 @@ export function Chat() {
           <ModelPicker
             value={detail.data.session.model}
             onChange={(model) => setChoices.mutate({ model })}
+            loadOnSelect
+            defaultModel={defaults?.model || undefined}
+            placeholder={
+              defaults?.model
+                ? `Default (${defaults.model})`
+                : "Default (none set; the server decides)"
+            }
             disabled={setChoices.isPending}
           />
           <ReasoningPicker
@@ -166,6 +173,11 @@ export function Chat() {
             value={detail.data.session.reasoning_effort}
             onChange={(reasoningEffort) =>
               setChoices.mutate({ reasoningEffort })
+            }
+            placeholder={
+              defaults?.reasoningEffort
+                ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
+                : "Reasoning: default (server decides)"
             }
             disabled={setChoices.isPending}
           />

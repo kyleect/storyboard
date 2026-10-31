@@ -18,6 +18,20 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { "/api": { target: backend } },
+    proxy: {
+      "/api": {
+        target: backend,
+        configure: (proxy) => {
+          // When the backend stops mid-response (a restart), close the
+          // browser's side too. Otherwise an open event stream hangs silently
+          // and the page never reconnects.
+          proxy.on("proxyRes", (proxyRes, _req, res) => {
+            proxyRes.on("close", () => {
+              if (!proxyRes.complete) res.destroy();
+            });
+          });
+        },
+      },
+    },
   },
 });

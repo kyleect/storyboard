@@ -13,6 +13,8 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api, type Settings as SettingsShape, type SettingsView } from "../api";
+import { ModelPicker } from "./ModelPicker";
+import { ReasoningPicker } from "./ReasoningPicker";
 
 export function Settings() {
   const queryClient = useQueryClient();
@@ -70,21 +72,34 @@ export function Settings() {
           description={envNote("llamaServerUrl")}
           {...form.getInputProps("llamaServerUrl")}
         />
-        <TextInput
+        <ModelPicker
           label="Default model"
           description={
             envNote("model") ??
-            "Default for sessions with no model chosen. Sent as `model` (router mode). Leave empty to omit."
+            "For sessions with no model chosen. Clear it to send no model name."
           }
-          {...form.getInputProps("model")}
+          placeholder="None (the server decides)"
+          value={form.values.model || null}
+          onChange={(model) => form.setFieldValue("model", model ?? "")}
+          disabled={!!env.model}
+          size="sm"
+          w={444}
         />
-        <TextInput
+        <ReasoningPicker
           label="Default reasoning effort"
           description={
             envNote("reasoningEffort") ??
-            "For sessions with none chosen. Empty: not sent (the server decides). `none`: reasoning off. Otherwise a level the model supports, such as `low`."
+            "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
           }
-          {...form.getInputProps("reasoningEffort")}
+          placeholder="Not sent (the server decides)"
+          model={form.values.model || undefined}
+          value={form.values.reasoningEffort || null}
+          onChange={(effort) =>
+            form.setFieldValue("reasoningEffort", effort ?? "")
+          }
+          disabled={!!env.reasoningEffort}
+          size="sm"
+          w="100%"
         />
         <NumberInput
           label="Backend port"

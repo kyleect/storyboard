@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +9,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings } from "./settings.js";
 import { Store } from "./store.js";
+import { loadOrCreateToken } from "./token.js";
 
 /** Migrations ship as files next to the backend for now (see README). */
 const MIGRATIONS_DIR = join(
@@ -36,7 +36,7 @@ async function main() {
   });
   const recovered = runs.recover();
 
-  const token = randomBytes(32).toString("hex");
+  const token = loadOrCreateToken(boot.tokenFile);
   const app = buildServer({ store, runs, token, logger: true });
   const { port } = settings();
   await app.listen({ host: "127.0.0.1", port });

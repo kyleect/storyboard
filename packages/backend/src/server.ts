@@ -4,7 +4,10 @@ import { z } from "zod";
 import {
   getReasoningLevels,
   listLlamaServerModels,
+  loadLlamaServerModel,
+  type LoadResult,
   type ModelInfo,
+  type ReasoningLevels,
   type StoredEvent,
 } from "@harness/core";
 import { RunError, type RunManager } from "./runs.js";
@@ -31,7 +34,9 @@ export interface ServerOptions {
   /** Defaults to asking the configured llama-server. */
   listModels?: () => Promise<ModelInfo[]>;
   /** Defaults to asking the configured llama-server. */
-  reasoningLevels?: (model: string | undefined) => Promise<string[]>;
+  loadModel?: (model: string) => Promise<LoadResult>;
+  /** Defaults to asking the configured llama-server. */
+  reasoningLevels?: (model: string | undefined) => Promise<ReasoningLevels>;
 }
 
 const IdParams = z.object({ id: z.string() });
@@ -63,6 +68,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const reasoningLevels =
     options.reasoningLevels ??
     ((model: string | undefined) => getReasoningLevels(llamaUrl(), model));
+  const loadModel =
+    options.loadModel ??
+    ((model: string) => loadLlamaServerModel(llamaUrl(), model));
   const listModels =
     options.listModels ?? (() => listLlamaServerModels(llamaUrl()));
 
@@ -155,16 +163,31 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
+   * Asks the router to load a model. Loading continues in the background;
+   * GET /api/models shows its status. 502 when llama-server cannot be
+   * reached or fails.
+   */
+  app.post("/api/models/load", async (req, reply) => {
+    const { model } = z.object({ model: ModelName }).parse(req.body);
+    try {
+      return await loadModel(model);
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
+
+  /**
    * The reasoning effort levels a model's chat template supports, read
-   * without loading the model. 502 when llama-server cannot say (for
-   * example, the model is not loaded).
+   * without loading the model: `{ levels }`, or `{ unavailable }` with
+   * llama-server's reason (for example, the model is not loaded). 502 when
+   * llama-server cannot be reached or fails.
    */
   app.get("/api/models/reasoning-levels", async (req, reply) => {
     const { model } = z
       .object({ model: ModelName.optional() })
       .parse(req.query);
     try {
-      return { levels: await reasoningLevels(model) };
+      return await reasoningLevels(model);
     } catch (err) {
       return reply.code(502).send({ error: (err as Error).message });
     }

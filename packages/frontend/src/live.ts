@@ -50,8 +50,8 @@ export const useLive = create<LiveState>((set) => ({
 
 /**
  * Subscribes to a session's events once its detail has loaded. Starts from
- * the snapshot (in-flight message and last event id) and applies the rest.
- * EventSource reconnects on its own and sends Last-Event-ID.
+ * the snapshot (in-flight message and last event id) and applies the rest,
+ * reconnecting after the last event received when the stream drops.
  */
 export function useSessionEvents(
   sessionId: string,
@@ -66,15 +66,26 @@ export function useSessionEvents(
     const snapshot = detail.activeRun;
     live.set(sessionId, snapshot ?? undefined);
 
-    const source = new EventSource(eventsUrl(sessionId, detail.lastEventId));
     // run.started carries the choices; message.started follows it.
     const runInfo = new Map<
       string,
       { model: string | null; reasoningEffort: string | null }
     >();
-    source.onopen = () => useLive.getState().setConnected(sessionId, true);
-    source.onerror = () => useLive.getState().setConnected(sessionId, false);
-    source.onmessage = (msg: MessageEvent<string>) => {
+    let lastId = detail.lastEventId;
+    // Runs whose model has started answering (so it is loaded now).
+    const answering = new Set<string>();
+    // A model is loaded by its first request, so what llama-server reports
+    // about models (status, reasoning levels) can change during a run.
+    const refreshModelInfo = () => {
+      void queryClient.invalidateQueries({ queryKey: ["models"] });
+      void queryClient.invalidateQueries({ queryKey: ["reasoning-levels"] });
+    };
+    let source: EventSource | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let delay = 500;
+
+    const onMessage = (msg: MessageEvent<string>) => {
+      if (msg.lastEventId) lastId = Number(msg.lastEventId);
       const event = JSON.parse(msg.data) as HarnessEvent;
       const state = useLive.getState();
 
@@ -116,6 +127,8 @@ export function useSessionEvents(
               message: event.data.error,
             });
           }
+          answering.delete(event.runId);
+          refreshModelInfo();
           void queryClient
             .invalidateQueries({ queryKey: ["session", sessionId] })
             .then(() => {
@@ -125,6 +138,13 @@ export function useSessionEvents(
             });
           break;
         default:
+          if (
+            (event.type === "text.delta" || event.type === "reasoning.delta") &&
+            !answering.has(event.runId)
+          ) {
+            answering.add(event.runId);
+            refreshModelInfo();
+          }
           state.update(sessionId, (run) => {
             const usage =
               (event.type === "text.delta" ||
@@ -141,8 +161,32 @@ export function useSessionEvents(
       }
     };
 
+    /*
+     * EventSource reconnects on its own after a dropped connection, but gives
+     * up for good when a reconnect gets an error status, which is what the
+     * dev proxy returns while the backend restarts. Then open a new one that
+     * resumes after the last event received.
+     */
+    const connect = () => {
+      source = new EventSource(eventsUrl(sessionId, lastId));
+      source.onopen = () => {
+        delay = 500;
+        useLive.getState().setConnected(sessionId, true);
+      };
+      source.onerror = () => {
+        useLive.getState().setConnected(sessionId, false);
+        if (source?.readyState === EventSource.CLOSED) {
+          retry = setTimeout(connect, delay);
+          delay = Math.min(delay * 2, 5000);
+        }
+      };
+      source.onmessage = onMessage;
+    };
+    connect();
+
     return () => {
-      source.close();
+      clearTimeout(retry);
+      source?.close();
       useLive.getState().setConnected(sessionId, false);
     };
     // Connect once per session, after the first load; later refetches must

@@ -19,6 +19,8 @@ export interface Bootstrap {
   keyFile: string;
   /** Written at startup so front ends can find the backend. */
   runtimeFile: string;
+  /** The API token, kept across restarts. */
+  tokenFile: string;
 }
 
 export function bootstrapFromEnv(
@@ -32,5 +34,6 @@ export function bootstrapFromEnv(
     dbPath: env.HARNESS_DB_PATH ?? join(dataDir, "harness.db"),
     keyFile: env.HARNESS_KEY_FILE ?? join(dataDir, "harness.key"),
     runtimeFile: join(dataDir, "backend.json"),
+    tokenFile: join(dataDir, "api.token"),
   };
 }

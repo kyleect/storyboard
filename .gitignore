@@ -2,3 +2,4 @@
 node_modules
 !patches/*.patch
 *.patch
+dist

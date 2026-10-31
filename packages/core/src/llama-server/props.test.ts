@@ -18,11 +18,9 @@ describe("getReasoningLevels", () => {
         reasoning_effort_levels: ["low", "medium", "high"],
       },
     });
-    expect(await getReasoningLevels(url, "qwen 3/x")).toEqual([
-      "low",
-      "medium",
-      "high",
-    ]);
+    expect(await getReasoningLevels(url, "qwen 3/x")).toEqual({
+      levels: ["low", "medium", "high"],
+    });
     expect(server.requests[0]?.path).toBe(
       "/props?autoload=false&model=qwen+3%2Fx",
     );
@@ -30,11 +28,11 @@ describe("getReasoningLevels", () => {
 
   it("returns no levels when the template lists none", async () => {
     server.onGet("/props", { chat_template_caps: {} });
-    expect(await getReasoningLevels(url, undefined)).toEqual([]);
+    expect(await getReasoningLevels(url, undefined)).toEqual({ levels: [] });
     expect(server.requests[0]?.path).toBe("/props?autoload=false");
   });
 
-  it("passes on the router's error for a model that is not loaded", async () => {
+  it("reports the router declining for a model that is not loaded", async () => {
     server.onGet(
       "/props",
       {
@@ -46,8 +44,13 @@ describe("getReasoningLevels", () => {
       },
       400,
     );
-    await expect(getReasoningLevels(url, "gemma")).rejects.toThrow(
-      "model is not loaded",
-    );
+    expect(await getReasoningLevels(url, "gemma")).toEqual({
+      unavailable: "model is not loaded",
+    });
+  });
+
+  it("throws when llama-server fails", async () => {
+    server.onGet("/props", { error: { message: "boom" } }, 500);
+    await expect(getReasoningLevels(url, "gemma")).rejects.toThrow("boom");
   });
 });

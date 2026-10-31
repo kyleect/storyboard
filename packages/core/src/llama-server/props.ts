@@ -10,11 +10,18 @@
  * answers "model is not loaded" instead (tools/server/server-models.cpp).
  */
 
+/**
+ * `levels` when llama-server can say; `unavailable` with its reason when it
+ * declines (for example "model is not loaded"). Throws when llama-server
+ * cannot be reached or fails.
+ */
+export type ReasoningLevels = { levels: string[] } | { unavailable: string };
+
 export async function getReasoningLevels(
   baseUrl: string,
   model: string | undefined,
   options: { fetch?: typeof fetch; signal?: AbortSignal } = {},
-): Promise<string[]> {
+): Promise<ReasoningLevels> {
   const doFetch = options.fetch ?? globalThis.fetch;
   const query = new URLSearchParams({ autoload: "false" });
   if (model) query.set("model", model);
@@ -26,13 +33,14 @@ export async function getReasoningLevels(
     error?: { message?: string };
     chat_template_caps?: { reasoning_effort_levels?: unknown };
   };
-  if (!res.ok) {
-    throw new Error(
-      body.error?.message ?? `llama-server /props returned ${res.status}`,
-    );
-  }
+  const message =
+    body.error?.message ?? `llama-server /props returned ${res.status}`;
+  if (res.status >= 400 && res.status < 500) return { unavailable: message };
+  if (!res.ok) throw new Error(message);
   const levels = body.chat_template_caps?.reasoning_effort_levels;
-  return Array.isArray(levels)
-    ? levels.filter((l): l is string => typeof l === "string")
-    : [];
+  return {
+    levels: Array.isArray(levels)
+      ? levels.filter((l): l is string => typeof l === "string")
+      : [],
+  };
 }

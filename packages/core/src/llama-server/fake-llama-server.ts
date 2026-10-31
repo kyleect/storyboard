@@ -35,15 +35,18 @@ export class FakeLlamaServer {
   /** Set when a client disconnects during a `hang`. */
   clientClosed = false;
   private readonly replies: Reply[] = [];
-  private readonly gets = new Map<string, { status: number; body: unknown }>();
+  private readonly gets = new Map<
+    string,
+    { status: number; body: unknown; delayMs: number }
+  >();
   private server: Server | undefined;
 
   /**
    * Answer every GET of `path` (query string ignored) with JSON. GETs without
    * an answer get 404.
    */
-  onGet(path: string, body: unknown, status = 200): this {
-    this.gets.set(path, { status, body });
+  onGet(path: string, body: unknown, status = 200, delayMs = 0): this {
+    this.gets.set(path, { status, body, delayMs });
     return this;
   }
 
@@ -66,17 +69,19 @@ export class FakeLlamaServer {
         });
         if (req.method === "GET") {
           const answer = this.gets.get((req.url ?? "").split("?")[0] ?? "");
-          res
-            .writeHead(answer?.status ?? 404, {
-              "content-type": "application/json",
-            })
-            .end(
-              JSON.stringify(
-                answer?.body ?? {
-                  error: { code: 404, message: "Not Found" },
-                },
+          void sleep(answer?.delayMs ?? 0).then(() =>
+            res
+              .writeHead(answer?.status ?? 404, {
+                "content-type": "application/json",
+              })
+              .end(
+                JSON.stringify(
+                  answer?.body ?? {
+                    error: { code: 404, message: "Not Found" },
+                  },
+                ),
               ),
-            );
+          );
           return;
         }
         const reply = this.replies.shift();

@@ -32,6 +32,14 @@ function readToken(): string | null {
 
 export const token = readToken();
 
+// Opening a new #token= link in a tab that is already open only changes the
+// hash, which does not reload the page; reload so the new token is used.
+window.addEventListener("hashchange", () => {
+  if (/(?:^|[#&])token=[0-9a-f]+/.test(window.location.hash)) {
+    window.location.reload();
+  }
+});
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -55,6 +63,12 @@ async function request<T>(
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 401) {
+    throw new ApiError(
+      "The backend rejected the token. Open the link the backend printed when it started.",
+      401,
+    );
+  }
   if (!res.ok) throw new ApiError(data.error ?? res.statusText, res.status);
   return data as T;
 }
@@ -107,8 +121,10 @@ export interface SettingsView {
 
 export interface ModelInfo {
   id: string;
-  /** Router mode only, for example "loaded" or "unloaded". */
+  /** Router mode only, for example "loaded", "loading" or "unloaded". */
   status?: string;
+  /** Router mode only: the last load attempt failed. */
+  failed?: boolean;
 }
 
 /** Sent with a message or continue; they become the session's choices. */
@@ -119,13 +135,18 @@ export interface Choices {
 
 export const api = {
   listModels: () => request<ModelInfo[]>("GET", "/api/models"),
+  /** Starts loading a model on the router; GET /api/models shows progress. */
+  loadModel: (model: string) =>
+    request<
+      { ok: true; alreadyRunning: boolean } | { ok: false; message: string }
+    >("POST", "/api/models/load", { model }),
   /** A field left out is unchanged; null returns it to the default. */
   setSessionChoices: (
     id: string,
     choices: { model?: string | null; reasoningEffort?: string | null },
   ) => request<Session>("PATCH", `/api/sessions/${id}`, choices),
   reasoningLevels: (model: string | undefined) =>
-    request<{ levels: string[] }>(
+    request<{ levels: string[] } | { unavailable: string }>(
       "GET",
       `/api/models/reasoning-levels${
         model ? `?model=${encodeURIComponent(model)}` : ""

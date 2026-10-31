@@ -818,8 +818,9 @@ describe("reasoning", () => {
       env: {},
       reasoningLevels: async (m) => {
         asked.push(m);
-        if (m === "unloaded") throw new Error("model is not loaded");
-        return ["low", "high"];
+        if (m === "unloaded") return { unavailable: "model is not loaded" };
+        if (m === "down") throw new Error("connect ECONNREFUSED");
+        return { levels: ["low", "high"] };
       },
     });
     cleanups.push(t.cleanup, () => app.close());
@@ -831,10 +832,17 @@ describe("reasoning", () => {
       "GET",
       "/api/models/reasoning-levels?model=unloaded",
     );
-    expect(bad.status).toBe(502);
-    expect(bad.body).toEqual({ error: "model is not loaded" });
+    expect(bad.status).toBe(200);
+    expect(bad.body).toEqual({ unavailable: "model is not loaded" });
+    const down = await api(
+      app,
+      "GET",
+      "/api/models/reasoning-levels?model=down",
+    );
+    expect(down.status).toBe(502);
+    expect(down.body).toEqual({ error: "connect ECONNREFUSED" });
     await api(app, "GET", "/api/models/reasoning-levels");
-    expect(asked).toEqual(["qwen", "unloaded", undefined]);
+    expect(asked).toEqual(["qwen", "unloaded", "down", undefined]);
   });
 });
 
@@ -899,5 +907,47 @@ describe("stop thinking", () => {
     expect(
       (await api(app, "POST", "/api/runs/nope/end-reasoning")).status,
     ).toBe(404);
+  });
+});
+
+describe("loading a model", () => {
+  it("asks llama-server to load and passes on the result", async () => {
+    const asked: string[] = [];
+    const t = tempDatabase();
+    const store = new Store(t.db);
+    const runs = new RunManager({
+      store,
+      settings: () => DEFAULTS,
+      model: () => new ScriptedModel([]),
+    });
+    const app = buildServer({
+      store,
+      runs,
+      token: TOKEN,
+      env: {},
+      loadModel: async (m) => {
+        asked.push(m);
+        if (m === "down") throw new Error("connect ECONNREFUSED");
+        if (m === "nope") return { ok: false, message: "model is not found" };
+        return { ok: true, alreadyRunning: m === "running" };
+      },
+    });
+    cleanups.push(t.cleanup, () => app.close());
+
+    expect(
+      (await api(app, "POST", "/api/models/load", { model: "qwen" })).body,
+    ).toEqual({ ok: true, alreadyRunning: false });
+    expect(
+      (await api(app, "POST", "/api/models/load", { model: "running" })).body,
+    ).toEqual({ ok: true, alreadyRunning: true });
+    expect(
+      (await api(app, "POST", "/api/models/load", { model: "nope" })).body,
+    ).toEqual({ ok: false, message: "model is not found" });
+    const down = await api(app, "POST", "/api/models/load", { model: "down" });
+    expect(down.status).toBe(502);
+    expect(
+      (await api(app, "POST", "/api/models/load", { model: "" })).status,
+    ).toBe(400);
+    expect(asked).toEqual(["qwen", "running", "nope", "down"]);
   });
 });
