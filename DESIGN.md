@@ -408,10 +408,15 @@ Command-line arguments (answered before the CLI was dropped; with no CLI for now
 - The CLI has subcommands to manage the backend (for example start, stop, status), for when the tray icon is not working. The exact subcommands are not yet defined.
 - Client commands (run, chat, sessions) were not selected in the question. Whether they exist is open.
 
+Defaults and stopping the backend (answered):
+
+- When the environment variables are unset, the database and the key file both default to `~/Library/Application Support/<bundle identifier>/`. The folder is owner-only, and so is the key file (permissions to be confirmed in the key decision).
+- The app keeps its Dock icon (Tauri's default activation policy on macOS), so right-click then Quit on the Dock icon is available if the tray icon is not working. This is my reading of "Keep the doc item"; the Dock icon was the option offered.
+- Not chosen: showing the window on reopen, a stop button plus authenticated stop route, and a PID file with a manual `kill` fallback.
+
 Open questions:
 
-- Environment variable names and defaults for the database path and key file location. A GUI app on macOS does not inherit shell-profile variables (see the key decision), so what does the app use when they are unset?
-- With no CLI, the tray icon is the only way to stop the backend. What happens if the tray icon is not working?
+- Environment variable names for the database path and key file location.
 - Does the backend accept command-line arguments, or only environment variables? The app starts it, so the app would pass them.
 - Exact backend management subcommands and client commands belong to a later CLI.
 
