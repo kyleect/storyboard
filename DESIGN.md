@@ -125,7 +125,7 @@ Rationale for each decision is to be filled in.
 
 ### 6.7 Layered configuration
 
-**Decision:** Configuration is read from several sources: environment variables, a config file or SQLite database, and command-line arguments. Details are open in D12.
+**Decision:** Configuration is read from several sources: command-line arguments, environment variables, settings stored in the SQLite database, and defaults. Precedence, highest first: command-line arguments, environment variables, stored settings, defaults. The settings needed to open the database (the database path and the key file location) cannot be stored in it, so they come from elsewhere; where is open in D12. The UI may change settings, and it saves them to the database.
 **Rationale:** _To be filled in._
 
 ### 6.8 Harness runs as a separate TypeScript process (D1)
@@ -366,12 +366,18 @@ Open questions:
 
 ### D12. Configuration details
 
-Layered configuration is decided (6.7). Open questions:
+Layered configuration is decided (6.7). Answered:
 
-- Config file or SQLite database for stored settings?
-- If a file, which format: JSON, TOML or YAML?
-- Precedence between sources. A common order is CLI arguments, then environment variables, then stored configuration.
-- May the UI change settings, and if so, which source does it write to?
+- Stored settings (everything except the database path and key file location) live in the SQLite database.
+- Precedence: command-line arguments, then environment variables, then stored settings, then defaults.
+- The UI may change settings, and it saves them to the database.
+- If a config file is used, its format is TOML.
+
+Open questions:
+
+- The database path and key file location cannot be in the database. Do they come from environment variables and command-line arguments only, or also from a TOML config file? If a file, where does it live on macOS?
+- Which settings exist? Candidates, not confirmed: llama-server base URL, optional llama-server API key, default model name for router mode, backend port, log level, default loop limit.
+- With one shared backend, which command-line arguments apply: those of the process that started the backend, or those of each client?
 
 ### D13. Streamed event contract
 
