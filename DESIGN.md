@@ -11,7 +11,7 @@
 
 Story Harness is a desktop application for writing short stories with locally hosted language models. This document covers the base harness: the runtime that sends prompts to a model, streams output to the UI, runs tools, and exposes the extension points a story-writing layer will build on. The story layer itself is out of scope.
 
-The UI stack (Tauri, React, Mantine), the language (TypeScript), and the initial model server (llama.cpp's `llama-server`) are decided. Thirteen architecture questions remain open and are laid out in section 7 with their options and trade-offs.
+The UI stack (Tauri, React, Mantine), the language (TypeScript), and the initial model server (llama.cpp's `llama-server`) are decided. Fifteen architecture questions remain open and are laid out in section 7 with their options and trade-offs.
 
 ## 2. Background and motivation
 
@@ -44,16 +44,19 @@ Further motivation: _to be filled in._
 
 ## 4. Requirements
 
-| ID  | Requirement                                                       |
-| --- | ----------------------------------------------------------------- |
-| R1  | TypeScript for the backend and the frontend.                      |
-| R2  | Tauri as the desktop application shell.                           |
-| R3  | Mantine React components for the UI. This implies React.          |
-| R4  | Compatibility with llama.cpp's `llama-server` API.                |
-| R5  | Generation can be constrained by a set of parameters.             |
-| R6  | The harness can run without the webview (for example from a CLI). |
-| R7  | A long-running generation survives a UI reload or close.          |
-| R8  | A session can be resumed after the fact.                          |
+| ID  | Requirement                                                                                                                                                     |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | TypeScript for the backend and the frontend.                                                                                                                    |
+| R2  | Tauri as the desktop application shell.                                                                                                                         |
+| R3  | Mantine React components for the UI. This implies React.                                                                                                        |
+| R4  | Compatibility with llama.cpp's `llama-server` API.                                                                                                              |
+| R5  | Generation can be constrained by a set of parameters.                                                                                                           |
+| R6  | The harness can run without the webview (for example from a CLI).                                                                                               |
+| R7  | A long-running generation survives a UI reload or close.                                                                                                        |
+| R8  | A session can be resumed after the fact.                                                                                                                        |
+| R9  | The application ships as self-contained binaries; users do not install a JavaScript runtime. (Under review in D15.)                                             |
+| R10 | A UI can reattach to a run already in progress and receive the events it missed.                                                                                |
+| R11 | The SQLite database is encrypted at rest. Encryption is provided at the SQLite level (an extension or an encrypted build), not implemented in application code. |
 
 ## 5. Architecture overview
 
@@ -83,6 +86,8 @@ Requests flow left to right; output streams back along the same path. The story 
 | Model adapter | Translates between the harness's message format and the model server's API. |
 | llama-server  | Serves the model. External to this project.                                 |
 | Storage       | Persists sessions and other data (scope open, D7).                          |
+
+The harness process can be started in two ways. The desktop app launches it as a bundled helper program (Tauri calls this a sidecar), or a user runs it directly from a terminal as a command-line tool (CLI). Both run the same harness core. Whether they are one binary with two modes or two binaries is open (D15).
 
 ## 6. Design decisions (made)
 
@@ -128,6 +133,21 @@ Rationale for each decision is to be filled in.
 **Decision:** The harness runs as its own TypeScript process, launched by Tauri when the desktop app is used, rather than inside the webview.
 **Rationale:** The harness must be able to run without the webview, since it will serve as a template for future projects that may have a CLI or other front ends, and the harness, backend and frontend are to be decoupled. Generations must survive a UI reload or close, and sessions must be resumable, which a webview-hosted harness cannot provide.
 
+### 6.9 Runtime: Node (D2)
+
+**Decision:** The harness process runs on Node. Distribution is self-contained binaries (R9).
+**Rationale:** To be filled in. Stated preference: Node is the ideal runtime.
+
+### 6.10 Transport: local HTTP with streaming (D3)
+
+**Decision:** The UI talks to the harness process over local HTTP, with server output streamed using server-sent events (SSE). Commands, including cancelling a run, are ordinary HTTP requests.
+**Rationale:** To be filled in.
+
+### 6.11 Database access: SQL with migrations, no ORM (D16, D17)
+
+**Decision:** The database layer uses SQL queries and versioned schema migrations, not an ORM. The migration tool is open (D17).
+**Rationale:** To be filled in.
+
 ## 7. Open decisions
 
 Each entry lists the options and trade-offs considered. No option is recommended. D1 is decided (6.8), so D2 to D4 apply.
@@ -138,32 +158,28 @@ Decided: a separate process. See 6.8.
 
 ### D2. JavaScript runtime
 
-| Option | Advantages                                                                                           | Disadvantages                                                                                                                  |
-| ------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Node   | Broadest library compatibility                                                                       | Single-file packaging uses Node SEA; the prototype's binary was 134 MB. Otherwise Node must be installed on the user's machine |
-| Bun    | Runs TypeScript natively; built-in test runner and SQLite; `bun build --compile` produces one binary | Some Node APIs and native modules behave differently                                                                           |
-| Deno   | Runs TypeScript natively; permission model; `deno compile` produces one binary                       | npm compatibility layer; smaller Deno-first ecosystem                                                                          |
-
-Binary sizes for Bun and Deno have not been measured.
-
-Open questions:
-
-- Must the application ship self-contained, or may it require an installed runtime?
-- Are there runtime preferences or exclusions?
+Decided: Node, shipped self-contained. See 6.9. The packaging mechanism is D15.
 
 ### D3. UI-to-harness transport
 
-| Option                                                         | Advantages                                                             | Disadvantages                                                           |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Local HTTP, streaming over SSE or WebSocket                    | Testable with standard tools; UI can be developed in a regular browser | Opens a localhost port, which needs a per-launch token                  |
-| Standard input/output, relayed to the UI by Tauri's Rust layer | No open port                                                           | All traffic passes through Rust relay code; UI cannot run outside Tauri |
+Decided: local HTTP with SSE streaming (6.10).
 
-Open questions:
+Reattaching to a run in progress (R10) uses SSE's event IDs: each event carries an ID, and a reconnecting client sends the last ID it received. The harness must keep events with IDs, in memory or persisted (D13).
 
-- Is a token-protected localhost port acceptable?
-- Must a UI be able to reattach to a run already in progress and receive the events it missed? (R7 implies yes.)
+The browser `EventSource` API cannot set request headers, so the auth token has to reach the stream another way. This is the one open question, and the options differ:
 
-### D4. HTTP framework (applies if D3 = HTTP)
+|                            | Token in the URL                                                                     | Cookie                                                                                                                                                                                                                                                                            | Reading the stream with `fetch`                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| How it works               | `EventSource` opens `/events?token=...`                                              | The server sets a cookie after an authenticated request; the browser sends it on the stream                                                                                                                                                                                       | The client uses `fetch` and sets `Authorization: Bearer ...`, then parses the SSE frames itself                  |
+| Reconnect and replay (R10) | Built into `EventSource`, including sending the last event ID                        | Built into `EventSource`                                                                                                                                                                                                                                                          | Written by hand: reconnect, send the last event ID, parse frames. Small libraries for this exist; none evaluated |
+| Token exposure             | The token appears in the URL and can end up in logs; low risk on localhost, but real | Not in the URL; stored in the browser                                                                                                                                                                                                                                             | Never in the URL; same header as every other request                                                             |
+| Complications              | None beyond logging                                                                  | The UI and the harness are different origins (the Tauri origin or the Vite dev server versus `127.0.0.1:<port>`), so cross-origin cookie rules and CORS with credentials apply; browsers send cookies automatically, which adds request-forgery concerns that header tokens avoid | None in the UI. A CLI client can set headers freely in every option                                              |
+
+Open question:
+
+- URL token, cookie or `fetch` streaming?
+
+### D4. HTTP framework
 
 | Option                           | Notes                                                                                                                                          |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -214,14 +230,14 @@ Open questions:
 
 ### D7. Persistence
 
-| Option                         | Advantages                                     | Disadvantages                      |
-| ------------------------------ | ---------------------------------------------- | ---------------------------------- |
-| None in the base               | Nothing to design now                          | Deferred work                      |
-| Plain files (JSON or Markdown) | Human-readable; diffable; version-controllable | No querying                        |
-| SQLite                         | Queries and indexes                            | Binary file; driver depends on D2  |
-| Tauri store plugin             | No backend required                            | Key-value only; coupled to the app |
+| Option                         | Advantages                                               | Disadvantages                                                                                                                                                       |
+| ------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| None in the base               | Nothing to design now                                    | Deferred work                                                                                                                                                       |
+| Plain files (JSON or Markdown) | Human-readable; diffable; version-controllable           | No querying                                                                                                                                                         |
+| SQLite                         | Queries and indexes; the intended store (R11 assumes it) | Binary file. Node's built-in `node:sqlite` (added in 22.5.0; no flag needed since 22.13.0; still experimental in 22.x) has no encryption options. Encryption is D16 |
+| Tauri store plugin             | No backend required                                      | Key-value only; coupled to the app                                                                                                                                  |
 
-R8 (resumable sessions) means sessions must be persisted, so the "None in the base" option no longer fits.
+R8 (resumable sessions) means sessions must be persisted, so the "None in the base" option no longer fits. R11 refers to a SQLite database, so SQLite is treated as the intended store; what it holds is still open.
 
 Open question:
 
@@ -279,6 +295,8 @@ During a run, the harness core emits a sequence of typed events (for example: ru
 | Vercel AI SDK stream protocol           | Coupled to that SDK's UI helpers                |
 | No streaming contract                   | Final results only; no live output              |
 
+R10 (reattach) requires events to have IDs and to be retained, in memory or persisted, so a reconnecting UI can receive what it missed.
+
 Open questions:
 
 - Custom events or an existing protocol?
@@ -294,13 +312,107 @@ R7 says a generation survives a UI reload or close. How long the backend process
 | Keeps running after the window closes (background or tray)          | Runs survive closing the window                                      | Needs a visible way to stop it; a lifecycle to manage      |
 | Independent long-lived service that the app and CLI both connect to | Runs survive quitting the app; one backend serves several front ends | Needs an install and start-up story; multi-client handling |
 
+Sharing a database file between the desktop app and a CLI only needs the same file and the same key. Sharing a live session, with the CLI attaching to a run the desktop app started, needs one harness process serving both, which is the third option. This is desirable but not a requirement for now.
+
 Open questions:
 
 - Which events must a run survive: window reload, window close, app quit?
 - If the process is killed mid-generation, must the run resume mid-stream, or is it enough that the session continues from the last completed message?
 
+### D15. Runtime distribution: Node single executable or installed runtime
+
+Status: tabled. R9 stands as written but is under review until this is taken up.
+
+R9 requires self-contained binaries. Node's single executable application (SEA) feature is the built-in way to produce one. Its documented limits ([Node docs](https://nodejs.org/dist/latest/docs/api/single-executable-applications.html)) and their effect on this project:
+
+| SEA limit                                                                                                                                           | Effect on this project                                                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The entry script must be a single bundle; `require` cannot read from the file system                                                                | Manageable. A bundler produces one file. The earlier prototype was built this way and ran                                                                                                                   |
+| Native `.node` addons cannot be loaded from inside the executable; they must be shipped as files and written to a temporary location before loading | Significant if the encrypted SQLite option is a native addon (D16). The addon would be a separate per-platform file, so the result is no longer one file. Whether it works inside a SEA has not been tested |
+| A SQLite extension loaded with `loadExtension(path)` is also a per-platform shared library on the real file system                                  | Same effect as a native addon                                                                                                                                                                               |
+| `import.meta.resolve` is unsupported; `import()` loads only built-in modules                                                                        | Low risk once everything is bundled. A dependency that uses `import.meta.resolve` would break. This cannot be known until dependencies are chosen                                                           |
+| The Node version that builds the blob must match the binary it is injected into                                                                     | Manageable by pinning one Node version in the build                                                                                                                                                         |
+| Builds are per platform; code cache and snapshots must be off for cross-platform builds; a known crash on Linux arm64 inside Docker                 | Manageable. Tauri also builds per platform. Matters only for CI design                                                                                                                                      |
+| macOS binaries must be re-signed after injection                                                                                                    | Needs checking against Tauri's signing and notarization of external binaries. Not yet verified                                                                                                              |
+| The feature is marked "active development" and may change                                                                                           | Moderate. Mitigated by pinning the Node version and re-testing on upgrades                                                                                                                                  |
+
+Options:
+
+| Option                        | Advantages                                                                          | Disadvantages                                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| A. Node SEA, self-contained   | No runtime for users to install; the Tauri app and CLI can each ship as one install | The limits above; native pieces for encryption stay beside the binary; per-platform build and signing pipeline |
+| B. Require an installed Node  | None of the SEA limits; native addons install normally with npm                     | Users must install Node; R9 would be dropped; versions are outside our control                                 |
+| C. Other Node packaging tools | Possibly different trade-offs                                                       | Not evaluated                                                                                                  |
+
+Open questions:
+
+- A, B or C? A short throwaway test (SEA plus the chosen encrypted SQLite option, on one platform) would answer the main unknown. It is not started.
+- Which Node version to target? The prototype used 22; newer releases exist.
+- Must the desktop app and the CLI share one binary or be separate? See section 5.
+
+### D16. SQLite driver and encryption (R11)
+
+Leading option: `better-sqlite3-multiple-ciphers`. Preference stated for SQLCipher; license is not a constraint. Stock SQLite does not encrypt, and `node:sqlite` uses Node's bundled SQLite, which has no encryption options. SQLCipher is a build of SQLite that replaces the stock library; it is not a loadable extension. The Node packages found ([comparison article](https://codenote.net/en/posts/electron-encrypted-sqlite-libraries-comparison/), a third-party source):
+
+| Option                            | Encryption engine                                          | Status and caveats                                                                                                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `better-sqlite3-multiple-ciphers` | SQLite3 Multiple Ciphers, with a SQLCipher-compatible mode | MIT. Active. N-API, so one binary covers many Node versions. Prebuilds for mainstream platforms. The default cipher is not SQLCipher's; the SQLCipher mode needs extra PRAGMAs and the key set before use |
+| `@journeyapps/sqlcipher`          | Upstream SQLCipher with OpenSSL, on a fork of node-sqlite3 | v6.0.0 (April 2026) dropped Windows and prebuilt binaries: source builds only, on macOS and Linux                                                                                                         |
+| `@signalapp/sqlcipher`            | Upstream SQLCipher 4.10.0                                  | N-API. Prebuilds oriented to Signal's own targets                                                                                                                                                         |
+| SQLite Encryption Extension (SEE) | The SQLite team's commercial encryption                    | US$2,000 perpetual license. No prebuilds; built from the amalgamation                                                                                                                                     |
+
+It is a native addon, so it interacts with D15 (tabled).
+
+Prior art: an earlier project that used SQLCipher was named as a reference, but its repository could not be read while drafting.
+
+Open questions:
+
+- Confirm `better-sqlite3-multiple-ciphers` as the choice?
+- SQLCipher-compatible mode (readable by `sqlcipher` tools) or the library's default cipher?
+- Must the database be opened with external tools?
+- Which platforms must have working prebuilt binaries (D11)?
+
+### D17. Migrations and query layer (6.11)
+
+Migrations must run inside the shipped application, so an in-process tool is the natural fit. Findings:
+
+| Option                                  | Notes                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Hand-written runner                     | A small runner that applies numbered `.sql` files and records the schema version with SQLite's `user_version` pragma. No dependency; maintained in this project                                                                                                                                                                                        |
+| `@blackglory/better-sqlite3-migrations` | Written for better-sqlite3 and records the version with `user_version`. Each migration has `up` and `down`, as a SQL string or a function ([npm](https://npmjs.com/package/@blackglory/better-sqlite3-migrations)). Version, publish date and maintenance were not shown on the page. Compatibility with the multiple-ciphers fork has not been tested |
+| Kysely migrator                         | Kysely is a typed query builder, not an ORM, with a built-in migrator whose migrations are TypeScript or JavaScript functions that can run raw SQL. From general knowledge; not verified here. A file-based provider reads migrations from the file system, which conflicts with single-file bundling, so migrations would be supplied from the bundle |
+| Umzug                                   | Migration runner that is not tied to a database; migrations and storage are supplied by the application. From general knowledge; not verified here                                                                                                                                                                                                     |
+| Postgrator                              | Ruled out: its documented databases are Postgres, MySQL and SQL Server, not SQLite ([npm](https://www.npmjs.com/package/postgrator))                                                                                                                                                                                                                   |
+| dbmate, Atlas                           | Single binaries with plain SQL files; separate programs to ship ([comparison](https://www.pkgpulse.com/guides/drizzle-kit-vs-atlas-vs-dbmate-schema-migration-tools-2026))                                                                                                                                                                             |
+| Flyway                                  | Supports SQLite; its command line bundles a Java runtime ([requirements](https://documentation.red-gate.com/flyway/getting-started-with-flyway/system-requirements/command-line-and-api-requirements))                                                                                                                                                 |
+| Drizzle Kit                             | Part of an ORM, which 6.11 excludes                                                                                                                                                                                                                                                                                                                    |
+
+Open questions:
+
+- Must migrations be plain `.sql` files?
+- Must they run automatically when the harness starts?
+- Forward-only, or with down migrations?
+- Raw driver calls only, or a typed query builder (not an ORM) on top?
+
+### D18. Encryption key management (R11)
+
+Threat model: anyone who acquires the database file must not be able to read it. The key therefore has to live somewhere other than the database file and anything copied with it.
+
+| Option                                                                                                   | Holds up when                                                                                                        | Does not hold up when                                                                                                                                                                                  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Random key in the OS credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service) | The database file is copied; also a stolen disk, since these stores are encrypted under the user's login credentials | Malware runs as the user                                                                                                                                                                               | No prompt, so unattended runs work (R7). A CLI can read the same entry by name and so open the same database; on macOS a different binary's first access normally prompts the user. Needs a native piece (for example `@napi-rs/keyring`, a keytar replacement shipping prebuilt binaries; the page checked only described Linux) or the Tauri layer. Headless Linux may have no Secret Service. Behavior stated from general knowledge; to be verified |
+| User passphrase                                                                                          | The database file is copied; the key exists only in the user's head                                                  | The passphrase is weak or forgotten                                                                                                                                                                    | A prompt on every launch; a lost passphrase means lost data; does not fit unattended runs                                                                                                                                                                                                                                                                                                                                                               |
+| Key in an environment variable                                                                           | The database file alone is copied                                                                                    | The home directory or a disk image is copied, if the variable is set in a plain-text file such as `.bashrc`: any process running as that user can read that file, as can anyone holding a backup of it | Better than a command-line argument, which other users can see in process listings. A running process's environment is readable by other processes of the same user (on Linux, through `/proc`)                                                                                                                                                                                                                                                         |
+| Key in a file with owner-only permissions                                                                | The database file alone is copied                                                                                    | The home directory or a disk image is copied                                                                                                                                                           | Same exposure as `.bashrc`, but kept out of shell startup files; can be placed outside synced or backed-up folders                                                                                                                                                                                                                                                                                                                                      |
+
+Open questions:
+
+- Which key sources should the harness support: one, or several with a precedence order (ties to the layered configuration in D12)?
+- Must it work unattended and in CI?
+
 ## 8. Future work
 
 - **Continue in a new session.** An alternative to context compaction: a new session can selectively search prior sessions rather than loading them fully into context.
+- **CLI attaching to a live desktop session.** Desirable; not required for now. Depends on D14.
 - **Additional model servers.** Other OpenAI-compatible servers beyond llama.cpp.
 - **Story layer.** Parameters, constraints, story structure and story-specific agents, in a separate design.
