@@ -158,6 +158,13 @@ Rationale for each decision is to be filled in.
 **Decision:** The database key is supplied through an environment variable. It is never passed as a command-line argument.
 **Rationale:** To be filled in. Stated: the whole system runs on localhost.
 
+### 6.14 HTTP framework: Fastify (D4)
+
+**Decision:** The harness process uses Fastify as its HTTP framework.
+**Rationale:** To be filled in. Stated: familiarity with the name.
+
+**Routes are thin adapters over the harness core.** All harness logic (loading sessions, calling the model, saving, producing events) lives in the harness core, which has no knowledge of HTTP. Fastify routes only translate requests into core calls and core events into SSE. The core is therefore reusable by a CLI or other front ends, and the framework can be replaced by rewriting only the route layer.
+
 ## 7. Open decisions
 
 Each entry lists the options and trade-offs considered. No option is recommended. D1 is decided (6.8), so D2 to D4 apply.
@@ -180,19 +187,26 @@ Consequence: a token in the URL can end up in logs, so the server must not log q
 
 ### D4. HTTP framework
 
-| Option                           | Notes                                                                                                                                          |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| None (runtime's built-in server) | No dependency; routing and validation written by hand                                                                                          |
-| Express                          | Long-standing default; middleware-based                                                                                                        |
-| Fastify                          | Built-in schema validation and serialization                                                                                                   |
-| Hono                             | Web-standard Request/Response; runs on Node, Bun and Deno; about 32,600 GitHub stars ([OSSInsight](https://ossinsight.io/analyze/honojs/hono)) |
-| Elysia                           | Bun only                                                                                                                                       |
+Decided: Fastify, with routes as thin adapters over the harness core (6.14). The options considered are kept below.
 
-Adoption figures for the other options have not yet been verified.
+The API is small now and expected to grow. The base is meant to serve as a template for future harnesses.
 
-Open question:
+| Option                        | Notes                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| None (Node's built-in `http`) | No dependency. Routing, parsing and validation written by hand; growth means writing a router                                                                                                                                                                                             |
+| Express                       | Largest ecosystem, in use since 2010. Typing comes from community definitions and varies across middleware. Middleware chains can become complex as an application grows ([Better Stack comparison](https://betterstack.com/community/guides/scaling-nodejs/fastify-vs-express-vs-hono/)) |
+| Fastify                       | Built-in schema validation and serialization, with typing from request to response per the same article. A plugin architecture that the article says scales from simple APIs to complex services; the official organization maintains many plugins                                        |
+| Hono                          | TypeScript-first, with typed routes. Middleware chains and pattern-matched routing. Newer and fast-evolving. About 32,600 GitHub stars ([OSSInsight](https://ossinsight.io/analyze/honojs/hono)). The comparison article does not address large-application structure                     |
 
-- Are there framework preferences or exclusions?
+SSE support does not separate the options. Any of them can write SSE frames by hand. Libraries and helpers:
+
+- Hono has a built-in SSE helper.
+- `better-sse` is dependency-free and written in TypeScript. It works with the Node `http` module and Fetch-based frameworks, including Express and Hono; Fastify support is inferred from that. It accepts the client's last event ID and supports broadcasting to channels, but it does not store past events ([README](https://github.com/MatthewWid/better-sse)).
+- A Fastify SSE plugin with `Last-Event-ID` replay was in an unreleased pull request when checked ([PR](https://github.com/fastify/sse/pull/1)). Community plugins exist and were not evaluated.
+
+Storing events for replay (R10) is the harness's job whichever option is chosen (D13).
+
+Not verified: OpenAPI generation, testing support, and the star counts for Express and Fastify.
 
 ### D5. llama-server API surface
 
