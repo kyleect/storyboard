@@ -19,6 +19,8 @@ Story creation in this system combines model text generation with a set of param
 
 The harness runs against models served locally by llama.cpp. Other OpenAI-compatible servers may be supported later.
 
+The harness is also intended as a template for future harness projects, which may have a CLI or other front ends. For that reason the harness core, the backend and the frontend are kept decoupled from each other.
+
 A throwaway prototype exists. It is not the basis for this design, and none of its choices carry over.
 
 Further motivation: _to be filled in._
@@ -30,6 +32,8 @@ Further motivation: _to be filled in._
 - Send prompts to a model and stream output back to the UI.
 - Support constraining generation with parameters. The base provides the mechanism; the parameters themselves belong to the story layer.
 - Provide clear extension points for the story layer.
+- Keep the harness core, backend and frontend decoupled, so the same harness can serve a desktop UI, a CLI or other front ends.
+- Let a generation keep running when the UI reloads or closes, and let a session be resumed later.
 
 ### Non-goals
 
@@ -40,13 +44,16 @@ Further motivation: _to be filled in._
 
 ## 4. Requirements
 
-| ID  | Requirement                                              |
-| --- | -------------------------------------------------------- |
-| R1  | TypeScript for the backend and the frontend.             |
-| R2  | Tauri as the desktop application shell.                  |
-| R3  | Mantine React components for the UI. This implies React. |
-| R4  | Compatibility with llama.cpp's `llama-server` API.       |
-| R5  | Generation can be constrained by a set of parameters.    |
+| ID  | Requirement                                                       |
+| --- | ----------------------------------------------------------------- |
+| R1  | TypeScript for the backend and the frontend.                      |
+| R2  | Tauri as the desktop application shell.                           |
+| R3  | Mantine React components for the UI. This implies React.          |
+| R4  | Compatibility with llama.cpp's `llama-server` API.                |
+| R5  | Generation can be constrained by a set of parameters.             |
+| R6  | The harness can run without the webview (for example from a CLI). |
+| R7  | A long-running generation survives a UI reload or close.          |
+| R8  | A session can be resumed after the fact.                          |
 
 ## 5. Architecture overview
 
@@ -55,7 +62,7 @@ The base consists of five logical components. No technology is assigned to them 
 ```
 +--------------+       +-----------------+       +-----------------+       +----------------+
 | Desktop UI   | ----> | Harness core    | ----> | Model adapter   | ----> | llama-server   |
-| Tauri +      |  D3   | location: D1,   |       | API: D5         |  D5   | local model    |
+| Tauri +      |  D3   | own process,    |       | API: D5         |  D5   | local model    |
 | Mantine      |       | runtime: D2     |       |                 |       | server         |
 +--------------+       +-----------------+       +-----------------+       +----------------+
                           ^          |
@@ -116,25 +123,20 @@ Rationale for each decision is to be filled in.
 **Decision:** Configuration is read from several sources: environment variables, a config file or SQLite database, and command-line arguments. Details are open in D12.
 **Rationale:** _To be filled in._
 
+### 6.8 Harness runs as a separate TypeScript process (D1)
+
+**Decision:** The harness runs as its own TypeScript process, launched by Tauri when the desktop app is used, rather than inside the webview.
+**Rationale:** The harness must be able to run without the webview, since it will serve as a template for future projects that may have a CLI or other front ends, and the harness, backend and frontend are to be decoupled. Generations must survive a UI reload or close, and sessions must be resumable, which a webview-hosted harness cannot provide.
+
 ## 7. Open decisions
 
-Each entry lists the options and trade-offs considered. No option is recommended. D1 is first because it determines whether D2 to D4 apply.
+Each entry lists the options and trade-offs considered. No option is recommended. D1 is decided (6.8), so D2 to D4 apply.
 
 ### D1. Where the harness logic runs
 
-| Option                                                       | Advantages                                                                                               | Disadvantages                                                                                                                                       |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A. In the webview, as frontend TypeScript                    | Single process; nothing extra to package                                                                 | Runs stop if the window reloads; file access only through Tauri plugins; requests to `llama-server` are subject to the webview's cross-origin rules |
-| B. A separate TypeScript process launched by Tauri (sidecar) | Full runtime APIs; runs survive UI reloads; harness can run without the app (scripts, tests, batch jobs) | A second program to build and ship; requires a UI-to-process channel (D3)                                                                           |
+Decided: a separate process. See 6.8.
 
-Running agent logic in Rust is excluded by R1.
-
-Open questions:
-
-- Must the harness run without the desktop app, for example from a CLI or batch job?
-- Must a long-running generation survive a window reload or close?
-
-### D2. JavaScript runtime (applies if D1 = B)
+### D2. JavaScript runtime
 
 | Option | Advantages                                                                                           | Disadvantages                                                                                                                  |
 | ------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -149,16 +151,17 @@ Open questions:
 - Must the application ship self-contained, or may it require an installed runtime?
 - Are there runtime preferences or exclusions?
 
-### D3. UI-to-harness transport (applies if D1 = B)
+### D3. UI-to-harness transport
 
 | Option                                                         | Advantages                                                             | Disadvantages                                                           |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Local HTTP, streaming over SSE or WebSocket                    | Testable with standard tools; UI can be developed in a regular browser | Opens a localhost port, which needs a per-launch token                  |
 | Standard input/output, relayed to the UI by Tauri's Rust layer | No open port                                                           | All traffic passes through Rust relay code; UI cannot run outside Tauri |
 
-Open question:
+Open questions:
 
 - Is a token-protected localhost port acceptable?
+- Must a UI be able to reattach to a run already in progress and receive the events it missed? (R7 implies yes.)
 
 ### D4. HTTP framework (applies if D3 = HTTP)
 
@@ -217,6 +220,8 @@ Open questions:
 | Plain files (JSON or Markdown) | Human-readable; diffable; version-controllable | No querying                        |
 | SQLite                         | Queries and indexes                            | Binary file; driver depends on D2  |
 | Tauri store plugin             | No backend required                            | Key-value only; coupled to the app |
+
+R8 (resumable sessions) means sessions must be persisted, so the "None in the base" option no longer fits.
 
 Open question:
 
@@ -278,6 +283,21 @@ Open questions:
 
 - Custom events or an existing protocol?
 - Should events be persisted so runs can be replayed or inspected?
+
+### D14. Backend lifetime
+
+R7 says a generation survives a UI reload or close. How long the backend process itself lives determines how far that goes.
+
+| Option                                                              | Advantages                                                           | Disadvantages                                              |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Lives and dies with the desktop app                                 | Simple lifecycle; nothing left running                               | Runs survive a window reload but not quitting the app      |
+| Keeps running after the window closes (background or tray)          | Runs survive closing the window                                      | Needs a visible way to stop it; a lifecycle to manage      |
+| Independent long-lived service that the app and CLI both connect to | Runs survive quitting the app; one backend serves several front ends | Needs an install and start-up story; multi-client handling |
+
+Open questions:
+
+- Which events must a run survive: window reload, window close, app quit?
+- If the process is killed mid-generation, must the run resume mid-stream, or is it enough that the session continues from the last completed message?
 
 ## 8. Future work
 
