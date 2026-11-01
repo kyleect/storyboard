@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolContext } from "@harness/core";
 import { currentDate, currentTime } from "./clock.js";
-import { allTools } from "./index.js";
 
 const ctx: ToolContext = {
   signal: new AbortController().signal,
@@ -35,7 +34,7 @@ describe("clock tools", () => {
   });
 
   it("take no arguments and run without asking", () => {
-    for (const tool of allTools) {
+    for (const tool of [currentDate, currentTime]) {
       expect(tool.approval).toBe("never");
       expect(tool.inputSchema).toEqual({
         type: "object",
@@ -44,9 +43,5 @@ describe("clock tools", () => {
       });
       expect(tool.parse({})).toEqual({ ok: true, input: {} });
     }
-    expect(allTools.map((t) => t.name)).toEqual([
-      "current_date",
-      "current_time",
-    ]);
   });
 });
