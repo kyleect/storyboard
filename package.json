@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build:core": "tsc -b packages/core",
-    "dev:backend": "pnpm build:core && pnpm --filter @harness/backend dev",
+    "build:tools": "tsc -b packages/tools",
+    "dev:backend": "pnpm build:tools && pnpm --filter @harness/backend dev",
     "dev:frontend": "pnpm --filter @harness/frontend dev"
   },
   "devDependencies": {

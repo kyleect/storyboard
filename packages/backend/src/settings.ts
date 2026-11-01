@@ -17,6 +17,8 @@ export const Settings = z.object({
    */
   reasoningEffort: z.string(),
   port: z.number().int().min(0).max(65535),
+  /** The most model calls one run makes (design doc 6.17). */
+  loopLimit: z.number().int().min(1),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -25,6 +27,7 @@ export const DEFAULTS: Settings = {
   model: "",
   reasoningEffort: "",
   port: 4317,
+  loopLimit: 20,
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -32,7 +35,10 @@ const ENV: Record<keyof Settings, string> = {
   model: "HARNESS_MODEL",
   reasoningEffort: "HARNESS_REASONING_EFFORT",
   port: "HARNESS_PORT",
+  loopLimit: "HARNESS_LOOP_LIMIT",
 };
+
+const NUMERIC = new Set<keyof Settings>(["port", "loopLimit"]);
 
 export interface SettingsView {
   /** What is in effect. */
@@ -64,7 +70,7 @@ export function readSettings(
   for (const key of Object.keys(ENV) as (keyof Settings)[]) {
     const raw = env[ENV[key]];
     if (raw === undefined) continue;
-    const value = key === "port" ? Number(raw) : raw;
+    const value = NUMERIC.has(key) ? Number(raw) : raw;
     const parsed = shape[key].safeParse(value);
     if (!parsed.success) {
       throw new Error(

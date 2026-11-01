@@ -10,6 +10,9 @@ export default defineConfig({
       "@harness/core": fileURLToPath(
         new URL("./packages/core/src/index.ts", import.meta.url),
       ),
+      "@harness/tools": fileURLToPath(
+        new URL("./packages/tools/src/index.ts", import.meta.url),
+      ),
     },
   },
   test: {

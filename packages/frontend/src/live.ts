@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { notifications } from "@mantine/notifications";
 import {
   applyMessageEvent,
+  type ApprovalRequest,
   type ContentBlock,
   type HarnessEvent,
   type Usage,
@@ -11,17 +12,26 @@ import {
 import { eventsUrl, type SessionDetail } from "./api";
 
 /*
- * The in-flight run of each session, built from streamed events.
- * When a run ends, the transcript is refetched and the live entry cleared.
+ * The in-flight run of each session, built from streamed events. A run can
+ * write several messages (tools design, section 4): each finished message
+ * goes into the cached transcript, tool results are refetched, and when the
+ * run ends the transcript is refetched and the live entry cleared.
  */
+
+export interface LiveMessage {
+  messageId: string;
+  continuing: boolean;
+  content: readonly ContentBlock[];
+}
 
 export interface LiveRun {
   runId: string;
-  messageId: string;
   model: string | null;
   reasoningEffort: string | null;
-  continuing: boolean;
-  content: readonly ContentBlock[];
+  /** The message being written now; null while a tool runs. */
+  message: LiveMessage | null;
+  /** Approval requests waiting for an answer, oldest first. */
+  approvals: ApprovalRequest[];
   /** The latest running token count from the stream. */
   usage?: Usage;
 }
@@ -66,11 +76,6 @@ export function useSessionEvents(
     const snapshot = detail.activeRun;
     live.set(sessionId, snapshot ?? undefined);
 
-    // run.started carries the choices; message.started follows it.
-    const runInfo = new Map<
-      string,
-      { model: string | null; reasoningEffort: string | null }
-    >();
     let lastId = detail.lastEventId;
     // Runs whose model has started answering (so it is loaded now).
     const answering = new Set<string>();
@@ -91,9 +96,12 @@ export function useSessionEvents(
 
       switch (event.type) {
         case "run.started":
-          runInfo.set(event.runId, {
+          state.set(sessionId, {
+            runId: event.runId,
             model: event.data.model ?? null,
             reasoningEffort: event.data.reasoningEffort ?? null,
+            message: null,
+            approvals: [],
           });
           break;
         case "message.started": {
@@ -104,19 +112,66 @@ export function useSessionEvents(
           const existing = cached?.messages.find(
             (m) => m.id === event.data.messageId,
           );
-          state.set(sessionId, {
-            runId: event.runId,
-            messageId: event.data.messageId,
-            model: runInfo.get(event.runId)?.model ?? null,
-            reasoningEffort: runInfo.get(event.runId)?.reasoningEffort ?? null,
-            continuing: event.data.continuing ?? false,
-            content:
-              event.data.continuing && existing?.message.role === "assistant"
-                ? existing.message.content
-                : [],
-          });
+          const continuing = event.data.continuing ?? false;
+          state.update(sessionId, (run) => ({
+            ...run,
+            message: {
+              messageId: event.data.messageId,
+              continuing,
+              content:
+                continuing && existing?.message.role === "assistant"
+                  ? existing.message.content
+                  : [],
+            },
+          }));
           break;
         }
+        case "message.finished": {
+          // The message is stored before this event; show it as stored.
+          const run = useLive.getState().runs[sessionId];
+          queryClient.setQueryData<SessionDetail>(
+            ["session", sessionId],
+            (old) => {
+              if (!old || event.data.message.content.length === 0) return old;
+              const stored = {
+                id: event.data.messageId,
+                message: event.data.message,
+                model: run?.model ?? null,
+                reasoningEffort: run?.reasoningEffort ?? null,
+              };
+              const at = old.messages.findIndex(
+                (m) => m.id === event.data.messageId,
+              );
+              const messages = [...old.messages];
+              if (at === -1) messages.push(stored);
+              else messages[at] = stored;
+              return { ...old, messages };
+            },
+          );
+          state.update(sessionId, (r) => ({ ...r, message: null }));
+          break;
+        }
+        case "tool.result":
+          // The result message is stored before this event.
+          void queryClient.invalidateQueries({
+            queryKey: ["session", sessionId],
+          });
+          break;
+        case "tool.approval_requested":
+          state.update(sessionId, (run) => ({
+            ...run,
+            approvals: [...run.approvals, event.data],
+          }));
+          break;
+        case "tool.approval_resolved":
+        case "request.cancel":
+          state.update(sessionId, (run) => ({
+            ...run,
+            approvals: run.approvals.filter(
+              (a) => a.requestId !== event.data.requestId,
+            ),
+          }));
+          break;
         case "run.finished":
         case "run.failed":
         case "run.interrupted":
@@ -152,11 +207,17 @@ export function useSessionEvents(
               event.data.usage
                 ? event.data.usage
                 : run.usage;
-            return {
-              ...run,
-              content: applyMessageEvent(run.content, run.messageId, event),
-              ...(usage ? { usage } : {}),
-            };
+            const message = run.message
+              ? {
+                  ...run.message,
+                  content: applyMessageEvent(
+                    run.message.content,
+                    run.message.messageId,
+                    event,
+                  ),
+                }
+              : null;
+            return { ...run, message, ...(usage ? { usage } : {}) };
           });
       }
     };

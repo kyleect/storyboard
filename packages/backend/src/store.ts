@@ -40,7 +40,6 @@ export interface RunRow {
   id: string;
   session_id: string;
   kind: string;
-  message_id: string;
   status: RunStatus;
   started_at: string;
   ended_at: string | null;
@@ -196,21 +195,19 @@ export class Store {
     id: string;
     sessionId: string;
     kind: string;
-    messageId: string;
     now: string;
     generation?: Generation;
   }) {
     const generation = run.generation ?? NO_GENERATION;
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, message_id, status, started_at, model, reasoning_effort)
-         VALUES (?, ?, ?, ?, 'running', ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort)
+         VALUES (?, ?, ?, 'running', ?, ?, ?)`,
       )
       .run(
         run.id,
         run.sessionId,
         run.kind,
-        run.messageId,
         run.now,
         generation.model,
         generation.reasoningEffort,
@@ -240,6 +237,46 @@ export class Store {
   getRun(id: string): RunRow | undefined {
     return this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as
       RunRow | undefined;
+  }
+
+  /** Records that the run wrote the message; once per run and message. */
+  linkRunMessage(runId: string, messageId: string) {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO run_messages (run_id, message_id, seq)
+         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM run_messages WHERE run_id = ?))`,
+      )
+      .run(runId, messageId, runId);
+  }
+
+  /** The messages the run wrote, in the order it first wrote them. */
+  runMessageIds(runId: string): string[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT message_id FROM run_messages WHERE run_id = ? ORDER BY seq",
+        )
+        .all(runId) as { message_id: string }[]
+    ).map((r) => r.message_id);
+  }
+
+  /** Records an "Allow for this session" answer. */
+  allowToolForSession(sessionId: string, toolName: string, now: string) {
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO session_tool_approvals (session_id, tool_name, created_at) VALUES (?, ?, ?)",
+      )
+      .run(sessionId, toolName, now);
+  }
+
+  isToolAllowedForSession(sessionId: string, toolName: string): boolean {
+    return (
+      this.db
+        .prepare(
+          "SELECT 1 FROM session_tool_approvals WHERE session_id = ? AND tool_name = ?",
+        )
+        .get(sessionId, toolName) !== undefined
+    );
   }
 
   runningRuns(): RunRow[] {

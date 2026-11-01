@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  ApprovalChoice,
   getReasoningLevels,
   listLlamaServerModels,
   loadLlamaServerModel,
@@ -13,6 +14,7 @@ import {
 import { RunError, type RunManager } from "./runs.js";
 import { readSettings, writeSettings } from "./settings.js";
 import type { Store } from "./store.js";
+import { listToolSettings, setToolAsks } from "./tool-settings.js";
 
 /*
  * HTTP routes (design doc 6.10, 6.14). Routes are thin adapters over the
@@ -236,6 +238,35 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (!store.getRun(id))
       return reply.code(404).send({ error: "Run not found." });
     return runs.endReasoning(id);
+  });
+
+  /**
+   * Answers an approval request: once, session, always or deny
+   * (tools design 6.5). 409 when the run is not active, 404 when the request
+   * is not open.
+   */
+  app.post("/api/runs/:id/approvals/:requestId", async (req, reply) => {
+    const { id, requestId } = IdParams.extend({
+      requestId: z.string(),
+    }).parse(req.params);
+    const { choice } = z.object({ choice: ApprovalChoice }).parse(req.body);
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    runs.answerApproval(id, requestId, choice);
+    return { ok: true };
+  });
+
+  /** Every tool, with its approval default and whether it asks now. */
+  app.get("/api/tools", async () => listToolSettings(store.db, runs.tools));
+
+  /** Sets whether a tool asks before running (either way, 6.5). */
+  app.put("/api/tools/:name/approval", async (req, reply) => {
+    const { name } = z.object({ name: z.string() }).parse(req.params);
+    const { ask } = z.object({ ask: z.boolean() }).parse(req.body);
+    const tool = runs.tools.find((t) => t.name === name);
+    if (!tool) return reply.code(404).send({ error: "Tool not found." });
+    setToolAsks(store.db, tool, ask);
+    return listToolSettings(store.db, [tool])[0];
   });
 
   app.post("/api/runs/:id/cancel", async (req, reply) => {

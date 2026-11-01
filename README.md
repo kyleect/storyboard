@@ -6,7 +6,10 @@ Design decisions live in the project's design document (`claude/base-design.md`)
 ## Packages
 
 - `packages/core`: framework-free harness core: messages, the streamed event
-  contract (Zod), the llama-server adapter, the single-call run.
+  contract (Zod), the llama-server adapter, the single-call run, tool
+  definitions (`defineTool`) and the agent loop.
+- `packages/tools`: the tools sessions get (for now `current_date` and
+  `current_time`).
 - `packages/backend`: Fastify server, encrypted SQLite, migrations, settings,
   event streaming with replay.
 - `packages/frontend`: React + Mantine UI (Vite).
@@ -14,7 +17,7 @@ Design decisions live in the project's design document (`claude/base-design.md`)
 ## Requirements
 
 - Node 22.12 or later, pnpm 10.
-- A running `llama-server`. In router mode, pick a model in each session's
+- A running `llama-server`, started with `--jinja` so tool calls work. In router mode, pick a model in each session's
   model picker, or set a default model in Settings. Picking a model in a session
   asks the router to load it. Reasoning effort works the same way.
 
@@ -44,6 +47,7 @@ get a new token.
 | `HARNESS_MODEL`            | stored setting, else empty (not sent)        | Default model for sessions with none chosen                                         |
 | `HARNESS_REASONING_EFFORT` | stored setting, else empty (not sent)        | Default reasoning effort for sessions with none chosen (`none` turns reasoning off) |
 | `HARNESS_PORT`             | stored setting, else `4317`                  | Backend port                                                                        |
+| `HARNESS_LOOP_LIMIT`       | stored setting, else `20`                    | The most model calls one run makes                                                  |
 
 `HARNESS_BACKEND_URL` tells the frontend dev server where the backend is
 (default `http://127.0.0.1:4317`).

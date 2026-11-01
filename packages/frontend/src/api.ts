@@ -1,4 +1,10 @@
-import type { ContentBlock, ControlResult, Message } from "@harness/core";
+import type {
+  ApprovalChoice,
+  ApprovalRequest,
+  ContentBlock,
+  ControlResult,
+  Message,
+} from "@harness/core";
 
 /*
  * Talks to the backend. The token arrives once in the URL fragment
@@ -98,12 +104,25 @@ export interface SessionDetail {
   lastEventId: number;
   activeRun: {
     runId: string;
-    messageId: string;
     model: string | null;
     reasoningEffort: string | null;
-    continuing: boolean;
-    content: ContentBlock[];
+    /** The message being written now; null while a tool runs. */
+    message: {
+      messageId: string;
+      continuing: boolean;
+      content: ContentBlock[];
+    } | null;
+    /** Approval requests waiting for an answer. */
+    approvals: ApprovalRequest[];
   } | null;
+}
+
+/** A tool and whether it asks before running. */
+export interface ToolView {
+  name: string;
+  description: string;
+  askByDefault: boolean;
+  ask: boolean;
 }
 
 export interface Settings {
@@ -111,6 +130,8 @@ export interface Settings {
   model: string;
   reasoningEffort: string;
   port: number;
+  /** The most model calls one run makes. */
+  loopLimit: number;
 }
 
 export interface SettingsView {
@@ -168,6 +189,19 @@ export const api = {
     request<{ runId: string }>("POST", `/api/sessions/${id}/continue`, choices),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>("POST", `/api/runs/${runId}/cancel`),
+  answerApproval: (runId: string, requestId: string, choice: ApprovalChoice) =>
+    request<{ ok: true }>(
+      "POST",
+      `/api/runs/${runId}/approvals/${encodeURIComponent(requestId)}`,
+      { choice },
+    ),
+  listTools: () => request<ToolView[]>("GET", "/api/tools"),
+  setToolAsks: (name: string, ask: boolean) =>
+    request<ToolView>(
+      "PUT",
+      `/api/tools/${encodeURIComponent(name)}/approval`,
+      { ask },
+    ),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<SettingsView>("PUT", "/api/settings", patch),

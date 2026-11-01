@@ -46,6 +46,9 @@ importers:
       '@harness/core':
         specifier: workspace:*
         version: link:../core
+      '@harness/tools':
+        specifier: workspace:*
+        version: link:../tools
       better-sqlite3-multiple-ciphers:
         specifier: 13.0.3
         version: 13.0.3(patch_hash=9b443ccbaee7ac91affdcecc315f983ec083ff9f1582cb9b115aaf06e055c062)
@@ -120,6 +123,15 @@ importers:
       vite:
         specifier: 8.3.5
         version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)
+
+  packages/tools:
+    dependencies:
+      '@harness/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
 packages:
 

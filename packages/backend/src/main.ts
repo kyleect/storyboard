@@ -2,6 +2,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LlamaServerAdapter } from "@harness/core";
+import { allTools } from "@harness/tools";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
 import { loadMigrations, migrate } from "./migrate.js";
@@ -33,6 +34,7 @@ async function main() {
     store,
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
+    tools: allTools,
   });
   const recovered = runs.recover();
 

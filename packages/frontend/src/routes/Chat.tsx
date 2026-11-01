@@ -5,6 +5,7 @@ import {
   Code,
   Group,
   Loader,
+  Modal,
   Paper,
   ScrollArea,
   Spoiler,
@@ -18,7 +19,13 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import type { ContentBlock, Message, Usage } from "@harness/core";
+import type {
+  ApprovalChoice,
+  ApprovalRequest,
+  ContentBlock,
+  Message,
+  Usage,
+} from "@harness/core";
 import { api, type Choices, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
 import { ModelPicker } from "./ModelPicker";
@@ -94,6 +101,21 @@ export function Chat() {
     mutationFn: (runId: string) => api.cancelRun(runId),
     onError,
   });
+  const answer = useMutation({
+    mutationFn: (a: {
+      runId: string;
+      requestId: string;
+      choice: ApprovalChoice;
+    }) => api.answerApproval(a.runId, a.requestId, a.choice),
+    onSuccess: (_r, a) => {
+      // "Always allow" changes the tool's setting.
+      if (a.choice === "always")
+        void queryClient.invalidateQueries({ queryKey: ["tools"] });
+    },
+    onError,
+  });
+  // The request whose dialog was closed without an answer.
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const stopThinking = useMutation({
     mutationFn: (runId: string) => api.endReasoning(runId),
     onSuccess: (result) => {
@@ -112,10 +134,10 @@ export function Chat() {
   if (detail.isError) return <Alert color="red">{detail.error.message}</Alert>;
 
   // Stored messages, with the in-flight one replacing or following them.
-  const liveShown: ShownMessage | undefined = live
+  const liveShown: ShownMessage | undefined = live?.message
     ? {
-        id: live.messageId,
-        message: { role: "assistant", content: [...live.content] },
+        id: live.message.messageId,
+        message: { role: "assistant", content: [...live.message.content] },
         model: live.model,
         reasoningEffort: live.reasoningEffort,
         streaming: true,
@@ -131,7 +153,10 @@ export function Chat() {
   const busy =
     !!live || send.isPending || cont.isPending || setChoices.isPending;
   const last = shown.at(-1);
-  const reasoningNow = live?.content.at(-1)?.type === "reasoning";
+  const reasoningNow = live?.message?.content.at(-1)?.type === "reasoning";
+  const pending = live?.approvals[0];
+  // Between model calls: a tool is running.
+  const toolRunning = !!live && !live.message && !pending;
   const defaults = settings.data?.effective;
   // The model whose levels the reasoning picker shows.
   const levelsModel = detail.data.session.model || defaults?.model || undefined;
@@ -151,6 +176,14 @@ export function Chat() {
           {shown.map((m) => (
             <MessageView key={m.id} {...m} />
           ))}
+          {toolRunning && (
+            <Group gap="xs">
+              <Loader size="xs" />
+              <Text size="sm" c="dimmed">
+                Running a tool…
+              </Text>
+            </Group>
+          )}
         </Stack>
       </ScrollArea>
 
@@ -184,6 +217,11 @@ export function Chat() {
         </Group>
         {live ? (
           <Group gap="xs">
+            {pending && dismissed === pending.requestId && (
+              <Button variant="light" onClick={() => setDismissed(null)}>
+                Approval needed
+              </Button>
+            )}
             {reasoningNow && (
               <Button
                 variant="light"
@@ -212,6 +250,22 @@ export function Chat() {
           </Button>
         )}
       </Group>
+
+      {live && pending && (
+        <ApprovalDialog
+          request={pending}
+          opened={dismissed !== pending.requestId}
+          busy={answer.isPending}
+          onClose={() => setDismissed(pending.requestId)}
+          onAnswer={(choice) =>
+            answer.mutate({
+              runId: live.runId,
+              requestId: pending.requestId,
+              choice,
+            })
+          }
+        />
+      )}
 
       <form
         onSubmit={(e) => {
@@ -258,6 +312,26 @@ function MessageView({
           You
         </Text>
         <Text style={{ whiteSpace: "pre-wrap" }}>{message.content}</Text>
+      </Paper>
+    );
+  }
+  if (message.role === "tool") {
+    return (
+      <Paper p="sm" withBorder>
+        <Group gap="xs">
+          <Text size="xs" c="dimmed">
+            Tool result
+          </Text>
+          <Badge size="xs" variant="light" color="gray" tt="none">
+            {message.name}
+          </Badge>
+          {message.isError && (
+            <Badge size="xs" variant="light" color="red">
+              error
+            </Badge>
+          )}
+        </Group>
+        <Code block>{showResult(message.content)}</Code>
       </Paper>
     );
   }
@@ -337,9 +411,18 @@ function BlockView({
       );
     case "tool_call":
       return (
-        <Code block>
-          {block.name}({JSON.stringify(block.arguments, null, 2)})
-        </Code>
+        <Stack gap={2}>
+          <Text size="xs" c="dimmed">
+            Tool call
+          </Text>
+          <Code block>
+            {block.name}(
+            {typeof block.arguments === "string"
+              ? block.arguments
+              : JSON.stringify(block.arguments, null, 2)}
+            )
+          </Code>
+        </Stack>
       );
   }
 }
@@ -390,5 +473,68 @@ function LiveReasoning({
         </Text>
       )}
     </Stack>
+  );
+}
+
+/** A result's text, indented when it is JSON. */
+function showResult(content: string): string {
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+}
+
+const CHOICES: { choice: ApprovalChoice; label: string; color?: string }[] = [
+  { choice: "once", label: "Allow once" },
+  { choice: "session", label: "Allow for this session" },
+  { choice: "always", label: "Always allow this tool" },
+  { choice: "deny", label: "Deny", color: "red" },
+];
+
+/**
+ * Asks whether a tool call may run (tools design 6.5). Closing it leaves the
+ * request open; the run keeps waiting until it is answered.
+ */
+function ApprovalDialog({
+  request,
+  opened,
+  busy,
+  onClose,
+  onAnswer,
+}: {
+  request: ApprovalRequest;
+  opened: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onAnswer: (choice: ApprovalChoice) => void;
+}) {
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Allow this tool call?"
+      size="lg"
+    >
+      <Stack gap="sm">
+        <Text size="sm">
+          The model wants to run <Code>{request.name}</Code> with:
+        </Text>
+        <Code block>{JSON.stringify(request.arguments, null, 2)}</Code>
+        <Group gap="xs" justify="flex-end">
+          {CHOICES.map((c) => (
+            <Button
+              key={c.choice}
+              variant={c.choice === "once" ? "filled" : "light"}
+              {...(c.color ? { color: c.color } : {})}
+              disabled={busy}
+              onClick={() => onAnswer(c.choice)}
+            >
+              {c.label}
+            </Button>
+          ))}
+        </Group>
+      </Stack>
+    </Modal>
   );
 }

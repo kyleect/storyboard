@@ -51,7 +51,13 @@ describe("chat completions", () => {
             { type: "tool_call", callId: "c1", name: "now", arguments: {} },
           ],
         },
-        { role: "tool", callId: "c1", content: "noon", isError: false },
+        {
+          role: "tool",
+          callId: "c1",
+          name: "now",
+          content: "noon",
+          isError: false,
+        },
       ],
       tools: [
         {

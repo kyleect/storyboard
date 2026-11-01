@@ -124,6 +124,12 @@ export const ToolMalformed = event(
     callId: z.string(),
     name: z.string(),
     error: z.string(),
+    /**
+     * Set in an agent loop, where the call is kept in the message (with its
+     * raw `arguments` string) so it can be returned to the model.
+     */
+    contentIndex: z.number().int().optional(),
+    arguments: z.string().optional(),
   }),
 );
 
@@ -137,9 +143,16 @@ export const ToolApprovalRequested = event(
   }),
 );
 
+/**
+ * The user's answer to an approval request: allow once, allow for this
+ * session, always allow this tool, or deny (tools design 6.5).
+ */
+export const ApprovalChoice = z.enum(["once", "session", "always", "deny"]);
+export type ApprovalChoice = z.infer<typeof ApprovalChoice>;
+
 export const ToolApprovalResolved = event(
   "tool.approval_resolved",
-  z.object({ requestId: z.string(), approved: z.boolean() }),
+  z.object({ requestId: z.string(), choice: ApprovalChoice }),
 );
 
 /** Withdraws an open request, for example when its run is cancelled. */
@@ -153,14 +166,22 @@ export const ToolUpdate = event(
   z.object({ callId: z.string(), partial: z.string() }),
 );
 
-/** `preview` is truncated and redacted; the full result is stored. */
+/**
+ * A tool call's outcome. `messageId` is the tool result message, which is
+ * stored before this event is sent. `preview` is truncated; the full result
+ * is in that message. `error` is the full error text when the text sent to
+ * the model was shortened.
+ */
 export const ToolResult = event(
   "tool.result",
   z.object({
+    messageId: z.string(),
     callId: z.string(),
+    name: z.string(),
     isError: z.boolean(),
     preview: z.string(),
     durationMs: z.number(),
+    error: z.string().optional(),
   }),
 );
 

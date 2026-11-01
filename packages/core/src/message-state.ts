@@ -45,6 +45,18 @@ export function applyMessageEvent(
       };
       return next;
     }
+    case "tool.malformed": {
+      // Kept in the message only in an agent loop (it has a contentIndex).
+      if (event.data.contentIndex === undefined) return content;
+      const next = [...content];
+      next[event.data.contentIndex] = {
+        type: "tool_call",
+        callId: event.data.callId,
+        name: event.data.name,
+        arguments: event.data.arguments ?? "",
+      };
+      return next;
+    }
     case "message.finished":
       return event.data.message.content;
     default:

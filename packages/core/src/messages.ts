@@ -38,7 +38,11 @@ export const ToolCallBlock = z.object({
   type: z.literal("tool_call"),
   callId: z.string(),
   name: z.string(),
-  /** Parsed arguments. */
+  /**
+   * Parsed arguments. In an agent loop, a call whose arguments were not
+   * valid JSON keeps the raw string here, so it can be returned to the model
+   * with an error result.
+   */
   arguments: z.unknown(),
 });
 
@@ -67,8 +71,18 @@ export const AssistantMessage = z.object({
 export const ToolResultMessage = z.object({
   role: z.literal("tool"),
   callId: z.string(),
+  /** The tool that was called. */
+  name: z.string(),
+  /** The text the model receives. */
   content: z.string(),
   isError: z.boolean(),
+  /** The tool's structured result. Not sent to the model as is. */
+  data: z.unknown().optional(),
+  /**
+   * State the tool saved with this result (tools design 6.8). Not sent to
+   * the model. The tool's latest saved state is rebuilt from the transcript.
+   */
+  state: z.unknown().optional(),
 });
 
 /** Provider-neutral message. Model adapters translate to and from it. */
@@ -80,6 +94,7 @@ export const Message = z.discriminatedUnion("role", [
 ]);
 export type Message = z.infer<typeof Message>;
 export type AssistantMessage = z.infer<typeof AssistantMessage>;
+export type ToolResultMessage = z.infer<typeof ToolResultMessage>;
 
 /** A tool the model may call. `inputSchema` is JSON Schema. */
 export const ToolDefinition = z.object({

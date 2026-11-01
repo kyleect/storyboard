@@ -153,7 +153,7 @@ describe("loadMigrations", () => {
       "INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T')",
     ).run();
 
-    expect(migrate(db, all)).toEqual([2, 3]);
+    expect(migrate(db, all)).toEqual([2, 3, 4]);
     expect(
       db
         .prepare("SELECT model, reasoning_effort FROM sessions WHERE id = 's'")
@@ -168,6 +168,32 @@ describe("loadMigrations", () => {
     }
   });
 
+  it("moves each run's message into run_messages and drops runs.message_id", () => {
+    db = new Database(":memory:");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 3),
+    );
+    db.exec(`
+      INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T');
+      INSERT INTO messages (id, session_id, seq, message, created_at)
+        VALUES ('m1', 's', 1, '{}', 'T');
+      INSERT INTO runs (id, session_id, kind, message_id, status, started_at)
+        VALUES ('r1', 's', 'single', 'm1', 'finished', 'T'),
+               ('r2', 's', 'single', 'never-saved', 'cancelled', 'T');
+    `);
+
+    expect(migrate(db, all)).toEqual([4]);
+    expect(db.prepare("SELECT * FROM run_messages").all()).toEqual([
+      { run_id: "r1", message_id: "m1", seq: 1 },
+    ]);
+    const cols = (
+      db.prepare("PRAGMA table_info(runs)").all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(cols).not.toContain("message_id");
+  });
+
   it("applies the project's migrations to an encrypted database", () => {
     const t = tempDatabase();
     db = t.db;
@@ -175,8 +201,10 @@ describe("loadMigrations", () => {
     expect(tables()).toEqual([
       "events",
       "messages",
+      "run_messages",
       "runs",
       "schema_migrations",
+      "session_tool_approvals",
       "sessions",
       "settings",
     ]);

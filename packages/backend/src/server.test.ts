@@ -179,11 +179,13 @@ describe("a chat turn", () => {
 
     expect(got.map((r) => r.event.type)).toEqual([
       "run.started",
+      "step.started",
       "message.started",
       "text.delta",
       "text.delta",
       "text.end",
       "message.finished",
+      "step.finished",
       "run.finished",
     ]);
     const ids = got.map((r) => r.id);
@@ -199,7 +201,7 @@ describe("a chat turn", () => {
       { role: "assistant", content: [{ type: "text", text: "Hello there" }] },
     ]);
     // Events refer to the message under the id it is saved with.
-    expect(got[1]?.event).toMatchObject({
+    expect(got[2]?.event).toMatchObject({
       data: { messageId: (session.body.messages as { id: string }[])[1]?.id },
     });
     expect(session.body.activeRun).toBeNull();
@@ -208,6 +210,7 @@ describe("a chat turn", () => {
       kind: "chat",
       messages: [{ role: "user", content: "Hi" }],
       control: expect.any(RunControl),
+      tools: [],
     });
   });
 
@@ -297,8 +300,9 @@ describe("continue", () => {
         { role: "assistant", content: [{ type: "text", text: "Once upon" }] },
       ],
       control: expect.any(RunControl),
+      tools: [],
     });
-    expect(got[1]?.event).toMatchObject({
+    expect(got[2]?.event).toMatchObject({
       type: "message.started",
       data: { messageId: assistantId, continuing: true },
     });
@@ -402,7 +406,9 @@ describe("reattach", () => {
     await expect
       .poll(async () => {
         const s = await api(app, "GET", `/api/sessions/${id}`);
-        return (s.body.activeRun as { content: unknown } | null)?.content;
+        return (
+          s.body.activeRun as { message: { content: unknown } | null } | null
+        )?.message?.content;
       })
       .toEqual([
         { type: "reasoning", text: "think" },
@@ -411,7 +417,8 @@ describe("reattach", () => {
     const s = await api(app, "GET", `/api/sessions/${id}`);
     expect(s.body.activeRun).toMatchObject({
       runId: body.runId,
-      continuing: false,
+      message: { continuing: false },
+      approvals: [],
     });
     expect(s.body.lastEventId).toBeGreaterThan(0);
 
@@ -477,13 +484,7 @@ describe("shutdown and recovery", () => {
     const { t, store } = await setup([]);
     // Simulate a crash: a run left 'running' with only some events stored.
     store.createSession("s1", "S", "T");
-    store.createRun({
-      id: "r1",
-      sessionId: "s1",
-      kind: "single",
-      messageId: "m1",
-      now: "T",
-    });
+    store.createRun({ id: "r1", sessionId: "s1", kind: "loop", now: "T" });
     const base = { runId: "r1", sessionId: "s1", time: "T" };
     store.insertEvent({
       ...base,

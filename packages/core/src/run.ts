@@ -42,18 +42,95 @@ export async function runSingleCall(
 ): Promise<SingleCallResult> {
   const now = ctx.now ?? (() => new Date().toISOString());
   const newId = ctx.newId ?? (() => globalThis.crypto.randomUUID());
-  const emit = (body: EventBody) =>
+  const emit = emitter(ctx, now);
+
+  const continuing = ctx.continueMessage;
+  emit({
+    type: "run.started",
+    data: {
+      kind: "single",
+      ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
+      ...(request.model ? { model: request.model } : {}),
+      ...(request.reasoningEffort
+        ? { reasoningEffort: request.reasoningEffort }
+        : {}),
+    },
+  });
+
+  const step = await streamMessage(model, request, {
+    emit,
+    signal: ctx.signal,
+    messageId: continuing?.messageId ?? ctx.messageId ?? newId(),
+    ...(continuing ? { continuing: continuing.message } : {}),
+    keepMalformed: false,
+  });
+
+  if (step.failure !== undefined) {
+    emit({ type: "run.failed", data: { error: step.failure } });
+  } else {
+    emit({
+      type: "run.finished",
+      data: {
+        reason: step.finishReason === "cancelled" ? "cancelled" : "stop",
+        ...(step.usage ? { usage: step.usage } : {}),
+      },
+    });
+  }
+
+  return {
+    message: step.message,
+    finishReason: step.finishReason,
+    ...(step.usage ? { usage: step.usage } : {}),
+    malformed: step.malformed,
+  };
+}
+
+/** Adds the envelope (run, session, time) to event bodies. */
+export function emitter(
+  ctx: Pick<RunContext, "runId" | "sessionId" | "emit">,
+  now: () => string,
+): (body: EventBody) => void {
+  return (body) =>
     ctx.emit({
       runId: ctx.runId,
       sessionId: ctx.sessionId,
       time: now(),
       ...body,
     } as HarnessEvent);
+}
 
-  const continuing = ctx.continueMessage;
-  const messageId = continuing?.messageId ?? ctx.messageId ?? newId();
-  const blocks: ContentBlock[] = continuing
-    ? structuredClone(continuing.message.content)
+export interface StreamOptions {
+  emit: (body: EventBody) => void;
+  signal: AbortSignal;
+  messageId: string;
+  /** Continue this message (assistant prefill) instead of starting one. */
+  continuing?: AssistantMessage;
+  /**
+   * Keep calls with invalid JSON in the message, with the raw argument
+   * string, so they can be returned to the model (agent loop).
+   */
+  keepMalformed: boolean;
+  /** Called with the final message just before `message.finished`. */
+  beforeFinished?: (message: AssistantMessage, reason: FinishReason) => void;
+}
+
+export interface StreamResult extends SingleCallResult {
+  /** Set when the model request failed. */
+  failure?: string;
+}
+
+/**
+ * Streams one model response into one assistant message, from
+ * `message.started` to `message.finished`. Never throws for model errors.
+ */
+export async function streamMessage(
+  model: ModelAdapter,
+  request: ChatRequest,
+  opts: StreamOptions,
+): Promise<StreamResult> {
+  const { emit, messageId } = opts;
+  const blocks: ContentBlock[] = opts.continuing
+    ? structuredClone(opts.continuing.content)
     : [];
   const malformed: SingleCallResult["malformed"] = [];
   let open: { type: "text" | "reasoning"; index: number; text: string } | null =
@@ -86,28 +163,17 @@ export async function runSingleCall(
   };
 
   emit({
-    type: "run.started",
-    data: {
-      kind: "single",
-      ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
-      ...(request.model ? { model: request.model } : {}),
-      ...(request.reasoningEffort
-        ? { reasoningEffort: request.reasoningEffort }
-        : {}),
-    },
-  });
-  emit({
     type: "message.started",
     data: {
       messageId,
       role: "assistant",
-      ...(continuing ? { continuing: true } : {}),
+      ...(opts.continuing ? { continuing: true } : {}),
     },
   });
 
   try {
-    for await (const chunk of model.stream(request, ctx.signal)) {
-      if (ctx.signal.aborted) break;
+    for await (const chunk of model.stream(request, opts.signal)) {
+      if (opts.signal.aborted) break;
       switch (chunk.type) {
         case "text": {
           const block = openBlock("text");
@@ -146,15 +212,36 @@ export async function runSingleCall(
           } catch (err) {
             const error = `Invalid JSON in tool arguments: ${(err as Error).message}`;
             malformed.push({ callId: chunk.callId, name: chunk.name, error });
-            emit({
-              type: "tool.malformed",
-              data: {
-                messageId,
+            if (opts.keepMalformed) {
+              const index = blocks.length;
+              blocks.push({
+                type: "tool_call",
                 callId: chunk.callId,
                 name: chunk.name,
-                error,
-              },
-            });
+                arguments: chunk.arguments,
+              });
+              emit({
+                type: "tool.malformed",
+                data: {
+                  messageId,
+                  callId: chunk.callId,
+                  name: chunk.name,
+                  error,
+                  contentIndex: index,
+                  arguments: chunk.arguments,
+                },
+              });
+            } else {
+              emit({
+                type: "tool.malformed",
+                data: {
+                  messageId,
+                  callId: chunk.callId,
+                  name: chunk.name,
+                  error,
+                },
+              });
+            }
             break;
           }
           const index = blocks.length;
@@ -189,26 +276,21 @@ export async function runSingleCall(
   }
 
   if (failure !== undefined) finishReason = "error";
-  else if (ctx.signal.aborted) finishReason = "cancelled";
+  else if (opts.signal.aborted) finishReason = "cancelled";
 
   closeOpen();
   const message: AssistantMessage = { role: "assistant", content: blocks };
+  opts.beforeFinished?.(message, finishReason);
   emit({
     type: "message.finished",
     data: { messageId, message, finishReason, ...(usage ? { usage } : {}) },
   });
 
-  if (failure !== undefined) {
-    emit({ type: "run.failed", data: { error: failure } });
-  } else {
-    emit({
-      type: "run.finished",
-      data: {
-        reason: finishReason === "cancelled" ? "cancelled" : "stop",
-        ...(usage ? { usage } : {}),
-      },
-    });
-  }
-
-  return { message, finishReason, ...(usage ? { usage } : {}), malformed };
+  return {
+    message,
+    finishReason,
+    ...(usage ? { usage } : {}),
+    malformed,
+    ...(failure !== undefined ? { failure } : {}),
+  };
 }
