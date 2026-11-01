@@ -24,6 +24,11 @@ export const Settings = z.object({
    * purged automatically (sessions and projects design, Q3d, Q3f).
    */
   trashRetentionDays: z.number().int().min(0),
+  /**
+   * The router model used for embeddings (files and memory design,
+   * decision 25). Empty: none, so search is keyword only (decision 26).
+   */
+  embeddingModel: z.string(),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -34,6 +39,7 @@ export const DEFAULTS: Settings = {
   port: 4317,
   loopLimit: 20,
   trashRetentionDays: 30,
+  embeddingModel: "",
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -43,6 +49,7 @@ const ENV: Record<keyof Settings, string> = {
   port: "HARNESS_PORT",
   loopLimit: "HARNESS_LOOP_LIMIT",
   trashRetentionDays: "HARNESS_TRASH_RETENTION_DAYS",
+  embeddingModel: "HARNESS_EMBEDDING_MODEL",
 };
 
 const NUMERIC = new Set<keyof Settings>([

@@ -175,6 +175,8 @@ export interface Settings {
   loopLimit: number;
   /** Days in the trash before deletion at startup; 0: never. */
   trashRetentionDays: number;
+  /** The router model used for embeddings; empty: keyword search only. */
+  embeddingModel: string;
 }
 
 export interface SettingsView {

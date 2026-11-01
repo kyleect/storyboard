@@ -138,29 +138,93 @@ export const memoryDelete = defineTool({
     ),
 });
 
+/** Like `guarded`, for the async search tools. */
+const guardedAsync = async (
+  run: () => Promise<ToolOutput>,
+): Promise<ToolOutput> => {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof EntryError) return fail(err.message);
+    throw err;
+  }
+};
+
+const Query = z
+  .string()
+  .min(1)
+  .describe("Words or a description of what to find.");
+/** Plan S3: 1 to 20 results, 5 when left out. */
+const Limit = z.number().int().min(1).max(20).optional();
+
+export const filesSearch = defineTool({
+  name: "files_search",
+  description:
+    "Searches files by keywords and by meaning, in one scope or every scope when scope is left out. Returns the best matches with the matching excerpt; read a whole file with files_read.",
+  input: z.object({ query: Query, scope: Scope.optional(), limit: Limit }),
+  approval: "never",
+  execute: ({ query, scope, limit }, ctx) =>
+    guardedAsync(async () => {
+      const result = await ctx.entries.search("file", query, scope, limit ?? 5);
+      return {
+        data: {
+          results: result.hits.map((h) => ({
+            scope: h.scope,
+            key: h.key,
+            excerpt: h.excerpt,
+          })),
+          ...(result.notice ? { notice: result.notice } : {}),
+        },
+      };
+    }),
+});
+
+export const memorySearch = defineTool({
+  name: "memory_search",
+  description:
+    "Searches your memory notes by keywords and by meaning, in one scope or every scope when scope is left out. Returns the best matching notes.",
+  input: z.object({ query: Query, scope: Scope.optional(), limit: Limit }),
+  approval: "never",
+  execute: ({ query, scope, limit }, ctx) =>
+    guardedAsync(async () => {
+      const result = await ctx.entries.search("note", query, scope, limit ?? 5);
+      return {
+        data: {
+          notes: result.hits.map((h) => ({
+            scope: h.scope,
+            id: h.key,
+            text: h.excerpt,
+          })),
+          ...(result.notice ? { notice: result.notice } : {}),
+        },
+      };
+    }),
+});
+
 export const entryTools = [
   filesList,
   filesRead,
   filesWrite,
   filesDelete,
+  filesSearch,
   memoryList,
   memoryAdd,
   memoryUpdate,
   memoryDelete,
+  memorySearch,
 ];
 
 /**
  * The fixed system message about files and memory (design decision 15,
- * wording approved in plan P7). Until search arrives, it names the list
- * tools instead of the search tools.
+ * wording approved in plan P7).
  */
 export function entriesInstruction(inProject: boolean): string {
   return [
     "You can keep information across conversations with two sets of tools.",
     "",
-    "Files: named text documents (plain, Markdown or JSON) at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). The user and you can both write them. Use files_list to find files and files_read to read them.",
+    "Files: named text documents (plain, Markdown or JSON) at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). The user and you can both write them. Use files_list and files_search to find files and files_read to read them.",
     "",
-    "Memory: short notes you write for yourself, at the same scopes. List memory with memory_list when earlier knowledge could help, and save what is worth remembering with memory_add.",
+    "Memory: short notes you write for yourself, at the same scopes. Search memory with memory_search when earlier knowledge could help, and save what is worth remembering with memory_add.",
     "",
     `This conversation is in a project: ${inProject ? "yes" : "no"}.`,
   ].join("\n");

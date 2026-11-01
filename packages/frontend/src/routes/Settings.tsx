@@ -41,6 +41,7 @@ export function Settings() {
       port: 0,
       loopLimit: 1,
       trashRetentionDays: 0,
+      embeddingModel: "",
     },
     validate: {
       llamaServerUrl: (v) =>
@@ -120,6 +121,21 @@ export function Settings() {
           disabled={!!env.reasoningEffort}
           size="sm"
           w="100%"
+        />
+        <ModelPicker
+          label="Embedding model"
+          description={
+            envNote("embeddingModel") ??
+            "A dedicated embedding model on the router, for searching files and memory by meaning. Clear it for keyword search only."
+          }
+          placeholder="None (keyword search only)"
+          value={form.values.embeddingModel || null}
+          onChange={(model) =>
+            form.setFieldValue("embeddingModel", model ?? "")
+          }
+          disabled={!!env.embeddingModel}
+          size="sm"
+          w={444}
         />
         <NumberInput
           label="Backend port"

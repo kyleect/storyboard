@@ -1,13 +1,16 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LlamaServerAdapter } from "@harness/core";
+import { embedTexts, LlamaServerAdapter } from "@harness/core";
 import { allTools, entriesInstruction } from "@harness/tools";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
+import { Embedder } from "./embedder.js";
 import { EntryStore } from "./entries-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
+import { SearchIndex } from "./search-index.js";
+import { sessionSearch } from "./search.js";
 import { buildServer } from "./server.js";
 import { readSettings } from "./settings.js";
 import { Store } from "./store.js";
@@ -30,8 +33,13 @@ async function main() {
 
   const applied = migrate(db, loadMigrations(MIGRATIONS_DIR));
   const store = new Store(db);
-  const entries = new EntryStore(db);
+  const index = new SearchIndex(db);
+  const entries = new EntryStore(db, undefined, undefined, index);
   const settings = () => readSettings(db).effective;
+  const embed = (model: string, texts: string[], signal?: AbortSignal) =>
+    embedTexts(settings().llamaServerUrl, model, texts, {
+      ...(signal ? { signal } : {}),
+    });
 
   const runs = new RunManager({
     store,
@@ -40,12 +48,40 @@ async function main() {
     tools: allTools,
     entries,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),
+    index,
+    search: (session) =>
+      sessionSearch({
+        index,
+        sessionId: session.id,
+        projectId: session.project_id,
+        embeddingModel: () => settings().embeddingModel,
+        embed,
+      }),
   });
   const recovered = runs.recover();
   const purged = purgeExpiredTrash(store, settings().trashRetentionDays);
+  // Indexes existing files and notes once, after the search migration.
+  const indexed = index.buildIfNeeded();
 
   const token = loadOrCreateToken(boot.tokenFile);
-  const app = buildServer({ store, runs, entries, token, logger: true });
+  const embedder = new Embedder({
+    index,
+    model: () => settings().embeddingModel,
+    embed,
+    // Only called after work starts, below, once `app` exists.
+    onError: (err, retryInMs) =>
+      app.log.warn({ err: err.message, retryInMs }, "embedding failed"),
+  });
+  const app = buildServer({
+    store,
+    runs,
+    entries,
+    token,
+    logger: true,
+    onSettingsSaved: () => embedder.settingsChanged(),
+  });
+  index.onChunksAdded = () => embedder.kick();
+  embedder.kick();
   const { port } = settings();
   await app.listen({ host: "127.0.0.1", port });
   const address = app.server.address();
@@ -63,6 +99,7 @@ async function main() {
       dataDir: boot.dataDir,
       migrationsApplied: applied,
       runsRecovered: recovered.length,
+      entriesIndexed: indexed,
       trashPurged: {
         projects: purged.projects.length,
         sessions: purged.sessions.length,
@@ -80,6 +117,7 @@ async function main() {
     stopping = true;
     app.log.info("stopping");
     await runs.shutdown();
+    await embedder.stop();
     await app.close();
     db.close();
     rmSync(boot.runtimeFile, { force: true });

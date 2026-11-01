@@ -234,3 +234,36 @@ describe("editNotice", () => {
     );
   });
 });
+
+describe("EntryAccess.search", () => {
+  it("passes the scopes on, every available scope by default", async () => {
+    const queries: unknown[] = [];
+    const entries = createEntryAccess({
+      session: replaySessionEntries([]),
+      sessionOps: [],
+      shared: new FakeSharedEntries(),
+      inProject: false,
+      author,
+      search: (q) => {
+        queries.push(q);
+        return Promise.resolve({ hits: [], mode: "keyword" });
+      },
+    });
+    await entries.search("note", "storm", undefined, 5);
+    await entries.search("file", "storm", "global", 3);
+    expect(queries).toEqual([
+      { kind: "note", query: "storm", scopes: ["session", "global"], limit: 5 },
+      { kind: "file", query: "storm", scopes: ["global"], limit: 3 },
+    ]);
+    await expect(entries.search("file", "x", "project", 5)).rejects.toThrow(
+      /not in a project/,
+    );
+  });
+
+  it("fails without a search backend", async () => {
+    const { entries } = access();
+    await expect(entries.search("file", "x", undefined, 5)).rejects.toThrow(
+      "Search is not available.",
+    );
+  });
+});

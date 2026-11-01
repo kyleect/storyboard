@@ -40,6 +40,21 @@ export class FakeLlamaServer {
     { status: number; body: unknown; delayMs: number }
   >();
   private server: Server | undefined;
+  private embedder:
+    | ((inputs: string[], model: string | undefined) => number[][] | Error)
+    | undefined;
+
+  /**
+   * Answer POST /v1/embeddings with these vectors (OpenAI shape), or with
+   * a 400 error when the function returns an Error. Without it, embeddings
+   * requests take the next queued reply like any POST.
+   */
+  onEmbeddings(
+    fn: (inputs: string[], model: string | undefined) => number[][] | Error,
+  ): this {
+    this.embedder = fn;
+    return this;
+  }
 
   /**
    * Answer every GET of `path` (query string ignored) with JSON. GETs without
@@ -81,6 +96,34 @@ export class FakeLlamaServer {
                   },
                 ),
               ),
+          );
+          return;
+        }
+        if (this.embedder && (req.url ?? "").startsWith("/v1/embeddings")) {
+          const body = JSON.parse(raw || "{}") as {
+            input?: string | string[];
+            model?: string;
+          };
+          const inputs =
+            typeof body.input === "string" ? [body.input] : (body.input ?? []);
+          const result = this.embedder(inputs, body.model);
+          res.writeHead(result instanceof Error ? 400 : 200, {
+            "content-type": "application/json",
+          });
+          res.end(
+            JSON.stringify(
+              result instanceof Error
+                ? { error: { code: 400, message: result.message } }
+                : {
+                    object: "list",
+                    model: body.model ?? "test-model",
+                    data: result.map((embedding, index) => ({
+                      object: "embedding",
+                      index,
+                      embedding,
+                    })),
+                  },
+            ),
           );
           return;
         }

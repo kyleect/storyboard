@@ -32,6 +32,8 @@ export interface ServerOptions {
   store: Store;
   runs: RunManager;
   token: string;
+  /** Called after settings are saved (the embedder restarts). */
+  onSettingsSaved?: () => void;
   /** Project and global files and notes. Default: over `store.db`. */
   entries?: EntryStore;
   /** Idle time before a keepalive comment is sent on an event stream. */
@@ -148,6 +150,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   app.put("/api/settings", async (req) => {
     writeSettings(store.db, req.body);
+    options.onSettingsSaved?.();
     return readSettings(store.db, env);
   });
 

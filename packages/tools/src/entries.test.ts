@@ -3,6 +3,7 @@ import {
   createEntryAccess,
   replaySessionEntries,
   type EntryOp,
+  type SearchResult,
   type ToolContext,
 } from "@harness/core";
 import { FakeSharedEntries } from "@harness/core/testing";
@@ -11,10 +12,12 @@ import {
   filesDelete,
   filesList,
   filesRead,
+  filesSearch,
   filesWrite,
   memoryAdd,
   memoryDelete,
   memoryList,
+  memorySearch,
   memoryUpdate,
 } from "./entries.js";
 
@@ -150,5 +153,74 @@ describe("entriesInstruction", () => {
     expect(entriesInstruction(true)).toMatch(/in a project: yes\.$/);
     expect(entriesInstruction(false)).toMatch(/in a project: no\.$/);
     expect(entriesInstruction(true)).toMatch(/^You can keep information/);
+  });
+});
+
+describe("search tools", () => {
+  const withSearch = (result: SearchResult) => {
+    const queries: unknown[] = [];
+    const { ctx } = context();
+    ctx.entries = createEntryAccess({
+      session: replaySessionEntries([]),
+      sessionOps: [],
+      shared: new FakeSharedEntries(),
+      inProject: true,
+      author: { by: "model", sessionId: "s", runId: "r" },
+      search: (q) => {
+        queries.push(q);
+        return Promise.resolve(result);
+      },
+    });
+    return { ctx, queries };
+  };
+
+  it("files_search returns key, scope and excerpt, 5 results by default", async () => {
+    const { ctx, queries } = withSearch({
+      hits: [
+        { scope: "project", key: "a.md", excerpt: "storm", matched: "both" },
+      ],
+      mode: "keyword+meaning",
+    });
+    expect(await filesSearch.execute({ query: "storm" }, ctx)).toEqual({
+      data: { results: [{ scope: "project", key: "a.md", excerpt: "storm" }] },
+    });
+    expect(queries).toEqual([
+      {
+        kind: "file",
+        query: "storm",
+        scopes: ["session", "project", "global"],
+        limit: 5,
+      },
+    ]);
+  });
+
+  it("memory_search returns notes and passes on a keyword-only notice", async () => {
+    const { ctx, queries } = withSearch({
+      hits: [
+        { scope: "global", key: "n1", excerpt: "fact", matched: "keyword" },
+      ],
+      mode: "keyword",
+      notice: "No embedding model is set.",
+    });
+    expect(
+      await memorySearch.execute(
+        { query: "x", scope: "global", limit: 2 },
+        ctx,
+      ),
+    ).toEqual({
+      data: {
+        notes: [{ scope: "global", id: "n1", text: "fact" }],
+        notice: "No embedding model is set.",
+      },
+    });
+    expect(queries).toMatchObject([
+      { kind: "note", scopes: ["global"], limit: 2 },
+    ]);
+  });
+
+  it("bounds limit to 1-20 and needs a query", () => {
+    expect(filesSearch.parse({ query: "x", limit: 21 }).ok).toBe(false);
+    expect(filesSearch.parse({ query: "x", limit: 0 }).ok).toBe(false);
+    expect(memorySearch.parse({ query: "" }).ok).toBe(false);
   });
 });

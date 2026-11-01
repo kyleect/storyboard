@@ -4,6 +4,7 @@ import {
   RunControl,
   runLoop,
   type EntryOp,
+  type EntrySearch,
   type ApprovalChoice,
   type ApprovalRequest,
   type AssistantMessage,
@@ -20,6 +21,7 @@ import {
 } from "@harness/core";
 import type { Settings } from "./settings.js";
 import type { EntryStore } from "./entries-store.js";
+import type { SearchIndex } from "./search-index.js";
 import type { Generation, SessionRow, Store } from "./store.js";
 import { setToolAsks, toolAsks } from "./tool-settings.js";
 
@@ -92,6 +94,10 @@ export interface RunManagerOptions {
   systemPrompt?: (session: SessionRow) => string | undefined;
   /** Generates memory note ids. Default: 8 random hex digits. */
   newNoteId?: () => string;
+  /** Kept in step with session-scoped changes, when given. */
+  index?: SearchIndex;
+  /** The search tools' backend for a session. Left out: search fails. */
+  search?: (session: SessionRow) => EntrySearch;
   now?: () => string;
   newId?: () => string;
 }
@@ -437,6 +443,7 @@ export class RunManager {
       { role: "edit", content: editNotice(ops), entries: ops },
       this.now(),
     );
+    this.indexSessionOps(sessionId, ops);
     this.publish({
       runId: null,
       sessionId,
@@ -445,6 +452,19 @@ export class RunManager {
       data: { messageId },
     });
     return { messageId };
+  }
+
+  /** Keeps the search index in step with session-scoped changes. */
+  private indexSessionOps(sessionId: string, ops: readonly EntryOp[]) {
+    for (const op of ops) {
+      this.options.index?.indexEntry(
+        op.kind,
+        "session",
+        sessionId,
+        op.key,
+        op.op === "put" ? op.value : null,
+      );
+    }
   }
 
   private requireIdle(sessionId: string) {
@@ -540,6 +560,9 @@ export class RunManager {
         usage ?? null,
       );
       this.store.linkRunMessage(runId, id);
+      if (message.role === "tool" && message.entries) {
+        this.indexSessionOps(sessionId, message.entries);
+      }
     };
 
     const execute = async () => {
@@ -563,6 +586,9 @@ export class RunManager {
             : {}),
           ...(this.options.newNoteId
             ? { newNoteId: this.options.newNoteId }
+            : {}),
+          ...(this.options.search && session
+            ? { searchEntries: this.options.search(session) }
             : {}),
           maxIterations: settings.loopLimit,
           needsApproval: (tool) =>

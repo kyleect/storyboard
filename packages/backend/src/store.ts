@@ -215,6 +215,9 @@ export class Store {
         )
         .run(id);
       this.db
+        .prepare("DELETE FROM chunks WHERE scope = 'session' AND owner_id = ?")
+        .run(id);
+      this.db
         .prepare(
           "DELETE FROM run_messages WHERE run_id IN (SELECT id FROM runs WHERE session_id = ?)",
         )
@@ -384,6 +387,9 @@ export class Store {
         )
         .run(id);
       this.db.prepare("DELETE FROM entries WHERE project_id = ?").run(id);
+      this.db
+        .prepare("DELETE FROM chunks WHERE scope = 'project' AND owner_id = ?")
+        .run(id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
     })();
   }

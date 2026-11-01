@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
+import type { SearchIndex } from "./search-index.js";
 import type {
   EntryAuthor,
   EntryKind,
@@ -44,7 +45,24 @@ export class EntryStore {
     readonly db: Database,
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly newId: () => string = () => crypto.randomUUID(),
+    /** Kept in step with every change, when given. */
+    private readonly index?: SearchIndex,
   ) {}
+
+  private reindex(
+    kind: EntryKind,
+    projectId: string | null,
+    key: string,
+    value: string | null,
+  ) {
+    this.index?.indexEntry(
+      kind,
+      projectId === null ? "global" : "project",
+      projectId,
+      key,
+      value,
+    );
+  }
 
   /** Includes deleted entries only when asked. Ordered by key. */
   list(
@@ -103,6 +121,7 @@ export class EntryStore {
           .run(id, kind, projectId, entry.key, type, entry.value, now, now);
       }
       this.addVersion(id, type, entry.value, false, author, now);
+      this.reindex(kind, projectId, entry.key, entry.value);
       return this.get(kind, projectId, entry.key) as EntryRow;
     })();
   }
@@ -131,6 +150,7 @@ export class EntryStore {
         author,
         now,
       );
+      this.reindex(kind, projectId, key, null);
       return true;
     })();
   }

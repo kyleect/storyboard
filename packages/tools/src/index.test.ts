@@ -12,10 +12,12 @@ describe("allTools", () => {
       "files_read",
       "files_write",
       "files_delete",
+      "files_search",
       "memory_list",
       "memory_add",
       "memory_update",
       "memory_delete",
+      "memory_search",
     ]);
   });
 });

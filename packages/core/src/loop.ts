@@ -1,6 +1,7 @@
 import {
   createEntryAccess,
   replaySessionEntries,
+  type EntrySearch,
   type SharedEntries,
 } from "./entries.js";
 import type { ApprovalChoice } from "./events.js";
@@ -81,6 +82,8 @@ export interface LoopContext extends RunContext {
   sharedEntries?: SharedEntries;
   /** Generates memory note ids. Default: 8 random hex digits. */
   newNoteId?: () => string;
+  /** Searches files and notes. Left out: the search tools fail. */
+  searchEntries?: EntrySearch;
 }
 
 export type LoopEnd = "stop" | "iteration_limit" | "cancelled" | "failed";
@@ -344,6 +347,15 @@ export async function runLoop(
         inProject: (ctx.projectId ?? null) !== null,
         author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
         ...(ctx.newNoteId ? { newNoteId: ctx.newNoteId } : {}),
+        ...(ctx.searchEntries
+          ? {
+              search: (q) =>
+                (ctx.searchEntries as EntrySearch)({
+                  ...q,
+                  signal: ctx.signal,
+                }),
+            }
+          : {}),
       });
       const output = await tool.execute(parsed.input, {
         signal: ctx.signal,

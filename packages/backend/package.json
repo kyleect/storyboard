@@ -11,6 +11,7 @@
     "@harness/tools": "workspace:*",
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "fastify": "5.12.7",
+    "sqlite-vec": "0.1.9",
     "zod": "4.6.7"
   },
   "scripts": {

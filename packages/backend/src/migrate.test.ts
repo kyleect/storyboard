@@ -380,6 +380,13 @@ describe("loadMigrations", () => {
     db = t.db;
     cleanup = t.cleanup;
     expect(tables()).toEqual([
+      "chunk_vectors",
+      "chunks",
+      "chunks_fts",
+      "chunks_fts_config",
+      "chunks_fts_data",
+      "chunks_fts_docsize",
+      "chunks_fts_idx",
       "entries",
       "entry_versions",
       "events",
@@ -388,6 +395,7 @@ describe("loadMigrations", () => {
       "run_messages",
       "runs",
       "schema_migrations",
+      "search_index_state",
       "session_tool_approvals",
       "sessions",
       "settings",

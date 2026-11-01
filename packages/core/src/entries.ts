@@ -108,6 +108,36 @@ export interface NoteEntry {
   text: string;
 }
 
+/** A search over one kind of entry in some scopes (decisions 22 to 30). */
+export interface SearchQuery {
+  kind: EntryKind;
+  query: string;
+  scopes: readonly Scope[];
+  limit: number;
+  signal?: AbortSignal;
+}
+
+export interface SearchHit {
+  scope: Scope;
+  /** The file key, or the note id. */
+  key: string;
+  /** The matching chunk; for a note, its whole text. */
+  excerpt: string;
+  /** Which search found it. */
+  matched: "keyword" | "meaning" | "both";
+}
+
+export interface SearchResult {
+  hits: SearchHit[];
+  /** "keyword" when no vectors could be used (decision 26). */
+  mode: "keyword+meaning" | "keyword";
+  /** Why the search was keyword only, when it was. */
+  notice?: string;
+}
+
+/** Searches files or notes; implemented by the backend for one session. */
+export type EntrySearch = (query: SearchQuery) => Promise<SearchResult>;
+
 /** What tools use to reach files and notes (`ToolContext.entries`). */
 export interface EntryAccess {
   /** The scopes this session has: no project scope in a standalone one. */
@@ -123,6 +153,13 @@ export interface EntryAccess {
   addNote(scope: Scope, text: string): string;
   updateNote(scope: Scope, id: string, text: string): boolean;
   deleteNote(scope: Scope, id: string): boolean;
+  /** Every scope when `scope` is left out. */
+  search(
+    kind: EntryKind,
+    query: string,
+    scope: Scope | undefined,
+    limit: number,
+  ): Promise<SearchResult>;
 }
 
 interface Current {
@@ -219,6 +256,8 @@ export interface EntryAccessOptions {
   author: EntryAuthor;
   /** Generates note ids. Default: 8 random hex digits. */
   newNoteId?: () => string;
+  /** Search. Left out: searching fails with an EntryError. */
+  search?: EntrySearch;
 }
 
 /** The `EntryAccess` a tool gets for one call. */
@@ -335,6 +374,11 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
     deleteNote: (scope, id) => {
       requireScope(scope);
       return remove("note", scope, id);
+    },
+    search: async (kind, query, scope, limit) => {
+      const scopesToSearch = listScopes(scope);
+      if (!options.search) throw new EntryError("Search is not available.");
+      return options.search({ kind, query, scopes: scopesToSearch, limit });
     },
   };
 }

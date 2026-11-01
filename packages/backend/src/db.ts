@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3-multiple-ciphers";
+import * as sqliteVec from "sqlite-vec";
 
 /*
  * Encrypted SQLite (design doc 6.12, 6.13).
@@ -73,6 +74,9 @@ export function openDatabase(path: string, key: string): Database.Database {
     }
     throw err;
   }
+  // Vector search for files and memory (files and memory design, P2):
+  // loaded before migrations run, on every connection.
+  sqliteVec.load(db);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
