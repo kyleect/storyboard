@@ -15,6 +15,7 @@ import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { api } from "../api";
 import { usePicked } from "../picked";
+import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
 
 const NO_PROJECT = "none";
@@ -143,7 +144,12 @@ export function Layout() {
                 label={s.title}
                 description={new Date(s.created_at).toLocaleString()}
                 active={params.sessionId === s.id}
-                rightSection={<SessionMenu session={s} />}
+                rightSection={
+                  <Group gap={4} wrap="nowrap">
+                    <UsageBadge usage={s.usage} />
+                    <SessionMenu session={s} />
+                  </Group>
+                }
               />
             ))}
           </ScrollArea>

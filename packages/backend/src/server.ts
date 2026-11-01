@@ -3,9 +3,11 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   ApprovalChoice,
+  getContextSize,
   getReasoningLevels,
   listLlamaServerModels,
   loadLlamaServerModel,
+  type ContextSize,
   type LoadResult,
   type ModelInfo,
   type ReasoningLevels,
@@ -39,6 +41,8 @@ export interface ServerOptions {
   loadModel?: (model: string) => Promise<LoadResult>;
   /** Defaults to asking the configured llama-server. */
   reasoningLevels?: (model: string | undefined) => Promise<ReasoningLevels>;
+  /** Defaults to asking the configured llama-server. */
+  contextSize?: (model: string | undefined) => Promise<ContextSize>;
 }
 
 const IdParams = z.object({ id: z.string() });
@@ -72,6 +76,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const reasoningLevels =
     options.reasoningLevels ??
     ((model: string | undefined) => getReasoningLevels(llamaUrl(), model));
+  const contextSize =
+    options.contextSize ??
+    ((model: string | undefined) => getContextSize(llamaUrl(), model));
   const loadModel =
     options.loadModel ??
     ((model: string) => loadLlamaServerModel(llamaUrl(), model));
@@ -218,6 +225,23 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       .parse(req.query);
     try {
       return await reasoningLevels(model);
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * A model's context size in tokens (one slot's), read without loading the
+   * model: `{ contextSize }`, or `{ unavailable }` with the reason (for
+   * example, the model is not loaded, or llama-server reported no size). 502
+   * when llama-server cannot be reached or fails.
+   */
+  app.get("/api/models/context-size", async (req, reply) => {
+    const { model } = z
+      .object({ model: ModelName.optional() })
+      .parse(req.query);
+    try {
+      return await contextSize(model);
     } catch (err) {
       return reply.code(502).send({ error: (err as Error).message });
     }

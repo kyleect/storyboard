@@ -48,11 +48,14 @@ export interface LoopContext extends RunContext {
   /**
    * Called with each complete message before its event is sent: an
    * assistant message before `message.finished` (only when it has
-   * content), a tool result before `tool.result`.
+   * content), a tool result before `tool.result`. For an assistant message,
+   * `usage` is the model call's, as `message.finished` carries it; a tool
+   * result has none.
    */
   onMessage?: (
     messageId: string,
     message: AssistantMessage | ToolResultMessage,
+    usage?: Usage,
   ) => void;
   /** Error text sent to the model is cut to this length. Default 2,000. */
   errorLimit?: number;
@@ -196,8 +199,9 @@ export async function runLoop(
         messageId,
         ...(continuing ? { continuing: continuing.message } : {}),
         keepMalformed: true,
-        beforeFinished: (message) => {
-          if (message.content.length > 0) ctx.onMessage?.(messageId, message);
+        beforeFinished: (message, _reason, usage) => {
+          if (message.content.length > 0)
+            ctx.onMessage?.(messageId, message, usage);
         },
       },
     );

@@ -110,8 +110,15 @@ export interface StreamOptions {
    * string, so they can be returned to the model (agent loop).
    */
   keepMalformed: boolean;
-  /** Called with the final message just before `message.finished`. */
-  beforeFinished?: (message: AssistantMessage, reason: FinishReason) => void;
+  /**
+   * Called with the final message just before `message.finished`, with the
+   * usage that event carries.
+   */
+  beforeFinished?: (
+    message: AssistantMessage,
+    reason: FinishReason,
+    usage: Usage | undefined,
+  ) => void;
 }
 
 export interface StreamResult extends SingleCallResult {
@@ -280,7 +287,7 @@ export async function streamMessage(
 
   closeOpen();
   const message: AssistantMessage = { role: "assistant", content: blocks };
-  opts.beforeFinished?.(message, finishReason);
+  opts.beforeFinished?.(message, finishReason, usage);
   emit({
     type: "message.finished",
     data: { messageId, message, finishReason, ...(usage ? { usage } : {}) },

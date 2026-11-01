@@ -293,6 +293,88 @@ describe("loadMigrations", () => {
     ).toThrow(/FOREIGN KEY/);
   });
 
+  it("adds messages.usage, filled from each message's latest message.finished", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 6),
+    );
+    const finished = (messageId: string, usage?: object) =>
+      JSON.stringify({
+        messageId,
+        message: { role: "assistant", content: [] },
+        finishReason: "stop",
+        ...(usage ? { usage } : {}),
+      });
+    const insertEvent = db.prepare(
+      "INSERT INTO events (run_id, session_id, time, type, data) VALUES ('r', 's', 'T', ?, ?)",
+    );
+    db.exec(`
+      INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T');
+      INSERT INTO runs (id, session_id, kind, status, started_at)
+        VALUES ('r', 's', 'loop', 'finished', 'T');
+      INSERT INTO messages (id, session_id, seq, message, created_at) VALUES
+        ('u', 's', 1, '{"role":"user","content":"Hi"}', 'T'),
+        ('a1', 's', 2, '{"role":"assistant","content":[]}', 'T'),
+        ('a2', 's', 3, '{"role":"assistant","content":[]}', 'T'),
+        ('a3', 's', 4, '{"role":"assistant","content":[]}', 'T'),
+        ('a4', 's', 5, '{"role":"assistant","content":[]}', 'T');
+    `);
+    // a1: one call. a2: continued; the later call counts. a3: the latest
+    // call reported none. a4: no event.
+    insertEvent.run(
+      "message.finished",
+      finished("a1", { promptTokens: 10, completionTokens: 2 }),
+    );
+    insertEvent.run(
+      "message.finished",
+      finished("a2", { promptTokens: 20, completionTokens: 3 }),
+    );
+    insertEvent.run(
+      "text.delta",
+      JSON.stringify({
+        messageId: "a2",
+        contentIndex: 0,
+        text: "x",
+        usage: { promptTokens: 99, completionTokens: 99 },
+      }),
+    );
+    insertEvent.run(
+      "message.finished",
+      finished("a2", { promptTokens: 25, completionTokens: 7 }),
+    );
+    insertEvent.run(
+      "message.finished",
+      finished("a3", { promptTokens: 30, completionTokens: 1 }),
+    );
+    insertEvent.run("message.finished", finished("a3"));
+
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 7),
+      ),
+    ).toEqual([7]);
+    const rows = (
+      db.prepare("SELECT id, usage FROM messages ORDER BY seq").all() as {
+        id: string;
+        usage: string | null;
+      }[]
+    ).map((r) => ({
+      id: r.id,
+      usage: r.usage === null ? null : (JSON.parse(r.usage) as unknown),
+    }));
+    expect(rows).toEqual([
+      { id: "u", usage: null },
+      { id: "a1", usage: { promptTokens: 10, completionTokens: 2 } },
+      { id: "a2", usage: { promptTokens: 25, completionTokens: 7 } },
+      { id: "a3", usage: null },
+      { id: "a4", usage: null },
+    ]);
+  });
+
   it("applies the project's migrations to an encrypted database", () => {
     const t = tempDatabase();
     db = t.db;

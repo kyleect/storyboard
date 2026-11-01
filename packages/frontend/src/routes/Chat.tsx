@@ -27,6 +27,7 @@ import type {
 } from "@harness/core";
 import { api, type Choices, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
+import { ContextMeter, latestUsage } from "./ContextMeter";
 import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
@@ -161,7 +162,15 @@ export function Chat() {
       }
     : undefined;
   const shown: ShownMessage[] = detail.data.messages.map((m) =>
-    liveShown && m.id === liveShown.id ? liveShown : { ...m, streaming: false },
+    liveShown && m.id === liveShown.id
+      ? liveShown
+      : {
+          id: m.id,
+          message: m.message,
+          model: m.model,
+          reasoningEffort: m.reasoningEffort,
+          streaming: false,
+        },
   );
   if (liveShown && !shown.some((m) => m.id === liveShown.id)) {
     shown.push(liveShown);
@@ -182,6 +191,9 @@ export function Chat() {
   const defaults = settings.data?.effective;
   // The model whose levels the reasoning picker shows.
   const levelsModel = detail.data.session.model || defaults?.model || undefined;
+  // How full the context is: the running count while a call streams, else
+  // the latest stored message's.
+  const contextUsage = live?.usage ?? latestUsage(detail.data.messages);
 
   return (
     <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
@@ -192,9 +204,12 @@ export function Chat() {
           label="Session title"
           onSave={(title) => actions.rename(sessionId, title)}
         />
-        <Badge color={connected ? "green" : "gray"} variant="light">
-          {connected ? "live" : "offline"}
-        </Badge>
+        <Group gap="sm" wrap="nowrap">
+          <ContextMeter usage={contextUsage} model={levelsModel} />
+          <Badge color={connected ? "green" : "gray"} variant="light">
+            {connected ? "live" : "offline"}
+          </Badge>
+        </Group>
       </Group>
 
       {trashed && (

@@ -183,6 +183,40 @@ describe("runLoop", () => {
     });
   });
 
+  it("hands each assistant message its own call's usage", async () => {
+    const got: { id: string; role: string; usage: unknown }[] = [];
+    const { ctx, model } = setup(
+      [
+        [
+          call("c1", "echo", '{"text":"a"}'),
+          { type: "usage", usage: { promptTokens: 10, completionTokens: 2 } },
+        ],
+        [
+          { type: "text", text: "ok" },
+          { type: "usage", usage: { promptTokens: 20, completionTokens: 3 } },
+        ],
+      ],
+      {
+        onMessage: (id, message, usage) =>
+          got.push({ id, role: message.role, usage }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(got).toEqual([
+      {
+        id: "id-1",
+        role: "assistant",
+        usage: { promptTokens: 10, completionTokens: 2 },
+      },
+      { id: "id-2", role: "tool", usage: undefined },
+      {
+        id: "id-3",
+        role: "assistant",
+        usage: { promptTokens: 20, completionTokens: 3 },
+      },
+    ]);
+  });
+
   it("returns unknown tools, bad JSON and failed checks to the model", async () => {
     const { events, saved, ctx, model } = setup([
       [

@@ -214,6 +214,78 @@ describe("a chat turn", () => {
     });
   });
 
+  it("stores each model call's usage on its message and lists the latest", async () => {
+    const { app, runs } = await setup([
+      [
+        { type: "text", text: "One" },
+        { type: "usage", usage: { promptTokens: 3, completionTokens: 2 } },
+      ],
+      [
+        { type: "text", text: "Two" },
+        { type: "usage", usage: { promptTokens: 9, completionTokens: 4 } },
+      ],
+    ]);
+    const id = await newSession(app);
+    const other = await newSession(app);
+
+    const first = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Hi",
+    });
+    await waitIdle(runs, first.body.runId as string);
+    const second = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Again",
+    });
+    await waitIdle(runs, second.body.runId as string);
+
+    const session = await api(app, "GET", `/api/sessions/${id}`);
+    expect(
+      (session.body.messages as { usage: unknown }[]).map((m) => m.usage),
+    ).toEqual([
+      null,
+      { promptTokens: 3, completionTokens: 2 },
+      null,
+      { promptTokens: 9, completionTokens: 4 },
+    ]);
+
+    const list = await api(app, "GET", "/api/sessions");
+    const rows = list.body as unknown as { id: string; usage: unknown }[];
+    expect(rows.find((r) => r.id === id)?.usage).toEqual({
+      promptTokens: 9,
+      completionTokens: 4,
+    });
+    expect(rows.find((r) => r.id === other)?.usage).toBeNull();
+  });
+
+  it("lists a project's sessions with their usage", async () => {
+    const { app, runs } = await setup([
+      [
+        { type: "text", text: "One" },
+        { type: "usage", usage: { promptTokens: 3, completionTokens: 2 } },
+      ],
+    ]);
+    const project = await api(app, "POST", "/api/projects", { name: "P" });
+    const created = await api(app, "POST", "/api/sessions", {
+      projectId: project.body.id,
+    });
+    const id = created.body.id as string;
+    const sent = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Hi",
+    });
+    await waitIdle(runs, sent.body.runId as string);
+
+    const list = await api(
+      app,
+      "GET",
+      `/api/sessions?projectId=${project.body.id as string}`,
+    );
+    expect(list.body).toEqual([
+      expect.objectContaining({
+        id,
+        usage: { promptTokens: 3, completionTokens: 2 },
+      }),
+    ]);
+  });
+
   it("sends the configured model name", async () => {
     const { app, t, runs, model } = await setup([
       [{ type: "text", text: "x" }],
@@ -272,8 +344,14 @@ describe("a chat turn", () => {
 describe("continue", () => {
   it("appends to the last assistant message using prefill", async () => {
     const { app, runs, model, base } = await setup([
-      [{ type: "text", text: "Once upon" }],
-      [{ type: "text", text: " a time" }],
+      [
+        { type: "text", text: "Once upon" },
+        { type: "usage", usage: { promptTokens: 5, completionTokens: 2 } },
+      ],
+      [
+        { type: "text", text: " a time" },
+        { type: "usage", usage: { promptTokens: 7, completionTokens: 3 } },
+      ],
     ]);
     const id = await newSession(app);
     const first = await api(app, "POST", `/api/sessions/${id}/messages`, {
@@ -317,6 +395,8 @@ describe("continue", () => {
         },
         model: null,
         reasoningEffort: null,
+        // The continuing call's usage replaces the first call's.
+        usage: { promptTokens: 7, completionTokens: 3 },
       },
     ]);
   });
@@ -504,7 +584,12 @@ describe("shutdown and recovery", () => {
     store.insertEvent({
       ...base,
       type: "text.delta",
-      data: { messageId: "m1", contentIndex: 0, text: "words" },
+      data: {
+        messageId: "m1",
+        contentIndex: 0,
+        text: "words",
+        usage: { promptTokens: 4, completionTokens: 1 },
+      },
     });
 
     const fresh = new RunManager({
@@ -519,6 +604,11 @@ describe("shutdown and recovery", () => {
     expect(store.getMessage("m1")).toEqual({
       role: "assistant",
       content: [{ type: "text", text: "Lost words" }],
+    });
+    // The last running count streamed for it.
+    expect(store.listMessages("s1").at(-1)?.usage).toEqual({
+      promptTokens: 4,
+      completionTokens: 1,
     });
   });
 });
@@ -844,6 +934,68 @@ describe("reasoning", () => {
     expect(down.body).toEqual({ error: "connect ECONNREFUSED" });
     await api(app, "GET", "/api/models/reasoning-levels");
     expect(asked).toEqual(["qwen", "unloaded", "down", undefined]);
+  });
+
+  it("reports a model's context size", async () => {
+    const asked: (string | undefined)[] = [];
+    const t = tempDatabase();
+    const store = new Store(t.db);
+    const runs = new RunManager({
+      store,
+      settings: () => DEFAULTS,
+      model: () => new ScriptedModel([]),
+    });
+    const app = buildServer({
+      store,
+      runs,
+      token: TOKEN,
+      env: {},
+      contextSize: async (m) => {
+        asked.push(m);
+        if (m === "unloaded") return { unavailable: "model is not loaded" };
+        if (m === "down") throw new Error("connect ECONNREFUSED");
+        return { contextSize: 8192 };
+      },
+    });
+    cleanups.push(t.cleanup, () => app.close());
+
+    const ok = await api(app, "GET", "/api/models/context-size?model=qwen");
+    expect(ok.body).toEqual({ contextSize: 8192 });
+    const bad = await api(
+      app,
+      "GET",
+      "/api/models/context-size?model=unloaded",
+    );
+    expect(bad.status).toBe(200);
+    expect(bad.body).toEqual({ unavailable: "model is not loaded" });
+    const down = await api(app, "GET", "/api/models/context-size?model=down");
+    expect(down.status).toBe(502);
+    expect(down.body).toEqual({ error: "connect ECONNREFUSED" });
+    await api(app, "GET", "/api/models/context-size");
+    expect(asked).toEqual(["qwen", "unloaded", "down", undefined]);
+  });
+
+  it("reads the context size from llama-server's /props by default", async () => {
+    const llama = new FakeLlamaServer();
+    const llamaUrl = await llama.start();
+    cleanups.push(() => llama.stop());
+    llama.onGet("/props", {
+      default_generation_settings: { params: {}, n_ctx: 4096 },
+    });
+    const t = tempDatabase();
+    writeSettings(t.db, { llamaServerUrl: llamaUrl });
+    const store = new Store(t.db);
+    const runs = new RunManager({
+      store,
+      settings: () => DEFAULTS,
+      model: () => new ScriptedModel([]),
+    });
+    const app = buildServer({ store, runs, token: TOKEN, env: {} });
+    cleanups.push(t.cleanup, () => app.close());
+
+    const res = await api(app, "GET", "/api/models/context-size?model=qwen");
+    expect(res.body).toEqual({ contextSize: 4096 });
+    expect(llama.requests[0]?.path).toBe("/props?autoload=false&model=qwen");
   });
 });
 

@@ -4,6 +4,7 @@ import type {
   ContentBlock,
   ControlResult,
   Message,
+  Usage,
 } from "@harness/core";
 
 /*
@@ -95,6 +96,12 @@ export interface Session {
   trashed_with_project: number;
 }
 
+/** A session in a list, with how full its context is. */
+export interface SessionListItem extends Session {
+  /** The usage of its latest model call that reported one; null: none. */
+  usage: Usage | null;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -121,6 +128,11 @@ export interface StoredMessage {
   model: string | null;
   /** For assistant messages: the effort of the run that last wrote it. */
   reasoningEffort: string | null;
+  /**
+   * For assistant messages: the usage of the model call that last wrote it.
+   * Null when none was reported, and for other messages.
+   */
+  usage: Usage | null;
 }
 
 export interface SessionDetail {
@@ -202,11 +214,19 @@ export const api = {
         model ? `?model=${encodeURIComponent(model)}` : ""
       }`,
     ),
+  /** One slot's context size in tokens, read without loading the model. */
+  contextSize: (model: string | undefined) =>
+    request<{ contextSize: number } | { unavailable: string }>(
+      "GET",
+      `/api/models/context-size${
+        model ? `?model=${encodeURIComponent(model)}` : ""
+      }`,
+    ),
   endReasoning: (runId: string) =>
     request<ControlResult>("POST", `/api/runs/${runId}/end-reasoning`),
   /** A project's sessions, or the standalone ones when null. */
   listSessions: (projectId: string | null) =>
-    request<Session[]>(
+    request<SessionListItem[]>(
       "GET",
       `/api/sessions${
         projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""

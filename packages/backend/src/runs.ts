@@ -14,6 +14,7 @@ import {
   type StoredEvent,
   type Tool,
   type ToolResultMessage,
+  type Usage,
 } from "@harness/core";
 import type { Settings } from "./settings.js";
 import type { Generation, Store } from "./store.js";
@@ -320,6 +321,7 @@ export class RunManager {
           { role: "assistant", content: partial.content },
           this.now(),
           generation,
+          lastStreamedUsage(events, partial.messageId),
         );
         this.store.linkRunMessage(run.id, partial.messageId);
       }
@@ -483,7 +485,7 @@ export class RunManager {
       this.publish(e);
     };
 
-    const saveMessage = (id: string, message: Message) => {
+    const saveMessage = (id: string, message: Message, usage?: Usage) => {
       this.store.saveMessage(
         sessionId,
         id,
@@ -492,6 +494,7 @@ export class RunManager {
         message.role === "assistant"
           ? generation
           : { model: null, reasoningEffort: null },
+        usage ?? null,
       );
       this.store.linkRunMessage(runId, id);
     };
@@ -571,6 +574,28 @@ export class RunManager {
     run.done = execute();
     return { runId };
   }
+}
+
+/**
+ * The latest running usage streamed for a message (its last delta that
+ * carried one), for a message the backend stopped writing; null when none
+ * did.
+ */
+function lastStreamedUsage(
+  events: readonly StoredEvent[],
+  messageId: string,
+): Usage | null {
+  let usage: Usage | null = null;
+  for (const e of events) {
+    if (
+      (e.type === "text.delta" || e.type === "reasoning.delta") &&
+      e.data.messageId === messageId &&
+      e.data.usage
+    ) {
+      usage = e.data.usage;
+    }
+  }
+  return usage;
 }
 
 /** Request ids of approval requests with no answer or withdrawal. */

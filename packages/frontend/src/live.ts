@@ -150,6 +150,7 @@ export function useSessionEvents(
                 message: event.data.message,
                 model: run?.model ?? null,
                 reasoningEffort: run?.reasoningEffort ?? null,
+                usage: event.data.usage ?? null,
               };
               const at = old.messages.findIndex(
                 (m) => m.id === event.data.messageId,
@@ -196,6 +197,8 @@ export function useSessionEvents(
           }
           answering.delete(event.runId);
           refreshModelInfo();
+          // The session lists show each session's latest usage.
+          void queryClient.invalidateQueries({ queryKey: ["sessions"] });
           void queryClient
             .invalidateQueries({ queryKey: ["session", sessionId] })
             .then(() => {

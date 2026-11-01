@@ -14,6 +14,7 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type Project } from "../api";
 import { EditableTitle } from "./EditableTitle";
+import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
 
 /**
@@ -121,7 +122,12 @@ export function ProjectPage() {
             )}
             label={s.title}
             description={new Date(s.created_at).toLocaleString()}
-            rightSection={<SessionMenu session={s} />}
+            rightSection={
+              <Group gap={4} wrap="nowrap">
+                <UsageBadge usage={s.usage} />
+                <SessionMenu session={s} />
+              </Group>
+            }
           />
         ))}
       </Stack>

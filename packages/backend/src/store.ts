@@ -1,9 +1,9 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import {
   Message,
+  Usage,
   type HarnessEvent,
   type StoredEvent,
-  type Usage,
 } from "@harness/core";
 
 /* Plain SQL over the encrypted database (design doc 6.11). */
@@ -26,6 +26,15 @@ export interface SessionRow {
 
 const SESSION_COLUMNS =
   "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project";
+
+/** A session in a list, with how full its context is. */
+export interface SessionListRow extends SessionRow {
+  /**
+   * The usage of the session's latest model call that reported one (its
+   * latest message with usage); null when none has.
+   */
+  usage: Usage | null;
+}
 
 export interface ProjectRow {
   id: string;
@@ -55,7 +64,15 @@ export interface StoredMessage extends Generation {
   message: Message;
   // For assistant messages, `model` and `reasoningEffort` are those of the
   // run that last wrote the message.
+  /**
+   * For assistant messages: the usage of the model call that last wrote the
+   * message. Null when none was reported, and for other messages.
+   */
+  usage: Usage | null;
 }
+
+const parseUsage = (json: string | null): Usage | null =>
+  json === null ? null : Usage.parse(JSON.parse(json));
 
 export type RunStatus =
   "running" | "finished" | "failed" | "cancelled" | "interrupted";
@@ -122,14 +139,19 @@ export class Store {
    * Sessions that are not in the trash, newest first: the project's, or
    * the standalone sessions when `projectId` is null.
    */
-  listSessions(projectId: string | null = null): SessionRow[] {
-    return this.db
+  listSessions(projectId: string | null = null): SessionListRow[] {
+    const rows = this.db
       .prepare(
-        `SELECT ${SESSION_COLUMNS} FROM sessions
+        `SELECT ${SESSION_COLUMNS},
+           (SELECT m.usage FROM messages m
+            WHERE m.session_id = sessions.id AND m.usage IS NOT NULL
+            ORDER BY m.seq DESC LIMIT 1) AS usage
+         FROM sessions
          WHERE trashed_at IS NULL AND project_id IS ?
          ORDER BY created_at DESC`,
       )
-      .all(projectId) as SessionRow[];
+      .all(projectId) as (SessionRow & { usage: string | null })[];
+    return rows.map((r) => ({ ...r, usage: parseUsage(r.usage) }));
   }
 
   /**
@@ -392,11 +414,12 @@ export class Store {
     message: Message,
     now: string,
     generation: Generation = NO_GENERATION,
+    usage: Usage | null = null,
   ) {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort)
-         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?)`,
+        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort, usage)
+         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -406,12 +429,13 @@ export class Store {
         now,
         generation.model,
         generation.reasoningEffort,
+        usage ? JSON.stringify(usage) : null,
       );
   }
 
   /**
-   * Inserts the message, or replaces it (with its model and effort) if the
-   * id exists.
+   * Inserts the message, or replaces it (with its model, effort and usage)
+   * if the id exists.
    */
   saveMessage(
     sessionId: string,
@@ -419,19 +443,21 @@ export class Store {
     message: Message,
     now: string,
     generation: Generation = NO_GENERATION,
+    usage: Usage | null = null,
   ) {
     const updated = this.db
       .prepare(
-        "UPDATE messages SET message = ?, model = ?, reasoning_effort = ? WHERE id = ?",
+        "UPDATE messages SET message = ?, model = ?, reasoning_effort = ?, usage = ? WHERE id = ?",
       )
       .run(
         JSON.stringify(message),
         generation.model,
         generation.reasoningEffort,
+        usage ? JSON.stringify(usage) : null,
         id,
       );
     if (updated.changes === 0)
-      this.addMessage(sessionId, id, message, now, generation);
+      this.addMessage(sessionId, id, message, now, generation, usage);
   }
 
   getMessage(id: string): Message | undefined {
@@ -444,19 +470,21 @@ export class Store {
   listMessages(sessionId: string): StoredMessage[] {
     const rows = this.db
       .prepare(
-        "SELECT id, message, model, reasoning_effort FROM messages WHERE session_id = ? ORDER BY seq",
+        "SELECT id, message, model, reasoning_effort, usage FROM messages WHERE session_id = ? ORDER BY seq",
       )
       .all(sessionId) as {
       id: string;
       message: string;
       model: string | null;
       reasoning_effort: string | null;
+      usage: string | null;
     }[];
     return rows.map((r) => ({
       id: r.id,
       message: Message.parse(JSON.parse(r.message)),
       model: r.model,
       reasoningEffort: r.reasoning_effort,
+      usage: parseUsage(r.usage),
     }));
   }
 
