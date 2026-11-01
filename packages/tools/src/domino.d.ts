@@ -8,6 +8,8 @@ declare module "@mixmark-io/domino" {
   interface DominoElement {
     readonly textContent: string | null;
     getAttribute(name: string): string | null;
+    matches(selector: string): boolean;
+    closest(selector: string): DominoElement | null;
     querySelector(selector: string): DominoElement | null;
     querySelectorAll(selector: string): Iterable<DominoElement>;
   }
