@@ -4,7 +4,7 @@ import {
   type EntrySearch,
   type SharedEntries,
 } from "./entries.js";
-import type { ApprovalChoice } from "./events.js";
+import type { ApprovalAnswer } from "./events.js";
 import type {
   AssistantMessage,
   ContentBlock,
@@ -46,12 +46,13 @@ export interface LoopContext extends RunContext {
   /**
    * Waits for the user's answer to an approval request, for as long as it
    * takes (6.5). When `signal` aborts, the loop stops waiting on its own;
-   * the implementation should drop the request then.
+   * the implementation should drop the request then. A note is kept only
+   * with "once" and "deny".
    */
   approve: (
     request: ApprovalRequest,
     signal: AbortSignal,
-  ) => Promise<ApprovalChoice>;
+  ) => Promise<ApprovalAnswer>;
   /**
    * Called with each complete message before its event is sent: an
    * assistant message before `message.finished` (only when it has
@@ -147,6 +148,7 @@ export async function runLoop(
       data?: unknown;
       state?: unknown;
       entries?: EntryOp[];
+      note?: ToolResultMessage["note"];
       error?: string;
       durationMs?: number;
     },
@@ -161,6 +163,7 @@ export async function runLoop(
       ...(result.data !== undefined ? { data: result.data } : {}),
       ...(result.state !== undefined ? { state: result.state } : {}),
       ...(result.entries?.length ? { entries: result.entries } : {}),
+      ...(result.note ? { note: result.note } : {}),
     };
     ctx.onMessage?.(messageId, message);
     transcript.push(message);
@@ -179,13 +182,19 @@ export async function runLoop(
   };
 
   /** An error result; text longer than the limit is cut, the full kept. */
-  const addError = (call: ToolCall, text: string, durationMs?: number) => {
+  const addError = (
+    call: ToolCall,
+    text: string,
+    durationMs?: number,
+    note?: ToolResultMessage["note"],
+  ) => {
     const content = truncate(text, errorLimit);
     addResult(call, {
       content,
       isError: true,
       ...(content !== text ? { error: text } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(note ? { note } : {}),
     });
   };
 
@@ -278,6 +287,8 @@ export async function runLoop(
       return;
     }
     const tool = ctx.tools.find((t) => t.name === call.name);
+    // The user's note from the approval prompt, kept on the call's result.
+    let note: ToolResultMessage["note"];
     if (!tool) {
       addError(call, `Unknown tool "${call.name}".`);
       return;
@@ -299,9 +310,9 @@ export async function runLoop(
           arguments: call.arguments,
         },
       });
-      let choice: ApprovalChoice | undefined;
+      let answer: ApprovalAnswer | undefined;
       try {
-        choice = await untilAborted(
+        answer = await untilAborted(
           ctx.approve(
             {
               requestId,
@@ -322,7 +333,7 @@ export async function runLoop(
         addError(call, `Not run: the approval failed: ${message}`);
         return;
       }
-      if (choice === undefined) {
+      if (answer === undefined) {
         emit({
           type: "request.cancel",
           data: { requestId, reason: "The run was cancelled." },
@@ -330,9 +341,16 @@ export async function runLoop(
         addError(call, notRun());
         return;
       }
-      emit({ type: "tool.approval_resolved", data: { requestId, choice } });
+      const { choice } = answer;
+      const text =
+        choice === "once" || choice === "deny" ? answer.note?.trim() : "";
+      emit({
+        type: "tool.approval_resolved",
+        data: { requestId, choice, ...(text ? { note: text } : {}) },
+      });
+      if (text) note = { text, choice: choice === "deny" ? "deny" : "once" };
       if (choice === "deny") {
-        addError(call, "The user denied this tool call.");
+        addError(call, "The user denied this tool call.", undefined, note);
         return;
       }
     }
@@ -379,18 +397,20 @@ export async function runLoop(
         // Session-scoped changes count only when the tool succeeded.
         ...(output.isError ? {} : { entries: sessionOps }),
         ...(content !== text ? { error: text } : {}),
+        ...(note ? { note } : {}),
         durationMs: elapsed(),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (err instanceof ToolRunError) {
-        addError(call, message, elapsed());
+        addError(call, message, elapsed(), note);
         return message;
       }
       addError(
         call,
         ctx.signal.aborted ? notRun() : `${tool.name} failed: ${message}`,
         elapsed(),
+        note,
       );
     }
   }

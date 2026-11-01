@@ -163,9 +163,22 @@ export const ToolApprovalRequested = event(
 export const ApprovalChoice = z.enum(["once", "session", "always", "deny"]);
 export type ApprovalChoice = z.infer<typeof ApprovalChoice>;
 
+/** The choices that can carry a note (approval notes design, D2). */
+export const NOTE_CHOICES: readonly ApprovalChoice[] = ["once", "deny"];
+
+/** The user's answer, with the note typed on the prompt, if any. */
+export interface ApprovalAnswer {
+  choice: ApprovalChoice;
+  note?: string;
+}
+
 export const ToolApprovalResolved = event(
   "tool.approval_resolved",
-  z.object({ requestId: z.string(), choice: ApprovalChoice }),
+  z.object({
+    requestId: z.string(),
+    choice: ApprovalChoice,
+    note: z.string().optional(),
+  }),
 );
 
 /** Withdraws an open request, for example when its run is cancelled. */

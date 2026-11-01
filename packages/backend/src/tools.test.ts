@@ -284,6 +284,66 @@ describe("approval", () => {
     });
   });
 
+  for (const choice of ["once", "deny"] as const) {
+    it(`keeps a note sent with "${choice}" on the result and the event`, async () => {
+      const rec = recorder("rec", "ask");
+      const { app, runs, store, model } = await setup(
+        [[call("a")], answer],
+        [rec.tool],
+      );
+      const id = await newSession(app);
+      const runId = await send(app, id);
+      const { approval } = await openApproval(app, id);
+      const res = await api(
+        app,
+        "POST",
+        `/api/runs/${runId}/approvals/${approval.requestId}`,
+        { choice, note: "keep it short" },
+      );
+      expect(res).toEqual({ status: 200, body: { ok: true } });
+      await waitIdle(runs, runId);
+
+      const d = await detail(app, id);
+      expect(d.messages[2]?.message).toMatchObject({
+        role: "tool",
+        note: { text: "keep it short", choice },
+      });
+      expect(roles(d).at(-1)).toBe("assistant");
+      const resolved = store
+        .runEvents(runId)
+        .find((e) => e.type === "tool.approval_resolved");
+      expect(resolved?.data).toEqual({
+        requestId: approval.requestId,
+        choice,
+        note: "keep it short",
+      });
+      // The next model call receives the result with its note.
+      expect((model.requests[1] as ChatRequest).messages.at(-1)).toMatchObject({
+        role: "tool",
+        note: { text: "keep it short", choice },
+      });
+    });
+  }
+
+  it('rejects a note sent with "session" or "always"', async () => {
+    const rec = recorder("rec", "ask");
+    const { app, runs } = await setup([[call("a")], answer], [rec.tool]);
+    const id = await newSession(app);
+    const runId = await send(app, id);
+    const { approval } = await openApproval(app, id);
+    const url = `/api/runs/${runId}/approvals/${approval.requestId}`;
+    for (const choice of ["session", "always"]) {
+      expect((await api(app, "POST", url, { choice, note: "x" })).status).toBe(
+        400,
+      );
+    }
+    // The request is still open.
+    expect(runs.isActive(runId)).toBe(true);
+    expect(rec.calls).toEqual([]);
+    runs.cancel(runId);
+    await waitIdle(runs, runId);
+  });
+
   it('"Allow for this session" stops asking in that session only', async () => {
     const rec = recorder("rec", "ask");
     const { app, runs } = await setup(

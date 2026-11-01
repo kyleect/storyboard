@@ -154,6 +154,52 @@ describe("chat completions", () => {
     ]);
   });
 
+  it("sends a turn's approval notes as a user message after its results", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({
+      kind: "chat",
+      messages: [
+        { role: "user", content: "a" },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", callId: "c1", name: "now", arguments: {} },
+          ],
+        },
+        {
+          role: "tool",
+          callId: "c1",
+          name: "now",
+          content: "noon",
+          isError: false,
+          note: { text: "use 24-hour time", choice: "once" },
+        },
+      ],
+    });
+    expect(
+      (server.requests[0]?.body as { messages: unknown[] }).messages,
+    ).toEqual([
+      { role: "user", content: "a" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "now", arguments: "{}" },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: "noon" },
+      {
+        role: "user",
+        content:
+          "Notes on this turn's tool calls:\n- now (allowed): use 24-hour time",
+      },
+    ]);
+  });
+
   it("yields reasoning, text, usage and finish", async () => {
     server.reply({
       frames: [

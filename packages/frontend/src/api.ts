@@ -1,5 +1,5 @@
 import type {
-  ApprovalChoice,
+  ApprovalAnswer,
   ApprovalRequest,
   ContentBlock,
   ControlResult,
@@ -439,11 +439,11 @@ export const api = {
     request<{ runId: string }>("POST", `/api/sessions/${id}/continue`, choices),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>("POST", `/api/runs/${runId}/cancel`),
-  answerApproval: (runId: string, requestId: string, choice: ApprovalChoice) =>
+  answerApproval: (runId: string, requestId: string, answer: ApprovalAnswer) =>
     request<{ ok: true }>(
       "POST",
       `/api/runs/${runId}/approvals/${encodeURIComponent(requestId)}`,
-      { choice },
+      answer,
     ),
   listTools: () => request<ToolView[]>("GET", "/api/tools"),
   setToolAsks: (name: string, ask: boolean) =>

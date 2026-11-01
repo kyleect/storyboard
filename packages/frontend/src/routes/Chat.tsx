@@ -5,7 +5,6 @@ import {
   Code,
   Group,
   Loader,
-  Modal,
   Paper,
   ScrollArea,
   Spoiler,
@@ -20,10 +19,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type {
-  ApprovalChoice,
-  ApprovalRequest,
+  ApprovalAnswer,
   ContentBlock,
   Message,
+  ToolResultMessage,
   Usage,
 } from "@harness/core";
 import {
@@ -34,6 +33,7 @@ import {
 } from "../api";
 import { useLive, useSessionEvents } from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
+import { ApprovalDialog } from "./ApprovalDialog";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { ModelPicker } from "./ModelPicker";
@@ -136,11 +136,11 @@ export function Chat() {
     mutationFn: (a: {
       runId: string;
       requestId: string;
-      choice: ApprovalChoice;
-    }) => api.answerApproval(a.runId, a.requestId, a.choice),
+      answer: ApprovalAnswer;
+    }) => api.answerApproval(a.runId, a.requestId, a.answer),
     onSuccess: (_r, a) => {
       // "Always allow" changes the tool's setting.
-      if (a.choice === "always")
+      if (a.answer.choice === "always")
         void queryClient.invalidateQueries({ queryKey: ["tools"] });
     },
     onError,
@@ -190,6 +190,12 @@ export function Chat() {
   );
   if (liveShown && !shown.some((m) => m.id === liveShown.id)) {
     shown.push(liveShown);
+  }
+  // Approval notes, stored on tool results, are shown under their calls.
+  const notes = new Map<string, NonNullable<ToolResultMessage["note"]>>();
+  for (const m of detail.data.messages) {
+    if (m.message.role === "tool" && m.message.note)
+      notes.set(m.message.callId, m.message.note);
   }
   // A session in the trash can be read, not changed (design Q3a).
   const trashed = detail.data.session.trashed_at !== null;
@@ -290,7 +296,7 @@ export function Chat() {
           <Stack gap="sm" pr="md">
             {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
             {shown.map((m) => (
-              <MessageView key={m.id} {...m} />
+              <MessageView key={m.id} {...m} notes={notes} />
             ))}
             {toolRunning && (
               <Group gap="xs">
@@ -378,15 +384,16 @@ export function Chat() {
 
       {live && pending && (
         <ApprovalDialog
+          key={pending.requestId}
           request={pending}
           opened={dismissed !== pending.requestId}
           busy={answer.isPending}
           onClose={() => setDismissed(pending.requestId)}
-          onAnswer={(choice) =>
+          onAnswer={(a) =>
             answer.mutate({
               runId: live.runId,
               requestId: pending.requestId,
-              choice,
+              answer: a,
             })
           }
         />
@@ -426,6 +433,9 @@ export function Chat() {
   );
 }
 
+/** Approval notes by call id. */
+type Notes = ReadonlyMap<string, NonNullable<ToolResultMessage["note"]>>;
+
 function MessageView({
   message,
   model,
@@ -433,7 +443,8 @@ function MessageView({
   agent,
   streaming,
   usage,
-}: ShownMessage) {
+  notes,
+}: ShownMessage & { notes: Notes }) {
   if (message.role === "user") {
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
@@ -513,6 +524,7 @@ function MessageView({
             // Only the block being written right now shows a live preview.
             live={streaming && i === message.content.length - 1}
             usage={usage}
+            notes={notes}
           />
         ))}
       </Stack>
@@ -524,10 +536,12 @@ function BlockView({
   block,
   live,
   usage,
+  notes,
 }: {
   block: ContentBlock;
   live: boolean;
   usage: Usage | undefined;
+  notes: Notes;
 }) {
   switch (block.type) {
     case "text":
@@ -551,7 +565,8 @@ function BlockView({
           </Text>
         </Spoiler>
       );
-    case "tool_call":
+    case "tool_call": {
+      const note = notes.get(block.callId);
       return (
         <Stack gap={2}>
           <Text size="xs" c="dimmed">
@@ -564,8 +579,19 @@ function BlockView({
               : JSON.stringify(block.arguments, null, 2)}
             )
           </Code>
+          {note && (
+            <Paper p="xs" withBorder bg="var(--mantine-color-default-hover)">
+              <Text size="xs" c="dimmed">
+                Your note ({note.choice === "deny" ? "denied" : "allowed"})
+              </Text>
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                {note.text}
+              </Text>
+            </Paper>
+          )}
         </Stack>
       );
+    }
   }
 }
 
@@ -625,58 +651,4 @@ function showResult(content: string): string {
   } catch {
     return content;
   }
-}
-
-const CHOICES: { choice: ApprovalChoice; label: string; color?: string }[] = [
-  { choice: "once", label: "Allow once" },
-  { choice: "session", label: "Allow for this session" },
-  { choice: "always", label: "Always allow this tool" },
-  { choice: "deny", label: "Deny", color: "red" },
-];
-
-/**
- * Asks whether a tool call may run (tools design 6.5). Closing it leaves the
- * request open; the run keeps waiting until it is answered.
- */
-function ApprovalDialog({
-  request,
-  opened,
-  busy,
-  onClose,
-  onAnswer,
-}: {
-  request: ApprovalRequest;
-  opened: boolean;
-  busy: boolean;
-  onClose: () => void;
-  onAnswer: (choice: ApprovalChoice) => void;
-}) {
-  return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="Allow this tool call?"
-      size="lg"
-    >
-      <Stack gap="sm">
-        <Text size="sm">
-          The model wants to run <Code>{request.name}</Code> with:
-        </Text>
-        <Code block>{JSON.stringify(request.arguments, null, 2)}</Code>
-        <Group gap="xs" justify="flex-end">
-          {CHOICES.map((c) => (
-            <Button
-              key={c.choice}
-              variant={c.choice === "once" ? "filled" : "light"}
-              {...(c.color ? { color: c.color } : {})}
-              disabled={busy}
-              onClick={() => onAnswer(c.choice)}
-            >
-              {c.label}
-            </Button>
-          ))}
-        </Group>
-      </Stack>
-    </Modal>
-  );
 }

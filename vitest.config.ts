@@ -16,6 +16,21 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["packages/*/src/**/*.test.ts"],
+    projects: [
+      {
+        extends: true,
+        test: { name: "node", include: ["packages/*/src/**/*.test.ts"] },
+      },
+      // The frontend's tests run in jsdom (approval notes design, D15).
+      {
+        extends: true,
+        test: {
+          name: "frontend",
+          include: ["packages/frontend/src/**/*.test.tsx"],
+          environment: "jsdom",
+          setupFiles: ["packages/frontend/src/test-setup.ts"],
+        },
+      },
+    ],
   },
 });

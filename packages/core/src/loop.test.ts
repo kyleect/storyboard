@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { HarnessEvent, type ApprovalChoice } from "./events.js";
+import {
+  HarnessEvent,
+  type ApprovalAnswer,
+  type ApprovalChoice,
+} from "./events.js";
 import { ScriptedModel, type ScriptStep } from "./fake-model.js";
 import { runLoop, type ApprovalRequest, type LoopContext } from "./loop.js";
 import type {
@@ -55,7 +59,7 @@ function setup(
     maxIterations: 5,
     approve: (r) => {
       approvals.push(r);
-      return Promise.resolve("once");
+      return Promise.resolve({ choice: "once" });
     },
     onMessage: (id, message) => {
       // Saved before its event: no event for this message yet.
@@ -525,7 +529,7 @@ describe("approval", () => {
           tools: [asking(() => (ran = true))],
           approve: (r) => {
             approvals.push(r);
-            return Promise.resolve(choice);
+            return Promise.resolve({ choice });
           },
         },
       );
@@ -561,7 +565,7 @@ describe("approval", () => {
       [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
       {
         tools: [asking(() => (ran = true))],
-        approve: () => Promise.resolve("deny"),
+        approve: () => Promise.resolve({ choice: "deny" }),
       },
     );
     const result = await runLoop(model, request, ctx);
@@ -571,6 +575,115 @@ describe("approval", () => {
       isError: true,
       content: "The user denied this tool call.",
     });
+  });
+
+  it('keeps a note given with "once" on the result and the event', async () => {
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asking()],
+        approve: () =>
+          Promise.resolve({ choice: "once", note: "  keep it short \n" }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]).toMatchObject({
+      isError: false,
+      note: { text: "keep it short", choice: "once" },
+    });
+    expect(
+      events.find((e) => e.type === "tool.approval_resolved")?.data,
+    ).toMatchObject({ choice: "once", note: "keep it short" });
+    // The next model call sees the result with its note.
+    const next = model.requests[1];
+    expect(next?.kind === "chat" ? next.messages.at(-1) : undefined).toEqual(
+      results(saved)[0],
+    );
+  });
+
+  it('keeps a note given with "deny" on the denied result', async () => {
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asking()],
+        approve: () => Promise.resolve({ choice: "deny", note: "try b" }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]).toMatchObject({
+      isError: true,
+      content: "The user denied this tool call.",
+      note: { text: "try b", choice: "deny" },
+    });
+    expect(
+      events.find((e) => e.type === "tool.approval_resolved")?.data,
+    ).toMatchObject({ choice: "deny", note: "try b" });
+  });
+
+  for (const choice of ["session", "always"] as ApprovalChoice[]) {
+    it(`drops a note given with "${choice}"`, async () => {
+      const { events, saved, ctx, model } = setup(
+        [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+        {
+          tools: [asking()],
+          approve: () => Promise.resolve({ choice, note: "x" }),
+        },
+      );
+      await runLoop(model, request, ctx);
+      expect(results(saved)[0]).not.toHaveProperty("note");
+      expect(
+        events.find((e) => e.type === "tool.approval_resolved")?.data,
+      ).not.toHaveProperty("note");
+    });
+  }
+
+  it("treats an empty or blank note as no note", async () => {
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asking()],
+        approve: () => Promise.resolve({ choice: "once", note: " \n " }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]).not.toHaveProperty("note");
+    expect(
+      events.find((e) => e.type === "tool.approval_resolved")?.data,
+    ).not.toHaveProperty("note");
+  });
+
+  it("keeps a note given earlier in a turn when the run is cancelled", async () => {
+    const controller = new AbortController();
+    let asked = 0;
+    let second!: () => void;
+    const secondAsked = new Promise<void>((r) => (second = r));
+    const { saved, ctx, model } = setup(
+      [
+        [
+          call("c1", "echo", '{"text":"a"}'),
+          call("c2", "echo", '{"text":"b"}'),
+        ],
+      ],
+      {
+        tools: [asking()],
+        approve: () => {
+          if (++asked === 1)
+            return Promise.resolve({ choice: "deny", note: "not that" });
+          second();
+          return new Promise<ApprovalAnswer>(() => {});
+        },
+      },
+      controller.signal,
+    );
+    const running = runLoop(model, request, ctx);
+    await secondAsked;
+    controller.abort();
+    expect((await running).reason).toBe("cancelled");
+    expect(results(saved)).toMatchObject([
+      { callId: "c1", note: { text: "not that", choice: "deny" } },
+      { callId: "c2", content: "Not run: the run was cancelled." },
+    ]);
+    expect(results(saved)[1]).not.toHaveProperty("note");
   });
 
   it("asks according to needsApproval, not only the tool's default", async () => {
@@ -597,7 +710,7 @@ describe("approval", () => {
         tools: [asking()],
         approve: () => {
           asked();
-          return new Promise<ApprovalChoice>(() => {});
+          return new Promise<ApprovalAnswer>(() => {});
         },
       },
       controller.signal,

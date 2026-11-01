@@ -8,6 +8,7 @@ import {
   getReasoningLevels,
   listLlamaServerModels,
   loadLlamaServerModel,
+  NOTE_CHOICES,
   type ContextSize,
   type LoadResult,
   type ModelInfo,
@@ -505,17 +506,27 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   /**
    * Answers an approval request: once, session, always or deny
-   * (tools design 6.5). 409 when the run is not active, 404 when the request
-   * is not open.
+   * (tools design 6.5), with an optional note for once or deny (approval
+   * notes design). 409 when the run is not active, 404 when the request is
+   * not open, 400 for a note with session or always.
    */
   app.post("/api/runs/:id/approvals/:requestId", async (req, reply) => {
     const { id, requestId } = IdParams.extend({
       requestId: z.string(),
     }).parse(req.params);
-    const { choice } = z.object({ choice: ApprovalChoice }).parse(req.body);
+    const { choice, note } = z
+      .object({ choice: ApprovalChoice, note: z.string().optional() })
+      .refine((b) => b.note === undefined || NOTE_CHOICES.includes(b.choice), {
+        message: "A note can only be sent with once or deny.",
+        path: ["note"],
+      })
+      .parse(req.body);
     if (!store.getRun(id))
       return reply.code(404).send({ error: "Run not found." });
-    runs.answerApproval(id, requestId, choice);
+    runs.answerApproval(id, requestId, {
+      choice,
+      ...(note !== undefined ? { note } : {}),
+    });
     return { ok: true };
   });
 

@@ -5,7 +5,7 @@ import {
   runLoop,
   type EntryOp,
   type EntrySearch,
-  type ApprovalChoice,
+  type ApprovalAnswer,
   type ApprovalRequest,
   type AssistantMessage,
   type ChatRequest,
@@ -54,7 +54,7 @@ type Listener = (event: StoredEvent) => void;
 
 interface OpenApproval {
   request: ApprovalRequest;
-  resolve: (choice: ApprovalChoice) => void;
+  resolve: (answer: ApprovalAnswer) => void;
 }
 
 interface ActiveRun {
@@ -292,9 +292,10 @@ export class RunManager {
 
   /**
    * Answers an approval request. "session" and "always" are recorded before
-   * the tool runs.
+   * the tool runs. A note goes with "once" or "deny" only.
    */
-  answerApproval(runId: string, requestId: string, choice: ApprovalChoice) {
+  answerApproval(runId: string, requestId: string, answer: ApprovalAnswer) {
+    const { choice } = answer;
     const run = this.active.get(runId);
     if (!run) throw new RunError("The run is not active.", 409);
     const open = run.approvals.get(requestId);
@@ -312,7 +313,7 @@ export class RunManager {
       setToolAsks(this.store.db, tool, false);
     }
     run.approvals.delete(requestId);
-    open.resolve(choice);
+    open.resolve(answer);
   }
 
   snapshot(sessionId: string): Snapshot {
@@ -684,7 +685,7 @@ export class RunManager {
             toolAsks(this.store.db, tool) &&
             !this.store.isToolAllowedForSession(sessionId, tool.name),
           approve: (req, signal) =>
-            new Promise<ApprovalChoice>((resolve) => {
+            new Promise<ApprovalAnswer>((resolve) => {
               approvals.set(req.requestId, { request: req, resolve });
               signal.addEventListener(
                 "abort",

@@ -111,6 +111,14 @@ export const ToolResultMessage = z.object({
    * from edit messages (files and memory design, decision 11).
    */
   entries: z.array(EntryOp).optional(),
+  /**
+   * The note the user typed when allowing the call once or denying it
+   * (approval notes design). Not sent as part of this message: the notes of
+   * one turn's results are sent as one user message after them.
+   */
+  note: z
+    .object({ text: z.string(), choice: z.enum(["once", "deny"]) })
+    .optional(),
 });
 
 /**

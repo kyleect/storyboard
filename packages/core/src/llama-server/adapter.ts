@@ -1,5 +1,6 @@
 import type { ControlResult } from "../control.js";
 import { foldEdits } from "../entries.js";
+import { foldNotes } from "../notes.js";
 import type { ModelMessage, TokenInfo } from "../messages.js";
 import type {
   ChatRequest,
@@ -67,7 +68,7 @@ export class LlamaServerAdapter implements ModelAdapter {
     signal: AbortSignal,
   ): AsyncGenerator<ModelChunk> {
     const body: Record<string, unknown> = {
-      messages: foldEdits(request.messages).map(toOpenAiMessage),
+      messages: foldEdits(foldNotes(request.messages)).map(toOpenAiMessage),
       stream: true,
       stream_options: { include_usage: true },
       // Timings on every chunk give a live token count.
