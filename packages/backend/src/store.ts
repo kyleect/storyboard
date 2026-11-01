@@ -16,7 +16,12 @@ export interface SessionRow {
   model: string | null;
   /** The session's chosen reasoning effort; null means the default. */
   reasoning_effort: string | null;
+  /** When it was moved to the trash; null when it is not in the trash. */
+  trashed_at: string | null;
 }
+
+const SESSION_COLUMNS =
+  "id, title, created_at, model, reasoning_effort, trashed_at";
 
 /** What a run sent to the model server; null where nothing was sent. */
 export interface Generation {
@@ -51,7 +56,7 @@ export interface RunRow {
 
 interface EventRow {
   id: number;
-  run_id: string;
+  run_id: string | null;
   session_id: string;
   time: string;
   type: string;
@@ -81,23 +86,88 @@ export class Store {
       created_at: now,
       model: null,
       reasoning_effort: null,
+      trashed_at: null,
     };
   }
 
+  /** Sessions that are not in the trash, newest first. */
   listSessions(): SessionRow[] {
     return this.db
       .prepare(
-        "SELECT id, title, created_at, model, reasoning_effort FROM sessions ORDER BY created_at DESC",
+        `SELECT ${SESSION_COLUMNS} FROM sessions WHERE trashed_at IS NULL ORDER BY created_at DESC`,
       )
       .all() as SessionRow[];
   }
 
-  getSession(id: string): SessionRow | undefined {
+  /** Sessions in the trash, most recently trashed first. */
+  listTrashedSessions(): SessionRow[] {
     return this.db
       .prepare(
-        "SELECT id, title, created_at, model, reasoning_effort FROM sessions WHERE id = ?",
+        `SELECT ${SESSION_COLUMNS} FROM sessions WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC`,
       )
+      .all() as SessionRow[];
+  }
+
+  /** Includes sessions in the trash. */
+  getSession(id: string): SessionRow | undefined {
+    return this.db
+      .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`)
       .get(id) as SessionRow | undefined;
+  }
+
+  renameSession(id: string, title: string) {
+    this.db
+      .prepare("UPDATE sessions SET title = ? WHERE id = ?")
+      .run(title, id);
+  }
+
+  /** Moves the session to the trash (or back out, with null). */
+  setSessionTrashed(id: string, trashedAt: string | null) {
+    this.db
+      .prepare("UPDATE sessions SET trashed_at = ? WHERE id = ?")
+      .run(trashedAt, id);
+  }
+
+  /**
+   * Permanently deletes a session and every row that belongs to it, in one
+   * transaction (design Q6). A new table that references a session, or a
+   * session's runs or messages, must be added here.
+   */
+  purgeSession(id: string) {
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "DELETE FROM run_messages WHERE run_id IN (SELECT id FROM runs WHERE session_id = ?)",
+        )
+        .run(id);
+      this.db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
+      this.db.prepare("DELETE FROM runs WHERE session_id = ?").run(id);
+      this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+      this.db
+        .prepare("DELETE FROM session_tool_approvals WHERE session_id = ?")
+        .run(id);
+      this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+    })();
+  }
+
+  /**
+   * Purges the sessions in the trash, or only those trashed before
+   * `before` (an ISO timestamp). Returns their ids.
+   */
+  purgeTrashedSessions(before?: string): string[] {
+    const ids = (
+      before === undefined
+        ? this.db
+            .prepare("SELECT id FROM sessions WHERE trashed_at IS NOT NULL")
+            .all()
+        : this.db
+            .prepare(
+              "SELECT id FROM sessions WHERE trashed_at IS NOT NULL AND trashed_at < ?",
+            )
+            .all(before)
+    ) as { id: string }[];
+    for (const { id } of ids) this.purgeSession(id);
+    return ids.map((r) => r.id);
   }
 
   /** Sets the session's choices; a field left out is not changed. */

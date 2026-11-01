@@ -2,8 +2,10 @@ import {
   Alert,
   Button,
   Divider,
+  Group,
   Loader,
   NumberInput,
+  Paper,
   Stack,
   Switch,
   Text,
@@ -11,17 +13,21 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import {
   api,
+  type Session,
   type Settings as SettingsShape,
   type SettingsView,
   type ToolView,
 } from "../api";
 import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
+import { showError, useSessionActions } from "./SessionActions";
 
 export function Settings() {
   const queryClient = useQueryClient();
@@ -33,6 +39,7 @@ export function Settings() {
       reasoningEffort: "",
       port: 0,
       loopLimit: 1,
+      trashRetentionDays: 0,
     },
     validate: {
       llamaServerUrl: (v) =>
@@ -41,6 +48,8 @@ export function Settings() {
         Number.isInteger(v) && v >= 0 && v <= 65535 ? null : "0–65535",
       loopLimit: (v) =>
         Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
+      trashRetentionDays: (v) =>
+        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
     },
   });
 
@@ -130,6 +139,17 @@ export function Settings() {
           disabled={!!env.loopLimit}
           {...form.getInputProps("loopLimit")}
         />
+        <NumberInput
+          label="Days in the trash"
+          description={
+            envNote("trashRetentionDays") ??
+            "Items in the trash longer than this are deleted when the backend starts. 0: never."
+          }
+          allowDecimal={false}
+          min={0}
+          disabled={!!env.trashRetentionDays}
+          {...form.getInputProps("trashRetentionDays")}
+        />
         <Text size="xs" c="dimmed">
           Saved to the database. Environment variables, when set, take
           precedence.
@@ -139,6 +159,8 @@ export function Settings() {
         </Button>
         <Divider />
         <ToolApprovals />
+        <Divider />
+        <TrashSection />
       </Stack>
     </form>
   );
@@ -189,6 +211,127 @@ function ToolApprovals() {
             setAsks.mutate({ name: t.name, ask: e.currentTarget.checked })
           }
         />
+      ))}
+    </Stack>
+  );
+}
+
+/**
+ * What is in the trash (sessions and projects design, Q3b, Q3c): open
+ * read-only, restore, delete forever, or empty the trash. Deleting asks
+ * first (Q4a).
+ */
+function TrashSection() {
+  const queryClient = useQueryClient();
+  const actions = useSessionActions();
+  const trash = useQuery({ queryKey: ["trash"], queryFn: api.getTrash });
+
+  const restore = useMutation({
+    mutationFn: (id: string) => actions.restore(id),
+    onError: showError("Could not restore"),
+  });
+  const refreshTrash = () =>
+    queryClient.invalidateQueries({ queryKey: ["trash"] });
+
+  const confirmDelete = (session: Session) =>
+    modals.openConfirmModal({
+      title: "Delete forever?",
+      children: (
+        <Text size="sm">
+          “{session.title}” and its whole transcript will be deleted. This
+          cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: "Delete forever", cancel: "Cancel" },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        api
+          .deleteSession(session.id)
+          .then(refreshTrash)
+          .catch(showError("Could not delete"));
+      },
+    });
+
+  const confirmEmpty = () =>
+    modals.openConfirmModal({
+      title: "Empty the trash?",
+      children: (
+        <Text size="sm">
+          Everything in the trash will be deleted. This cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: "Empty trash", cancel: "Cancel" },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        api
+          .emptyTrash()
+          .then(refreshTrash)
+          .catch(showError("Could not empty the trash"));
+      },
+    });
+
+  const sessions = trash.data?.sessions ?? [];
+  return (
+    <Stack gap="xs">
+      <Group justify="space-between">
+        <Title order={4}>Trash</Title>
+        {sessions.length > 0 && (
+          <Button size="xs" color="red" variant="light" onClick={confirmEmpty}>
+            Empty trash
+          </Button>
+        )}
+      </Group>
+      {trash.isPending && <Loader size="sm" />}
+      {trash.isError && <Alert color="red">{trash.error.message}</Alert>}
+      {trash.data && sessions.length === 0 && (
+        <Text size="sm" c="dimmed">
+          The trash is empty.
+        </Text>
+      )}
+      {sessions.map((s) => (
+        <Paper key={s.id} p="xs" withBorder>
+          <Group justify="space-between" wrap="nowrap">
+            <Stack gap={0} style={{ minWidth: 0 }}>
+              <Text size="sm" truncate>
+                {s.title}
+              </Text>
+              <Text size="xs" c="dimmed">
+                Trashed {new Date(s.trashed_at ?? "").toLocaleString()}
+              </Text>
+            </Stack>
+            <Group gap="xs" wrap="nowrap">
+              <Button
+                size="xs"
+                variant="default"
+                renderRoot={(props) => (
+                  <Link
+                    {...props}
+                    to="/sessions/$sessionId"
+                    params={{ sessionId: s.id }}
+                  />
+                )}
+              >
+                Open
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                loading={restore.isPending && restore.variables === s.id}
+                onClick={() => restore.mutate(s.id)}
+              >
+                Restore
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                variant="subtle"
+                onClick={() => confirmDelete(s)}
+              >
+                Delete forever
+              </Button>
+            </Group>
+          </Group>
+        </Paper>
       ))}
     </Stack>
   );

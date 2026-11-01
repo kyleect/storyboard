@@ -153,7 +153,12 @@ describe("loadMigrations", () => {
       "INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T')",
     ).run();
 
-    expect(migrate(db, all)).toEqual([2, 3, 4]);
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 4),
+      ),
+    ).toEqual([2, 3, 4]);
     expect(
       db
         .prepare("SELECT model, reasoning_effort FROM sessions WHERE id = 's'")
@@ -184,7 +189,12 @@ describe("loadMigrations", () => {
                ('r2', 's', 'single', 'never-saved', 'cancelled', 'T');
     `);
 
-    expect(migrate(db, all)).toEqual([4]);
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 4),
+      ),
+    ).toEqual([4]);
     expect(db.prepare("SELECT * FROM run_messages").all()).toEqual([
       { run_id: "r1", message_id: "m1", seq: 1 },
     ]);
@@ -192,6 +202,63 @@ describe("loadMigrations", () => {
       db.prepare("PRAGMA table_info(runs)").all() as { name: string }[]
     ).map((c) => c.name);
     expect(cols).not.toContain("message_id");
+  });
+
+  it("adds sessions.trashed_at and lets events have no run, keeping event ids", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 4),
+    );
+    db.exec(`
+      INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T');
+      INSERT INTO runs (id, session_id, kind, status, started_at)
+        VALUES ('r', 's', 'loop', 'finished', 'T');
+      INSERT INTO events (run_id, session_id, time, type, data)
+        VALUES ('r', 's', 'T', 'run.started', '{}'),
+               ('r', 's', 'T', 'run.finished', '{}'),
+               ('r', 's', 'T', 'run.finished', '{}');
+      DELETE FROM events WHERE id = 3;
+    `);
+
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 5),
+      ),
+    ).toEqual([5]);
+    expect(
+      db.prepare("SELECT trashed_at FROM sessions WHERE id = 's'").get(),
+    ).toEqual({ trashed_at: null });
+    expect(
+      db.prepare("SELECT id, run_id, type FROM events ORDER BY id").all(),
+    ).toEqual([
+      { id: 1, run_id: "r", type: "run.started" },
+      { id: 2, run_id: "r", type: "run.finished" },
+    ]);
+    // A deleted id is not reused, and run_id can be NULL.
+    const inserted = db
+      .prepare(
+        "INSERT INTO events (run_id, session_id, time, type, data) VALUES (NULL, 's', 'T', 'session.trashed', '{}')",
+      )
+      .run();
+    expect(Number(inserted.lastInsertRowid)).toBe(4);
+    const indexes = (
+      db.prepare("PRAGMA index_list(events)").all() as { name: string }[]
+    ).map((i) => i.name);
+    expect(indexes).toEqual(
+      expect.arrayContaining(["events_session", "events_run"]),
+    );
+    // The foreign keys still hold.
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO events (run_id, session_id, time, type, data) VALUES ('nope', 's', 'T', 'x', '{}')",
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
   });
 
   it("applies the project's migrations to an encrypted database", () => {

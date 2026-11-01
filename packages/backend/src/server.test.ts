@@ -52,7 +52,7 @@ async function setup(
 
 async function api(
   app: FastifyInstance,
-  method: "GET" | "POST" | "PUT" | "PATCH",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   url: string,
   body?: unknown,
 ) {
@@ -950,5 +950,181 @@ describe("loading a model", () => {
       (await api(app, "POST", "/api/models/load", { model: "" })).status,
     ).toBe(400);
     expect(asked).toEqual(["qwen", "running", "nope", "down"]);
+  });
+});
+
+describe("renaming a session", () => {
+  it("trims the title and rejects an empty one", async () => {
+    const { app } = await setup([]);
+    const id = await newSession(app);
+    const renamed = await api(app, "PATCH", `/api/sessions/${id}`, {
+      title: "  The lighthouse  ",
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.title).toBe("The lighthouse");
+    expect(
+      (await api(app, "PATCH", `/api/sessions/${id}`, { title: "   " })).status,
+    ).toBe(400);
+    expect(
+      (await api(app, "POST", "/api/sessions", { title: "  " })).status,
+    ).toBe(400);
+    const list = await api(app, "GET", "/api/sessions");
+    expect((list.body as unknown as { title: string }[])[0]?.title).toBe(
+      "The lighthouse",
+    );
+  });
+
+  it("renames and changes choices in one request", async () => {
+    const { app } = await setup([]);
+    const id = await newSession(app);
+    const { body } = await api(app, "PATCH", `/api/sessions/${id}`, {
+      title: "A",
+      model: "qwen3",
+    });
+    expect(body).toMatchObject({ title: "A", model: "qwen3" });
+  });
+});
+
+describe("trash", () => {
+  async function trashed(app: FastifyInstance) {
+    const id = await newSession(app);
+    const res = await api(app, "POST", `/api/sessions/${id}/trash`);
+    expect(res.status).toBe(200);
+    return id;
+  }
+
+  it("moves a session to the trash, where it can be read but not changed", async () => {
+    const { app } = await setup([]);
+    const id = await trashed(app);
+
+    const list = await api(app, "GET", "/api/sessions");
+    expect(list.body).toEqual([]);
+    const trash = await api(app, "GET", "/api/trash");
+    expect(trash.body.sessions).toMatchObject([{ id }]);
+
+    const detail = await api(app, "GET", `/api/sessions/${id}`);
+    expect(detail.status).toBe(200);
+    expect((detail.body.session as { trashed_at: unknown }).trashed_at).toEqual(
+      expect.any(String),
+    );
+
+    for (const [method, url, body] of [
+      ["POST", `/api/sessions/${id}/messages`, { content: "Hi" }],
+      ["POST", `/api/sessions/${id}/continue`, {}],
+      ["PATCH", `/api/sessions/${id}`, { title: "New" }],
+      ["POST", `/api/sessions/${id}/trash`, undefined],
+    ] as const) {
+      expect((await api(app, method, url, body)).status).toBe(409);
+    }
+  });
+
+  it("refuses to trash a session while a run is in progress", async () => {
+    const { app, runs } = await setup([
+      [
+        { type: "text", text: "a" },
+        { type: "wait", until: new Promise(() => {}) },
+      ],
+    ]);
+    const id = await newSession(app);
+    const run = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Hi",
+    });
+    const runId = run.body.runId as string;
+    expect((await api(app, "POST", `/api/sessions/${id}/trash`)).status).toBe(
+      409,
+    );
+    await api(app, "POST", `/api/runs/${runId}/cancel`);
+    await waitIdle(runs, runId);
+    expect((await api(app, "POST", `/api/sessions/${id}/trash`)).status).toBe(
+      200,
+    );
+  });
+
+  it("sends a stored session.trashed event with no run", async () => {
+    const { app, base } = await setup([]);
+    const id = await newSession(app);
+    const listening = stream(base, id, {
+      until: (got) => got.some((r) => r.event.type === "session.trashed"),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    await api(app, "POST", `/api/sessions/${id}/trash`);
+    const { got } = await listening;
+    expect(got.at(-1)?.event).toMatchObject({
+      type: "session.trashed",
+      runId: null,
+      sessionId: id,
+      data: {},
+    });
+
+    // It is replayed like other events.
+    const replay = await stream(base, id, {
+      lastEventId: 0,
+      until: (r) => r.length > 0,
+    });
+    expect(replay.got[0]?.id).toBe(got.at(-1)?.id);
+  });
+
+  it("restores a session", async () => {
+    const { app } = await setup([]);
+    const id = await trashed(app);
+    const restored = await api(app, "POST", `/api/sessions/${id}/restore`);
+    expect(restored.body).toMatchObject({ id, trashed_at: null });
+    expect(await api(app, "GET", "/api/sessions")).toMatchObject({
+      body: [{ id }],
+    });
+    expect((await api(app, "POST", `/api/sessions/${id}/restore`)).status).toBe(
+      409,
+    );
+  });
+
+  it("deletes only a trashed session, with all its rows", async () => {
+    const { app, runs, t, store } = await setup([
+      [{ type: "text", text: "Hello" }],
+    ]);
+    const id = await newSession(app);
+    const keep = await newSession(app);
+    const run = await api(app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Hi",
+    });
+    await waitIdle(runs, run.body.runId as string);
+    store.allowToolForSession(id, "clock", "T");
+
+    expect((await api(app, "DELETE", `/api/sessions/${id}`)).status).toBe(409);
+    await api(app, "POST", `/api/sessions/${id}/trash`);
+    expect((await api(app, "DELETE", `/api/sessions/${id}`)).status).toBe(200);
+    expect((await api(app, "GET", `/api/sessions/${id}`)).status).toBe(404);
+    expect((await api(app, "DELETE", `/api/sessions/${id}`)).status).toBe(404);
+
+    const count = (table: string) =>
+      (
+        t.db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as {
+          n: number;
+        }
+      ).n;
+    for (const table of [
+      "messages",
+      "runs",
+      "run_messages",
+      "events",
+      "session_tool_approvals",
+    ]) {
+      expect(count(table), table).toBe(0);
+    }
+    expect(store.getSession(keep)).toBeDefined();
+  });
+
+  it("empties the trash", async () => {
+    const { app } = await setup([]);
+    await trashed(app);
+    await trashed(app);
+    const keep = await newSession(app);
+    const res = await api(app, "DELETE", "/api/trash");
+    expect(res.body).toEqual({ purged: 2 });
+    expect((await api(app, "GET", "/api/trash")).body).toEqual({
+      sessions: [],
+    });
+    expect(await api(app, "GET", "/api/sessions")).toMatchObject({
+      body: [{ id: keep }],
+    });
   });
 });

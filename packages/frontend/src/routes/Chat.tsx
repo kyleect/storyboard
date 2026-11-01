@@ -12,6 +12,7 @@ import {
   Stack,
   Text,
   Textarea,
+  TextInput,
   Title,
   UnstyledButton,
 } from "@mantine/core";
@@ -30,6 +31,7 @@ import { api, type Choices, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
 import { ModelPicker } from "./ModelPicker";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
+import { showError, useSessionActions } from "./SessionActions";
 
 interface ShownMessage {
   id: string;
@@ -51,7 +53,13 @@ export function Chat() {
     queryKey: ["settings"],
     queryFn: api.getSettings,
   });
-  useSessionEvents(sessionId, detail.data);
+  // Start the stream from a fresh load, not from cached data: a cached
+  // snapshot's last event id can be older than events already handled, such
+  // as session.trashed when a trashed session is opened from the trash.
+  useSessionEvents(
+    sessionId,
+    detail.isFetchedAfterMount ? detail.data : undefined,
+  );
   const live = useLive((s) => s.runs[sessionId]);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
   const [draft, setDraft] = useState("");
@@ -63,6 +71,8 @@ export function Chat() {
       message: err.message,
     });
   const queryClient = useQueryClient();
+  const actions = useSessionActions();
+  const [restoring, setRestoring] = useState(false);
   const session = detail.data?.session;
   const choices: Choices = {
     ...(session?.model ? { model: session.model } : {}),
@@ -150,8 +160,14 @@ export function Chat() {
   if (liveShown && !shown.some((m) => m.id === liveShown.id)) {
     shown.push(liveShown);
   }
+  // A session in the trash can be read, not changed (design Q3a).
+  const trashed = detail.data.session.trashed_at !== null;
   const busy =
-    !!live || send.isPending || cont.isPending || setChoices.isPending;
+    trashed ||
+    !!live ||
+    send.isPending ||
+    cont.isPending ||
+    setChoices.isPending;
   const last = shown.at(-1);
   const reasoningNow = live?.message?.content.at(-1)?.type === "reasoning";
   const pending = live?.approvals[0];
@@ -163,12 +179,38 @@ export function Chat() {
 
   return (
     <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between">
-        <Title order={3}>{detail.data.session.title}</Title>
+      <Group justify="space-between" wrap="nowrap">
+        <EditableTitle
+          title={detail.data.session.title}
+          disabled={trashed}
+          onSave={(title) => actions.rename(sessionId, title)}
+        />
         <Badge color={connected ? "green" : "gray"} variant="light">
           {connected ? "live" : "offline"}
         </Badge>
       </Group>
+
+      {trashed && (
+        <Alert color="yellow" title="This session is in the trash">
+          <Group justify="space-between">
+            <Text size="sm">It can be read but not changed.</Text>
+            <Button
+              size="xs"
+              variant="light"
+              loading={restoring}
+              onClick={() => {
+                setRestoring(true);
+                actions
+                  .restore(sessionId)
+                  .catch(showError("Could not restore"))
+                  .finally(() => setRestoring(false));
+              }}
+            >
+              Restore
+            </Button>
+          </Group>
+        </Alert>
+      )}
 
       <ScrollArea style={{ flex: 1 }}>
         <Stack gap="sm" pr="md">
@@ -199,7 +241,7 @@ export function Chat() {
                 ? `Default (${defaults.model})`
                 : "Default (none set; the server decides)"
             }
-            disabled={setChoices.isPending}
+            disabled={trashed || setChoices.isPending}
           />
           <ReasoningPicker
             model={levelsModel}
@@ -212,7 +254,7 @@ export function Chat() {
                 ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
                 : "Reasoning: default (server decides)"
             }
-            disabled={setChoices.isPending}
+            disabled={trashed || setChoices.isPending}
           />
         </Group>
         {live ? (
@@ -280,6 +322,7 @@ export function Chat() {
             minRows={2}
             maxRows={8}
             placeholder="Write a message (Ctrl+Enter to send)"
+            disabled={trashed}
             value={draft}
             onChange={(e) => setDraft(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -295,6 +338,75 @@ export function Chat() {
         </Group>
       </form>
     </Stack>
+  );
+}
+
+/**
+ * The session title; click to edit it in place (design Q1). Enter or
+ * leaving the field saves, Escape cancels.
+ */
+function EditableTitle({
+  title,
+  disabled,
+  onSave,
+}: {
+  title: string;
+  disabled: boolean;
+  onSave: (title: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  if (draft === null || disabled) {
+    return (
+      <UnstyledButton
+        onClick={() => setDraft(title)}
+        disabled={disabled}
+        title={disabled ? undefined : "Rename"}
+        style={{ minWidth: 0 }}
+      >
+        <Title order={3} lineClamp={1}>
+          {title}
+        </Title>
+      </UnstyledButton>
+    );
+  }
+
+  const save = () => {
+    // Enter saves, and the field then loses focus: save once.
+    if (saving) return;
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === title) {
+      setDraft(null);
+      return;
+    }
+    setSaving(true);
+    onSave(trimmed)
+      .then(() => setDraft(null))
+      .catch(showError("Could not rename"))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <TextInput
+      style={{ flex: 1 }}
+      size="md"
+      autoFocus
+      aria-label="Session title"
+      value={draft}
+      disabled={saving}
+      error={draft.trim() ? null : "A title is required"}
+      onChange={(e) => setDraft(e.currentTarget.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          save();
+        } else if (e.key === "Escape") {
+          setDraft(null);
+        }
+      }}
+    />
   );
 }
 

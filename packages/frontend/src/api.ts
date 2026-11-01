@@ -87,6 +87,13 @@ export interface Session {
   model: string | null;
   /** The session's chosen reasoning effort; null means the default. */
   reasoning_effort: string | null;
+  /** When it was moved to the trash; null when it is not in the trash. */
+  trashed_at: string | null;
+}
+
+/** Everything in the trash. */
+export interface Trash {
+  sessions: Session[];
 }
 
 export interface StoredMessage {
@@ -132,6 +139,8 @@ export interface Settings {
   port: number;
   /** The most model calls one run makes. */
   loopLimit: number;
+  /** Days in the trash before deletion at startup; 0: never. */
+  trashRetentionDays: number;
 }
 
 export interface SettingsView {
@@ -180,6 +189,17 @@ export const api = {
     request<Session>("POST", "/api/sessions", title ? { title } : {}),
   getSession: (id: string) =>
     request<SessionDetail>("GET", `/api/sessions/${id}`),
+  renameSession: (id: string, title: string) =>
+    request<Session>("PATCH", `/api/sessions/${id}`, { title }),
+  trashSession: (id: string) =>
+    request<Session>("POST", `/api/sessions/${id}/trash`),
+  restoreSession: (id: string) =>
+    request<Session>("POST", `/api/sessions/${id}/restore`),
+  /** Permanently deletes a session in the trash. */
+  deleteSession: (id: string) =>
+    request<{ ok: true }>("DELETE", `/api/sessions/${id}`),
+  getTrash: () => request<Trash>("GET", "/api/trash"),
+  emptyTrash: () => request<{ purged: number }>("DELETE", "/api/trash"),
   sendMessage: (id: string, content: string, choices: Choices) =>
     request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
       content,

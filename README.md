@@ -38,16 +38,17 @@ get a new token.
 
 ### Backend environment variables
 
-| Variable                   | Default                                      | Purpose                                                                             |
-| -------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `HARNESS_DATA_DIR`         | `~/Library/Application Support/harness`      | Folder for the database, key file and runtime file                                  |
-| `HARNESS_DB_PATH`          | `<data dir>/harness.db`                      | Encrypted database                                                                  |
-| `HARNESS_KEY_FILE`         | `<data dir>/harness.key`                     | Database key; created on first run (mode 600)                                       |
-| `HARNESS_LLAMA_URL`        | stored setting, else `http://127.0.0.1:8080` | llama-server address                                                                |
-| `HARNESS_MODEL`            | stored setting, else empty (not sent)        | Default model for sessions with none chosen                                         |
-| `HARNESS_REASONING_EFFORT` | stored setting, else empty (not sent)        | Default reasoning effort for sessions with none chosen (`none` turns reasoning off) |
-| `HARNESS_PORT`             | stored setting, else `4317`                  | Backend port                                                                        |
-| `HARNESS_LOOP_LIMIT`       | stored setting, else `20`                    | The most model calls one run makes                                                  |
+| Variable                       | Default                                      | Purpose                                                                             |
+| ------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `HARNESS_DATA_DIR`             | `~/Library/Application Support/harness`      | Folder for the database, key file and runtime file                                  |
+| `HARNESS_DB_PATH`              | `<data dir>/harness.db`                      | Encrypted database                                                                  |
+| `HARNESS_KEY_FILE`             | `<data dir>/harness.key`                     | Database key; created on first run (mode 600)                                       |
+| `HARNESS_LLAMA_URL`            | stored setting, else `http://127.0.0.1:8080` | llama-server address                                                                |
+| `HARNESS_MODEL`                | stored setting, else empty (not sent)        | Default model for sessions with none chosen                                         |
+| `HARNESS_REASONING_EFFORT`     | stored setting, else empty (not sent)        | Default reasoning effort for sessions with none chosen (`none` turns reasoning off) |
+| `HARNESS_PORT`                 | stored setting, else `4317`                  | Backend port                                                                        |
+| `HARNESS_LOOP_LIMIT`           | stored setting, else `20`                    | The most model calls one run makes                                                  |
+| `HARNESS_TRASH_RETENTION_DAYS` | stored setting, else `30`                    | Days in the trash before an item is deleted at startup (`0`: never)                 |
 
 `HARNESS_BACKEND_URL` tells the frontend dev server where the backend is
 (default `http://127.0.0.1:4317`).

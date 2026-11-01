@@ -104,6 +104,33 @@ export class RunManager {
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
 
+  /**
+   * Moves a session to the trash and emits `session.trashed` (design Q3,
+   * Q7). Refused while a run is in progress in it (Q5).
+   */
+  trashSession(sessionId: string) {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new RunError("Session not found.", 404);
+    if (session.trashed_at !== null) {
+      throw new RunError("The session is already in the trash.", 409);
+    }
+    if (this.hasActiveRun(sessionId)) {
+      throw new RunError(
+        "A run is in progress in this session. Wait for it to end or cancel it.",
+        409,
+      );
+    }
+    const now = this.now();
+    this.store.setSessionTrashed(sessionId, now);
+    this.publish({
+      runId: null,
+      sessionId,
+      time: now,
+      type: "session.trashed",
+      data: {},
+    });
+  }
+
   /** Listen to a session's events. Returns the unsubscribe function. */
   subscribe(sessionId: string, listener: Listener): () => void {
     let set = this.listeners.get(sessionId);
@@ -351,17 +378,29 @@ export class RunManager {
   private requireIdle(sessionId: string) {
     if (this.shuttingDown)
       throw new RunError("The backend is shutting down.", 503);
-    if (!this.store.getSession(sessionId)) {
+    const session = this.store.getSession(sessionId);
+    if (!session) {
       throw new RunError("Session not found.", 404);
     }
-    for (const run of this.active.values()) {
-      if (run.sessionId === sessionId) {
-        throw new RunError(
-          "A run is already in progress in this session.",
-          409,
-        );
-      }
+    if (session.trashed_at !== null) {
+      throw new RunError("The session is in the trash.", 409);
     }
+    if (this.hasActiveRun(sessionId)) {
+      throw new RunError("A run is already in progress in this session.", 409);
+    }
+  }
+
+  private hasActiveRun(sessionId: string): boolean {
+    for (const run of this.active.values()) {
+      if (run.sessionId === sessionId) return true;
+    }
+    return false;
+  }
+
+  /** Stores an event, then sends it to the session's listeners. */
+  private publish(event: HarnessEvent) {
+    const stored = this.store.insertEvent(event);
+    for (const l of this.listeners.get(event.sessionId) ?? []) l(stored);
   }
 
   private start(
@@ -403,8 +442,7 @@ export class RunManager {
         this.shuttingDown && event.type === "run.finished"
           ? { ...event, type: "run.interrupted", data: {} }
           : event;
-      const stored = this.store.insertEvent(e);
-      for (const l of this.listeners.get(sessionId) ?? []) l(stored);
+      this.publish(e);
     };
 
     const saveMessage = (id: string, message: Message) => {

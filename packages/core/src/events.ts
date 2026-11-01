@@ -221,6 +221,17 @@ export const EventBody = z.discriminatedUnion("type", [
 ]);
 export type EventBody = z.infer<typeof EventBody>;
 
+/*
+ * Session events belong to a session but to no run; their envelope's
+ * `runId` is null (sessions and projects design, Q7b).
+ */
+
+/** The session was moved to the trash. */
+export const SessionTrashed = event("session.trashed", z.object({}));
+
+export const SessionEventBody = z.discriminatedUnion("type", [SessionTrashed]);
+export type SessionEventBody = z.infer<typeof SessionEventBody>;
+
 const Envelope = z.object({
   runId: z.string(),
   sessionId: z.string(),
@@ -228,16 +239,27 @@ const Envelope = z.object({
   time: z.string(),
 });
 
-/** An event as emitted by the core. */
-export const HarnessEvent = z.intersection(Envelope, EventBody);
+const SessionEnvelope = Envelope.extend({ runId: z.null() });
+
+/** An event as emitted by the core (run events) or the backend. */
+export const HarnessEvent = z.union([
+  z.intersection(Envelope, EventBody),
+  z.intersection(SessionEnvelope, SessionEventBody),
+]);
 export type HarnessEvent = z.infer<typeof HarnessEvent>;
 
+/** An event that belongs to a run. */
+export type RunEvent = Extract<HarnessEvent, { runId: string }>;
+
 /** An event after storage, with its replay ID. */
-export const StoredEvent = z.intersection(
-  Envelope.extend({ id: z.number().int() }),
-  EventBody,
-);
+export const StoredEvent = z.union([
+  z.intersection(Envelope.extend({ id: z.number().int() }), EventBody),
+  z.intersection(
+    SessionEnvelope.extend({ id: z.number().int() }),
+    SessionEventBody,
+  ),
+]);
 export type StoredEvent = z.infer<typeof StoredEvent>;
 
-export type EventType = EventBody["type"];
+export type EventType = HarnessEvent["type"];
 export type EventOf<T extends EventType> = Extract<HarnessEvent, { type: T }>;

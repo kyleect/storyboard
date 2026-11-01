@@ -42,6 +42,8 @@ export interface ServerOptions {
 }
 
 const IdParams = z.object({ id: z.string() });
+/** Trimmed; empty is rejected; no maximum (design Q2). */
+const Title = z.string().trim().min(1);
 const ModelName = z.string().min(1);
 /** "none" turns reasoning off; other values go to the chat template. */
 const Effort = z.string().min(1);
@@ -142,9 +144,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   app.get("/api/sessions", async () => store.listSessions());
 
   app.post("/api/sessions", async (req, reply) => {
-    const body = z
-      .object({ title: z.string().min(1).optional() })
-      .parse(req.body ?? {});
+    const body = z.object({ title: Title.optional() }).parse(req.body ?? {});
     const session = store.createSession(
       newId(),
       body.title ?? "New session",
@@ -196,25 +196,77 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
-   * Changes the session's choices. A field left out is unchanged; null
-   * returns it to the default from Settings.
+   * Renames the session or changes its choices. A field left out is
+   * unchanged; null returns a choice to the default from Settings. Refused
+   * for a session in the trash.
    */
   app.patch("/api/sessions/:id", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const choices = z
+    const { title, ...choices } = z
       .object({
+        title: Title.optional(),
         model: ModelName.nullable().optional(),
         reasoningEffort: Effort.nullable().optional(),
       })
-      .refine((c) => c.model !== undefined || c.reasoningEffort !== undefined, {
-        message: "Nothing to change",
-      })
+      .refine(
+        (c) =>
+          c.title !== undefined ||
+          c.model !== undefined ||
+          c.reasoningEffort !== undefined,
+        { message: "Nothing to change" },
+      )
       .parse(req.body);
-    if (!store.getSession(id))
-      return reply.code(404).send({ error: "Session not found." });
+    const session = store.getSession(id);
+    if (!session) return reply.code(404).send({ error: "Session not found." });
+    if (session.trashed_at !== null)
+      return reply.code(409).send({ error: "The session is in the trash." });
+    if (title !== undefined) store.renameSession(id, title);
     store.setSessionChoices(id, defined(choices));
     return store.getSession(id);
   });
+
+  /** Moves the session to the trash. 409 while a run is in progress. */
+  app.post("/api/sessions/:id/trash", async (req) => {
+    const { id } = IdParams.parse(req.params);
+    runs.trashSession(id);
+    return store.getSession(id);
+  });
+
+  /** Takes the session out of the trash. */
+  app.post("/api/sessions/:id/restore", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const session = store.getSession(id);
+    if (!session) return reply.code(404).send({ error: "Session not found." });
+    if (session.trashed_at === null)
+      return reply
+        .code(409)
+        .send({ error: "The session is not in the trash." });
+    store.setSessionTrashed(id, null);
+    return store.getSession(id);
+  });
+
+  /** Permanently deletes a session. Only a session in the trash. */
+  app.delete("/api/sessions/:id", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const session = store.getSession(id);
+    if (!session) return reply.code(404).send({ error: "Session not found." });
+    if (session.trashed_at === null)
+      return reply
+        .code(409)
+        .send({ error: "Only a session in the trash can be deleted." });
+    store.purgeSession(id);
+    return { ok: true };
+  });
+
+  /** Everything in the trash. */
+  app.get("/api/trash", async () => ({
+    sessions: store.listTrashedSessions(),
+  }));
+
+  /** Empties the trash: permanently deletes everything in it. */
+  app.delete("/api/trash", async () => ({
+    purged: store.purgeTrashedSessions().length,
+  }));
 
   app.post("/api/sessions/:id/messages", async (req, reply) => {
     const { id } = IdParams.parse(req.params);

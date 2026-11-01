@@ -1,7 +1,9 @@
 import {
+  ActionIcon,
   AppShell,
   Button,
   Group,
+  Menu,
   NavLink,
   ScrollArea,
   Stack,
@@ -10,7 +12,8 @@ import {
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import { api } from "../api";
+import { api, type Session } from "../api";
+import { useSessionActions } from "./SessionActions";
 
 export function Layout() {
   const queryClient = useQueryClient();
@@ -65,6 +68,7 @@ export function Layout() {
                 label={s.title}
                 description={new Date(s.created_at).toLocaleString()}
                 active={params.sessionId === s.id}
+                rightSection={<SessionMenu session={s} />}
               />
             ))}
           </ScrollArea>
@@ -78,6 +82,38 @@ export function Layout() {
         <Outlet />
       </AppShell.Main>
     </AppShell>
+  );
+}
+
+/** The ⋯ menu on a session's navbar entry: Rename, Move to trash. */
+function SessionMenu({ session }: { session: Session }) {
+  const actions = useSessionActions();
+  return (
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          size="sm"
+          aria-label={`Actions for ${session.title}`}
+          // The entry is a link; the menu must not follow it.
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          ⋯
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Item onClick={() => actions.openRename(session)}>
+          Rename
+        </Menu.Item>
+        <Menu.Item color="red" onClick={() => actions.confirmTrash(session)}>
+          Move to trash
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
   );
 }
 

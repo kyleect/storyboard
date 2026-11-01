@@ -19,6 +19,11 @@ export const Settings = z.object({
   port: z.number().int().min(0).max(65535),
   /** The most model calls one run makes (design doc 6.17). */
   loopLimit: z.number().int().min(1),
+  /**
+   * Days an item stays in the trash before it is purged at startup. 0: never
+   * purged automatically (sessions and projects design, Q3d, Q3f).
+   */
+  trashRetentionDays: z.number().int().min(0),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -28,6 +33,7 @@ export const DEFAULTS: Settings = {
   reasoningEffort: "",
   port: 4317,
   loopLimit: 20,
+  trashRetentionDays: 30,
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -36,9 +42,14 @@ const ENV: Record<keyof Settings, string> = {
   reasoningEffort: "HARNESS_REASONING_EFFORT",
   port: "HARNESS_PORT",
   loopLimit: "HARNESS_LOOP_LIMIT",
+  trashRetentionDays: "HARNESS_TRASH_RETENTION_DAYS",
 };
 
-const NUMERIC = new Set<keyof Settings>(["port", "loopLimit"]);
+const NUMERIC = new Set<keyof Settings>([
+  "port",
+  "loopLimit",
+  "trashRetentionDays",
+]);
 
 export interface SettingsView {
   /** What is in effect. */

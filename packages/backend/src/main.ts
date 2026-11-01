@@ -10,6 +10,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings } from "./settings.js";
 import { Store } from "./store.js";
+import { purgeExpiredTrash } from "./trash.js";
 import { loadOrCreateToken } from "./token.js";
 
 /** Migrations ship as files next to the backend for now (see README). */
@@ -37,6 +38,7 @@ async function main() {
     tools: allTools,
   });
   const recovered = runs.recover();
+  const purged = purgeExpiredTrash(store, settings().trashRetentionDays);
 
   const token = loadOrCreateToken(boot.tokenFile);
   const app = buildServer({ store, runs, token, logger: true });
@@ -57,6 +59,7 @@ async function main() {
       dataDir: boot.dataDir,
       migrationsApplied: applied,
       runsRecovered: recovered.length,
+      trashPurged: purged.length,
     },
     "backend ready",
   );

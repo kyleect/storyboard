@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { notifications } from "@mantine/notifications";
 import {
   applyMessageEvent,
@@ -68,6 +69,7 @@ export function useSessionEvents(
   detail: SessionDetail | undefined,
 ) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const ready = detail !== undefined;
 
   useEffect(() => {
@@ -95,6 +97,16 @@ export function useSessionEvents(
       const state = useLive.getState();
 
       switch (event.type) {
+        case "session.trashed":
+          // Trashed here or in another window (sessions and projects
+          // design, Q7a).
+          void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+          void queryClient.invalidateQueries({ queryKey: ["trash"] });
+          void queryClient.invalidateQueries({
+            queryKey: ["session", sessionId],
+          });
+          void navigate({ to: "/" });
+          break;
         case "run.started":
           state.set(sessionId, {
             runId: event.runId,
