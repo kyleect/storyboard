@@ -6,7 +6,8 @@ import { defineTool } from "@harness/core";
 /*
  * Web tools. Fetched HTML is converted to Markdown with Turndown. The
  * contents of <style>, <script> and <noscript> are dropped first, so no CSS
- * or JavaScript ends up in the Markdown.
+ * or JavaScript ends up in the Markdown. Images are dropped too, along with
+ * any link left with no text once its image is gone.
  *
  * Search results are read out of DuckDuckGo Lite's page with selectors and
  * written as one short Markdown line each (title, URL, snippet), so the
@@ -15,9 +16,25 @@ import { defineTool } from "@harness/core";
 
 const turndown = new TurndownService().remove(["style", "script", "noscript"]);
 
-/** Converts an HTML page to Markdown. */
+/** Image elements. <picture> also holds <source> elements. */
+const IMAGE_SELECTOR = "img, picture, svg";
+
+/**
+ * Converts an HTML page to Markdown, without images.
+ *
+ * Images are removed from the parsed page rather than with Turndown's
+ * remove(), because Turndown's built-in image rule takes precedence over it.
+ */
 export function htmlToMarkdown(html: string): string {
-  return turndown.turndown(html);
+  const doc = createDocument(html);
+  for (const el of Array.from(doc.querySelectorAll(IMAGE_SELECTOR))) {
+    el.remove();
+  }
+  // Links that only wrapped an image (logos, icons) would become "[](url)".
+  for (const link of Array.from(doc.querySelectorAll("a"))) {
+    if (!link.textContent?.trim()) link.remove();
+  }
+  return turndown.turndown(doc as unknown as TurndownService.Node);
 }
 
 export interface SearchResult {
@@ -110,7 +127,9 @@ export function parseDuckDuckGoResults(html: string): ParsedSearchPage {
   // its snippet isn't attached to the result before it.
   let current: SearchResult | null = null;
 
-  for (const el of doc.querySelectorAll("a.result-link, td.result-snippet")) {
+  for (const el of Array.from(
+    doc.querySelectorAll("a.result-link, td.result-snippet"),
+  )) {
     if (el.matches("td.result-snippet")) {
       if (current && !current.snippet) current.snippet = clean(el.textContent);
       continue;
@@ -135,7 +154,7 @@ export function parseDuckDuckGoResults(html: string): ParsedSearchPage {
   }
 
   // Fallback: the page's outbound links, titled by their text.
-  for (const el of doc.querySelectorAll("a[href]")) {
+  for (const el of Array.from(doc.querySelectorAll("a[href]"))) {
     const url = resultUrl(el.getAttribute("href") ?? "");
     const title = clean(el.textContent);
     if (title && isOutboundUrl(url))

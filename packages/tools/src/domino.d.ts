@@ -5,18 +5,24 @@
  * web tools use are declared here.
  */
 declare module "@mixmark-io/domino" {
+  /*
+   * querySelectorAll returns an array for most selectors but a live
+   * collection, which for...of can't iterate, for a plain tag or class
+   * selector such as "a". Wrap results in Array.from.
+   */
   interface DominoElement {
     readonly textContent: string | null;
     getAttribute(name: string): string | null;
     matches(selector: string): boolean;
     closest(selector: string): DominoElement | null;
     querySelector(selector: string): DominoElement | null;
-    querySelectorAll(selector: string): Iterable<DominoElement>;
+    querySelectorAll(selector: string): ArrayLike<DominoElement>;
+    remove(): void;
   }
 
   interface DominoDocument {
     querySelector(selector: string): DominoElement | null;
-    querySelectorAll(selector: string): Iterable<DominoElement>;
+    querySelectorAll(selector: string): ArrayLike<DominoElement>;
   }
 
   export function createDocument(

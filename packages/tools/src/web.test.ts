@@ -54,6 +54,20 @@ describe("htmlToMarkdown", () => {
       "T \n\nHello\n=====\n\nA [link](https://example.com).",
     );
   });
+
+  it("drops images and links that only held an image", () => {
+    const html = `<html><body>
+      <a href="/"><img src="logo.png" alt="Logo"></a>
+      <a href="/home"> <svg><title>Home</title><path d="M0 0"/></svg> </a>
+      <p>Before <img src="a.png" alt="A"> after.</p>
+      <picture><source srcset="b.webp"><img src="b.png" alt="B"></picture>
+      <figure><img src="c.png"><figcaption>Caption</figcaption></figure>
+      <p><a href="/more"><img src="arrow.png"> Read more</a></p>
+    </body></html>`;
+    expect(htmlToMarkdown(html)).toBe(
+      "Before after.\n\nCaption\n\n[Read more](/more)",
+    );
+  });
 });
 
 /**
