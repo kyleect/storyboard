@@ -395,6 +395,7 @@ describe("continue", () => {
         },
         model: null,
         reasoningEffort: null,
+        agent: null,
         // The continuing call's usage replaces the first call's.
         usage: { promptTokens: 7, completionTokens: 3 },
       },

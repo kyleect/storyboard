@@ -236,6 +236,23 @@ describe("runSingleCall", () => {
     });
   });
 
+  it("reports the agent on run.started, and checks its shape", async () => {
+    const { events, ctx, model } = setup([{ type: "text", text: "x" }]);
+    const agent = { id: "a1", name: "Editor", version: 3, projectId: null };
+    await runSingleCall(model, request, { ...ctx, agent });
+    expect(events[0]).toMatchObject({
+      type: "run.started",
+      data: { kind: "single", agent },
+    });
+    expect(HarnessEvent.safeParse(events[0]).success).toBe(true);
+    expect(
+      HarnessEvent.safeParse({
+        ...events[0],
+        data: { kind: "single", agent: { id: "a1" } },
+      }).success,
+    ).toBe(false);
+  });
+
   it("records the parent run when nested", async () => {
     const { events, ctx, model } = setup([{ type: "text", text: "x" }]);
     await runSingleCall(model, request, { ...ctx, parentRunId: "run-0" });

@@ -14,6 +14,9 @@ import {
   type ReasoningLevels,
   type StoredEvent,
 } from "@harness/core";
+import { registerAgentRoutes } from "./agent-routes.js";
+import { AgentStore } from "./agents-store.js";
+import { AppEvents, type AppEvent } from "./app-events.js";
 import { EntryStore } from "./entries-store.js";
 import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
@@ -36,6 +39,10 @@ export interface ServerOptions {
   onSettingsSaved?: () => void;
   /** Project and global files and notes. Default: over `store.db`. */
   entries?: EntryStore;
+  /** Agents. Default: over `store.db`. */
+  agents?: AgentStore;
+  /** The app-wide event stream's source. Default: a new one. */
+  events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
   keepaliveMs?: number;
   logger?: boolean;
@@ -58,9 +65,12 @@ const Title = z.string().trim().min(1);
 const ModelName = z.string().min(1);
 /** "none" turns reasoning off; other values go to the chat template. */
 const Effort = z.string().min(1);
+/** Null: no agent (agents design 12). */
+const AgentId = z.string().min(1).nullable();
 const Choices = z.object({
   model: ModelName.optional(),
   reasoningEffort: Effort.optional(),
+  agentId: AgentId.optional(),
 });
 
 /** Drops undefined fields (exactOptionalPropertyTypes). */
@@ -144,6 +154,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     store,
     runs,
     entries: options.entries ?? new EntryStore(store.db, now, newId),
+  });
+
+  const events = options.events ?? new AppEvents();
+  registerAgentRoutes(app, {
+    store,
+    runs,
+    agents: options.agents ?? new AgentStore(store.db, now, newId),
+    events,
   });
 
   app.get("/api/settings", async () => readSettings(store.db, env));
@@ -276,12 +294,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         title: Title.optional(),
         model: ModelName.nullable().optional(),
         reasoningEffort: Effort.nullable().optional(),
+        agentId: AgentId.optional(),
       })
       .refine(
         (c) =>
           c.title !== undefined ||
           c.model !== undefined ||
-          c.reasoningEffort !== undefined,
+          c.reasoningEffort !== undefined ||
+          c.agentId !== undefined,
         { message: "Nothing to change" },
       )
       .parse(req.body);
@@ -289,6 +309,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (!session) return reply.code(404).send({ error: "Session not found." });
     if (session.trashed_at !== null)
       return reply.code(409).send({ error: "The session is in the trash." });
+    runs.checkAgentChoice(id, defined(choices));
     if (title !== undefined) store.renameSession(id, title);
     store.setSessionChoices(id, defined(choices));
     return store.getSession(id);
@@ -516,6 +537,39 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (!store.getRun(id))
       return reply.code(404).send({ error: "Run not found." });
     return { cancelled: runs.cancel(id) };
+  });
+
+  /*
+   * App-wide server-sent events (agents plan, P7): not stored, so there is
+   * no replay; a client refetches when the stream opens. Sends a keepalive
+   * comment after `keepaliveMs` idle.
+   */
+  app.get("/api/events", (req, reply) => {
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        res.write(": keepalive\n\n");
+        arm();
+      }, keepaliveMs);
+    };
+    const unsubscribe = events.subscribe((event: AppEvent) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      arm();
+    });
+    res.write(": connected\n\n");
+    arm();
+    req.raw.on("close", () => {
+      clearTimeout(timer);
+      unsubscribe();
+    });
   });
 
   /*

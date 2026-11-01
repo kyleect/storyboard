@@ -80,6 +80,16 @@ const results = (saved: { message: Message }[]) =>
     .filter((m): m is ToolResultMessage => m.role === "tool");
 
 describe("runLoop", () => {
+  it("reports the agent on run.started", async () => {
+    const { events, ctx, model } = setup([[{ type: "text", text: "x" }]]);
+    const agent = { id: "a1", name: "Editor", version: 2, projectId: "p" };
+    await runLoop(model, request, { ...ctx, agent });
+    expect(events[0]).toMatchObject({
+      type: "run.started",
+      data: { kind: "loop", agent },
+    });
+  });
+
   it("runs a tool, sends the result back, and stops when the model does", async () => {
     const { events, saved, ctx, model } = setup([
       [

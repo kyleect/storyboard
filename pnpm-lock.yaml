@@ -39,7 +39,7 @@ importers:
         version: 8.72.1(eslint@10.14.0)(typescript@6.0.3)
       vitest:
         specifier: 5.0.5
-        version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15))
+        version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1))
 
   packages/backend:
     dependencies:
@@ -58,6 +58,9 @@ importers:
       sqlite-vec:
         specifier: 0.1.9
         version: 0.1.9
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -116,7 +119,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: 6.1.2
-        version: 6.1.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15))
+        version: 6.1.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1))
       postcss-preset-mantine:
         specifier: 1.18.0
         version: 1.18.0(postcss@8.5.32)
@@ -125,13 +128,16 @@ importers:
         version: 7.0.1(postcss@8.5.32)
       vite:
         specifier: 8.3.5
-        version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)
+        version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1)
 
   packages/tools:
     dependencies:
       '@harness/core':
         specifier: workspace:*
         version: link:../core
+      '@mixmark-io/domino':
+        specifier: ^2.2.0
+        version: 2.2.0
       turndown:
         specifier: ^7.2.4
         version: 7.2.4
@@ -1760,6 +1766,11 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
@@ -2365,19 +2376,19 @@ snapshots:
       '@typescript-eslint/types': 8.72.1
       eslint-visitor-keys: 5.0.1
 
-  '@vitejs/plugin-react@6.1.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15))':
+  '@vitejs/plugin-react@6.1.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)
+      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1)
 
-  '@vitest/mocker@5.0.5(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15))':
+  '@vitest/mocker@5.0.5(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.5
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
-      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)
+      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/spy@5.0.5': {}
 
@@ -3182,7 +3193,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15):
+  vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -3195,11 +3206,12 @@ snapshots:
       fsevents: 2.3.3
       sugarss: 5.0.2(postcss@8.5.32)
       tsx: 4.23.15
+      yaml: 2.9.1
 
-  vitest@5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)):
+  vitest@5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.5(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15))
+      '@vitest/mocker': 5.0.5(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -3210,7 +3222,7 @@ snapshots:
       tinybench: 6.2.2
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)
+      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(sugarss@5.0.2(postcss@8.5.32))(tsx@4.23.15)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@types/node': 22.20.5
@@ -3226,6 +3238,8 @@ snapshots:
   word-wrap@1.2.5: {}
 
   yallist@3.1.1: {}
+
+  yaml@2.9.1: {}
 
   yocto-queue@0.1.0: {}
 

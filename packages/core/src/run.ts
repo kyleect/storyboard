@@ -1,4 +1,9 @@
-import type { EventBody, FinishReason, HarnessEvent } from "./events.js";
+import type {
+  EventBody,
+  FinishReason,
+  HarnessEvent,
+  RunAgent,
+} from "./events.js";
 import type { AssistantMessage, ContentBlock, Usage } from "./messages.js";
 import type { ChatRequest, ModelAdapter } from "./model.js";
 
@@ -8,6 +13,8 @@ export interface RunContext {
   emit: (event: HarnessEvent) => void;
   signal: AbortSignal;
   parentRunId?: string;
+  /** The agent the run runs as; reported in `run.started`. */
+  agent?: RunAgent;
   /** Defaults to the current time as ISO 8601. */
   now?: () => string;
   /** Defaults to random UUIDs. */
@@ -50,6 +57,7 @@ export async function runSingleCall(
     data: {
       kind: "single",
       ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
+      ...(ctx.agent ? { agent: ctx.agent } : {}),
       ...(request.model ? { model: request.model } : {}),
       ...(request.reasoningEffort
         ? { reasoningEffort: request.reasoningEffort }

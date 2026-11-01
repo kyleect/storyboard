@@ -13,6 +13,17 @@ const event = <T extends string, D extends z.ZodType>(type: T, data: D) =>
 
 export const RunKind = z.enum(["single", "loop", "pipeline"]);
 
+/** The agent version a run runs as (agents design, decisions 13 to 15). */
+export const RunAgent = z.object({
+  id: z.string(),
+  /** The name it has in this version. */
+  name: z.string(),
+  version: z.number().int(),
+  /** Null: a global agent. */
+  projectId: z.string().nullable(),
+});
+export type RunAgent = z.infer<typeof RunAgent>;
+
 export const RunStarted = event(
   "run.started",
   z.object({
@@ -22,6 +33,8 @@ export const RunStarted = event(
     model: z.string().optional(),
     /** The reasoning effort sent to the server, when one is set. */
     reasoningEffort: z.string().optional(),
+    /** The agent the run runs as, when there is one. */
+    agent: RunAgent.optional(),
   }),
 );
 

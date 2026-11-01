@@ -8,9 +8,10 @@ import {
   type ApprovalRequest,
   type ContentBlock,
   type HarnessEvent,
+  type RunAgent,
   type Usage,
 } from "@harness/core";
-import { entriesKey, eventsUrl, type SessionDetail } from "./api";
+import { appEventsUrl, entriesKey, eventsUrl, type SessionDetail } from "./api";
 
 /*
  * The in-flight run of each session, built from streamed events. A run can
@@ -29,6 +30,8 @@ export interface LiveRun {
   runId: string;
   model: string | null;
   reasoningEffort: string | null;
+  /** The agent version the run uses; null: none. */
+  agent: RunAgent | null;
   /** The message being written now; null while a tool runs. */
   message: LiveMessage | null;
   /** Approval requests waiting for an answer, oldest first. */
@@ -121,6 +124,7 @@ export function useSessionEvents(
             runId: event.runId,
             model: event.data.model ?? null,
             reasoningEffort: event.data.reasoningEffort ?? null,
+            agent: event.data.agent ?? null,
             message: null,
             approvals: [],
           });
@@ -159,6 +163,7 @@ export function useSessionEvents(
                 message: event.data.message,
                 model: run?.model ?? null,
                 reasoningEffort: run?.reasoningEffort ?? null,
+                agent: run?.agent ?? null,
                 usage: event.data.usage ?? null,
               };
               const at = old.messages.findIndex(
@@ -284,4 +289,63 @@ export function useSessionEvents(
     // not reset the stream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, ready]);
+}
+
+/** An event on the app-wide stream (agents plan, P7). */
+interface AppEvent {
+  type: "agents.changed";
+  data: {
+    agentId: string;
+    projectId: string | null;
+    clearedSessions: string[];
+  };
+}
+
+/**
+ * Listens to the app-wide stream for the whole app. Its events are not
+ * replayed, so agent data is refetched whenever the stream opens or
+ * reopens, then on each `agents.changed`.
+ */
+export function useAppEvents() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const refreshAgents = () => {
+      void queryClient.invalidateQueries({ queryKey: ["agents"] });
+      void queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+    };
+    let source: EventSource | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let delay = 500;
+    const connect = () => {
+      source = new EventSource(appEventsUrl());
+      source.onopen = () => {
+        delay = 500;
+        // Anything that changed before the stream opened was not sent.
+        refreshAgents();
+      };
+      source.onmessage = (msg: MessageEvent<string>) => {
+        const event = JSON.parse(msg.data) as AppEvent;
+        if (event.type !== "agents.changed") return;
+        refreshAgents();
+        // A deleted agent is cleared from the sessions that had it picked.
+        for (const id of event.data.clearedSessions) {
+          void queryClient.invalidateQueries({ queryKey: ["session", id] });
+        }
+      };
+      // EventSource reconnects on its own after a dropped connection, but
+      // gives up on some errors (CLOSED); reconnect then with a backoff.
+      source.onerror = () => {
+        if (source?.readyState === EventSource.CLOSED) {
+          source.close();
+          retry = setTimeout(connect, delay);
+          delay = Math.min(delay * 2, 5000);
+        }
+      };
+    };
+    connect();
+    return () => {
+      clearTimeout(retry);
+      source?.close();
+    };
+  }, [queryClient]);
 }

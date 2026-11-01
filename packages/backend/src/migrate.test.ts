@@ -375,11 +375,72 @@ describe("loadMigrations", () => {
     ]);
   });
 
+  it("adds agents; existing sessions, runs and messages have none", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 9),
+    );
+    db.prepare(
+      "INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T')",
+    ).run();
+    db.prepare(
+      "INSERT INTO runs (id, session_id, kind, status, started_at) VALUES ('r', 's', 'loop', 'finished', 'T')",
+    ).run();
+    db.prepare(
+      "INSERT INTO messages (id, session_id, seq, message, created_at) VALUES ('m', 's', 1, '{}', 'T')",
+    ).run();
+
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 10),
+      ),
+    ).toEqual([10]);
+    expect(
+      db.prepare("SELECT agent_id FROM sessions WHERE id = 's'").get(),
+    ).toEqual({ agent_id: null });
+    expect(
+      db
+        .prepare("SELECT agent_id, agent_version FROM runs WHERE id = 'r'")
+        .get(),
+    ).toEqual({ agent_id: null, agent_version: null });
+    expect(
+      db
+        .prepare("SELECT agent_id, agent_version FROM messages WHERE id = 'm'")
+        .get(),
+    ).toEqual({ agent_id: null, agent_version: null });
+    expect(() =>
+      db.prepare("UPDATE sessions SET agent_id = 'nope' WHERE id = 's'").run(),
+    ).toThrow(/FOREIGN KEY/);
+
+    const insert = db.prepare(
+      `INSERT INTO agents (id, project_id, name, prompt, tool_mode, tools, version, created_at, updated_at)
+       VALUES (?, NULL, ?, '', 'allow', '[]', 1, 'T', 'T')`,
+    );
+    insert.run("a1", "Editor");
+    // Names are unique per scope and case-sensitive (decision 4).
+    expect(() => insert.run("a2", "Editor")).toThrow(/UNIQUE/);
+    expect(() => insert.run("a3", "editor")).not.toThrow();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO agents (id, name, prompt, tool_mode, tools, version, created_at, updated_at)
+           VALUES ('a4', 'X', '', 'some', '[]', 1, 'T', 'T')`,
+        )
+        .run(),
+    ).toThrow(/CHECK/);
+  });
+
   it("applies the project's migrations to an encrypted database", () => {
     const t = tempDatabase();
     db = t.db;
     cleanup = t.cleanup;
     expect(tables()).toEqual([
+      "agent_versions",
+      "agents",
       "chunk_vectors",
       "chunks",
       "chunks_fts",

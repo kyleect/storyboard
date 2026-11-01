@@ -26,8 +26,14 @@ import type {
   Message,
   Usage,
 } from "@harness/core";
-import { api, type Choices, type SessionDetail } from "../api";
+import {
+  api,
+  type Choices,
+  type MessageAgent,
+  type SessionDetail,
+} from "../api";
 import { useLive, useSessionEvents } from "../live";
+import { AgentBadge, AgentPicker } from "./Agents";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { ModelPicker } from "./ModelPicker";
@@ -40,6 +46,7 @@ interface ShownMessage {
   message: Message;
   model: string | null;
   reasoningEffort: string | null;
+  agent: MessageAgent | null;
   streaming: boolean;
   /** Running token count while streaming. */
   usage?: Usage | undefined;
@@ -83,12 +90,15 @@ export function Chat() {
     ...(session?.reasoning_effort
       ? { reasoningEffort: session.reasoning_effort }
       : {}),
+    // Sent every time, so "no agent" is sent too (agents design 11).
+    ...(session ? { agentId: session.agent_id } : {}),
   };
 
   const setChoices = useMutation({
     mutationFn: (c: {
       model?: string | null;
       reasoningEffort?: string | null;
+      agentId?: string | null;
     }) => api.setSessionChoices(sessionId, c),
     onSuccess: (updated) => {
       queryClient.setQueryData<SessionDetail>(["session", sessionId], (old) =>
@@ -161,6 +171,7 @@ export function Chat() {
         message: { role: "assistant", content: [...live.message.content] },
         model: live.model,
         reasoningEffort: live.reasoningEffort,
+        agent: live.agent,
         streaming: true,
         usage: live.usage,
       }
@@ -173,6 +184,7 @@ export function Chat() {
           message: m.message,
           model: m.model,
           reasoningEffort: m.reasoningEffort,
+          agent: m.agent,
           streaming: false,
         },
   );
@@ -320,6 +332,12 @@ export function Chat() {
               }
               disabled={trashed || setChoices.isPending}
             />
+            <AgentPicker
+              sessionId={sessionId}
+              value={detail.data.session.agent_id}
+              onChange={(agentId) => setChoices.mutate({ agentId })}
+              disabled={trashed || setChoices.isPending}
+            />
           </Group>
           {live ? (
             <Group gap="xs">
@@ -412,6 +430,7 @@ function MessageView({
   message,
   model,
   reasoningEffort,
+  agent,
   streaming,
   usage,
 }: ShownMessage) {
@@ -473,6 +492,7 @@ function MessageView({
         <Text size="xs" c="dimmed">
           Assistant
         </Text>
+        {agent && <AgentBadge agent={agent} />}
         {model && (
           <Badge size="xs" variant="light" color="gray" tt="none">
             {model}

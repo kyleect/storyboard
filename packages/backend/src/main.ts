@@ -2,7 +2,8 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { embedTexts, LlamaServerAdapter } from "@harness/core";
-import { allTools, entriesInstruction } from "@harness/tools";
+import { allTools, entriesInstruction, entryTools } from "@harness/tools";
+import { AgentStore } from "./agents-store.js";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
 import { Embedder } from "./embedder.js";
@@ -35,6 +36,7 @@ async function main() {
   const store = new Store(db);
   const index = new SearchIndex(db);
   const entries = new EntryStore(db, undefined, undefined, index);
+  const agents = new AgentStore(db);
   const settings = () => readSettings(db).effective;
   const embed = (model: string, texts: string[], signal?: AbortSignal) =>
     embedTexts(settings().llamaServerUrl, model, texts, {
@@ -46,6 +48,9 @@ async function main() {
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
+    // Every agent gets the files and memory tools (agents design 8, P5).
+    alwaysOnTools: entryTools.map((t) => t.name),
+    agents,
     entries,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),
     index,
@@ -76,6 +81,7 @@ async function main() {
     store,
     runs,
     entries,
+    agents,
     token,
     logger: true,
     onSettingsSaved: () => embedder.settingsChanged(),

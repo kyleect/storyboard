@@ -73,20 +73,34 @@ export function ProjectPage() {
           Restore it from the Trash section in Settings to change it.
         </Alert>
       )}
-      <Button
-        size="xs"
-        variant="default"
-        w="fit-content"
-        renderRoot={(props) => (
-          <Link
-            {...props}
-            to="/projects/$projectId/files"
-            params={{ projectId }}
-          />
-        )}
-      >
-        Files & memory
-      </Button>
+      <Group gap="xs">
+        <Button
+          size="xs"
+          variant="default"
+          renderRoot={(props) => (
+            <Link
+              {...props}
+              to="/projects/$projectId/files"
+              params={{ projectId }}
+            />
+          )}
+        >
+          Files & memory
+        </Button>
+        <Button
+          size="xs"
+          variant="default"
+          renderRoot={(props) => (
+            <Link
+              {...props}
+              to="/projects/$projectId/agents"
+              params={{ projectId }}
+            />
+          )}
+        >
+          Agents
+        </Button>
+      </Group>
       <Description
         key={project.data.description}
         initial={project.data.description}

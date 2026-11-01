@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { api } from "../api";
+import { useAppEvents } from "../live";
 import { usePicked } from "../picked";
 import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
@@ -28,6 +29,8 @@ export function Layout() {
   const projectActions = useProjectActions();
   const picked = usePicked((s) => s.projectId);
   const pick = usePicked((s) => s.pick);
+  // Agent changes from any window (agents plan, P7).
+  useAppEvents();
 
   const projects = useQuery({
     queryKey: ["projects"],
@@ -128,6 +131,20 @@ export function Layout() {
                 Project files & memory
               </Anchor>
             )}
+            {picked !== null && (
+              <Anchor
+                size="xs"
+                renderRoot={(props) => (
+                  <Link
+                    {...props}
+                    to="/projects/$projectId/agents"
+                    params={{ projectId: picked }}
+                  />
+                )}
+              >
+                Project agents
+              </Anchor>
+            )}
             {projects.isError && (
               <Text c="red" size="xs">
                 {projects.error.message}
@@ -170,6 +187,10 @@ export function Layout() {
           <NavLink
             renderRoot={(props) => <Link {...props} to="/files" />}
             label="Files & memory"
+          />
+          <NavLink
+            renderRoot={(props) => <Link {...props} to="/agents" />}
+            label="Agents"
           />
           <NavLink
             renderRoot={(props) => <Link {...props} to="/settings" />}

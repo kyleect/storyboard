@@ -22,10 +22,12 @@ export interface SessionRow {
   project_id: string | null;
   /** 1 when it went to the trash because its project did. */
   trashed_with_project: number;
+  /** The session's chosen agent; null means no agent (agents design 12). */
+  agent_id: string | null;
 }
 
 const SESSION_COLUMNS =
-  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project";
+  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id";
 
 /** A session in a list, with how full its context is. */
 export interface SessionListRow extends SessionRow {
@@ -51,19 +53,42 @@ export interface ProjectRow {
 const PROJECT_COLUMNS =
   "id, name, description, created_at, last_used_at, trashed_at";
 
-/** What a run sent to the model server; null where nothing was sent. */
+/** An agent version a run used (agents design, decisions 13, 14). */
+export interface AgentRef {
+  id: string;
+  version: number;
+}
+
+/**
+ * What a run sent to the model server, and the agent it ran as; null where
+ * nothing was sent or there was no agent.
+ */
 export interface Generation {
   model: string | null;
   reasoningEffort: string | null;
+  agent: AgentRef | null;
 }
 
-const NO_GENERATION: Generation = { model: null, reasoningEffort: null };
+export const NO_GENERATION: Generation = {
+  model: null,
+  reasoningEffort: null,
+  agent: null,
+};
+
+/** An agent version as a message shows it (decision 15). */
+export interface MessageAgent extends AgentRef {
+  /** The name it had in that version. */
+  name: string;
+  /** Null: global. */
+  projectId: string | null;
+}
 
 export interface StoredMessage extends Generation {
   id: string;
   message: Message;
-  // For assistant messages, `model` and `reasoningEffort` are those of the
-  // run that last wrote the message.
+  // For assistant messages, `model`, `reasoningEffort` and `agent` are
+  // those of the run that last wrote the message.
+  agent: MessageAgent | null;
   /**
    * For assistant messages: the usage of the model call that last wrote the
    * message. Null when none was reported, and for other messages.
@@ -88,6 +113,8 @@ export interface RunRow {
   error: string | null;
   model: string | null;
   reasoning_effort: string | null;
+  agent_id: string | null;
+  agent_version: number | null;
 }
 
 interface EventRow {
@@ -132,6 +159,7 @@ export class Store {
       trashed_at: null,
       project_id: projectId,
       trashed_with_project: 0,
+      agent_id: null,
     };
   }
 
@@ -390,6 +418,14 @@ export class Store {
       this.db
         .prepare("DELETE FROM chunks WHERE scope = 'project' AND owner_id = ?")
         .run(id);
+      // Only the project's sessions can use its agents (agents design 16),
+      // and they are purged above (decision 25).
+      this.db
+        .prepare(
+          "DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)",
+        )
+        .run(id);
+      this.db.prepare("DELETE FROM agents WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
     })();
   }
@@ -412,8 +448,17 @@ export class Store {
   /** Sets the session's choices; a field left out is not changed. */
   setSessionChoices(
     id: string,
-    choices: { model?: string | null; reasoningEffort?: string | null },
+    choices: {
+      model?: string | null;
+      reasoningEffort?: string | null;
+      agentId?: string | null;
+    },
   ) {
+    if (choices.agentId !== undefined) {
+      this.db
+        .prepare("UPDATE sessions SET agent_id = ? WHERE id = ?")
+        .run(choices.agentId, id);
+    }
     if (choices.model !== undefined) {
       this.db
         .prepare("UPDATE sessions SET model = ? WHERE id = ?")
@@ -436,8 +481,8 @@ export class Store {
   ) {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort, usage)
-         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort, usage, agent_id, agent_version)
+         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -448,6 +493,8 @@ export class Store {
         generation.model,
         generation.reasoningEffort,
         usage ? JSON.stringify(usage) : null,
+        generation.agent?.id ?? null,
+        generation.agent?.version ?? null,
       );
   }
 
@@ -465,13 +512,15 @@ export class Store {
   ) {
     const updated = this.db
       .prepare(
-        "UPDATE messages SET message = ?, model = ?, reasoning_effort = ?, usage = ? WHERE id = ?",
+        "UPDATE messages SET message = ?, model = ?, reasoning_effort = ?, usage = ?, agent_id = ?, agent_version = ? WHERE id = ?",
       )
       .run(
         JSON.stringify(message),
         generation.model,
         generation.reasoningEffort,
         usage ? JSON.stringify(usage) : null,
+        generation.agent?.id ?? null,
+        generation.agent?.version ?? null,
         id,
       );
     if (updated.changes === 0)
@@ -488,7 +537,12 @@ export class Store {
   listMessages(sessionId: string): StoredMessage[] {
     const rows = this.db
       .prepare(
-        "SELECT id, message, model, reasoning_effort, usage FROM messages WHERE session_id = ? ORDER BY seq",
+        `SELECT m.id, m.message, m.model, m.reasoning_effort, m.usage,
+           m.agent_id, m.agent_version, v.name AS agent_name, a.project_id AS agent_project_id
+         FROM messages m
+         LEFT JOIN agent_versions v ON v.agent_id = m.agent_id AND v.seq = m.agent_version
+         LEFT JOIN agents a ON a.id = m.agent_id
+         WHERE m.session_id = ? ORDER BY m.seq`,
       )
       .all(sessionId) as {
       id: string;
@@ -496,12 +550,25 @@ export class Store {
       model: string | null;
       reasoning_effort: string | null;
       usage: string | null;
+      agent_id: string | null;
+      agent_version: number | null;
+      agent_name: string | null;
+      agent_project_id: string | null;
     }[];
     return rows.map((r) => ({
       id: r.id,
       message: Message.parse(JSON.parse(r.message)),
       model: r.model,
       reasoningEffort: r.reasoning_effort,
+      agent:
+        r.agent_id !== null && r.agent_version !== null
+          ? {
+              id: r.agent_id,
+              version: r.agent_version,
+              name: r.agent_name ?? "",
+              projectId: r.agent_project_id,
+            }
+          : null,
       usage: parseUsage(r.usage),
     }));
   }
@@ -516,8 +583,8 @@ export class Store {
     const generation = run.generation ?? NO_GENERATION;
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort)
-         VALUES (?, ?, ?, 'running', ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version)
+         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -526,6 +593,8 @@ export class Store {
         run.now,
         generation.model,
         generation.reasoningEffort,
+        generation.agent?.id ?? null,
+        generation.agent?.version ?? null,
       );
   }
 

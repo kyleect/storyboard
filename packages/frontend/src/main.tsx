@@ -14,6 +14,7 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { token } from "./api";
+import { GlobalAgentsPage, ProjectAgentsPage } from "./routes/Agents";
 import { Chat } from "./routes/Chat";
 import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/Entries";
 import { Home, Layout } from "./routes/Layout";
@@ -40,8 +41,18 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/agents",
+    component: ProjectAgentsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: "/files",
     component: GlobalEntriesPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/agents",
+    component: GlobalAgentsPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

@@ -194,6 +194,7 @@ export async function runLoop(
     data: {
       kind: "loop",
       ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
+      ...(ctx.agent ? { agent: ctx.agent } : {}),
       ...(request.model ? { model: request.model } : {}),
       ...(request.reasoningEffort
         ? { reasoningEffort: request.reasoningEffort }

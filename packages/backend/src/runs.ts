@@ -13,22 +13,31 @@ import {
   type ControlResult,
   type HarnessEvent,
   type Message,
+  type RunAgent,
   type ModelAdapter,
   type StoredEvent,
   type Tool,
   type ToolResultMessage,
   type Usage,
 } from "@harness/core";
+import type { Agent, AgentStore } from "./agents-store.js";
 import type { Settings } from "./settings.js";
 import type { EntryStore } from "./entries-store.js";
 import type { SearchIndex } from "./search-index.js";
-import type { Generation, SessionRow, Store } from "./store.js";
+import {
+  NO_GENERATION,
+  type Generation,
+  type SessionRow,
+  type Store,
+} from "./store.js";
 import { setToolAsks, toolAsks } from "./tool-settings.js";
 
 /** Choices sent with a message or continue; they become the session's. */
 export interface RunChoices {
   model?: string;
   reasoningEffort?: string;
+  /** Null: no agent (agents design, decisions 11, 12). */
+  agentId?: string | null;
 }
 
 export class RunError extends Error {
@@ -52,6 +61,7 @@ interface ActiveRun {
   runId: string;
   sessionId: string;
   generation: Generation;
+  agent: RunAgent | null;
   controller: AbortController;
   control: RunControl;
   /** Approval requests waiting for an answer, by request id. */
@@ -65,6 +75,8 @@ export interface Snapshot {
     runId: string;
     model: string | null;
     reasoningEffort: string | null;
+    /** The agent version the run uses; null: none. */
+    agent: RunAgent | null;
     /** The message being written now; null while a tool runs. */
     message: {
       messageId: string;
@@ -80,8 +92,18 @@ export interface RunManagerOptions {
   store: Store;
   settings: () => Settings;
   model: (settings: Settings) => ModelAdapter;
-  /** Every session gets every tool (tools design 6.11). */
+  /**
+   * Every tool. A session with no agent gets all of them (tools design
+   * 6.11); an agent narrows them (agents design 6).
+   */
   tools?: readonly Tool[];
+  /**
+   * Names of the tools every agent gets, whatever its selection (the files
+   * and memory tools, agents design 8).
+   */
+  alwaysOnTools?: readonly string[];
+  /** Agents. Left out: sessions cannot pick one. */
+  agents?: AgentStore;
   /**
    * Project and global files and notes for tools. Left out: tools see
    * session scope only.
@@ -89,7 +111,8 @@ export interface RunManagerOptions {
   entries?: EntryStore;
   /**
    * A system message put before the transcript of every model call; not
-   * stored. Undefined: none.
+   * stored. Undefined: none. An agent's prompt goes before it, in the same
+   * message (agents design 9).
    */
   systemPrompt?: (session: SessionRow) => string | undefined;
   /** Generates memory note ids. Default: 8 random hex digits. */
@@ -118,10 +141,13 @@ export class RunManager {
   private readonly now: () => string;
   private readonly newId: () => string;
   readonly tools: readonly Tool[];
+  /** Tools every agent gets (agents design 8). */
+  readonly alwaysOnTools: readonly string[];
 
   constructor(private readonly options: RunManagerOptions) {
     this.store = options.store;
     this.tools = options.tools ?? [];
+    this.alwaysOnTools = options.alwaysOnTools ?? [];
     this.now = options.now ?? (() => new Date().toISOString());
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
@@ -205,6 +231,7 @@ export class RunManager {
     choices: RunChoices = {},
   ): { runId: string } {
     this.requireIdle(sessionId);
+    this.checkAgentChoice(sessionId, choices);
     this.store.setSessionChoices(sessionId, choices);
     this.store.addMessage(
       sessionId,
@@ -231,6 +258,7 @@ export class RunManager {
           409,
         );
       }
+      this.checkAgentChoice(sessionId, choices);
       this.store.setSessionChoices(sessionId, choices);
       return this.start(sessionId, {
         messageId: last.id,
@@ -238,6 +266,7 @@ export class RunManager {
       });
     }
     if (last?.message.role === "tool") {
+      this.checkAgentChoice(sessionId, choices);
       this.store.setSessionChoices(sessionId, choices);
       return this.start(sessionId, null);
     }
@@ -298,6 +327,7 @@ export class RunManager {
         runId: run.runId,
         model: run.generation.model,
         reasoningEffort: run.generation.reasoningEffort,
+        agent: run.agent,
         message: this.inFlight(this.store.runEvents(run.runId)),
         approvals: [...run.approvals.values()].map((a) => a.request),
       },
@@ -327,9 +357,13 @@ export class RunManager {
     const recovered: string[] = [];
     for (const run of this.store.runningRuns()) {
       const events = this.store.runEvents(run.id);
-      const generation = {
+      const generation: Generation = {
         model: run.model,
         reasoningEffort: run.reasoning_effort,
+        agent:
+          run.agent_id !== null && run.agent_version !== null
+            ? { id: run.agent_id, version: run.agent_version }
+            : null,
       };
       const base = { runId: run.id, sessionId: run.session_id };
       const insert = (event: HarnessEvent) => this.store.insertEvent(event);
@@ -467,6 +501,36 @@ export class RunManager {
     }
   }
 
+  /**
+   * Refuses an agent the session cannot use: 404 when there is no such
+   * agent, 409 when it is deleted or belongs to another project (agents
+   * design 16). Null (no agent) and a field left out are always allowed.
+   */
+  checkAgentChoice(sessionId: string, choices: { agentId?: string | null }) {
+    if (choices.agentId === undefined || choices.agentId === null) return;
+    const agents = this.options.agents;
+    const agent = agents?.get(choices.agentId);
+    if (!agents || !agent) throw new RunError("Agent not found.", 404);
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new RunError("Session not found.", 404);
+    if (agent.deleted) throw new RunError("The agent is deleted.", 409);
+    if (!agents.usableIn(agent, session.project_id)) {
+      throw new RunError("This session cannot use that agent.", 409);
+    }
+  }
+
+  /** The tools a run gets with this agent (agents design 6, 8, 35). */
+  private toolsFor(agent: Agent | null): readonly Tool[] {
+    if (!agent) return this.tools;
+    const alwaysOn = new Set(this.alwaysOnTools);
+    const listed = new Set(agent.tools);
+    return this.tools.filter(
+      (t) =>
+        alwaysOn.has(t.name) ||
+        (agent.toolMode === "allow" ? listed.has(t.name) : !listed.has(t.name)),
+    );
+  }
+
   private requireIdle(sessionId: string) {
     if (this.shuttingDown)
       throw new RunError("The backend is shutting down.", 503);
@@ -510,13 +574,39 @@ export class RunManager {
     const runId = this.newId();
     // The session's choices, else the default settings. Empty: not sent.
     const session = this.store.getSession(sessionId);
+    // The session's agent as it is now; the run keeps this version to the
+    // end (agents design 13, 24). One it can no longer use counts as none.
+    const picked =
+      session?.agent_id != null
+        ? this.options.agents?.get(session.agent_id)
+        : undefined;
+    const agent =
+      picked &&
+      session &&
+      this.options.agents?.usableIn(picked, session.project_id)
+        ? picked
+        : null;
+    const runAgent: RunAgent | null = agent
+      ? {
+          id: agent.id,
+          name: agent.name,
+          version: agent.version,
+          projectId: agent.projectId,
+        }
+      : null;
     const generation: Generation = {
       model: session?.model || settings.model || null,
       reasoningEffort:
         session?.reasoning_effort || settings.reasoningEffort || null,
+      agent: agent ? { id: agent.id, version: agent.version } : null,
     };
     const control = new RunControl();
-    const system = session ? this.options.systemPrompt?.(session) : undefined;
+    const base = session ? this.options.systemPrompt?.(session) : undefined;
+    // The agent's prompt, then the files and memory instruction (design 9).
+    const system =
+      [agent?.prompt, base]
+        .filter((p): p is string => p !== undefined && p !== "")
+        .join("\n\n") || undefined;
     const request: ChatRequest = {
       kind: "chat",
       messages: [
@@ -554,9 +644,7 @@ export class RunManager {
         id,
         message,
         this.now(),
-        message.role === "assistant"
-          ? generation
-          : { model: null, reasoningEffort: null },
+        message.role === "assistant" ? generation : NO_GENERATION,
         usage ?? null,
       );
       this.store.linkRunMessage(runId, id);
@@ -575,7 +663,8 @@ export class RunManager {
           newId: this.newId,
           now: this.now,
           ...(continuing ? { continueMessage: continuing } : {}),
-          tools: this.tools,
+          tools: this.toolsFor(agent),
+          ...(runAgent ? { agent: runAgent } : {}),
           projectId: session?.project_id ?? null,
           ...(this.options.entries
             ? {
@@ -645,6 +734,7 @@ export class RunManager {
       runId,
       sessionId,
       generation,
+      agent: runAgent,
       controller,
       control,
       approvals,
