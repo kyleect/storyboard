@@ -7,6 +7,9 @@ import {
   type EntrySearch,
   type ApprovalAnswer,
   type ApprovalRequest,
+  checkAnswers,
+  type InputAnswer,
+  type InputRequest,
   type AssistantMessage,
   type ChatRequest,
   type ContentBlock,
@@ -57,6 +60,11 @@ interface OpenApproval {
   resolve: (answer: ApprovalAnswer) => void;
 }
 
+interface OpenInput {
+  request: InputRequest;
+  resolve: (answer: InputAnswer) => void;
+}
+
 interface ActiveRun {
   runId: string;
   sessionId: string;
@@ -66,6 +74,8 @@ interface ActiveRun {
   control: RunControl;
   /** Approval requests waiting for an answer, by request id. */
   approvals: Map<string, OpenApproval>;
+  /** Forms waiting for an answer, by request id (input forms design). */
+  inputs: Map<string, OpenInput>;
   done: Promise<void>;
 }
 
@@ -85,6 +95,8 @@ export interface Snapshot {
     } | null;
     /** Approval requests waiting for an answer (design D13, item 5). */
     approvals: ApprovalRequest[];
+    /** Forms waiting for an answer (input forms design, D13). */
+    inputs: InputRequest[];
   } | null;
 }
 
@@ -316,6 +328,30 @@ export class RunManager {
     open.resolve(answer);
   }
 
+  /**
+   * Answers a form. Answers are checked against the form first (D8); the
+   * stored result holds them as checked ("Other" text trimmed).
+   */
+  answerInput(runId: string, requestId: string, answer: InputAnswer) {
+    const run = this.active.get(runId);
+    if (!run) throw new RunError("The run is not active.", 409);
+    const open = run.inputs.get(requestId);
+    if (!open) throw new RunError("No open form with that id.", 404);
+    let final = answer;
+    if (answer.outcome === "answered") {
+      const checked = checkAnswers(open.request.form, answer.answers);
+      if (!checked.ok) {
+        const problems = Object.entries(checked.errors)
+          .map(([name, error]) => (name ? `${name}: ${error}` : error))
+          .join(" ");
+        throw new RunError(`The answers are not valid. ${problems}`, 400);
+      }
+      final = { outcome: "answered", answers: checked.answers };
+    }
+    run.inputs.delete(requestId);
+    open.resolve(final);
+  }
+
   snapshot(sessionId: string): Snapshot {
     const lastEventId = this.store.lastEventId(sessionId);
     const run = [...this.active.values()].find(
@@ -331,6 +367,7 @@ export class RunManager {
         agent: run.agent,
         message: this.inFlight(this.store.runEvents(run.runId)),
         approvals: [...run.approvals.values()].map((a) => a.request),
+        inputs: [...run.inputs.values()].map((i) => i.request),
       },
     };
   }
@@ -352,7 +389,7 @@ export class RunManager {
    * partial message is saved from the stored events, and every tool call the
    * run made without a result gets an error result saying it was
    * interrupted; the tool is not run again (tools design 6.10). Open
-   * approval requests are withdrawn.
+   * approval requests and forms are withdrawn.
    */
   recover(): string[] {
     const recovered: string[] = [];
@@ -382,7 +419,7 @@ export class RunManager {
         this.store.linkRunMessage(run.id, partial.messageId);
       }
 
-      for (const e of openApprovals(events)) {
+      for (const e of openRequests(events)) {
         insert({
           ...base,
           time: this.now(),
@@ -630,6 +667,7 @@ export class RunManager {
 
     const controller = new AbortController();
     const approvals = new Map<string, OpenApproval>();
+    const inputs = new Map<string, OpenInput>();
     const emit = (event: HarnessEvent) => {
       // Runs stopped by shutdown end as interrupted, not cancelled.
       const e: HarnessEvent =
@@ -693,6 +731,15 @@ export class RunManager {
                 { once: true },
               );
             }),
+          requestInput: (req, signal) =>
+            new Promise<InputAnswer>((resolve) => {
+              inputs.set(req.requestId, { request: req, resolve });
+              signal.addEventListener(
+                "abort",
+                () => inputs.delete(req.requestId),
+                { once: true },
+              );
+            }),
           onMessage: saveMessage,
           cancelledText: () => (this.shuttingDown ? STOPPED_CALL : undefined),
         });
@@ -739,6 +786,7 @@ export class RunManager {
       controller,
       control,
       approvals,
+      inputs,
       done: Promise.resolve(),
     };
     this.active.set(runId, run);
@@ -769,12 +817,17 @@ function lastStreamedUsage(
   return usage;
 }
 
-/** Request ids of approval requests with no answer or withdrawal. */
-function openApprovals(events: readonly StoredEvent[]): string[] {
+/** Ids of approval requests and forms with no answer or withdrawal. */
+function openRequests(events: readonly StoredEvent[]): string[] {
   const open = new Set<string>();
   for (const e of events) {
-    if (e.type === "tool.approval_requested") open.add(e.data.requestId);
-    else if (e.type === "tool.approval_resolved" || e.type === "request.cancel")
+    if (e.type === "tool.approval_requested" || e.type === "input.requested")
+      open.add(e.data.requestId);
+    else if (
+      e.type === "tool.approval_resolved" ||
+      e.type === "input.resolved" ||
+      e.type === "request.cancel"
+    )
       open.delete(e.data.requestId);
   }
   return [...open];

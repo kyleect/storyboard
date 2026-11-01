@@ -8,6 +8,7 @@ describe("allTools", () => {
       "current_time",
       "web_search",
       "read_webpage",
+      "ask_user",
       "files_list",
       "files_read",
       "files_write",

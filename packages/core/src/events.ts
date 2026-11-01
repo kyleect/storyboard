@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Form } from "./forms.js";
 import { AssistantMessage, TokenInfo, Usage } from "./messages.js";
 
 /*
@@ -181,6 +182,27 @@ export const ToolApprovalResolved = event(
   }),
 );
 
+/** A form shown to the user, waiting for answers (input forms design). */
+export const InputRequest = z.object({
+  requestId: z.string(),
+  /** The tool call that asked. */
+  callId: z.string(),
+  form: Form,
+});
+export type InputRequest = z.infer<typeof InputRequest>;
+
+export const InputRequested = event("input.requested", InputRequest);
+
+/** How the user answered a form: answered it, or skipped it (D10). */
+export const InputOutcome = z.enum(["answered", "skipped"]);
+export type InputOutcome = z.infer<typeof InputOutcome>;
+
+/** The answers themselves are in the tool result (D13). */
+export const InputResolved = event(
+  "input.resolved",
+  z.object({ requestId: z.string(), outcome: InputOutcome }),
+);
+
 /** Withdraws an open request, for example when its run is cancelled. */
 export const RequestCancel = event(
   "request.cancel",
@@ -238,6 +260,8 @@ export const EventBody = z.discriminatedUnion("type", [
   ToolMalformed,
   ToolApprovalRequested,
   ToolApprovalResolved,
+  InputRequested,
+  InputResolved,
   RequestCancel,
   ToolUpdate,
   ToolResult,

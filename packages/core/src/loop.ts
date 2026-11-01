@@ -4,7 +4,8 @@ import {
   type EntrySearch,
   type SharedEntries,
 } from "./entries.js";
-import type { ApprovalAnswer } from "./events.js";
+import type { ApprovalAnswer, InputRequest } from "./events.js";
+import type { Form, InputAnswer } from "./forms.js";
 import type {
   AssistantMessage,
   ContentBlock,
@@ -53,6 +54,16 @@ export interface LoopContext extends RunContext {
     request: ApprovalRequest,
     signal: AbortSignal,
   ) => Promise<ApprovalAnswer>;
+  /**
+   * Waits for the user's answer to a form a tool shows (input forms design),
+   * for as long as it takes. When `signal` aborts, the loop stops waiting on
+   * its own; the implementation should drop the request then. Left out:
+   * tools that ask fail.
+   */
+  requestInput?: (
+    request: InputRequest,
+    signal: AbortSignal,
+  ) => Promise<InputAnswer>;
   /**
    * Called with each complete message before its event is sent: an
    * assistant message before `message.finished` (only when it has
@@ -277,6 +288,55 @@ export async function runLoop(
     if (ctx.signal.aborted) return finish({ reason: "cancelled" });
   }
 
+  /**
+   * Shows a form for a call and waits for the answer. Throws when the run is
+   * cancelled (the tool's result then says it was not run) or the run
+   * cannot ask.
+   */
+  async function requestInput(
+    call: ToolCall,
+    form: Form,
+  ): Promise<InputAnswer> {
+    if (!ctx.requestInput) {
+      throw new Error("This run cannot ask the user for input.");
+    }
+    const request: InputRequest = {
+      requestId: newId(),
+      callId: call.callId,
+      form,
+    };
+    emit({ type: "input.requested", data: request });
+    let answer: InputAnswer | undefined;
+    try {
+      answer = await untilAborted(
+        ctx.requestInput(request, ctx.signal),
+        ctx.signal,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      emit({
+        type: "request.cancel",
+        data: { requestId: request.requestId, reason: message },
+      });
+      throw err;
+    }
+    if (answer === undefined) {
+      emit({
+        type: "request.cancel",
+        data: {
+          requestId: request.requestId,
+          reason: "The run was cancelled.",
+        },
+      });
+      throw new Error("The run was cancelled.");
+    }
+    emit({
+      type: "input.resolved",
+      data: { requestId: request.requestId, outcome: answer.outcome },
+    });
+    return answer;
+  }
+
   /** Runs one call and adds its result. Returns an error to fail the run. */
   async function runCall(
     call: ToolCall,
@@ -386,6 +446,7 @@ export async function runLoop(
         state: latestToolState(transcript, tool.name),
         projectId: ctx.projectId ?? null,
         entries,
+        requestInput: (form) => requestInput(call, form),
       });
       const text = serializeResult(output.data);
       const content = output.isError ? truncate(text, errorLimit) : text;

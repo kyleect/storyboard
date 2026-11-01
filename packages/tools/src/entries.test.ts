@@ -30,6 +30,7 @@ function context(inProject = true) {
     runId: "r",
     callId: "c",
     update: () => {},
+    requestInput: () => Promise.reject(new Error("Not used here.")),
     state: undefined,
     projectId: inProject ? "p" : null,
     entries: createEntryAccess({

@@ -18,12 +18,17 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import type {
-  ApprovalAnswer,
-  ContentBlock,
-  Message,
-  ToolResultMessage,
-  Usage,
+import {
+  ASK_USER,
+  DECLINED,
+  readAskUserCall,
+  type ApprovalAnswer,
+  type ContentBlock,
+  type InputAnswer,
+  type InputRequest,
+  type Message,
+  type ToolResultMessage,
+  type Usage,
 } from "@harness/core";
 import {
   api,
@@ -34,12 +39,25 @@ import {
 import { useLive, useSessionEvents } from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
+import { AskUserForm, type AskUserState } from "./AskUserForm";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
+
+/** What `ask_user` calls need to draw their forms (input forms design). */
+interface Asks {
+  /** Tool results by call id. */
+  results: ReadonlyMap<string, ToolResultMessage>;
+  /** The form waiting for an answer, if any. */
+  open: InputRequest | undefined;
+  /** Answers sent, by call id, shown until the result is stored. */
+  submitted: ReadonlyMap<string, Record<string, unknown>>;
+  busy: boolean;
+  onAnswer: (request: InputRequest, answer: InputAnswer) => void;
+}
 
 interface ShownMessage {
   id: string;
@@ -145,6 +163,24 @@ export function Chat() {
     },
     onError,
   });
+  // Answers sent for each ask_user call, shown until its result is stored.
+  const [submitted, setSubmitted] = useState<
+    ReadonlyMap<string, Record<string, unknown>>
+  >(new Map());
+  const answerForm = useMutation({
+    mutationFn: (a: {
+      runId: string;
+      requestId: string;
+      callId: string;
+      answer: InputAnswer;
+    }) => api.answerInput(a.runId, a.requestId, a.answer),
+    onSuccess: (_r, a) => {
+      const { answer } = a;
+      if (answer.outcome === "answered")
+        setSubmitted((m) => new Map(m).set(a.callId, answer.answers));
+    },
+    onError,
+  });
   // The request whose dialog was closed without an answer.
   const [dismissed, setDismissed] = useState<string | null>(null);
   const stopThinking = useMutation({
@@ -208,8 +244,28 @@ export function Chat() {
   const last = shown.at(-1);
   const reasoningNow = live?.message?.content.at(-1)?.type === "reasoning";
   const pending = live?.approvals[0];
-  // Between model calls: a tool is running.
-  const toolRunning = !!live && !live.message && !pending;
+  const openInput = live?.inputs[0];
+  // Between model calls: a tool is running (a form shows it is waiting).
+  const toolRunning = !!live && !live.message && !pending && !openInput;
+  const asks: Asks = {
+    results: new Map(
+      detail.data.messages.flatMap((m) =>
+        m.message.role === "tool" ? [[m.message.callId, m.message]] : [],
+      ),
+    ),
+    open: openInput,
+    submitted,
+    busy: answerForm.isPending,
+    onAnswer: (request, answer) => {
+      if (live)
+        answerForm.mutate({
+          runId: live.runId,
+          requestId: request.requestId,
+          callId: request.callId,
+          answer,
+        });
+    },
+  };
   const defaults = settings.data?.effective;
   // The model whose levels the reasoning picker shows.
   const levelsModel = detail.data.session.model || defaults?.model || undefined;
@@ -296,7 +352,7 @@ export function Chat() {
           <Stack gap="sm" pr="md">
             {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
             {shown.map((m) => (
-              <MessageView key={m.id} {...m} notes={notes} />
+              <MessageView key={m.id} {...m} notes={notes} asks={asks} />
             ))}
             {toolRunning && (
               <Group gap="xs">
@@ -347,6 +403,20 @@ export function Chat() {
           </Group>
           {live ? (
             <Group gap="xs">
+              {openInput && (
+                <Button
+                  variant="light"
+                  onClick={() =>
+                    document
+                      .querySelector(
+                        `[data-request-id="${CSS.escape(openInput.requestId)}"]`,
+                      )
+                      ?.scrollIntoView({ block: "nearest" })
+                  }
+                >
+                  Answer needed
+                </Button>
+              )}
               {pending && dismissed === pending.requestId && (
                 <Button variant="light" onClick={() => setDismissed(null)}>
                   Approval needed
@@ -444,7 +514,8 @@ function MessageView({
   streaming,
   usage,
   notes,
-}: ShownMessage & { notes: Notes }) {
+  asks,
+}: ShownMessage & { notes: Notes; asks: Asks }) {
   if (message.role === "user") {
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
@@ -456,6 +527,12 @@ function MessageView({
     );
   }
   if (message.role === "tool") {
+    if (
+      message.name === ASK_USER &&
+      (!message.isError || message.content === DECLINED)
+    ) {
+      return <AskUserResult message={message} />;
+    }
     return (
       <Paper p="sm" withBorder>
         <Group gap="xs">
@@ -525,6 +602,7 @@ function MessageView({
             live={streaming && i === message.content.length - 1}
             usage={usage}
             notes={notes}
+            asks={asks}
           />
         ))}
       </Stack>
@@ -537,11 +615,13 @@ function BlockView({
   live,
   usage,
   notes,
+  asks,
 }: {
   block: ContentBlock;
   live: boolean;
   usage: Usage | undefined;
   notes: Notes;
+  asks: Asks;
 }) {
   switch (block.type) {
     case "text":
@@ -566,6 +646,17 @@ function BlockView({
         </Spoiler>
       );
     case "tool_call": {
+      const form = block.name === ASK_USER && readAskUserCall(block.arguments);
+      if (form) {
+        const state = askState(block.callId, asks);
+        return (
+          <AskUserForm
+            key={`${state.mode}:${"requestId" in state ? state.requestId : ""}`}
+            form={form}
+            state={state}
+          />
+        );
+      }
       const note = notes.get(block.callId);
       return (
         <Stack gap={2}>
@@ -593,6 +684,60 @@ function BlockView({
       );
     }
   }
+}
+
+/** Where an `ask_user` call's form stands. */
+function askState(callId: string, asks: Asks): AskUserState {
+  const result = asks.results.get(callId);
+  if (result && !result.isError) {
+    const answers =
+      result.data &&
+      typeof result.data === "object" &&
+      !Array.isArray(result.data)
+        ? (result.data as Record<string, unknown>)
+        : {};
+    return { mode: "answered", answers };
+  }
+  if (result?.content === DECLINED) return { mode: "skipped" };
+  const sent = asks.submitted.get(callId);
+  if (!result && sent) return { mode: "answered", answers: sent };
+  const open = asks.open;
+  if (!result && open?.callId === callId) {
+    return {
+      mode: "open",
+      requestId: open.requestId,
+      busy: asks.busy,
+      onAnswer: (answer) => asks.onAnswer(open, answer),
+    };
+  }
+  return { mode: "closed" };
+}
+
+/**
+ * An `ask_user` result: the outcome, with the JSON the model received one
+ * click away (D16). The answers themselves show in the form.
+ */
+function AskUserResult({ message }: { message: ToolResultMessage }) {
+  return (
+    <Paper p="sm" withBorder>
+      <Group gap="xs">
+        <Text size="xs" c="dimmed">
+          Tool result
+        </Text>
+        <Badge size="xs" variant="light" color="gray" tt="none">
+          {message.name}
+        </Badge>
+        <Text size="sm">{message.isError ? "Skipped" : "Answered"}</Text>
+      </Group>
+      <Spoiler
+        maxHeight={0}
+        showLabel="Show what the model received"
+        hideLabel="Hide"
+      >
+        <Code block>{showResult(message.content)}</Code>
+      </Spoiler>
+    </Paper>
+  );
 }
 
 /**

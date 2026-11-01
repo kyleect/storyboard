@@ -11,7 +11,7 @@ import {
   type Tool,
 } from "@harness/core";
 import { chatChunk, DONE, FakeLlamaServer } from "@harness/core/testing";
-import { allTools } from "@harness/tools";
+import { allTools, askUser } from "@harness/tools";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
@@ -114,6 +114,7 @@ interface Detail {
     runId: string;
     message: unknown;
     approvals: { requestId: string; name: string; arguments: unknown }[];
+    inputs: { requestId: string; callId: string; form: unknown }[];
   } | null;
 }
 
@@ -480,6 +481,152 @@ describe("approval", () => {
   });
 });
 
+describe("input forms", () => {
+  const ask: ScriptStep = {
+    type: "tool_call",
+    callId: "call-ask",
+    name: "ask_user",
+    arguments: JSON.stringify({
+      schema: {
+        title: "Story",
+        properties: {
+          genre: { type: "string", title: "Genre", enum: ["noir", "sci-fi"] },
+          note: { type: "string", title: "Note" },
+        },
+        required: ["genre"],
+      },
+    }),
+  };
+
+  /** Waits until the session's active run has an open form. */
+  async function openInput(app: FastifyInstance, id: string) {
+    await expect
+      .poll(async () => (await detail(app, id)).activeRun?.inputs.length)
+      .toBe(1);
+    const run = (await detail(app, id)).activeRun;
+    const input = run?.inputs[0];
+    if (!run || !input) throw new Error("no open form");
+    return { runId: run.runId, input };
+  }
+
+  it("waits for the answer, shows the form in the snapshot, and returns the checked answers", async () => {
+    const { app, runs, store } = await setup([[ask], answer], [askUser]);
+    const id = await newSession(app);
+    const runId = await send(app, id);
+
+    const { input } = await openInput(app, id);
+    expect(input).toMatchObject({
+      callId: "call-ask",
+      form: {
+        title: "Story",
+        fields: [
+          { name: "genre", kind: "choice", required: true },
+          { name: "note", kind: "text", required: false },
+        ],
+      },
+    });
+    const url = `/api/runs/${runId}/inputs/${input.requestId}`;
+
+    // Checked against the form: a required answer missing.
+    const missing = await api(app, "POST", url, {
+      outcome: "answered",
+      answers: {},
+    });
+    expect(missing).toEqual({
+      status: 400,
+      body: {
+        error: "The answers are not valid. genre: Answer this question.",
+      },
+    });
+    expect(runs.isActive(runId)).toBe(true);
+
+    // "Other" text in place of an option, trimmed.
+    const res = await api(app, "POST", url, {
+      outcome: "answered",
+      answers: { genre: " cozy mystery " },
+    });
+    expect(res).toEqual({ status: 200, body: { ok: true } });
+    await waitIdle(runs, runId);
+
+    const d = await detail(app, id);
+    expect(d.messages[2]?.message).toMatchObject({
+      role: "tool",
+      name: "ask_user",
+      content: '{"genre":"cozy mystery"}',
+      isError: false,
+      data: { genre: "cozy mystery" },
+    });
+    expect(
+      store.runEvents(runId).find((e) => e.type === "input.resolved")?.data,
+    ).toEqual({ requestId: input.requestId, outcome: "answered" });
+  });
+
+  it("returns a skip to the model as an error", async () => {
+    const { app, runs } = await setup([[ask], answer], [askUser]);
+    const id = await newSession(app);
+    const runId = await send(app, id);
+    const { input } = await openInput(app, id);
+    await api(app, "POST", `/api/runs/${runId}/inputs/${input.requestId}`, {
+      outcome: "skipped",
+    });
+    await waitIdle(runs, runId);
+    expect((await detail(app, id)).messages[2]?.message).toMatchObject({
+      content: "The user declined to answer.",
+      isError: true,
+    });
+  });
+
+  it("rejects bad bodies, unknown forms and inactive runs", async () => {
+    const { app, runs } = await setup([[ask]], [askUser]);
+    const id = await newSession(app);
+    const runId = await send(app, id);
+    const { input } = await openInput(app, id);
+    const url = `/api/runs/${runId}/inputs`;
+    expect(
+      (
+        await api(app, "POST", `${url}/${input.requestId}`, {
+          outcome: "maybe",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await api(app, "POST", `${url}/nope`, { outcome: "skipped" })).status,
+    ).toBe(404);
+    expect(
+      (
+        await api(app, "POST", `/api/runs/none/inputs/x`, {
+          outcome: "skipped",
+        })
+      ).status,
+    ).toBe(404);
+    runs.cancel(runId);
+    await waitIdle(runs, runId);
+    expect(
+      (
+        await api(app, "POST", `${url}/${input.requestId}`, {
+          outcome: "skipped",
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("withdraws the form when the run is cancelled", async () => {
+    const { app, runs, store } = await setup([[ask]], [askUser]);
+    const id = await newSession(app);
+    const runId = await send(app, id);
+    const { input } = await openInput(app, id);
+    await api(app, "POST", `/api/runs/${runId}/cancel`);
+    await waitIdle(runs, runId);
+    expect(
+      store.runEvents(runId).find((e) => e.type === "request.cancel")?.data,
+    ).toMatchObject({ requestId: input.requestId });
+    expect((await detail(app, id)).messages.at(-1)?.message).toMatchObject({
+      role: "tool",
+      content: "Not run: the run was cancelled.",
+    });
+  });
+});
+
 describe("tool settings", () => {
   it("lists tools and switches asking either way", async () => {
     const asks = recorder("asks", "ask");
@@ -598,6 +745,26 @@ describe("recovery after a crash", () => {
       "tool.result",
       "run.interrupted",
     ]);
+  });
+
+  it("withdraws an open form", async () => {
+    const { t, store } = await setup([], []);
+    store.createSession("s1", "S", "T");
+    store.createRun({ id: "r1", sessionId: "s1", kind: "loop", now: "T" });
+    const base = { runId: "r1", sessionId: "s1", time: "T" };
+    store.insertEvent({
+      ...base,
+      type: "input.requested",
+      data: { requestId: "f1", callId: "c1", form: { fields: [] } },
+    });
+    new RunManager({
+      store: new Store(t.db),
+      settings: () => DEFAULTS,
+      model: () => new ScriptedModel([]),
+    }).recover();
+    expect(
+      store.runEvents("r1").find((e) => e.type === "request.cancel")?.data,
+    ).toEqual({ requestId: "f1", reason: "The backend stopped." });
   });
 
   it("saves a partial message's calls and answers them", async () => {

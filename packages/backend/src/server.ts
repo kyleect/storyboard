@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   ApprovalChoice,
+  InputAnswer,
   EntryError,
   getContextSize,
   getReasoningLevels,
@@ -527,6 +528,22 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       choice,
       ...(note !== undefined ? { note } : {}),
     });
+    return { ok: true };
+  });
+
+  /**
+   * Answers a form (input forms design): its answers, or skipped. 400 when
+   * the answers do not fit the form, 409 when the run is not active, 404
+   * when the form is not open.
+   */
+  app.post("/api/runs/:id/inputs/:requestId", async (req, reply) => {
+    const { id, requestId } = IdParams.extend({
+      requestId: z.string(),
+    }).parse(req.params);
+    const answer = InputAnswer.parse(req.body);
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    runs.answerInput(id, requestId, answer);
     return { ok: true };
   });
 

@@ -5,6 +5,8 @@ import type {
   ControlResult,
   EntryKind,
   FileType,
+  InputAnswer,
+  InputRequest,
   Message,
   RunAgent,
   Usage,
@@ -176,6 +178,8 @@ export interface SessionDetail {
     } | null;
     /** Approval requests waiting for an answer. */
     approvals: ApprovalRequest[];
+    /** Forms waiting for an answer (input forms design). */
+    inputs: InputRequest[];
   } | null;
 }
 
@@ -443,6 +447,13 @@ export const api = {
     request<{ ok: true }>(
       "POST",
       `/api/runs/${runId}/approvals/${encodeURIComponent(requestId)}`,
+      answer,
+    ),
+  /** Answers a form: its answers, or skipped. */
+  answerInput: (runId: string, requestId: string, answer: InputAnswer) =>
+    request<{ ok: true }>(
+      "POST",
+      `/api/runs/${runId}/inputs/${encodeURIComponent(requestId)}`,
       answer,
     ),
   listTools: () => request<ToolView[]>("GET", "/api/tools"),

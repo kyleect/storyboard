@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { EntryAccess } from "./entries.js";
+import type { Form, InputAnswer } from "./forms.js";
 import type { Message, ToolDefinition } from "./messages.js";
 
 /*
@@ -32,6 +33,12 @@ export interface ToolContext {
    * only when the tool succeeds.
    */
   entries: EntryAccess;
+  /**
+   * Shows the user a form in the chat and waits for the answer, for as long
+   * as it takes (input forms design, D2). Rejects when the run is cancelled
+   * or the run cannot ask.
+   */
+  requestInput: (form: Form) => Promise<InputAnswer>;
 }
 
 export interface ToolOutput {

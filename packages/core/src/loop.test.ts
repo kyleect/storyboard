@@ -4,7 +4,9 @@ import {
   HarnessEvent,
   type ApprovalAnswer,
   type ApprovalChoice,
+  type InputRequest,
 } from "./events.js";
+import type { Form, InputAnswer } from "./forms.js";
 import { ScriptedModel, type ScriptStep } from "./fake-model.js";
 import { runLoop, type ApprovalRequest, type LoopContext } from "./loop.js";
 import type {
@@ -737,6 +739,124 @@ describe("approval", () => {
     expect(events.at(-1)).toMatchObject({
       type: "run.finished",
       data: { reason: "cancelled" },
+    });
+  });
+});
+
+describe("asking the user (input forms)", () => {
+  const form: Form = {
+    title: "Story",
+    fields: [
+      {
+        name: "g",
+        label: "Genre",
+        required: true,
+        kind: "text",
+        multiline: false,
+      },
+    ],
+  };
+  /** Shows `form` and returns the answer as its result. */
+  const asker = defineTool({
+    name: "asker",
+    description: "Asks.",
+    input: z.object({}),
+    approval: "never",
+    execute: async (_i, ctx) => {
+      const answer = await ctx.requestInput(form);
+      return answer.outcome === "answered"
+        ? { data: answer.answers }
+        : { data: "skipped", isError: true };
+    },
+  });
+
+  it("emits the request, waits for the answer, and resolves it", async () => {
+    const requests: InputRequest[] = [];
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "asker", "{}")], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asker],
+        requestInput: (r) => {
+          requests.push(r);
+          return Promise.resolve<InputAnswer>({
+            outcome: "answered",
+            answers: { g: "noir" },
+          });
+        },
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(requests).toEqual([{ requestId: "id-2", callId: "c1", form }]);
+    const relevant = events.filter((e) =>
+      ["input.requested", "input.resolved", "tool.result"].includes(e.type),
+    );
+    expect(relevant.map((e) => [e.type, e.data])).toEqual([
+      ["input.requested", { requestId: "id-2", callId: "c1", form }],
+      ["input.resolved", { requestId: "id-2", outcome: "answered" }],
+      [
+        "tool.result",
+        expect.objectContaining({ callId: "c1", isError: false }),
+      ],
+    ]);
+    expect(results(saved)[0]?.content).toBe('{"g":"noir"}');
+  });
+
+  it("passes a skip to the tool", async () => {
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "asker", "{}")], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asker],
+        requestInput: () =>
+          Promise.resolve<InputAnswer>({ outcome: "skipped" }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(events.find((e) => e.type === "input.resolved")?.data).toMatchObject(
+      { outcome: "skipped" },
+    );
+    expect(results(saved)[0]).toMatchObject({
+      content: "skipped",
+      isError: true,
+    });
+  });
+
+  it("withdraws the request on cancel; the call is not run", async () => {
+    const controller = new AbortController();
+    let asked!: () => void;
+    const wasAsked = new Promise<void>((r) => (asked = r));
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "asker", "{}")]],
+      {
+        tools: [asker],
+        requestInput: () => {
+          asked();
+          return new Promise<InputAnswer>(() => {});
+        },
+      },
+      controller.signal,
+    );
+    const running = runLoop(model, request, ctx);
+    await wasAsked;
+    controller.abort();
+    expect((await running).reason).toBe("cancelled");
+    expect(events.find((e) => e.type === "request.cancel")?.data).toEqual({
+      requestId: "id-2",
+      reason: "The run was cancelled.",
+    });
+    expect(events.some((e) => e.type === "input.resolved")).toBe(false);
+    expect(results(saved)[0]?.content).toBe("Not run: the run was cancelled.");
+  });
+
+  it("fails the call when the run cannot ask", async () => {
+    const { events, saved, ctx, model } = setup(
+      [[call("c1", "asker", "{}")], [{ type: "text", text: "ok" }]],
+      { tools: [asker] },
+    );
+    await runLoop(model, request, ctx);
+    expect(events.some((e) => e.type === "input.requested")).toBe(false);
+    expect(results(saved)[0]).toMatchObject({
+      content: "asker failed: This run cannot ask the user for input.",
+      isError: true,
     });
   });
 });

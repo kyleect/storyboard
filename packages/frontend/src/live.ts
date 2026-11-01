@@ -8,6 +8,7 @@ import {
   type ApprovalRequest,
   type ContentBlock,
   type HarnessEvent,
+  type InputRequest,
   type RunAgent,
   type Usage,
 } from "@harness/core";
@@ -36,6 +37,8 @@ export interface LiveRun {
   message: LiveMessage | null;
   /** Approval requests waiting for an answer, oldest first. */
   approvals: ApprovalRequest[];
+  /** Forms waiting for an answer, oldest first (input forms design). */
+  inputs: InputRequest[];
   /** The latest running token count from the stream. */
   usage?: Usage;
 }
@@ -127,6 +130,7 @@ export function useSessionEvents(
             agent: event.data.agent ?? null,
             message: null,
             approvals: [],
+            inputs: [],
           });
           break;
         case "message.started": {
@@ -196,12 +200,22 @@ export function useSessionEvents(
             approvals: [...run.approvals, event.data],
           }));
           break;
+        case "input.requested":
+          state.update(sessionId, (run) => ({
+            ...run,
+            inputs: [...run.inputs, event.data],
+          }));
+          break;
         case "tool.approval_resolved":
+        case "input.resolved":
         case "request.cancel":
           state.update(sessionId, (run) => ({
             ...run,
             approvals: run.approvals.filter(
               (a) => a.requestId !== event.data.requestId,
+            ),
+            inputs: run.inputs.filter(
+              (i) => i.requestId !== event.data.requestId,
             ),
           }));
           break;

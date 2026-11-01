@@ -12,6 +12,7 @@ const ctx: ToolContext = {
   runId: "r",
   callId: "c",
   update: () => {},
+  requestInput: () => Promise.reject(new Error("Not used here.")),
   state: undefined,
   projectId: null,
   entries: createEntryAccess({
