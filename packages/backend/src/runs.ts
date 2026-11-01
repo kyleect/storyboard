@@ -131,6 +131,37 @@ export class RunManager {
     });
   }
 
+  /**
+   * Moves a project and its sessions to the trash, emitting
+   * `session.trashed` for each session moved (design Q12). Refused while a
+   * run is in progress in any of its sessions (Q12a).
+   */
+  trashProject(projectId: string) {
+    const project = this.store.getProject(projectId);
+    if (!project) throw new RunError("Project not found.", 404);
+    if (project.trashed_at !== null) {
+      throw new RunError("The project is already in the trash.", 409);
+    }
+    for (const run of this.active.values()) {
+      if (this.store.getSession(run.sessionId)?.project_id === projectId) {
+        throw new RunError(
+          "A run is in progress in one of this project's sessions. Wait for it to end or cancel it.",
+          409,
+        );
+      }
+    }
+    const now = this.now();
+    for (const sessionId of this.store.trashProject(projectId, now)) {
+      this.publish({
+        runId: null,
+        sessionId,
+        time: now,
+        type: "session.trashed",
+        data: {},
+      });
+    }
+  }
+
   /** Listen to a session's events. Returns the unsubscribe function. */
   subscribe(sessionId: string, listener: Listener): () => void {
     let set = this.listeners.get(sessionId);
@@ -390,6 +421,12 @@ export class RunManager {
     }
   }
 
+  /** Sending or continuing counts as using the project (design Q15a). */
+  private touchProject(sessionId: string) {
+    const projectId = this.store.getSession(sessionId)?.project_id;
+    if (projectId) this.store.touchProject(projectId, this.now());
+  }
+
   private hasActiveRun(sessionId: string): boolean {
     for (const run of this.active.values()) {
       if (run.sessionId === sessionId) return true;
@@ -407,6 +444,7 @@ export class RunManager {
     sessionId: string,
     continuing: { messageId: string; message: AssistantMessage } | null,
   ): { runId: string } {
+    this.touchProject(sessionId);
     const settings = this.options.settings();
     const runId = this.newId();
     // The session's choices, else the default settings. Empty: not sent.

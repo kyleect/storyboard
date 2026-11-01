@@ -18,10 +18,29 @@ export interface SessionRow {
   reasoning_effort: string | null;
   /** When it was moved to the trash; null when it is not in the trash. */
   trashed_at: string | null;
+  /** The project it belongs to; null for a standalone session. */
+  project_id: string | null;
+  /** 1 when it went to the trash because its project did. */
+  trashed_with_project: number;
 }
 
 const SESSION_COLUMNS =
-  "id, title, created_at, model, reasoning_effort, trashed_at";
+  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project";
+
+export interface ProjectRow {
+  id: string;
+  name: string;
+  /** Empty when there is none. */
+  description: string;
+  created_at: string;
+  /** For the most recently used order (design Q15a). */
+  last_used_at: string;
+  /** When it was moved to the trash; null when it is not in the trash. */
+  trashed_at: string | null;
+}
+
+const PROJECT_COLUMNS =
+  "id, name, description, created_at, last_used_at, trashed_at";
 
 /** What a run sent to the model server; null where nothing was sent. */
 export interface Generation {
@@ -76,10 +95,17 @@ const toEvent = (r: EventRow): StoredEvent =>
 export class Store {
   constructor(readonly db: Database) {}
 
-  createSession(id: string, title: string, now: string): SessionRow {
+  createSession(
+    id: string,
+    title: string,
+    now: string,
+    projectId: string | null = null,
+  ): SessionRow {
     this.db
-      .prepare("INSERT INTO sessions (id, title, created_at) VALUES (?, ?, ?)")
-      .run(id, title, now);
+      .prepare(
+        "INSERT INTO sessions (id, title, created_at, project_id) VALUES (?, ?, ?, ?)",
+      )
+      .run(id, title, now, projectId);
     return {
       id,
       title,
@@ -87,25 +113,48 @@ export class Store {
       model: null,
       reasoning_effort: null,
       trashed_at: null,
+      project_id: projectId,
+      trashed_with_project: 0,
     };
   }
 
-  /** Sessions that are not in the trash, newest first. */
-  listSessions(): SessionRow[] {
+  /**
+   * Sessions that are not in the trash, newest first: the project's, or
+   * the standalone sessions when `projectId` is null.
+   */
+  listSessions(projectId: string | null = null): SessionRow[] {
     return this.db
       .prepare(
-        `SELECT ${SESSION_COLUMNS} FROM sessions WHERE trashed_at IS NULL ORDER BY created_at DESC`,
+        `SELECT ${SESSION_COLUMNS} FROM sessions
+         WHERE trashed_at IS NULL AND project_id IS ?
+         ORDER BY created_at DESC`,
+      )
+      .all(projectId) as SessionRow[];
+  }
+
+  /**
+   * Sessions trashed on their own (not with their project), most recently
+   * trashed first.
+   */
+  listTrashedSessions(): SessionRow[] {
+    return this.db
+      .prepare(
+        `SELECT ${SESSION_COLUMNS} FROM sessions
+         WHERE trashed_at IS NOT NULL AND trashed_with_project = 0
+         ORDER BY trashed_at DESC`,
       )
       .all() as SessionRow[];
   }
 
-  /** Sessions in the trash, most recently trashed first. */
-  listTrashedSessions(): SessionRow[] {
+  /** The sessions that went to the trash together with the project. */
+  listSessionsTrashedWithProject(projectId: string): SessionRow[] {
     return this.db
       .prepare(
-        `SELECT ${SESSION_COLUMNS} FROM sessions WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC`,
+        `SELECT ${SESSION_COLUMNS} FROM sessions
+         WHERE project_id = ? AND trashed_with_project = 1
+         ORDER BY created_at DESC`,
       )
-      .all() as SessionRow[];
+      .all(projectId) as SessionRow[];
   }
 
   /** Includes sessions in the trash. */
@@ -121,10 +170,12 @@ export class Store {
       .run(title, id);
   }
 
-  /** Moves the session to the trash (or back out, with null). */
+  /** Moves the session to the trash on its own, or back out with null. */
   setSessionTrashed(id: string, trashedAt: string | null) {
     this.db
-      .prepare("UPDATE sessions SET trashed_at = ? WHERE id = ?")
+      .prepare(
+        "UPDATE sessions SET trashed_at = ?, trashed_with_project = 0 WHERE id = ?",
+      )
       .run(trashedAt, id);
   }
 
@@ -151,22 +202,170 @@ export class Store {
   }
 
   /**
-   * Purges the sessions in the trash, or only those trashed before
-   * `before` (an ISO timestamp). Returns their ids.
+   * Purges the sessions trashed on their own, or only those trashed before
+   * `before` (an ISO timestamp). Sessions trashed with their project are
+   * purged with the project. Returns their ids.
    */
   purgeTrashedSessions(before?: string): string[] {
-    const ids = (
-      before === undefined
-        ? this.db
-            .prepare("SELECT id FROM sessions WHERE trashed_at IS NOT NULL")
-            .all()
-        : this.db
-            .prepare(
-              "SELECT id FROM sessions WHERE trashed_at IS NOT NULL AND trashed_at < ?",
-            )
-            .all(before)
-    ) as { id: string }[];
+    const ids = this.db
+      .prepare(
+        `SELECT id FROM sessions
+         WHERE trashed_at IS NOT NULL AND trashed_with_project = 0
+         AND (? IS NULL OR trashed_at < ?)`,
+      )
+      .all(before ?? null, before ?? null) as { id: string }[];
     for (const { id } of ids) this.purgeSession(id);
+    return ids.map((r) => r.id);
+  }
+
+  createProject(project: {
+    id: string;
+    name: string;
+    description: string;
+    now: string;
+  }): ProjectRow {
+    this.db
+      .prepare(
+        `INSERT INTO projects (id, name, description, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        project.id,
+        project.name,
+        project.description,
+        project.now,
+        project.now,
+      );
+    return {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      created_at: project.now,
+      last_used_at: project.now,
+      trashed_at: null,
+    };
+  }
+
+  /** Includes projects in the trash. */
+  getProject(id: string): ProjectRow | undefined {
+    return this.db
+      .prepare(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = ?`)
+      .get(id) as ProjectRow | undefined;
+  }
+
+  /** Projects that are not in the trash, most recently used first (Q15). */
+  listProjects(): ProjectRow[] {
+    return this.db
+      .prepare(
+        `SELECT ${PROJECT_COLUMNS} FROM projects
+         WHERE trashed_at IS NULL ORDER BY last_used_at DESC`,
+      )
+      .all() as ProjectRow[];
+  }
+
+  /** Projects in the trash, most recently trashed first. */
+  listTrashedProjects(): ProjectRow[] {
+    return this.db
+      .prepare(
+        `SELECT ${PROJECT_COLUMNS} FROM projects
+         WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC`,
+      )
+      .all() as ProjectRow[];
+  }
+
+  /** A field left out is not changed. */
+  updateProject(id: string, fields: { name?: string; description?: string }) {
+    if (fields.name !== undefined) {
+      this.db
+        .prepare("UPDATE projects SET name = ? WHERE id = ?")
+        .run(fields.name, id);
+    }
+    if (fields.description !== undefined) {
+      this.db
+        .prepare("UPDATE projects SET description = ? WHERE id = ?")
+        .run(fields.description, id);
+    }
+  }
+
+  /** Records that the project was used (Q15a). */
+  touchProject(id: string, now: string) {
+    this.db
+      .prepare("UPDATE projects SET last_used_at = ? WHERE id = ?")
+      .run(now, id);
+  }
+
+  /**
+   * Moves the project to the trash, with every session of it that is not
+   * already there (Q12). Returns the ids of the sessions moved.
+   */
+  trashProject(id: string, now: string): string[] {
+    return this.db.transaction(() => {
+      const ids = (
+        this.db
+          .prepare(
+            "SELECT id FROM sessions WHERE project_id = ? AND trashed_at IS NULL",
+          )
+          .all(id) as { id: string }[]
+      ).map((r) => r.id);
+      this.db
+        .prepare(
+          `UPDATE sessions SET trashed_at = ?, trashed_with_project = 1
+           WHERE project_id = ? AND trashed_at IS NULL`,
+        )
+        .run(now, id);
+      this.db
+        .prepare("UPDATE projects SET trashed_at = ? WHERE id = ?")
+        .run(now, id);
+      return ids;
+    })();
+  }
+
+  /**
+   * Takes the project out of the trash. With `sessions: "all"`, the
+   * sessions trashed together with it come back too; with "none", they
+   * stay in the trash as sessions trashed on their own (Q12b). Sessions
+   * trashed before the project stay in the trash either way (Q12c).
+   */
+  restoreProject(id: string, sessions: "all" | "none") {
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          sessions === "all"
+            ? `UPDATE sessions SET trashed_at = NULL, trashed_with_project = 0
+               WHERE project_id = ? AND trashed_with_project = 1`
+            : `UPDATE sessions SET trashed_with_project = 0
+               WHERE project_id = ? AND trashed_with_project = 1`,
+        )
+        .run(id);
+      this.db
+        .prepare("UPDATE projects SET trashed_at = NULL WHERE id = ?")
+        .run(id);
+    })();
+  }
+
+  /** Permanently deletes a project and all its sessions. */
+  purgeProject(id: string) {
+    this.db.transaction(() => {
+      const ids = this.db
+        .prepare("SELECT id FROM sessions WHERE project_id = ?")
+        .all(id) as { id: string }[];
+      for (const s of ids) this.purgeSession(s.id);
+      this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+    })();
+  }
+
+  /**
+   * Purges the projects in the trash, or only those trashed before
+   * `before`, with their sessions. Returns their ids.
+   */
+  purgeTrashedProjects(before?: string): string[] {
+    const ids = this.db
+      .prepare(
+        `SELECT id FROM projects
+         WHERE trashed_at IS NOT NULL AND (? IS NULL OR trashed_at < ?)`,
+      )
+      .all(before ?? null, before ?? null) as { id: string }[];
+    for (const { id } of ids) this.purgeProject(id);
     return ids.map((r) => r.id);
   }
 

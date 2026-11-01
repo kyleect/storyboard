@@ -141,15 +141,40 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     }
   });
 
-  app.get("/api/sessions", async () => store.listSessions());
+  /**
+   * Sessions not in the trash: the project's with `?projectId=`, else the
+   * standalone sessions.
+   */
+  app.get("/api/sessions", async (req) => {
+    const { projectId } = z
+      .object({ projectId: z.string().min(1).optional() })
+      .parse(req.query);
+    return store.listSessions(projectId ?? null);
+  });
 
+  /** Creates a session, in a project when `projectId` is given. */
   app.post("/api/sessions", async (req, reply) => {
-    const body = z.object({ title: Title.optional() }).parse(req.body ?? {});
+    const body = z
+      .object({
+        title: Title.optional(),
+        projectId: z.string().min(1).optional(),
+      })
+      .parse(req.body ?? {});
+    if (body.projectId !== undefined) {
+      const project = store.getProject(body.projectId);
+      if (!project)
+        return reply.code(404).send({ error: "Project not found." });
+      if (project.trashed_at !== null)
+        return reply.code(409).send({ error: "The project is in the trash." });
+    }
+    const time = now();
     const session = store.createSession(
       newId(),
       body.title ?? "New session",
-      now(),
+      time,
+      body.projectId ?? null,
     );
+    if (body.projectId !== undefined) store.touchProject(body.projectId, time);
     return reply.code(201).send(session);
   });
 
@@ -159,6 +184,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (!session) return reply.code(404).send({ error: "Session not found." });
     return {
       session,
+      project: session.project_id
+        ? (store.getProject(session.project_id) ?? null)
+        : null,
       messages: store.listMessages(id),
       ...runs.snapshot(id),
     };
@@ -233,15 +261,39 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /** Takes the session out of the trash. */
+  /**
+   * Takes the session out of the trash. When its project is in the trash
+   * too, `project` says whether the project comes back with every session
+   * trashed together with it ("all") or with only this one ("only") (design
+   * Q12b); without it, 409.
+   */
   app.post("/api/sessions/:id/restore", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
+    const { project: choice } = z
+      .object({ project: z.enum(["all", "only"]).optional() })
+      .parse(req.body ?? {});
     const session = store.getSession(id);
     if (!session) return reply.code(404).send({ error: "Session not found." });
     if (session.trashed_at === null)
       return reply
         .code(409)
         .send({ error: "The session is not in the trash." });
-    store.setSessionTrashed(id, null);
+    const project = session.project_id
+      ? store.getProject(session.project_id)
+      : undefined;
+    if (project && project.trashed_at !== null) {
+      if (!choice)
+        return reply.code(409).send({
+          error:
+            "The session's project is in the trash. Say whether to restore it with all its sessions or only this one.",
+        });
+      store.db.transaction(() => {
+        store.restoreProject(project.id, choice === "all" ? "all" : "none");
+        store.setSessionTrashed(id, null);
+      })();
+    } else {
+      store.setSessionTrashed(id, null);
+    }
     return store.getSession(id);
   });
 
@@ -259,14 +311,111 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /** Everything in the trash. */
+  /**
+   * Everything in the trash: projects, each with the sessions trashed
+   * together with it, and sessions trashed on their own.
+   */
   app.get("/api/trash", async () => ({
+    projects: store.listTrashedProjects().map((p) => ({
+      ...p,
+      sessions: store.listSessionsTrashedWithProject(p.id),
+    })),
     sessions: store.listTrashedSessions(),
   }));
 
   /** Empties the trash: permanently deletes everything in it. */
-  app.delete("/api/trash", async () => ({
-    purged: store.purgeTrashedSessions().length,
-  }));
+  app.delete("/api/trash", async () => {
+    let projects = 0;
+    let sessions = 0;
+    store.db.transaction(() => {
+      projects = store.purgeTrashedProjects().length;
+      sessions = store.purgeTrashedSessions().length;
+    })();
+    return { purged: { projects, sessions } };
+  });
+
+  app.get("/api/projects", async () => store.listProjects());
+
+  app.post("/api/projects", async (req, reply) => {
+    const body = z
+      .object({ name: Title, description: z.string().optional() })
+      .parse(req.body);
+    const project = store.createProject({
+      id: newId(),
+      name: body.name,
+      description: body.description ?? "",
+      now: now(),
+    });
+    return reply.code(201).send(project);
+  });
+
+  /** Includes a project in the trash. */
+  app.get("/api/projects/:id", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const project = store.getProject(id);
+    if (!project) return reply.code(404).send({ error: "Project not found." });
+    return project;
+  });
+
+  /**
+   * Renames the project or changes its description. A field left out is
+   * unchanged. Refused for a project in the trash.
+   */
+  app.patch("/api/projects/:id", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const fields = z
+      .object({ name: Title.optional(), description: z.string().optional() })
+      .refine((f) => f.name !== undefined || f.description !== undefined, {
+        message: "Nothing to change",
+      })
+      .parse(req.body);
+    const project = store.getProject(id);
+    if (!project) return reply.code(404).send({ error: "Project not found." });
+    if (project.trashed_at !== null)
+      return reply.code(409).send({ error: "The project is in the trash." });
+    store.updateProject(id, defined(fields));
+    store.touchProject(id, now());
+    return store.getProject(id);
+  });
+
+  /**
+   * Moves the project and its sessions to the trash. 409 while a run is in
+   * progress in any of its sessions.
+   */
+  app.post("/api/projects/:id/trash", async (req) => {
+    const { id } = IdParams.parse(req.params);
+    runs.trashProject(id);
+    return store.getProject(id);
+  });
+
+  /**
+   * Takes the project out of the trash, with the sessions trashed together
+   * with it. Sessions trashed before it stay in the trash (design Q12c).
+   */
+  app.post("/api/projects/:id/restore", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const project = store.getProject(id);
+    if (!project) return reply.code(404).send({ error: "Project not found." });
+    if (project.trashed_at === null)
+      return reply
+        .code(409)
+        .send({ error: "The project is not in the trash." });
+    store.restoreProject(id, "all");
+    return store.getProject(id);
+  });
+
+  /** Permanently deletes a project and its sessions. Only when trashed. */
+  app.delete("/api/projects/:id", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const project = store.getProject(id);
+    if (!project) return reply.code(404).send({ error: "Project not found." });
+    if (project.trashed_at === null)
+      return reply
+        .code(409)
+        .send({ error: "Only a project in the trash can be deleted." });
+    store.purgeProject(id);
+    return { ok: true };
+  });
 
   app.post("/api/sessions/:id/messages", async (req, reply) => {
     const { id } = IdParams.parse(req.params);

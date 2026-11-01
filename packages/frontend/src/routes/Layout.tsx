@@ -1,38 +1,66 @@
 import {
-  ActionIcon,
+  Anchor,
   AppShell,
   Button,
   Group,
-  Menu,
   NavLink,
   ScrollArea,
+  Select,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import { api, type Session } from "../api";
-import { useSessionActions } from "./SessionActions";
+import { useEffect } from "react";
+import { api } from "../api";
+import { usePicked } from "../picked";
+import { SessionMenu, showError, useProjectActions } from "./SessionActions";
+
+const NO_PROJECT = "none";
+const NEW_PROJECT = "new";
 
 export function Layout() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const params = useParams({ strict: false });
+  const projectActions = useProjectActions();
+  const picked = usePicked((s) => s.projectId);
+  const pick = usePicked((s) => s.pick);
+
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: api.listProjects,
+  });
   const sessions = useQuery({
-    queryKey: ["sessions"],
-    queryFn: api.listSessions,
+    queryKey: ["sessions", picked],
+    queryFn: () => api.listSessions(picked),
   });
 
+  // A remembered project that is gone (trashed or deleted): No project.
+  useEffect(() => {
+    if (
+      picked !== null &&
+      projects.data &&
+      !projects.data.some((p) => p.id === picked)
+    ) {
+      pick(null);
+    }
+  }, [picked, projects.data, pick]);
+
   const create = useMutation({
-    mutationFn: () => api.createSession(),
+    mutationFn: () => api.createSession(picked),
     onSuccess: async (session) => {
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      // Creating a session in a project counts as using it.
+      if (picked !== null)
+        await queryClient.invalidateQueries({ queryKey: ["projects"] });
       await navigate({
         to: "/sessions/$sessionId",
         params: { sessionId: session.id },
       });
     },
+    onError: showError("Could not create a session"),
   });
 
   return (
@@ -49,10 +77,57 @@ export function Layout() {
               New session
             </Button>
           </Group>
+          <Stack gap={4}>
+            <Select
+              aria-label="Project"
+              size="xs"
+              allowDeselect={false}
+              data={[
+                { value: NO_PROJECT, label: "No project" },
+                ...(projects.data ?? []).map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                })),
+                { value: NEW_PROJECT, label: "New project…" },
+              ]}
+              value={picked ?? NO_PROJECT}
+              onChange={(value) => {
+                if (value === NEW_PROJECT) {
+                  projectActions.openCreate((project) => pick(project.id));
+                } else {
+                  pick(value === NO_PROJECT || value === null ? null : value);
+                }
+              }}
+            />
+            {picked !== null && (
+              <Anchor
+                size="xs"
+                renderRoot={(props) => (
+                  <Link
+                    {...props}
+                    to="/projects/$projectId"
+                    params={{ projectId: picked }}
+                  />
+                )}
+              >
+                Open project page
+              </Anchor>
+            )}
+            {projects.isError && (
+              <Text c="red" size="xs">
+                {projects.error.message}
+              </Text>
+            )}
+          </Stack>
           <ScrollArea style={{ flex: 1 }}>
             {sessions.isError && (
               <Text c="red" size="sm">
                 {sessions.error.message}
+              </Text>
+            )}
+            {sessions.data?.length === 0 && (
+              <Text c="dimmed" size="sm">
+                No sessions.
               </Text>
             )}
             {sessions.data?.map((s) => (
@@ -82,38 +157,6 @@ export function Layout() {
         <Outlet />
       </AppShell.Main>
     </AppShell>
-  );
-}
-
-/** The ⋯ menu on a session's navbar entry: Rename, Move to trash. */
-function SessionMenu({ session }: { session: Session }) {
-  const actions = useSessionActions();
-  return (
-    <Menu position="bottom-end" withinPortal>
-      <Menu.Target>
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="sm"
-          aria-label={`Actions for ${session.title}`}
-          // The entry is a link; the menu must not follow it.
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        >
-          ⋯
-        </ActionIcon>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Item onClick={() => actions.openRename(session)}>
-          Rename
-        </Menu.Item>
-        <Menu.Item color="red" onClick={() => actions.confirmTrash(session)}>
-          Move to trash
-        </Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
   );
 }
 

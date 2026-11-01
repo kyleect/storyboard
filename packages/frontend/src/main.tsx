@@ -16,6 +16,7 @@ import { createRoot } from "react-dom/client";
 import { token } from "./api";
 import { Chat } from "./routes/Chat";
 import { Home, Layout } from "./routes/Layout";
+import { ProjectPage } from "./routes/ProjectPage";
 import { Settings } from "./routes/Settings";
 
 const rootRoute = createRootRoute({ component: Layout });
@@ -25,6 +26,11 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: "/sessions/$sessionId",
     component: Chat,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId",
+    component: ProjectPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

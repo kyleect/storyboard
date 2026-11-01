@@ -1119,12 +1119,298 @@ describe("trash", () => {
     await trashed(app);
     const keep = await newSession(app);
     const res = await api(app, "DELETE", "/api/trash");
-    expect(res.body).toEqual({ purged: 2 });
+    expect(res.body).toEqual({ purged: { projects: 0, sessions: 2 } });
     expect((await api(app, "GET", "/api/trash")).body).toEqual({
+      projects: [],
       sessions: [],
     });
     expect(await api(app, "GET", "/api/sessions")).toMatchObject({
       body: [{ id: keep }],
     });
+  });
+});
+
+describe("projects", () => {
+  async function newProject(
+    app: FastifyInstance,
+    body: Record<string, unknown> = { name: "Harbour stories" },
+  ) {
+    const res = await api(app, "POST", "/api/projects", body);
+    expect(res.status).toBe(201);
+    return res.body as { id: string; last_used_at: string };
+  }
+
+  async function sessionIn(app: FastifyInstance, projectId: string) {
+    const res = await api(app, "POST", "/api/sessions", { projectId });
+    expect(res.status).toBe(201);
+    return res.body.id as string;
+  }
+
+  const ids = (body: unknown) => (body as { id: string }[]).map((r) => r.id);
+
+  it("creates, reads and edits a project", async () => {
+    const { app } = await setup([]);
+    const created = await api(app, "POST", "/api/projects", {
+      name: "  Harbour stories  ",
+    });
+    expect(created.body).toMatchObject({
+      name: "Harbour stories",
+      description: "",
+      trashed_at: null,
+    });
+    const id = created.body.id as string;
+    expect(
+      (await api(app, "POST", "/api/projects", { name: " " })).status,
+    ).toBe(400);
+
+    const edited = await api(app, "PATCH", `/api/projects/${id}`, {
+      name: "Sea stories",
+      description: "Short pieces set by the sea.",
+    });
+    expect(edited.body).toMatchObject({
+      name: "Sea stories",
+      description: "Short pieces set by the sea.",
+    });
+    expect(
+      (await api(app, "PATCH", `/api/projects/${id}`, { name: "" })).status,
+    ).toBe(400);
+    expect((await api(app, "PATCH", `/api/projects/${id}`, {})).status).toBe(
+      400,
+    );
+    expect((await api(app, "GET", `/api/projects/${id}`)).body).toMatchObject({
+      name: "Sea stories",
+    });
+    expect((await api(app, "GET", "/api/projects/nope")).status).toBe(404);
+  });
+
+  it("keeps project sessions apart from standalone sessions", async () => {
+    const { app } = await setup([]);
+    const p = await newProject(app);
+    const standalone = await newSession(app);
+    const inProject = await sessionIn(app, p.id);
+
+    expect(ids((await api(app, "GET", "/api/sessions")).body)).toEqual([
+      standalone,
+    ]);
+    expect(
+      ids((await api(app, "GET", `/api/sessions?projectId=${p.id}`)).body),
+    ).toEqual([inProject]);
+    const detail = await api(app, "GET", `/api/sessions/${inProject}`);
+    expect(detail.body.session).toMatchObject({ project_id: p.id });
+    expect(detail.body.project).toMatchObject({ id: p.id });
+    expect(
+      (await api(app, "GET", `/api/sessions/${standalone}`)).body.project,
+    ).toBeNull();
+
+    expect(
+      (await api(app, "POST", "/api/sessions", { projectId: "nope" })).status,
+    ).toBe(404);
+  });
+
+  it("lists projects most recently used first", async () => {
+    let tick = 0;
+    const t = tempDatabase();
+    const store = new Store(t.db);
+    const model = new ScriptedModel([[{ type: "text", text: "ok" }]]);
+    const runs = new RunManager({
+      store,
+      settings: () => readSettings(t.db, {}).effective,
+      model: () => model,
+      now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString(),
+    });
+    const app = buildServer({
+      store,
+      runs,
+      token: TOKEN,
+      env: {},
+      now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString(),
+    });
+    cleanups.push(t.cleanup, () => app.close());
+
+    const a = await newProject(app, { name: "A" });
+    const b = await newProject(app, { name: "B" });
+    const c = await newProject(app, { name: "C" });
+    const list = async () => ids((await api(app, "GET", "/api/projects")).body);
+    expect(await list()).toEqual([c.id, b.id, a.id]);
+
+    // Creating a session in it.
+    const inA = await sessionIn(app, a.id);
+    expect(await list()).toEqual([a.id, c.id, b.id]);
+    // Editing it.
+    await api(app, "PATCH", `/api/projects/${b.id}`, { description: "x" });
+    expect(await list()).toEqual([b.id, a.id, c.id]);
+    // Sending a message in one of its sessions.
+    const run = await api(app, "POST", `/api/sessions/${inA}/messages`, {
+      content: "Hi",
+    });
+    await waitIdle(runs, run.body.runId as string);
+    expect(await list()).toEqual([a.id, b.id, c.id]);
+    // Opening it does not count.
+    await api(app, "GET", `/api/projects/${c.id}`);
+    expect(await list()).toEqual([a.id, b.id, c.id]);
+  });
+
+  it("trashes a project with its sessions and emits session.trashed for each", async () => {
+    const { app, base } = await setup([]);
+    const p = await newProject(app);
+    const s1 = await sessionIn(app, p.id);
+    const s2 = await sessionIn(app, p.id);
+    const listening = stream(base, s1, {
+      until: (got) => got.some((r) => r.event.type === "session.trashed"),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect((await api(app, "POST", `/api/projects/${p.id}/trash`)).status).toBe(
+      200,
+    );
+    const { got } = await listening;
+    expect(got.at(-1)?.event).toMatchObject({
+      type: "session.trashed",
+      runId: null,
+    });
+
+    expect(ids((await api(app, "GET", "/api/projects")).body)).toEqual([]);
+    const trash = await api(app, "GET", "/api/trash");
+    const projects = trash.body.projects as {
+      id: string;
+      sessions: { id: string }[];
+    }[];
+    expect(projects.map((x) => x.id)).toEqual([p.id]);
+    expect(ids(projects[0]?.sessions).sort()).toEqual([s1, s2].sort());
+    expect(trash.body.sessions).toEqual([]);
+
+    for (const [method, url, body] of [
+      ["POST", `/api/projects/${p.id}/trash`, undefined],
+      ["PATCH", `/api/projects/${p.id}`, { name: "X" }],
+      ["POST", "/api/sessions", { projectId: p.id }],
+      ["POST", `/api/sessions/${s1}/messages`, { content: "Hi" }],
+    ] as const) {
+      expect((await api(app, method, url, body)).status).toBe(409);
+    }
+  });
+
+  it("refuses to trash a project while one of its sessions has a run", async () => {
+    const { app, runs } = await setup([
+      [
+        { type: "text", text: "a" },
+        { type: "wait", until: new Promise(() => {}) },
+      ],
+    ]);
+    const p = await newProject(app);
+    const s = await sessionIn(app, p.id);
+    const run = await api(app, "POST", `/api/sessions/${s}/messages`, {
+      content: "Hi",
+    });
+    const runId = run.body.runId as string;
+    expect((await api(app, "POST", `/api/projects/${p.id}/trash`)).status).toBe(
+      409,
+    );
+    await api(app, "POST", `/api/runs/${runId}/cancel`);
+    await waitIdle(runs, runId);
+    expect((await api(app, "POST", `/api/projects/${p.id}/trash`)).status).toBe(
+      200,
+    );
+  });
+
+  it("restores a project with the sessions trashed with it, not earlier ones", async () => {
+    const { app } = await setup([]);
+    const p = await newProject(app);
+    const earlier = await sessionIn(app, p.id);
+    const withProject = await sessionIn(app, p.id);
+    await api(app, "POST", `/api/sessions/${earlier}/trash`);
+    await api(app, "POST", `/api/projects/${p.id}/trash`);
+
+    const trash = await api(app, "GET", "/api/trash");
+    expect(ids(trash.body.sessions)).toEqual([earlier]);
+
+    expect(
+      (await api(app, "POST", `/api/projects/${p.id}/restore`)).body,
+    ).toMatchObject({ trashed_at: null });
+    expect(
+      ids((await api(app, "GET", `/api/sessions?projectId=${p.id}`)).body),
+    ).toEqual([withProject]);
+    expect(ids((await api(app, "GET", "/api/trash")).body.sessions)).toEqual([
+      earlier,
+    ]);
+    expect(
+      (await api(app, "POST", `/api/projects/${p.id}/restore`)).status,
+    ).toBe(409);
+  });
+
+  it("restoring a session of a trashed project asks which sessions come back", async () => {
+    const { app } = await setup([]);
+    const setupProject = async () => {
+      const p = await newProject(app);
+      const s1 = await sessionIn(app, p.id);
+      const s2 = await sessionIn(app, p.id);
+      await api(app, "POST", `/api/projects/${p.id}/trash`);
+      return { p, s1, s2 };
+    };
+
+    const one = await setupProject();
+    expect(
+      (await api(app, "POST", `/api/sessions/${one.s1}/restore`)).status,
+    ).toBe(409);
+    await api(app, "POST", `/api/sessions/${one.s1}/restore`, {
+      project: "all",
+    });
+    expect(
+      ids(
+        (await api(app, "GET", `/api/sessions?projectId=${one.p.id}`)).body,
+      ).sort(),
+    ).toEqual([one.s1, one.s2].sort());
+
+    const two = await setupProject();
+    await api(app, "POST", `/api/sessions/${two.s1}/restore`, {
+      project: "only",
+    });
+    expect(
+      ids((await api(app, "GET", `/api/sessions?projectId=${two.p.id}`)).body),
+    ).toEqual([two.s1]);
+    expect(ids((await api(app, "GET", "/api/projects")).body)).toContain(
+      two.p.id,
+    );
+    // The other session stays in the trash, now as a session of its own.
+    const trash = await api(app, "GET", "/api/trash");
+    expect(ids(trash.body.sessions)).toEqual([two.s2]);
+    expect(trash.body.projects).toEqual([]);
+  });
+
+  it("deletes only a trashed project, with its sessions", async () => {
+    const { app, store } = await setup([]);
+    const p = await newProject(app);
+    const s1 = await sessionIn(app, p.id);
+    const s2 = await sessionIn(app, p.id);
+    await api(app, "POST", `/api/sessions/${s1}/trash`);
+    expect((await api(app, "DELETE", `/api/projects/${p.id}`)).status).toBe(
+      409,
+    );
+    await api(app, "POST", `/api/projects/${p.id}/trash`);
+    expect((await api(app, "DELETE", `/api/projects/${p.id}`)).status).toBe(
+      200,
+    );
+    expect(store.getProject(p.id)).toBeUndefined();
+    expect(store.getSession(s1)).toBeUndefined();
+    expect(store.getSession(s2)).toBeUndefined();
+  });
+
+  it("empties projects and sessions from the trash", async () => {
+    const { app, store } = await setup([]);
+    const p = await newProject(app);
+    await sessionIn(app, p.id);
+    await api(app, "POST", `/api/projects/${p.id}/trash`);
+    const s = await newSession(app);
+    await api(app, "POST", `/api/sessions/${s}/trash`);
+    expect((await api(app, "DELETE", "/api/trash")).body).toEqual({
+      purged: { projects: 1, sessions: 1 },
+    });
+    expect(store.getProject(p.id)).toBeUndefined();
+    expect(
+      (
+        store.db.prepare("SELECT count(*) AS n FROM sessions").get() as {
+          n: number;
+        }
+      ).n,
+    ).toBe(0);
   });
 });

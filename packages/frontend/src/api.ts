@@ -89,10 +89,28 @@ export interface Session {
   reasoning_effort: string | null;
   /** When it was moved to the trash; null when it is not in the trash. */
   trashed_at: string | null;
+  /** The project it belongs to; null for a standalone session. */
+  project_id: string | null;
+  /** 1 when it went to the trash because its project did. */
+  trashed_with_project: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  /** Empty when there is none. */
+  description: string;
+  created_at: string;
+  last_used_at: string;
+  /** When it was moved to the trash; null when it is not in the trash. */
+  trashed_at: string | null;
 }
 
 /** Everything in the trash. */
 export interface Trash {
+  /** Each with the sessions trashed together with it. */
+  projects: (Project & { sessions: Session[] })[];
+  /** Sessions trashed on their own. */
   sessions: Session[];
 }
 
@@ -107,6 +125,8 @@ export interface StoredMessage {
 
 export interface SessionDetail {
   session: Session;
+  /** The session's project; null for a standalone session. */
+  project: Project | null;
   messages: StoredMessage[];
   lastEventId: number;
   activeRun: {
@@ -184,22 +204,59 @@ export const api = {
     ),
   endReasoning: (runId: string) =>
     request<ControlResult>("POST", `/api/runs/${runId}/end-reasoning`),
-  listSessions: () => request<Session[]>("GET", "/api/sessions"),
-  createSession: (title?: string) =>
-    request<Session>("POST", "/api/sessions", title ? { title } : {}),
+  /** A project's sessions, or the standalone ones when null. */
+  listSessions: (projectId: string | null) =>
+    request<Session[]>(
+      "GET",
+      `/api/sessions${
+        projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""
+      }`,
+    ),
+  /** Creates a session, in a project when one is given. */
+  createSession: (projectId: string | null) =>
+    request<Session>("POST", "/api/sessions", projectId ? { projectId } : {}),
   getSession: (id: string) =>
     request<SessionDetail>("GET", `/api/sessions/${id}`),
   renameSession: (id: string, title: string) =>
     request<Session>("PATCH", `/api/sessions/${id}`, { title }),
   trashSession: (id: string) =>
     request<Session>("POST", `/api/sessions/${id}/trash`),
-  restoreSession: (id: string) =>
-    request<Session>("POST", `/api/sessions/${id}/restore`),
+  /**
+   * When the session's project is in the trash, `project` says whether the
+   * project comes back with all the sessions trashed with it, or only this
+   * one.
+   */
+  restoreSession: (id: string, project?: "all" | "only") =>
+    request<Session>(
+      "POST",
+      `/api/sessions/${id}/restore`,
+      project ? { project } : {},
+    ),
   /** Permanently deletes a session in the trash. */
   deleteSession: (id: string) =>
     request<{ ok: true }>("DELETE", `/api/sessions/${id}`),
   getTrash: () => request<Trash>("GET", "/api/trash"),
-  emptyTrash: () => request<{ purged: number }>("DELETE", "/api/trash"),
+  emptyTrash: () =>
+    request<{ purged: { projects: number; sessions: number } }>(
+      "DELETE",
+      "/api/trash",
+    ),
+  listProjects: () => request<Project[]>("GET", "/api/projects"),
+  getProject: (id: string) => request<Project>("GET", `/api/projects/${id}`),
+  createProject: (p: { name: string; description: string }) =>
+    request<Project>("POST", "/api/projects", p),
+  /** A field left out is unchanged. */
+  updateProject: (
+    id: string,
+    fields: { name?: string; description?: string },
+  ) => request<Project>("PATCH", `/api/projects/${id}`, fields),
+  trashProject: (id: string) =>
+    request<Project>("POST", `/api/projects/${id}/trash`),
+  restoreProject: (id: string) =>
+    request<Project>("POST", `/api/projects/${id}/restore`),
+  /** Permanently deletes a project in the trash, with its sessions. */
+  deleteProject: (id: string) =>
+    request<{ ok: true }>("DELETE", `/api/projects/${id}`),
   sendMessage: (id: string, content: string, choices: Choices) =>
     request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
       content,

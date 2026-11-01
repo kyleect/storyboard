@@ -12,8 +12,6 @@ import {
   Stack,
   Text,
   Textarea,
-  TextInput,
-  Title,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -30,6 +28,7 @@ import type {
 import { api, type Choices, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
 import { ModelPicker } from "./ModelPicker";
+import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
 
@@ -100,11 +99,18 @@ export function Chat() {
       setDraft("");
       // Shows the stored user message.
       void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      // Sending in a project's session counts as using the project.
+      if (session?.project_id)
+        void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
     onError,
   });
   const cont = useMutation({
     mutationFn: () => api.continueLast(sessionId, choices),
+    onSuccess: () => {
+      if (session?.project_id)
+        void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
     onError,
   });
   const cancel = useMutation({
@@ -183,6 +189,7 @@ export function Chat() {
         <EditableTitle
           title={detail.data.session.title}
           disabled={trashed}
+          label="Session title"
           onSave={(title) => actions.rename(sessionId, title)}
         />
         <Badge color={connected ? "green" : "gray"} variant="light">
@@ -200,8 +207,12 @@ export function Chat() {
               loading={restoring}
               onClick={() => {
                 setRestoring(true);
+                const { project } = detail.data;
                 actions
-                  .restore(sessionId)
+                  .restore(
+                    detail.data.session,
+                    project?.trashed_at ? project : null,
+                  )
                   .catch(showError("Could not restore"))
                   .finally(() => setRestoring(false));
               }}
@@ -338,75 +349,6 @@ export function Chat() {
         </Group>
       </form>
     </Stack>
-  );
-}
-
-/**
- * The session title; click to edit it in place (design Q1). Enter or
- * leaving the field saves, Escape cancels.
- */
-function EditableTitle({
-  title,
-  disabled,
-  onSave,
-}: {
-  title: string;
-  disabled: boolean;
-  onSave: (title: string) => Promise<void>;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  if (draft === null || disabled) {
-    return (
-      <UnstyledButton
-        onClick={() => setDraft(title)}
-        disabled={disabled}
-        title={disabled ? undefined : "Rename"}
-        style={{ minWidth: 0 }}
-      >
-        <Title order={3} lineClamp={1}>
-          {title}
-        </Title>
-      </UnstyledButton>
-    );
-  }
-
-  const save = () => {
-    // Enter saves, and the field then loses focus: save once.
-    if (saving) return;
-    const trimmed = draft.trim();
-    if (!trimmed || trimmed === title) {
-      setDraft(null);
-      return;
-    }
-    setSaving(true);
-    onSave(trimmed)
-      .then(() => setDraft(null))
-      .catch(showError("Could not rename"))
-      .finally(() => setSaving(false));
-  };
-
-  return (
-    <TextInput
-      style={{ flex: 1 }}
-      size="md"
-      autoFocus
-      aria-label="Session title"
-      value={draft}
-      disabled={saving}
-      error={draft.trim() ? null : "A title is required"}
-      onChange={(e) => setDraft(e.currentTarget.value)}
-      onBlur={save}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          save();
-        } else if (e.key === "Escape") {
-          setDraft(null);
-        }
-      }}
-    />
   );
 }
 

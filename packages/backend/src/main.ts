@@ -59,7 +59,10 @@ async function main() {
       dataDir: boot.dataDir,
       migrationsApplied: applied,
       runsRecovered: recovered.length,
-      trashPurged: purged.length,
+      trashPurged: {
+        projects: purged.projects.length,
+        sessions: purged.sessions.length,
+      },
     },
     "backend ready",
   );

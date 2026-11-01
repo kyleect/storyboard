@@ -261,6 +261,38 @@ describe("loadMigrations", () => {
     ).toThrow(/FOREIGN KEY/);
   });
 
+  it("adds projects; existing sessions become standalone", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 5),
+    );
+    db.prepare(
+      "INSERT INTO sessions (id, title, created_at) VALUES ('s', 't', 'T')",
+    ).run();
+
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 6),
+      ),
+    ).toEqual([6]);
+    expect(
+      db
+        .prepare(
+          "SELECT project_id, trashed_with_project FROM sessions WHERE id = 's'",
+        )
+        .get(),
+    ).toEqual({ project_id: null, trashed_with_project: 0 });
+    expect(() =>
+      db
+        .prepare("UPDATE sessions SET project_id = 'nope' WHERE id = 's'")
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
+  });
+
   it("applies the project's migrations to an encrypted database", () => {
     const t = tempDatabase();
     db = t.db;
@@ -268,6 +300,7 @@ describe("loadMigrations", () => {
     expect(tables()).toEqual([
       "events",
       "messages",
+      "projects",
       "run_messages",
       "runs",
       "schema_migrations",

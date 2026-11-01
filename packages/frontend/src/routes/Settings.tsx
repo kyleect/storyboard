@@ -1,5 +1,6 @@
 import {
   Alert,
+  Anchor,
   Button,
   Divider,
   Group,
@@ -17,7 +18,7 @@ import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   type Session,
@@ -217,37 +218,40 @@ function ToolApprovals() {
 }
 
 /**
- * What is in the trash (sessions and projects design, Q3b, Q3c): open
- * read-only, restore, delete forever, or empty the trash. Deleting asks
- * first (Q4a).
+ * What is in the trash (sessions and projects design, Q3b, Q3c, Q12):
+ * projects with the sessions trashed with them, and sessions trashed on
+ * their own. Open read-only, restore, delete forever, or empty the trash.
+ * Deleting asks first (Q4a).
  */
 function TrashSection() {
-  const queryClient = useQueryClient();
   const actions = useSessionActions();
   const trash = useQuery({ queryKey: ["trash"], queryFn: api.getTrash });
-
-  const restore = useMutation({
-    mutationFn: (id: string) => actions.restore(id),
-    onError: showError("Could not restore"),
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: api.listProjects,
   });
-  const refreshTrash = () =>
-    queryClient.invalidateQueries({ queryKey: ["trash"] });
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const confirmDelete = (session: Session) =>
+  const run = (id: string, work: () => Promise<unknown>, failed: string) => {
+    setBusy(id);
+    work()
+      .catch(showError(failed))
+      .finally(() => setBusy(null));
+  };
+
+  const confirmDelete = (
+    title: string,
+    body: string,
+    work: () => Promise<unknown>,
+  ) =>
     modals.openConfirmModal({
-      title: "Delete forever?",
-      children: (
-        <Text size="sm">
-          “{session.title}” and its whole transcript will be deleted. This
-          cannot be undone.
-        </Text>
-      ),
+      title,
+      children: <Text size="sm">{body}</Text>,
       labels: { confirm: "Delete forever", cancel: "Cancel" },
       confirmProps: { color: "red" },
       onConfirm: () => {
-        api
-          .deleteSession(session.id)
-          .then(refreshTrash)
+        work()
+          .then(() => actions.refreshProjects())
           .catch(showError("Could not delete"));
       },
     });
@@ -265,17 +269,25 @@ function TrashSection() {
       onConfirm: () => {
         api
           .emptyTrash()
-          .then(refreshTrash)
+          .then(() => actions.refreshProjects())
           .catch(showError("Could not empty the trash"));
       },
     });
 
+  const trashedProjects = trash.data?.projects ?? [];
   const sessions = trash.data?.sessions ?? [];
+  const empty = trashedProjects.length === 0 && sessions.length === 0;
+  const projectOf = (s: Session) =>
+    s.project_id === null
+      ? undefined
+      : (trashedProjects.find((p) => p.id === s.project_id) ??
+        projects.data?.find((p) => p.id === s.project_id));
+
   return (
     <Stack gap="xs">
       <Group justify="space-between">
         <Title order={4}>Trash</Title>
-        {sessions.length > 0 && (
+        {!empty && (
           <Button size="xs" color="red" variant="light" onClick={confirmEmpty}>
             Empty trash
           </Button>
@@ -283,41 +295,55 @@ function TrashSection() {
       </Group>
       {trash.isPending && <Loader size="sm" />}
       {trash.isError && <Alert color="red">{trash.error.message}</Alert>}
-      {trash.data && sessions.length === 0 && (
+      {trash.data && empty && (
         <Text size="sm" c="dimmed">
           The trash is empty.
         </Text>
       )}
-      {sessions.map((s) => (
-        <Paper key={s.id} p="xs" withBorder>
-          <Group justify="space-between" wrap="nowrap">
+      {trashedProjects.map((p) => (
+        <Paper key={p.id} p="xs" withBorder>
+          <Group justify="space-between" wrap="nowrap" align="flex-start">
             <Stack gap={0} style={{ minWidth: 0 }}>
-              <Text size="sm" truncate>
-                {s.title}
+              <Text size="sm" fw={500} truncate>
+                Project: {p.name}
               </Text>
               <Text size="xs" c="dimmed">
-                Trashed {new Date(s.trashed_at ?? "").toLocaleString()}
+                Trashed {new Date(p.trashed_at ?? "").toLocaleString()} ·{" "}
+                {p.sessions.length === 1
+                  ? "1 session"
+                  : `${p.sessions.length} sessions`}
               </Text>
+              {p.sessions.map((s) => (
+                <Anchor
+                  key={s.id}
+                  size="xs"
+                  renderRoot={(props) => (
+                    <Link
+                      {...props}
+                      to="/sessions/$sessionId"
+                      params={{ sessionId: s.id }}
+                    />
+                  )}
+                >
+                  {s.title}
+                </Anchor>
+              ))}
             </Stack>
             <Group gap="xs" wrap="nowrap">
               <Button
                 size="xs"
-                variant="default"
-                renderRoot={(props) => (
-                  <Link
-                    {...props}
-                    to="/sessions/$sessionId"
-                    params={{ sessionId: s.id }}
-                  />
-                )}
-              >
-                Open
-              </Button>
-              <Button
-                size="xs"
                 variant="light"
-                loading={restore.isPending && restore.variables === s.id}
-                onClick={() => restore.mutate(s.id)}
+                loading={busy === p.id}
+                onClick={() =>
+                  run(
+                    p.id,
+                    () =>
+                      api
+                        .restoreProject(p.id)
+                        .then(() => actions.refreshProjects()),
+                    "Could not restore",
+                  )
+                }
               >
                 Restore
               </Button>
@@ -325,7 +351,13 @@ function TrashSection() {
                 size="xs"
                 color="red"
                 variant="subtle"
-                onClick={() => confirmDelete(s)}
+                onClick={() =>
+                  confirmDelete(
+                    "Delete project forever?",
+                    `“${p.name}” and all its sessions, including any trashed on their own, will be deleted. This cannot be undone.`,
+                    () => api.deleteProject(p.id),
+                  )
+                }
               >
                 Delete forever
               </Button>
@@ -333,6 +365,71 @@ function TrashSection() {
           </Group>
         </Paper>
       ))}
+      {sessions.map((s) => {
+        const project = projectOf(s);
+        return (
+          <Paper key={s.id} p="xs" withBorder>
+            <Group justify="space-between" wrap="nowrap">
+              <Stack gap={0} style={{ minWidth: 0 }}>
+                <Text size="sm" truncate>
+                  {s.title}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {project ? `In ${project.name} · ` : ""}
+                  Trashed {new Date(s.trashed_at ?? "").toLocaleString()}
+                </Text>
+              </Stack>
+              <Group gap="xs" wrap="nowrap">
+                <Button
+                  size="xs"
+                  variant="default"
+                  renderRoot={(props) => (
+                    <Link
+                      {...props}
+                      to="/sessions/$sessionId"
+                      params={{ sessionId: s.id }}
+                    />
+                  )}
+                >
+                  Open
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  loading={busy === s.id}
+                  onClick={() =>
+                    run(
+                      s.id,
+                      () =>
+                        actions.restore(
+                          s,
+                          project?.trashed_at ? project : null,
+                        ),
+                      "Could not restore",
+                    )
+                  }
+                >
+                  Restore
+                </Button>
+                <Button
+                  size="xs"
+                  color="red"
+                  variant="subtle"
+                  onClick={() =>
+                    confirmDelete(
+                      "Delete forever?",
+                      `“${s.title}” and its whole transcript will be deleted. This cannot be undone.`,
+                      () => api.deleteSession(s.id),
+                    )
+                  }
+                >
+                  Delete forever
+                </Button>
+              </Group>
+            </Group>
+          </Paper>
+        );
+      })}
     </Stack>
   );
 }
