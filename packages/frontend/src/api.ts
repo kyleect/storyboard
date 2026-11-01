@@ -3,6 +3,8 @@ import type {
   ApprovalRequest,
   ContentBlock,
   ControlResult,
+  EntryKind,
+  FileType,
   Message,
   Usage,
 } from "@harness/core";
@@ -189,6 +191,58 @@ export interface ModelInfo {
   failed?: boolean;
 }
 
+/**
+ * Where files and memory notes live (files and memory design, section 3.3).
+ */
+export type EntryScope =
+  | { scope: "global" }
+  | { scope: "project"; id: string }
+  | { scope: "session"; id: string };
+
+/** The query key prefix for a scope's files or notes. */
+export const entriesKey = (s: EntryScope, kind?: EntryKind) => [
+  "entries",
+  s.scope,
+  s.scope === "global" ? null : s.id,
+  ...(kind ? [kind] : []),
+];
+
+const entriesBase = (s: EntryScope, kind: EntryKind) =>
+  `${
+    s.scope === "global"
+      ? "/api/global"
+      : s.scope === "project"
+        ? `/api/projects/${s.id}`
+        : `/api/sessions/${s.id}`
+  }/${kind === "file" ? "files" : "notes"}`;
+
+/** A file or note. For a note, `key` is its id. */
+export interface Entry {
+  key: string;
+  /** Files only. */
+  type?: FileType;
+  /** For a deleted entry, its last value. */
+  value: string;
+  updatedAt: string;
+  deleted: boolean;
+}
+
+export interface EntryVersion {
+  seq: number;
+  type?: FileType;
+  /** For a deletion, the value at the time. */
+  value: string;
+  deleted: boolean;
+  by: "user" | "model";
+  sessionId: string | null;
+  runId: string | null;
+  createdAt: string;
+}
+
+export interface EntryDetail extends Entry {
+  versions: EntryVersion[];
+}
+
 /** Sent with a message or continue; they become the session's choices. */
 export interface Choices {
   model?: string;
@@ -298,6 +352,42 @@ export const api = {
       "PUT",
       `/api/tools/${encodeURIComponent(name)}/approval`,
       { ask },
+    ),
+  listEntries: (s: EntryScope, kind: EntryKind, deleted: boolean) =>
+    request<Entry[]>(
+      "GET",
+      `${entriesBase(s, kind)}${deleted ? "?deleted=true" : ""}`,
+    ),
+  getEntry: (s: EntryScope, kind: EntryKind, key: string) =>
+    request<EntryDetail>(
+      "GET",
+      `${entriesBase(s, kind)}/${encodeURIComponent(key)}`,
+    ),
+  /** Creates or replaces a file. */
+  writeFile: (s: EntryScope, key: string, type: FileType, value: string) =>
+    request<EntryDetail>(
+      "PUT",
+      `${entriesBase(s, "file")}/${encodeURIComponent(key)}`,
+      { type, value },
+    ),
+  /** Changes a note's text; the user cannot create notes. */
+  editNote: (s: EntryScope, id: string, text: string) =>
+    request<EntryDetail>(
+      "PATCH",
+      `${entriesBase(s, "note")}/${encodeURIComponent(id)}`,
+      { text },
+    ),
+  deleteEntry: (s: EntryScope, kind: EntryKind, key: string) =>
+    request<unknown>(
+      "DELETE",
+      `${entriesBase(s, kind)}/${encodeURIComponent(key)}`,
+    ),
+  /** Makes an earlier version current; also restores a deleted entry. */
+  restoreEntry: (s: EntryScope, kind: EntryKind, key: string, seq: number) =>
+    request<EntryDetail>(
+      "POST",
+      `${entriesBase(s, kind)}/${encodeURIComponent(key)}/restore`,
+      { seq },
     ),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>

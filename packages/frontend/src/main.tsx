@@ -15,6 +15,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { token } from "./api";
 import { Chat } from "./routes/Chat";
+import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/Entries";
 import { Home, Layout } from "./routes/Layout";
 import { ProjectPage } from "./routes/ProjectPage";
 import { Settings } from "./routes/Settings";
@@ -31,6 +32,16 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId",
     component: ProjectPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/files",
+    component: ProjectEntriesPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/files",
+    component: GlobalEntriesPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

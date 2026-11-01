@@ -1,5 +1,6 @@
 import type { ControlResult } from "../control.js";
-import type { Message, TokenInfo } from "../messages.js";
+import { foldEdits } from "../entries.js";
+import type { ModelMessage, TokenInfo } from "../messages.js";
 import type {
   ChatRequest,
   ModelAdapter,
@@ -66,7 +67,7 @@ export class LlamaServerAdapter implements ModelAdapter {
     signal: AbortSignal,
   ): AsyncGenerator<ModelChunk> {
     const body: Record<string, unknown> = {
-      messages: request.messages.map(toOpenAiMessage),
+      messages: foldEdits(request.messages).map(toOpenAiMessage),
       stream: true,
       stream_options: { include_usage: true },
       // Timings on every chunk give a live token count.
@@ -317,7 +318,7 @@ function sampling(
 }
 
 /** Converts a harness message to the OpenAI-style shape llama-server reads. */
-export function toOpenAiMessage(m: Message): Record<string, unknown> {
+export function toOpenAiMessage(m: ModelMessage): Record<string, unknown> {
   switch (m.role) {
     case "system":
     case "user":

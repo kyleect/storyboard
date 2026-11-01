@@ -10,7 +10,7 @@ import {
   type HarnessEvent,
   type Usage,
 } from "@harness/core";
-import { eventsUrl, type SessionDetail } from "./api";
+import { entriesKey, eventsUrl, type SessionDetail } from "./api";
 
 /*
  * The in-flight run of each session, built from streamed events. A run can
@@ -107,6 +107,15 @@ export function useSessionEvents(
           });
           void navigate({ to: "/" });
           break;
+        case "session.entries_changed":
+          // An edit to session-scoped files or notes added a message.
+          void queryClient.invalidateQueries({
+            queryKey: ["session", sessionId],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: entriesKey({ scope: "session", id: sessionId }),
+          });
+          break;
         case "run.started":
           state.set(sessionId, {
             runId: event.runId,
@@ -169,6 +178,12 @@ export function useSessionEvents(
           void queryClient.invalidateQueries({
             queryKey: ["session", sessionId],
           });
+          // The session's Files and Memory tabs update live (decision 35).
+          if (/^(files|memory)_/.test(event.data.name)) {
+            void queryClient.invalidateQueries({
+              queryKey: entriesKey({ scope: "session", id: sessionId }),
+            });
+          }
           break;
         case "tool.approval_requested":
           state.update(sessionId, (run) => ({

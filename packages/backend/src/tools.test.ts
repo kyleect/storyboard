@@ -627,12 +627,9 @@ describe("with llama-server's wire format", () => {
     const first = llama.requests[0]?.body as {
       tools: { function: { name: string; parameters: unknown } }[];
     };
-    expect(first.tools.map((x) => x.function.name)).toEqual([
-      "current_date",
-      "current_time",
-      "web_search",
-      "read_webpage",
-    ]);
+    expect(first.tools.map((x) => x.function.name)).toEqual(
+      allTools.map((t) => t.name),
+    );
     expect(first.tools[0]?.function.parameters).toEqual({
       type: "object",
       properties: {},

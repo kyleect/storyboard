@@ -114,6 +114,20 @@ export function Layout() {
                 Open project page
               </Anchor>
             )}
+            {picked !== null && (
+              <Anchor
+                size="xs"
+                renderRoot={(props) => (
+                  <Link
+                    {...props}
+                    to="/projects/$projectId/files"
+                    params={{ projectId: picked }}
+                  />
+                )}
+              >
+                Project files & memory
+              </Anchor>
+            )}
             {projects.isError && (
               <Text c="red" size="xs">
                 {projects.error.message}
@@ -153,6 +167,10 @@ export function Layout() {
               />
             ))}
           </ScrollArea>
+          <NavLink
+            renderRoot={(props) => <Link {...props} to="/files" />}
+            label="Files & memory"
+          />
           <NavLink
             renderRoot={(props) => <Link {...props} to="/settings" />}
             label="Settings"

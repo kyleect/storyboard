@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EntryAccess } from "./entries.js";
 import type { Message, ToolDefinition } from "./messages.js";
 
 /*
@@ -23,6 +24,14 @@ export interface ToolContext {
    * undefined when it has saved none (tools design 6.8).
    */
   state: unknown;
+  /** The session's project; null for a standalone session. */
+  projectId: string | null;
+  /**
+   * Files and memory notes (files and memory design, decision 21). Changes
+   * to session-scoped entries are recorded with this call's result, and
+   * only when the tool succeeds.
+   */
+  entries: EntryAccess;
 }
 
 export interface ToolOutput {

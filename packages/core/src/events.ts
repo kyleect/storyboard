@@ -229,7 +229,20 @@ export type EventBody = z.infer<typeof EventBody>;
 /** The session was moved to the trash. */
 export const SessionTrashed = event("session.trashed", z.object({}));
 
-export const SessionEventBody = z.discriminatedUnion("type", [SessionTrashed]);
+/**
+ * The user changed session-scoped files or memory notes in the app; the
+ * change is recorded in the edit message `messageId` (files and memory
+ * design, decision 11).
+ */
+export const SessionEntriesChanged = event(
+  "session.entries_changed",
+  z.object({ messageId: z.string() }),
+);
+
+export const SessionEventBody = z.discriminatedUnion("type", [
+  SessionTrashed,
+  SessionEntriesChanged,
+]);
 export type SessionEventBody = z.infer<typeof SessionEventBody>;
 
 const Envelope = z.object({

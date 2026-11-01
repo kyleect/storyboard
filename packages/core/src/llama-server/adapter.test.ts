@@ -127,6 +127,33 @@ describe("chat completions", () => {
     expect(server.requests[0]?.body).not.toHaveProperty("model");
   });
 
+  it("joins an edit message to the next user message", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({
+      kind: "chat",
+      messages: [
+        { role: "user", content: "a" },
+        { role: "assistant", content: [{ type: "text", text: "b" }] },
+        {
+          role: "edit",
+          content: "[The user changed session file x in the app.]",
+          entries: [{ op: "put", kind: "file", key: "x", value: "v" }],
+        },
+        { role: "user", content: "c" },
+      ],
+    });
+    expect(
+      (server.requests[0]?.body as { messages: unknown[] }).messages,
+    ).toEqual([
+      { role: "user", content: "a" },
+      { role: "assistant", content: "b" },
+      {
+        role: "user",
+        content: "[The user changed session file x in the app.]\n\nc",
+      },
+    ]);
+  });
+
   it("yields reasoning, text, usage and finish", async () => {
     server.reply({
       frames: [

@@ -9,6 +9,7 @@ import type {
   ToolResultMessage,
 } from "./messages.js";
 import type { ChatRequest } from "./model.js";
+import { FakeSharedEntries } from "./fake-shared-entries.js";
 import { buildMessageContent } from "./message-state.js";
 import { defineTool, ToolRunError, type Tool } from "./tools.js";
 
@@ -643,5 +644,89 @@ describe("cancelling", () => {
     expect((await running).reason).toBe("cancelled");
     expect(results(saved)[0]?.content).toBe("Not run: the run was cancelled.");
     expect(model.requests).toHaveLength(1);
+  });
+});
+
+describe("runLoop with files and memory", () => {
+  const writer = defineTool({
+    name: "writer",
+    description: "Writes a session file and a global note.",
+    input: z.object({ fail: z.boolean() }),
+    approval: "never",
+    execute: (input, ctx) => {
+      ctx.entries.writeFile("session", "a", "plain", "v");
+      ctx.entries.addNote("global", "fact");
+      return input.fail
+        ? { data: "nope", isError: true }
+        : { data: { ok: ctx.projectId } };
+    },
+  });
+  const reader = defineTool({
+    name: "reader",
+    description: "Reads the session file.",
+    input: z.object({}),
+    approval: "never",
+    execute: (_input, ctx) => ({
+      data: ctx.entries.readFile("session", "a")?.value ?? null,
+    }),
+  });
+
+  it("records session changes with the result and passes the project", async () => {
+    const shared = new FakeSharedEntries();
+    const { saved, ctx, model } = setup(
+      [
+        [
+          call("c1", "writer", '{"fail":false}'),
+          { type: "finish", reason: "tool_calls" },
+        ],
+        [call("c2", "reader", "{}"), { type: "finish", reason: "tool_calls" }],
+        [
+          { type: "text", text: "Done" },
+          { type: "finish", reason: "stop" },
+        ],
+      ],
+      {
+        tools: [writer, reader],
+        projectId: "p1",
+        sharedEntries: shared,
+        newNoteId: () => "n1",
+      },
+    );
+    await runLoop(model, request, ctx);
+    const [first, second] = results(saved);
+    expect(first?.entries).toEqual([
+      { op: "put", kind: "file", key: "a", value: "v", type: "plain" },
+    ]);
+    expect(first?.content).toBe('{"ok":"p1"}');
+    // The next call sees the change, rebuilt from the transcript.
+    expect(second?.content).toBe("v");
+    expect(second?.entries).toBeUndefined();
+    expect(shared.changes).toEqual([
+      {
+        kind: "note",
+        scope: "global",
+        key: "n1",
+        op: "put",
+        author: { by: "model", sessionId: "s-1", runId: "run-1" },
+      },
+    ]);
+  });
+
+  it("drops session changes when the tool reports an error", async () => {
+    const { saved, ctx, model } = setup(
+      [
+        [
+          call("c1", "writer", '{"fail":true}'),
+          { type: "finish", reason: "tool_calls" },
+        ],
+        [
+          { type: "text", text: "Done" },
+          { type: "finish", reason: "stop" },
+        ],
+      ],
+      { tools: [writer], sharedEntries: new FakeSharedEntries() },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]?.entries).toBeUndefined();
   });
 });

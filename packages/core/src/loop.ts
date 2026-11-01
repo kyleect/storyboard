@@ -1,7 +1,13 @@
+import {
+  createEntryAccess,
+  replaySessionEntries,
+  type SharedEntries,
+} from "./entries.js";
 import type { ApprovalChoice } from "./events.js";
 import type {
   AssistantMessage,
   ContentBlock,
+  EntryOp,
   Message,
   ToolResultMessage,
   Usage,
@@ -66,6 +72,15 @@ export interface LoopContext extends RunContext {
    * or left out: "Not run: the run was cancelled."
    */
   cancelledText?: () => string | undefined;
+  /** The session's project; null or left out for a standalone session. */
+  projectId?: string | null;
+  /**
+   * Project and global files and notes. Left out: tools see session scope
+   * only.
+   */
+  sharedEntries?: SharedEntries;
+  /** Generates memory note ids. Default: 8 random hex digits. */
+  newNoteId?: () => string;
 }
 
 export type LoopEnd = "stop" | "iteration_limit" | "cancelled" | "failed";
@@ -128,6 +143,7 @@ export async function runLoop(
       isError: boolean;
       data?: unknown;
       state?: unknown;
+      entries?: EntryOp[];
       error?: string;
       durationMs?: number;
     },
@@ -141,6 +157,7 @@ export async function runLoop(
       isError: result.isError,
       ...(result.data !== undefined ? { data: result.data } : {}),
       ...(result.state !== undefined ? { state: result.state } : {}),
+      ...(result.entries?.length ? { entries: result.entries } : {}),
     };
     ctx.onMessage?.(messageId, message);
     transcript.push(message);
@@ -318,7 +335,16 @@ export async function runLoop(
 
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
+    const sessionOps: EntryOp[] = [];
     try {
+      const entries = createEntryAccess({
+        session: replaySessionEntries(transcript),
+        sessionOps,
+        ...(ctx.sharedEntries ? { shared: ctx.sharedEntries } : {}),
+        inProject: (ctx.projectId ?? null) !== null,
+        author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
+        ...(ctx.newNoteId ? { newNoteId: ctx.newNoteId } : {}),
+      });
       const output = await tool.execute(parsed.input, {
         signal: ctx.signal,
         sessionId: ctx.sessionId,
@@ -327,6 +353,8 @@ export async function runLoop(
         update: (partial) =>
           emit({ type: "tool.update", data: { callId: call.callId, partial } }),
         state: latestToolState(transcript, tool.name),
+        projectId: ctx.projectId ?? null,
+        entries,
       });
       const text = serializeResult(output.data);
       const content = output.isError ? truncate(text, errorLimit) : text;
@@ -335,6 +363,8 @@ export async function runLoop(
         isError: output.isError ?? false,
         data: output.data,
         ...(output.state !== undefined ? { state: output.state } : {}),
+        // Session-scoped changes count only when the tool succeeded.
+        ...(output.isError ? {} : { entries: sessionOps }),
         ...(content !== text ? { error: text } : {}),
         durationMs: elapsed(),
       });

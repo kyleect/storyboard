@@ -1,7 +1,9 @@
 import {
   buildMessageContent,
+  editNotice,
   RunControl,
   runLoop,
+  type EntryOp,
   type ApprovalChoice,
   type ApprovalRequest,
   type AssistantMessage,
@@ -17,7 +19,8 @@ import {
   type Usage,
 } from "@harness/core";
 import type { Settings } from "./settings.js";
-import type { Generation, Store } from "./store.js";
+import type { EntryStore } from "./entries-store.js";
+import type { Generation, SessionRow, Store } from "./store.js";
 import { setToolAsks, toolAsks } from "./tool-settings.js";
 
 /** Choices sent with a message or continue; they become the session's. */
@@ -77,6 +80,18 @@ export interface RunManagerOptions {
   model: (settings: Settings) => ModelAdapter;
   /** Every session gets every tool (tools design 6.11). */
   tools?: readonly Tool[];
+  /**
+   * Project and global files and notes for tools. Left out: tools see
+   * session scope only.
+   */
+  entries?: EntryStore;
+  /**
+   * A system message put before the transcript of every model call; not
+   * stored. Undefined: none.
+   */
+  systemPrompt?: (session: SessionRow) => string | undefined;
+  /** Generates memory note ids. Default: 8 random hex digits. */
+  newNoteId?: () => string;
   now?: () => string;
   newId?: () => string;
 }
@@ -408,6 +423,30 @@ export class RunManager {
     };
   }
 
+  /**
+   * Records the user's changes to session-scoped files or notes as an edit
+   * message and emits `session.entries_changed` (files and memory design,
+   * decision 11). Refused while a run is in progress (plan P5).
+   */
+  editSessionEntries(sessionId: string, ops: EntryOp[]): { messageId: string } {
+    this.requireIdle(sessionId);
+    const messageId = this.newId();
+    this.store.addMessage(
+      sessionId,
+      messageId,
+      { role: "edit", content: editNotice(ops), entries: ops },
+      this.now(),
+    );
+    this.publish({
+      runId: null,
+      sessionId,
+      time: this.now(),
+      type: "session.entries_changed",
+      data: { messageId },
+    });
+    return { messageId };
+  }
+
   private requireIdle(sessionId: string) {
     if (this.shuttingDown)
       throw new RunError("The backend is shutting down.", 503);
@@ -457,9 +496,13 @@ export class RunManager {
         session?.reasoning_effort || settings.reasoningEffort || null,
     };
     const control = new RunControl();
+    const system = session ? this.options.systemPrompt?.(session) : undefined;
     const request: ChatRequest = {
       kind: "chat",
-      messages: this.store.listMessages(sessionId).map((m) => m.message),
+      messages: [
+        ...(system ? [{ role: "system" as const, content: system }] : []),
+        ...this.store.listMessages(sessionId).map((m) => m.message),
+      ],
       control,
       ...(generation.model ? { model: generation.model } : {}),
       ...(generation.reasoningEffort
@@ -510,6 +553,17 @@ export class RunManager {
           now: this.now,
           ...(continuing ? { continueMessage: continuing } : {}),
           tools: this.tools,
+          projectId: session?.project_id ?? null,
+          ...(this.options.entries
+            ? {
+                sharedEntries: this.options.entries.shared(
+                  session?.project_id ?? null,
+                ),
+              }
+            : {}),
+          ...(this.options.newNoteId
+            ? { newNoteId: this.options.newNoteId }
+            : {}),
           maxIterations: settings.loopLimit,
           needsApproval: (tool) =>
             toolAsks(this.store.db, tool) &&

@@ -73,6 +73,20 @@ export function ProjectPage() {
           Restore it from the Trash section in Settings to change it.
         </Alert>
       )}
+      <Button
+        size="xs"
+        variant="default"
+        w="fit-content"
+        renderRoot={(props) => (
+          <Link
+            {...props}
+            to="/projects/$projectId/files"
+            params={{ projectId }}
+          />
+        )}
+      >
+        Files & memory
+      </Button>
       <Description
         key={project.data.description}
         initial={project.data.description}

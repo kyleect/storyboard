@@ -380,6 +380,8 @@ describe("loadMigrations", () => {
     db = t.db;
     cleanup = t.cleanup;
     expect(tables()).toEqual([
+      "entries",
+      "entry_versions",
       "events",
       "messages",
       "projects",

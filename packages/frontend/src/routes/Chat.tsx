@@ -10,6 +10,7 @@ import {
   ScrollArea,
   Spoiler,
   Stack,
+  Tabs,
   Text,
   Textarea,
   UnstyledButton,
@@ -28,6 +29,7 @@ import type {
 import { api, type Choices, type SessionDetail } from "../api";
 import { useLive, useSessionEvents } from "../live";
 import { ContextMeter, latestUsage } from "./ContextMeter";
+import { FilesPanel, NotesPanel } from "./Entries";
 import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
@@ -63,6 +65,8 @@ export function Chat() {
   const live = useLive((s) => s.runs[sessionId]);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
   const [draft, setDraft] = useState("");
+  // Chat, or the session's files or memory (plan U3).
+  const [tab, setTab] = useState<string>("chat");
 
   const onError = (err: Error) =>
     notifications.show({
@@ -194,6 +198,13 @@ export function Chat() {
   // How full the context is: the running count while a call streams, else
   // the latest stored message's.
   const contextUsage = live?.usage ?? latestUsage(detail.data.messages);
+  // Session files and notes cannot change in the trash or during a run
+  // (plan P5).
+  const entriesReadOnly = trashed
+    ? "The session is in the trash, so these can be read but not changed."
+    : live
+      ? "A run is in progress; changes are possible when it ends."
+      : undefined;
 
   return (
     <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
@@ -238,86 +249,114 @@ export function Chat() {
         </Alert>
       )}
 
-      <ScrollArea style={{ flex: 1 }}>
-        <Stack gap="sm" pr="md">
-          {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
-          {shown.map((m) => (
-            <MessageView key={m.id} {...m} />
-          ))}
-          {toolRunning && (
-            <Group gap="xs">
-              <Loader size="xs" />
-              <Text size="sm" c="dimmed">
-                Running a tool…
-              </Text>
-            </Group>
-          )}
-        </Stack>
-      </ScrollArea>
+      <Tabs value={tab} onChange={(v) => v && setTab(v)}>
+        <Tabs.List>
+          <Tabs.Tab value="chat">Chat</Tabs.Tab>
+          <Tabs.Tab value="files">Files</Tabs.Tab>
+          <Tabs.Tab value="memory">Memory</Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
 
-      <Group gap="xs" justify="space-between" align="flex-start">
-        <Group gap="xs" align="flex-start">
-          <ModelPicker
-            value={detail.data.session.model}
-            onChange={(model) => setChoices.mutate({ model })}
-            loadOnSelect
-            defaultModel={defaults?.model || undefined}
-            placeholder={
-              defaults?.model
-                ? `Default (${defaults.model})`
-                : "Default (none set; the server decides)"
-            }
-            disabled={trashed || setChoices.isPending}
-          />
-          <ReasoningPicker
-            model={levelsModel}
-            value={detail.data.session.reasoning_effort}
-            onChange={(reasoningEffort) =>
-              setChoices.mutate({ reasoningEffort })
-            }
-            placeholder={
-              defaults?.reasoningEffort
-                ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
-                : "Reasoning: default (server decides)"
-            }
-            disabled={trashed || setChoices.isPending}
-          />
-        </Group>
-        {live ? (
-          <Group gap="xs">
-            {pending && dismissed === pending.requestId && (
-              <Button variant="light" onClick={() => setDismissed(null)}>
-                Approval needed
-              </Button>
+      {tab !== "chat" && (
+        <ScrollArea style={{ flex: 1 }}>
+          {tab === "files" ? (
+            <FilesPanel
+              scope={{ scope: "session", id: sessionId }}
+              readOnly={entriesReadOnly}
+            />
+          ) : (
+            <NotesPanel
+              scope={{ scope: "session", id: sessionId }}
+              readOnly={entriesReadOnly}
+            />
+          )}
+        </ScrollArea>
+      )}
+
+      {tab === "chat" && (
+        <ScrollArea style={{ flex: 1 }}>
+          <Stack gap="sm" pr="md">
+            {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
+            {shown.map((m) => (
+              <MessageView key={m.id} {...m} />
+            ))}
+            {toolRunning && (
+              <Group gap="xs">
+                <Loader size="xs" />
+                <Text size="sm" c="dimmed">
+                  Running a tool…
+                </Text>
+              </Group>
             )}
-            {reasoningNow && (
-              <Button
-                variant="light"
-                onClick={() => stopThinking.mutate(live.runId)}
-                loading={stopThinking.isPending}
-              >
-                Stop thinking
-              </Button>
-            )}
-            <Button
-              color="red"
-              variant="light"
-              onClick={() => cancel.mutate(live.runId)}
-              loading={cancel.isPending}
-            >
-              Cancel
-            </Button>
+          </Stack>
+        </ScrollArea>
+      )}
+
+      {tab === "chat" && (
+        <Group gap="xs" justify="space-between" align="flex-start">
+          <Group gap="xs" align="flex-start">
+            <ModelPicker
+              value={detail.data.session.model}
+              onChange={(model) => setChoices.mutate({ model })}
+              loadOnSelect
+              defaultModel={defaults?.model || undefined}
+              placeholder={
+                defaults?.model
+                  ? `Default (${defaults.model})`
+                  : "Default (none set; the server decides)"
+              }
+              disabled={trashed || setChoices.isPending}
+            />
+            <ReasoningPicker
+              model={levelsModel}
+              value={detail.data.session.reasoning_effort}
+              onChange={(reasoningEffort) =>
+                setChoices.mutate({ reasoningEffort })
+              }
+              placeholder={
+                defaults?.reasoningEffort
+                  ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
+                  : "Reasoning: default (server decides)"
+              }
+              disabled={trashed || setChoices.isPending}
+            />
           </Group>
-        ) : (
-          <Button
-            variant="light"
-            disabled={busy || last?.message.role !== "assistant"}
-            onClick={() => cont.mutate()}
-          >
-            Continue
-          </Button>
-        )}
-      </Group>
+          {live ? (
+            <Group gap="xs">
+              {pending && dismissed === pending.requestId && (
+                <Button variant="light" onClick={() => setDismissed(null)}>
+                  Approval needed
+                </Button>
+              )}
+              {reasoningNow && (
+                <Button
+                  variant="light"
+                  onClick={() => stopThinking.mutate(live.runId)}
+                  loading={stopThinking.isPending}
+                >
+                  Stop thinking
+                </Button>
+              )}
+              <Button
+                color="red"
+                variant="light"
+                onClick={() => cancel.mutate(live.runId)}
+                loading={cancel.isPending}
+              >
+                Cancel
+              </Button>
+            </Group>
+          ) : (
+            <Button
+              variant="light"
+              disabled={busy || last?.message.role !== "assistant"}
+              onClick={() => cont.mutate()}
+            >
+              Continue
+            </Button>
+          )}
+        </Group>
+      )}
 
       {live && pending && (
         <ApprovalDialog
@@ -335,34 +374,36 @@ export function Chat() {
         />
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (draft.trim() && !busy) send.mutate(draft);
-        }}
-      >
-        <Group align="flex-end" gap="xs">
-          <Textarea
-            style={{ flex: 1 }}
-            autosize
-            minRows={2}
-            maxRows={8}
-            placeholder="Write a message (Ctrl+Enter to send)"
-            disabled={trashed}
-            value={draft}
-            onChange={(e) => setDraft(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                if (draft.trim() && !busy) send.mutate(draft);
-              }
-            }}
-          />
-          <Button type="submit" disabled={busy || !draft.trim()}>
-            Send
-          </Button>
-        </Group>
-      </form>
+      {tab === "chat" && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (draft.trim() && !busy) send.mutate(draft);
+          }}
+        >
+          <Group align="flex-end" gap="xs">
+            <Textarea
+              style={{ flex: 1 }}
+              autosize
+              minRows={2}
+              maxRows={8}
+              placeholder="Write a message (Ctrl+Enter to send)"
+              disabled={trashed}
+              value={draft}
+              onChange={(e) => setDraft(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (draft.trim() && !busy) send.mutate(draft);
+                }
+              }}
+            />
+            <Button type="submit" disabled={busy || !draft.trim()}>
+              Send
+            </Button>
+          </Group>
+        </form>
+      )}
     </Stack>
   );
 }
@@ -401,6 +442,18 @@ function MessageView({
           )}
         </Group>
         <Code block>{showResult(message.content)}</Code>
+      </Paper>
+    );
+  }
+  if (message.role === "edit") {
+    return (
+      <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
+        <Text size="xs" c="dimmed">
+          Your edit to this session's files or memory
+        </Text>
+        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+          {message.content}
+        </Text>
       </Paper>
     );
   }

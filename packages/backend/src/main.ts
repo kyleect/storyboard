@@ -2,9 +2,10 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LlamaServerAdapter } from "@harness/core";
-import { allTools } from "@harness/tools";
+import { allTools, entriesInstruction } from "@harness/tools";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
+import { EntryStore } from "./entries-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
@@ -29,6 +30,7 @@ async function main() {
 
   const applied = migrate(db, loadMigrations(MIGRATIONS_DIR));
   const store = new Store(db);
+  const entries = new EntryStore(db);
   const settings = () => readSettings(db).effective;
 
   const runs = new RunManager({
@@ -36,12 +38,14 @@ async function main() {
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
+    entries,
+    systemPrompt: (session) => entriesInstruction(session.project_id !== null),
   });
   const recovered = runs.recover();
   const purged = purgeExpiredTrash(store, settings().trashRetentionDays);
 
   const token = loadOrCreateToken(boot.tokenFile);
-  const app = buildServer({ store, runs, token, logger: true });
+  const app = buildServer({ store, runs, entries, token, logger: true });
   const { port } = settings();
   await app.listen({ host: "127.0.0.1", port });
   const address = app.server.address();

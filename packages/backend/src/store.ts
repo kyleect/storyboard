@@ -208,6 +208,12 @@ export class Store {
    */
   purgeSession(id: string) {
     this.db.transaction(() => {
+      // Project and global entry versions it made are kept, unlinked.
+      this.db
+        .prepare(
+          "UPDATE entry_versions SET session_id = NULL, run_id = NULL WHERE session_id = ?",
+        )
+        .run(id);
       this.db
         .prepare(
           "DELETE FROM run_messages WHERE run_id IN (SELECT id FROM runs WHERE session_id = ?)",
@@ -372,6 +378,12 @@ export class Store {
         .prepare("SELECT id FROM sessions WHERE project_id = ?")
         .all(id) as { id: string }[];
       for (const s of ids) this.purgeSession(s.id);
+      this.db
+        .prepare(
+          "DELETE FROM entry_versions WHERE entry_id IN (SELECT id FROM entries WHERE project_id = ?)",
+        )
+        .run(id);
+      this.db.prepare("DELETE FROM entries WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
     })();
   }
@@ -544,6 +556,27 @@ export class Store {
          VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM run_messages WHERE run_id = ?))`,
       )
       .run(runId, messageId, runId);
+  }
+
+  /** When each of the session's messages was created, by message id. */
+  messageTimes(sessionId: string): Map<string, string> {
+    const rows = this.db
+      .prepare("SELECT id, created_at FROM messages WHERE session_id = ?")
+      .all(sessionId) as { id: string; created_at: string }[];
+    return new Map(rows.map((r) => [r.id, r.created_at]));
+  }
+
+  /** Which run wrote each of the session's messages (the first run). */
+  messageRuns(sessionId: string): Map<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT rm.message_id, rm.run_id FROM run_messages rm
+         JOIN runs r ON r.id = rm.run_id
+         WHERE r.session_id = ? ORDER BY r.started_at DESC`,
+      )
+      .all(sessionId) as { message_id: string; run_id: string }[];
+    // Later rows (earlier runs) overwrite, so the first run wins.
+    return new Map(rows.map((r) => [r.message_id, r.run_id]));
   }
 
   /** The messages the run wrote, in the order it first wrote them. */

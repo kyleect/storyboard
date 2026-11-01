@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ToolContext } from "@harness/core";
+import {
+  createEntryAccess,
+  replaySessionEntries,
+  type ToolContext,
+} from "@harness/core";
 import { htmlToMarkdown, readWebpage, webSearch } from "./web.js";
 
 const ctx: ToolContext = {
@@ -9,6 +13,13 @@ const ctx: ToolContext = {
   callId: "c",
   update: () => {},
   state: undefined,
+  projectId: null,
+  entries: createEntryAccess({
+    session: replaySessionEntries([]),
+    sessionOps: [],
+    inProject: false,
+    author: { by: "model", sessionId: "s", runId: "r" },
+  }),
 };
 
 const PAGE = `<html><head><title>T</title>

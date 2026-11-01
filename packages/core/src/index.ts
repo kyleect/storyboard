@@ -5,6 +5,7 @@ export * from "./fake-model.js";
 export * from "./run.js";
 export * from "./loop.js";
 export * from "./tools.js";
+export * from "./entries.js";
 export * from "./llama-server/adapter.js";
 export * from "./message-state.js";
 export * from "./llama-server/models.js";

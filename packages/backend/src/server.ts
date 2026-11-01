@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   ApprovalChoice,
+  EntryError,
   getContextSize,
   getReasoningLevels,
   listLlamaServerModels,
@@ -13,6 +14,8 @@ import {
   type ReasoningLevels,
   type StoredEvent,
 } from "@harness/core";
+import { EntryStore } from "./entries-store.js";
+import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
 import { readSettings, writeSettings } from "./settings.js";
 import type { Store } from "./store.js";
@@ -29,6 +32,8 @@ export interface ServerOptions {
   store: Store;
   runs: RunManager;
   token: string;
+  /** Project and global files and notes. Default: over `store.db`. */
+  entries?: EntryStore;
   /** Idle time before a keepalive comment is sent on an event stream. */
   keepaliveMs?: number;
   logger?: boolean;
@@ -118,6 +123,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (err instanceof RunError) {
       return reply.code(err.statusCode).send({ error: err.message });
     }
+    if (err instanceof EntryError) {
+      return reply.code(400).send({ error: err.message });
+    }
     if (err instanceof z.ZodError) {
       return reply
         .code(400)
@@ -129,6 +137,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   app.get("/api/health", async () => ({ ok: true }));
+
+  registerEntryRoutes(app, {
+    store,
+    runs,
+    entries: options.entries ?? new EntryStore(store.db, now, newId),
+  });
 
   app.get("/api/settings", async () => readSettings(store.db, env));
 
