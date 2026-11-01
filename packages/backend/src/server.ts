@@ -23,7 +23,7 @@ import { EntryStore } from "./entries-store.js";
 import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
 import { readSettings, writeSettings } from "./settings.js";
-import type { Store } from "./store.js";
+import { DEFAULT_TITLE, type Store } from "./store.js";
 import { listToolSettings, setToolAsks } from "./tool-settings.js";
 
 /*
@@ -214,7 +214,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const time = now();
     const session = store.createSession(
       newId(),
-      body.title ?? "New session",
+      body.title ?? DEFAULT_TITLE,
       time,
       body.projectId ?? null,
     );
@@ -312,7 +312,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (session.trashed_at !== null)
       return reply.code(409).send({ error: "The session is in the trash." });
     runs.checkAgentChoice(id, defined(choices));
-    if (title !== undefined) store.renameSession(id, title);
+    if (title !== undefined) runs.renameSession(id, title);
     store.setSessionChoices(id, defined(choices));
     return store.getSession(id);
   });

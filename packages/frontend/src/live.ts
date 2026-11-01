@@ -122,6 +122,20 @@ export function useSessionEvents(
             queryKey: entriesKey({ scope: "session", id: sessionId }),
           });
           break;
+        case "session.renamed":
+          // Renamed automatically or by the user, here or in another
+          // window (auto-rename plan, decision 8).
+          queryClient.setQueryData<SessionDetail>(
+            ["session", sessionId],
+            (old) =>
+              old && {
+                ...old,
+                session: { ...old.session, title: event.data.title },
+              },
+          );
+          void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+          void queryClient.invalidateQueries({ queryKey: ["trash"] });
+          break;
         case "run.started":
           state.set(sessionId, {
             runId: event.runId,

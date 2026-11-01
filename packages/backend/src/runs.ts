@@ -24,10 +24,12 @@ import {
   type Usage,
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
+import { cleanTitle, requestTitle } from "./auto-title.js";
 import type { Settings } from "./settings.js";
 import type { EntryStore } from "./entries-store.js";
 import type { SearchIndex } from "./search-index.js";
 import {
+  DEFAULT_TITLE,
   NO_GENERATION,
   type Generation,
   type SessionRow,
@@ -149,6 +151,11 @@ export class RunManager {
   private readonly store: Store;
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly active = new Map<string, ActiveRun>();
+  /** Title calls in progress (auto-rename plan, step 3). */
+  private readonly titleJobs = new Set<{
+    controller: AbortController;
+    done: Promise<void>;
+  }>();
   private shuttingDown = false;
   private readonly now: () => string;
   private readonly newId: () => string;
@@ -245,13 +252,127 @@ export class RunManager {
     this.requireIdle(sessionId);
     this.checkAgentChoice(sessionId, choices);
     this.store.setSessionChoices(sessionId, choices);
+    const rename = this.wantsAutoRename(sessionId);
     this.store.addMessage(
       sessionId,
       this.newId(),
       { role: "user", content },
       this.now(),
     );
-    return this.start(sessionId, null);
+    const started = this.start(sessionId, null);
+    if (rename) this.autoRename(sessionId, content);
+    return started;
+  }
+
+  /**
+   * Renames the session as the user asked and emits `session.renamed`
+   * (auto-rename plan, decision 8).
+   */
+  renameSession(sessionId: string, title: string) {
+    this.store.renameSession(sessionId, title);
+    this.publishRename(sessionId, {
+      title,
+      source: "user",
+      model: null,
+      usage: null,
+    });
+  }
+
+  /**
+   * Whether the message about to be sent gets the session a title: the
+   * setting is on, the session has no user message yet and its title is
+   * still the default (decisions 4, 5).
+   */
+  private wantsAutoRename(sessionId: string): boolean {
+    if (!this.options.settings().autoRename) return false;
+    if (this.store.getSession(sessionId)?.title !== DEFAULT_TITLE) return false;
+    return !this.store
+      .listMessages(sessionId)
+      .some((m) => m.message.role === "user");
+  }
+
+  /**
+   * Gives the session a title from its first message, alongside the run
+   * and independent of it (decisions 2, 10). With the model as the source,
+   * a failed or stopped call, or one with nothing usable, falls back to the
+   * message (decision 6, plan step 3). A title the user set in the meantime
+   * is kept.
+   */
+  private autoRename(sessionId: string, content: string) {
+    const settings = this.options.settings();
+    const fallback = () => {
+      const title = cleanTitle(content);
+      if (title === "" || !this.store.renameSessionIfDefault(sessionId, title))
+        return;
+      this.publishRename(sessionId, {
+        title,
+        source: "message",
+        model: null,
+        usage: null,
+      });
+    };
+    if (settings.autoRenameSource === "message") {
+      fallback();
+      return;
+    }
+    const session = this.store.getSession(sessionId);
+    const model =
+      settings.titleModel || session?.model || settings.model || null;
+    const reasoningEffort =
+      session?.reasoning_effort || settings.reasoningEffort || null;
+    const controller = new AbortController();
+    const job = { controller, done: Promise.resolve() };
+    const run = async () => {
+      try {
+        const result = await requestTitle(
+          this.options.model(settings),
+          {
+            prompt: settings.titlePrompt,
+            message: content,
+            model,
+            reasoningEffort,
+          },
+          controller.signal,
+        );
+        const title = cleanTitle(result.text);
+        if (title === "") return fallback();
+        if (!this.store.renameSessionIfDefault(sessionId, title)) return;
+        this.publishRename(sessionId, {
+          title,
+          source: "model",
+          model,
+          usage: result.usage,
+        });
+      } catch {
+        try {
+          fallback();
+        } catch {
+          // The database failed; the session keeps its title.
+        }
+      } finally {
+        this.titleJobs.delete(job);
+      }
+    };
+    this.titleJobs.add(job);
+    job.done = run();
+  }
+
+  private publishRename(
+    sessionId: string,
+    data: Extract<HarnessEvent, { type: "session.renamed" }>["data"],
+  ) {
+    this.publish({
+      runId: null,
+      sessionId,
+      time: this.now(),
+      type: "session.renamed",
+      data,
+    });
+  }
+
+  /** Resolves when every title call in progress has ended (for tests). */
+  async titlesSettled(): Promise<void> {
+    await Promise.all([...this.titleJobs].map((j) => j.done));
   }
 
   /**
@@ -381,7 +502,10 @@ export class RunManager {
     this.shuttingDown = true;
     const runs = [...this.active.values()];
     for (const run of runs) run.controller.abort();
-    await Promise.all(runs.map((r) => r.done));
+    // Stopped title calls fall back to the message (auto-rename plan).
+    const titles = [...this.titleJobs];
+    for (const job of titles) job.controller.abort();
+    await Promise.all([...runs, ...titles].map((r) => r.done));
   }
 
   /**

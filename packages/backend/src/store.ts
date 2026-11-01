@@ -26,6 +26,9 @@ export interface SessionRow {
   agent_id: string | null;
 }
 
+/** The title a session gets when none is given. */
+export const DEFAULT_TITLE = "New session";
+
 const SESSION_COLUMNS =
   "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id";
 
@@ -218,6 +221,19 @@ export class Store {
     this.db
       .prepare("UPDATE sessions SET title = ? WHERE id = ?")
       .run(title, id);
+  }
+
+  /**
+   * Renames the session only while its title is still the default, so a
+   * rename by the user wins (auto-rename plan, decision 10). True when it
+   * was renamed.
+   */
+  renameSessionIfDefault(id: string, title: string): boolean {
+    return (
+      this.db
+        .prepare("UPDATE sessions SET title = ? WHERE id = ? AND title = ?")
+        .run(title, id, DEFAULT_TITLE).changes > 0
+    );
   }
 
   /** Moves the session to the trash on its own, or back out with null. */

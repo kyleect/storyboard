@@ -59,7 +59,10 @@ async function setup(scripts: ScriptStep[][] = []) {
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
     store,
-    settings: () => readSettings(t.db, {}).effective,
+    settings: () => ({
+      ...readSettings(t.db, {}).effective,
+      autoRename: false,
+    }),
     model: () => model,
     tools: TOOLS,
     alwaysOnTools: ALWAYS_ON,
@@ -711,7 +714,10 @@ describe("app-wide events", () => {
     const events = new AppEvents();
     const runs = new RunManager({
       store,
-      settings: () => readSettings(t.db, {}).effective,
+      settings: () => ({
+        ...readSettings(t.db, {}).effective,
+        autoRename: false,
+      }),
       model: () => new ScriptedModel([]),
       tools: TOOLS,
       alwaysOnTools: ALWAYS_ON,

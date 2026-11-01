@@ -202,6 +202,14 @@ export interface Settings {
   trashRetentionDays: number;
   /** The router model used for embeddings; empty: keyword search only. */
   embeddingModel: string;
+  /** Renames new sessions after their first message. */
+  autoRename: boolean;
+  /** Where the title comes from. */
+  autoRenameSource: "model" | "message";
+  /** The router model that writes titles; empty: the session's model. */
+  titleModel: string;
+  /** The system prompt of the title call. */
+  titlePrompt: string;
 }
 
 export interface SettingsView {

@@ -34,7 +34,10 @@ async function setup(scripts: ScriptStep[][] = []) {
   let note = 0;
   const runs = new RunManager({
     store,
-    settings: () => readSettings(t.db, {}).effective,
+    settings: () => ({
+      ...readSettings(t.db, {}).effective,
+      autoRename: false,
+    }),
     model: () => model,
     tools: allTools,
     entries,

@@ -34,7 +34,10 @@ async function setup(
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
     store,
-    settings: () => readSettings(t.db, {}).effective,
+    settings: () => ({
+      ...readSettings(t.db, {}).effective,
+      autoRename: false,
+    }),
     model: () => model,
   });
   const app = buildServer({
@@ -595,7 +598,7 @@ describe("shutdown and recovery", () => {
 
     const fresh = new RunManager({
       store: new Store(t.db),
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     });
     expect(fresh.recover()).toEqual(["r1"]);
@@ -900,7 +903,7 @@ describe("reasoning", () => {
     const store = new Store(t.db);
     const runs = new RunManager({
       store,
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     });
     const app = buildServer({
@@ -943,7 +946,7 @@ describe("reasoning", () => {
     const store = new Store(t.db);
     const runs = new RunManager({
       store,
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     });
     const app = buildServer({
@@ -988,7 +991,7 @@ describe("reasoning", () => {
     const store = new Store(t.db);
     const runs = new RunManager({
       store,
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     });
     const app = buildServer({ store, runs, token: TOKEN, env: {} });
@@ -1020,6 +1023,7 @@ describe("stop thinking", () => {
       store,
       settings: () => ({
         ...DEFAULTS,
+        autoRename: false,
         model: "qwen",
         llamaServerUrl: llamaUrl,
       }),
@@ -1071,7 +1075,7 @@ describe("loading a model", () => {
     const store = new Store(t.db);
     const runs = new RunManager({
       store,
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     });
     const app = buildServer({
@@ -1367,7 +1371,10 @@ describe("projects", () => {
     const model = new ScriptedModel([[{ type: "text", text: "ok" }]]);
     const runs = new RunManager({
       store,
-      settings: () => readSettings(t.db, {}).effective,
+      settings: () => ({
+        ...readSettings(t.db, {}).effective,
+        autoRename: false,
+      }),
       model: () => model,
       now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString(),
     });

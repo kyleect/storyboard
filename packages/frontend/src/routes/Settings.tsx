@@ -4,12 +4,15 @@ import {
   Button,
   Divider,
   Group,
+  Input,
   Loader,
   NumberInput,
   Paper,
+  SegmentedControl,
   Stack,
   Switch,
   Text,
+  Textarea,
   TextInput,
   Title,
 } from "@mantine/core";
@@ -30,10 +33,63 @@ import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
 
-export function Settings() {
+/** The fields the main form saves; the session titles section has its own. */
+type MainSettings = Omit<SettingsShape, keyof TitleSettings>;
+
+type TitleSettings = Pick<
+  SettingsShape,
+  "autoRename" | "autoRenameSource" | "titleModel" | "titlePrompt"
+>;
+
+function mainSettings(s: SettingsShape): MainSettings {
+  return {
+    llamaServerUrl: s.llamaServerUrl,
+    model: s.model,
+    reasoningEffort: s.reasoningEffort,
+    port: s.port,
+    loopLimit: s.loopLimit,
+    trashRetentionDays: s.trashRetentionDays,
+    embeddingModel: s.embeddingModel,
+  };
+}
+
+function titleSettings(s: SettingsShape): TitleSettings {
+  return {
+    autoRename: s.autoRename,
+    autoRenameSource: s.autoRenameSource,
+    titleModel: s.titleModel,
+    titlePrompt: s.titlePrompt,
+  };
+}
+
+/** Saves settings, showing the outcome. */
+function useSaveSettings() {
   const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.saveSettings,
+    onSuccess: (view: SettingsView) => {
+      queryClient.setQueryData(["settings"], view);
+      notifications.show({ color: "green", message: "Settings saved" });
+    },
+    onError: (err: Error) =>
+      notifications.show({
+        color: "red",
+        title: "Could not save",
+        message: err.message,
+      }),
+  });
+}
+
+/** Overridden-by-env notes for the settings page. */
+function envNoteFor(view: SettingsView) {
+  const env = view.overriddenByEnv;
+  return (key: keyof SettingsShape) =>
+    env[key] ? `Overridden by the ${env[key]} environment variable` : undefined;
+}
+
+export function Settings() {
   const query = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const form = useForm<SettingsShape>({
+  const form = useForm<MainSettings>({
     initialValues: {
       llamaServerUrl: "",
       model: "",
@@ -57,127 +113,206 @@ export function Settings() {
 
   useEffect(() => {
     if (query.data) {
-      form.setValues(query.data.effective);
-      form.resetDirty(query.data.effective);
+      const values = mainSettings(query.data.effective);
+      form.setValues(values);
+      form.resetDirty(values);
     }
     // Only when fresh data arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.data]);
 
-  const save = useMutation({
-    mutationFn: api.saveSettings,
-    onSuccess: (view: SettingsView) => {
-      queryClient.setQueryData(["settings"], view);
-      notifications.show({ color: "green", message: "Settings saved" });
-    },
-    onError: (err: Error) =>
-      notifications.show({
-        color: "red",
-        title: "Could not save",
-        message: err.message,
-      }),
-  });
+  const save = useSaveSettings();
 
   if (query.isPending) return <Loader />;
   if (query.isError) return <Alert color="red">{query.error.message}</Alert>;
   const env = query.data.overriddenByEnv;
-  const envNote = (key: keyof SettingsShape) =>
-    env[key] ? `Overridden by the ${env[key]} environment variable` : undefined;
+  const envNote = envNoteFor(query.data);
+
+  return (
+    <Stack maw={480}>
+      <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+        <Stack>
+          <Title order={3}>Settings</Title>
+          <TextInput
+            label="llama-server URL"
+            description={envNote("llamaServerUrl")}
+            {...form.getInputProps("llamaServerUrl")}
+          />
+          <ModelPicker
+            label="Default model"
+            description={
+              envNote("model") ??
+              "For sessions with no model chosen. Clear it to send no model name."
+            }
+            placeholder="None (the server decides)"
+            value={form.values.model || null}
+            onChange={(model) => form.setFieldValue("model", model ?? "")}
+            disabled={!!env.model}
+            size="sm"
+            w={444}
+          />
+          <ReasoningPicker
+            label="Default reasoning effort"
+            description={
+              envNote("reasoningEffort") ??
+              "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
+            }
+            placeholder="Not sent (the server decides)"
+            model={form.values.model || undefined}
+            value={form.values.reasoningEffort || null}
+            onChange={(effort) =>
+              form.setFieldValue("reasoningEffort", effort ?? "")
+            }
+            disabled={!!env.reasoningEffort}
+            size="sm"
+            w="100%"
+          />
+          <ModelPicker
+            label="Embedding model"
+            description={
+              envNote("embeddingModel") ??
+              "A dedicated embedding model on the router, for searching files and memory by meaning. Clear it for keyword search only."
+            }
+            placeholder="None (keyword search only)"
+            value={form.values.embeddingModel || null}
+            onChange={(model) =>
+              form.setFieldValue("embeddingModel", model ?? "")
+            }
+            disabled={!!env.embeddingModel}
+            size="sm"
+            w={444}
+          />
+          <NumberInput
+            label="Backend port"
+            description={
+              envNote("port") ?? "Takes effect when the backend restarts."
+            }
+            allowDecimal={false}
+            {...form.getInputProps("port")}
+          />
+          <NumberInput
+            label="Loop limit"
+            description={
+              envNote("loopLimit") ??
+              "The most model calls one run makes before it stops."
+            }
+            allowDecimal={false}
+            min={1}
+            disabled={!!env.loopLimit}
+            {...form.getInputProps("loopLimit")}
+          />
+          <NumberInput
+            label="Days in the trash"
+            description={
+              envNote("trashRetentionDays") ??
+              "Items in the trash longer than this are deleted when the backend starts. 0: never."
+            }
+            allowDecimal={false}
+            min={0}
+            disabled={!!env.trashRetentionDays}
+            {...form.getInputProps("trashRetentionDays")}
+          />
+          <Text size="xs" c="dimmed">
+            Saved to the database. Environment variables, when set, take
+            precedence.
+          </Text>
+          <Button type="submit" loading={save.isPending} w="fit-content">
+            Save
+          </Button>
+        </Stack>
+      </form>
+      <Divider />
+      <SessionTitles view={query.data} />
+      <Divider />
+      <ToolApprovals />
+      <Divider />
+      <TrashSection />
+    </Stack>
+  );
+}
+
+/**
+ * Auto-rename (auto-rename plan, decisions 1 to 4), with its own Save.
+ */
+function SessionTitles({ view }: { view: SettingsView }) {
+  const save = useSaveSettings();
+  const form = useForm<TitleSettings>({
+    initialValues: titleSettings(view.effective),
+    validate: {
+      titlePrompt: (v) => (v.trim() !== "" ? null : "Must not be empty"),
+    },
+  });
+
+  useEffect(() => {
+    const values = titleSettings(view.effective);
+    form.setValues(values);
+    form.resetDirty(values);
+    // Only when fresh data arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  const env = view.overriddenByEnv;
+  const envNote = envNoteFor(view);
+  const off = !form.values.autoRename;
+  const fromMessage = form.values.autoRenameSource === "message";
 
   return (
     <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
-      <Stack maw={480}>
-        <Title order={3}>Settings</Title>
-        <TextInput
-          label="llama-server URL"
-          description={envNote("llamaServerUrl")}
-          {...form.getInputProps("llamaServerUrl")}
-        />
-        <ModelPicker
-          label="Default model"
+      <Stack>
+        <Title order={4}>Session titles</Title>
+        <Switch
+          label="Rename new sessions after the first message"
           description={
-            envNote("model") ??
-            "For sessions with no model chosen. Clear it to send no model name."
+            envNote("autoRename") ?? "Only sessions still titled “New session”."
           }
-          placeholder="None (the server decides)"
-          value={form.values.model || null}
-          onChange={(model) => form.setFieldValue("model", model ?? "")}
-          disabled={!!env.model}
+          disabled={!!env.autoRename}
+          {...form.getInputProps("autoRename", { type: "checkbox" })}
+        />
+        <Input.Wrapper
+          label="Title source"
+          description={
+            envNote("autoRenameSource") ??
+            "When the model can't write a title, the first message is used."
+          }
+        >
+          <SegmentedControl
+            display="flex"
+            mt={4}
+            data={[
+              { value: "model", label: "Model writes it" },
+              { value: "message", label: "First message" },
+            ]}
+            disabled={off || !!env.autoRenameSource}
+            {...form.getInputProps("autoRenameSource")}
+          />
+        </Input.Wrapper>
+        <ModelPicker
+          label="Title model"
+          description={
+            envNote("titleModel") ??
+            "The model that writes titles. Clear it to use the session's model."
+          }
+          placeholder="Session's model"
+          value={form.values.titleModel || null}
+          onChange={(model) => form.setFieldValue("titleModel", model ?? "")}
+          disabled={off || fromMessage || !!env.titleModel}
           size="sm"
           w={444}
         />
-        <ReasoningPicker
-          label="Default reasoning effort"
+        <Textarea
+          label="Title prompt"
           description={
-            envNote("reasoningEffort") ??
-            "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
+            envNote("titlePrompt") ??
+            "Sent as the system message, before the first message."
           }
-          placeholder="Not sent (the server decides)"
-          model={form.values.model || undefined}
-          value={form.values.reasoningEffort || null}
-          onChange={(effort) =>
-            form.setFieldValue("reasoningEffort", effort ?? "")
-          }
-          disabled={!!env.reasoningEffort}
-          size="sm"
-          w="100%"
+          autosize
+          minRows={3}
+          disabled={off || fromMessage || !!env.titlePrompt}
+          {...form.getInputProps("titlePrompt")}
         />
-        <ModelPicker
-          label="Embedding model"
-          description={
-            envNote("embeddingModel") ??
-            "A dedicated embedding model on the router, for searching files and memory by meaning. Clear it for keyword search only."
-          }
-          placeholder="None (keyword search only)"
-          value={form.values.embeddingModel || null}
-          onChange={(model) =>
-            form.setFieldValue("embeddingModel", model ?? "")
-          }
-          disabled={!!env.embeddingModel}
-          size="sm"
-          w={444}
-        />
-        <NumberInput
-          label="Backend port"
-          description={
-            envNote("port") ?? "Takes effect when the backend restarts."
-          }
-          allowDecimal={false}
-          {...form.getInputProps("port")}
-        />
-        <NumberInput
-          label="Loop limit"
-          description={
-            envNote("loopLimit") ??
-            "The most model calls one run makes before it stops."
-          }
-          allowDecimal={false}
-          min={1}
-          disabled={!!env.loopLimit}
-          {...form.getInputProps("loopLimit")}
-        />
-        <NumberInput
-          label="Days in the trash"
-          description={
-            envNote("trashRetentionDays") ??
-            "Items in the trash longer than this are deleted when the backend starts. 0: never."
-          }
-          allowDecimal={false}
-          min={0}
-          disabled={!!env.trashRetentionDays}
-          {...form.getInputProps("trashRetentionDays")}
-        />
-        <Text size="xs" c="dimmed">
-          Saved to the database. Environment variables, when set, take
-          precedence.
-        </Text>
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save
         </Button>
-        <Divider />
-        <ToolApprovals />
-        <Divider />
-        <TrashSection />
       </Stack>
     </form>
   );

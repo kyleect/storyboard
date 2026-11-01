@@ -29,6 +29,17 @@ export const Settings = z.object({
    * decision 25). Empty: none, so search is keyword only (decision 26).
    */
   embeddingModel: z.string(),
+  /**
+   * Renames a session still titled "New session" when its first user
+   * message is sent (auto-rename plan, decisions 4, 5).
+   */
+  autoRename: z.boolean(),
+  /** Where the title comes from (decision 1). */
+  autoRenameSource: z.enum(["model", "message"]),
+  /** The router model that writes titles. Empty: the session's model. */
+  titleModel: z.string(),
+  /** The system prompt of the title call (decision 3). */
+  titlePrompt: z.string().min(1),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -40,6 +51,11 @@ export const DEFAULTS: Settings = {
   loopLimit: 20,
   trashRetentionDays: 30,
   embeddingModel: "",
+  autoRename: true,
+  autoRenameSource: "model",
+  titleModel: "",
+  titlePrompt:
+    "Write a short title (at most 6 words) for a writing session that starts with the user's message below. Reply with the title only.",
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -50,6 +66,10 @@ const ENV: Record<keyof Settings, string> = {
   loopLimit: "HARNESS_LOOP_LIMIT",
   trashRetentionDays: "HARNESS_TRASH_RETENTION_DAYS",
   embeddingModel: "HARNESS_EMBEDDING_MODEL",
+  autoRename: "HARNESS_AUTO_RENAME",
+  autoRenameSource: "HARNESS_AUTO_RENAME_SOURCE",
+  titleModel: "HARNESS_TITLE_MODEL",
+  titlePrompt: "HARNESS_TITLE_PROMPT",
 };
 
 const NUMERIC = new Set<keyof Settings>([
@@ -57,6 +77,15 @@ const NUMERIC = new Set<keyof Settings>([
   "loopLimit",
   "trashRetentionDays",
 ]);
+
+const BOOLEAN = new Set<keyof Settings>(["autoRename"]);
+
+/** "true" and "false" only; anything else is left for the schema to refuse. */
+function parseBoolean(raw: string): unknown {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return raw;
+}
 
 export interface SettingsView {
   /** What is in effect. */
@@ -88,7 +117,11 @@ export function readSettings(
   for (const key of Object.keys(ENV) as (keyof Settings)[]) {
     const raw = env[ENV[key]];
     if (raw === undefined) continue;
-    const value = NUMERIC.has(key) ? Number(raw) : raw;
+    const value = NUMERIC.has(key)
+      ? Number(raw)
+      : BOOLEAN.has(key)
+        ? parseBoolean(raw)
+        : raw;
     const parsed = shape[key].safeParse(value);
     if (!parsed.success) {
       throw new Error(

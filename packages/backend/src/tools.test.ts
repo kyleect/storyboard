@@ -52,7 +52,10 @@ async function setup(
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
     store,
-    settings: () => readSettings(t.db, env).effective,
+    settings: () => ({
+      ...readSettings(t.db, env).effective,
+      autoRename: false,
+    }),
     model: () => model,
     tools,
   });
@@ -724,7 +727,7 @@ describe("recovery after a crash", () => {
 
     const fresh = new RunManager({
       store: new Store(t.db),
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     });
     expect(fresh.recover()).toEqual(["r1"]);
@@ -759,7 +762,7 @@ describe("recovery after a crash", () => {
     });
     new RunManager({
       store: new Store(t.db),
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     }).recover();
     expect(
@@ -791,7 +794,7 @@ describe("recovery after a crash", () => {
 
     new RunManager({
       store: new Store(t.db),
-      settings: () => DEFAULTS,
+      settings: () => ({ ...DEFAULTS, autoRename: false }),
       model: () => new ScriptedModel([]),
     }).recover();
 
@@ -837,7 +840,11 @@ describe("with llama-server's wire format", () => {
     const store = new Store(t.db);
     const runs = new RunManager({
       store,
-      settings: () => ({ ...DEFAULTS, llamaServerUrl: llamaUrl }),
+      settings: () => ({
+        ...DEFAULTS,
+        llamaServerUrl: llamaUrl,
+        autoRename: false,
+      }),
       model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
       tools: allTools,
     });

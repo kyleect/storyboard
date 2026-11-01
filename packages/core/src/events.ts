@@ -289,9 +289,27 @@ export const SessionEntriesChanged = event(
   z.object({ messageId: z.string() }),
 );
 
+/**
+ * The session's title changed (auto-rename plan, decision 8): renamed by
+ * the user, or automatically after its first message, from a title the
+ * model wrote or from the message itself. `model` and `usage` describe the
+ * title call; null when there was none, or it failed and the message was
+ * used instead (decision 9).
+ */
+export const SessionRenamed = event(
+  "session.renamed",
+  z.object({
+    title: z.string(),
+    source: z.enum(["user", "model", "message"]),
+    model: z.string().nullable(),
+    usage: Usage.nullable(),
+  }),
+);
+
 export const SessionEventBody = z.discriminatedUnion("type", [
   SessionTrashed,
   SessionEntriesChanged,
+  SessionRenamed,
 ]);
 export type SessionEventBody = z.infer<typeof SessionEventBody>;
 
