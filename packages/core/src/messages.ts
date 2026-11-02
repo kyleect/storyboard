@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PromptRecord } from "./forms.js";
 
 /** Token usage reported by the model server for one response. */
 export const Usage = z.object({
@@ -119,6 +120,11 @@ export const ToolResultMessage = z.object({
   note: z
     .object({ text: z.string(), choice: z.enum(["once", "deny"]) })
     .optional(),
+  /**
+   * The form the tool showed during the call and how it was answered (tool
+   * prompts D9, D10: at most one per call). Not sent to the model.
+   */
+  prompt: PromptRecord.optional(),
 });
 
 /**

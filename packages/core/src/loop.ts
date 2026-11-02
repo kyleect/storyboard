@@ -5,7 +5,14 @@ import {
   type SharedEntries,
 } from "./entries.js";
 import type { ApprovalAnswer, InputRequest } from "./events.js";
-import { ASK_USER, DECLINED, type Form, type InputAnswer } from "./forms.js";
+import {
+  ASK_USER,
+  DECLINED,
+  describePrompt,
+  type Form,
+  type InputAnswer,
+  type PromptRecord,
+} from "./forms.js";
 import type {
   AssistantMessage,
   ContentBlock,
@@ -122,12 +129,14 @@ export interface LoopContext extends RunContext {
   cancelledText?: () => string | undefined;
   /** The session's project; null or left out for a standalone session. */
   projectId?: string | null;
+  /** The project's name, for forms tools show; null when there is none. */
+  projectName?: string | null;
   /**
    * Project and global files and notes. Left out: tools see session scope
    * only.
    */
   sharedEntries?: SharedEntries;
-  /** Generates memory note ids. Default: 8 random hex digits. */
+  /** Generates memory note ids. Default: 16 random hex digits. */
   newNoteId?: () => string;
   /** Searches files and notes. Left out: the search tools fail. */
   searchEntries?: EntrySearch;
@@ -195,6 +204,7 @@ export async function runLoop(
       state?: unknown;
       entries?: EntryOp[];
       note?: ToolResultMessage["note"];
+      prompt?: PromptRecord | undefined;
       error?: string;
       durationMs?: number;
     },
@@ -210,6 +220,7 @@ export async function runLoop(
       ...(result.state !== undefined ? { state: result.state } : {}),
       ...(result.entries?.length ? { entries: result.entries } : {}),
       ...(result.note ? { note: result.note } : {}),
+      ...(result.prompt ? { prompt: result.prompt } : {}),
     };
     ctx.onMessage?.(messageId, message);
     transcript.push(message);
@@ -237,6 +248,7 @@ export async function runLoop(
     text: string,
     durationMs?: number,
     note?: ToolResultMessage["note"],
+    prompt?: PromptRecord,
   ) => {
     const content = truncate(text, errorLimit);
     return addResult(call, {
@@ -245,6 +257,7 @@ export async function runLoop(
       ...(content !== text ? { error: text } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
       ...(note ? { note } : {}),
+      ...(prompt ? { prompt } : {}),
     });
   };
 
@@ -388,12 +401,19 @@ export async function runLoop(
       extra: {
         durationMs?: number;
         note?: ToolResultMessage["note"];
+        prompt?: PromptRecord | undefined;
         details?: Record<string, unknown> | undefined;
         stack?: string | undefined;
         endsRun?: boolean;
       } = {},
     ) => {
-      const messageId = addError(call, text, extra.durationMs, extra.note);
+      const messageId = addError(
+        call,
+        text,
+        extra.durationMs,
+        extra.note,
+        extra.prompt,
+      );
       report(kind, messageId, text, extra);
     };
     const report = (
@@ -498,6 +518,19 @@ export async function runLoop(
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const sessionOps: EntryOp[] = [];
+    // The form a tool showed (at most one per call, tool prompts D10) and
+    // whether the user skipped it.
+    let asked = false;
+    let prompt: PromptRecord | undefined;
+    let skipped = false;
+    const ask = async (form: Form): Promise<InputAnswer> => {
+      if (asked) throw new Error("A tool can ask the user only once per call.");
+      asked = true;
+      const answer = await requestInput(call, form);
+      if (tool.name !== ASK_USER) prompt = describePrompt(form, answer);
+      skipped = answer.outcome === "skipped";
+      return answer;
+    };
     try {
       const entries = createEntryAccess({
         session: replaySessionEntries(transcript),
@@ -525,8 +558,9 @@ export async function runLoop(
           emit({ type: "tool.update", data: { callId: call.callId, partial } }),
         state: latestToolState(transcript, tool.name),
         projectId: ctx.projectId ?? null,
+        projectName: ctx.projectName ?? null,
         entries,
-        requestInput: (form) => requestInput(call, form),
+        requestInput: ask,
       });
       const text = serializeResult(output.data);
       const content = output.isError ? truncate(text, errorLimit) : text;
@@ -539,10 +573,14 @@ export async function runLoop(
         ...(output.isError ? {} : { entries: sessionOps }),
         ...(content !== text ? { error: text } : {}),
         ...(note ? { note } : {}),
+        prompt,
         durationMs: elapsed(),
       });
-      // A declined or skipped form is the user's choice, not an error (O1).
-      const declined = tool.name === ASK_USER && output.data === DECLINED;
+      // A declined or skipped form is the user's choice, not an error (O1);
+      // so is a tool's error result after its form was skipped (tool
+      // prompts D5).
+      const declined =
+        skipped || (tool.name === ASK_USER && output.data === DECLINED);
       if (output.isError && !declined) {
         report("tool_returned_error", messageId, text, {
           details: output.details,
@@ -553,6 +591,7 @@ export async function runLoop(
       const thrown = {
         durationMs: elapsed(),
         note,
+        prompt,
         details: err instanceof ToolError ? err.details : undefined,
         stack: err instanceof Error ? err.stack : undefined,
       };
@@ -561,7 +600,7 @@ export async function runLoop(
         return message;
       }
       if (ctx.signal.aborted) {
-        addError(call, notRun(), elapsed(), note);
+        addError(call, notRun(), elapsed(), note, prompt);
         return;
       }
       addReported("tool_threw", `${tool.name} failed: ${message}`, thrown);

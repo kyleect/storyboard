@@ -132,6 +132,13 @@ describe("createEntryAccess", () => {
       { scope: "project", key: "style", type: "plain", size: 4 },
       { scope: "global", key: "style", type: "plain", size: 5 },
     ]);
+    // Several scopes: in the usual order, once each (tool prompts D7).
+    expect(
+      entries.listFiles(["global", "session", "global"]).map((f) => f.scope),
+    ).toEqual(["global"]);
+    expect(
+      entries.listFiles(["global", "project"]).map((f) => f.scope),
+    ).toEqual(["project", "global"]);
     expect(sessionOps).toEqual([]);
     expect(shared.changes.map((c) => [c.scope, c.op, c.author])).toEqual([
       ["global", "put", author],

@@ -16,6 +16,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import {
   checkAnswers,
+  optionLabel,
   type Answers,
   type Form,
   type FormField,
@@ -27,6 +28,10 @@ import {
  * the call is (input forms design, D9). Open while the run waits for it;
  * afterwards read-only, with the answers filled in. Every question except
  * text offers "Other" (D19, D21).
+ *
+ * Also draws forms other tools show (tool prompts design): those can label
+ * their options, leave out "Other" (a yes/no without "Other" is a
+ * checkbox) and name their buttons (D4 to D6, D8).
  */
 
 /** Choices with more options than this use a dropdown (D5). */
@@ -109,6 +114,9 @@ export function initialState(field: FormField, answer?: unknown): FieldState {
     }
     case "boolean": {
       const value = given ? answer : field.default;
+      // A checkbox is always answered: unticked is "no".
+      if (field.noOther)
+        return { ...EMPTY, pick: value === true ? "yes" : "no" };
       if (value === undefined) return EMPTY;
       if (typeof value === "boolean")
         return { ...EMPTY, pick: value ? "yes" : "no" };
@@ -133,6 +141,7 @@ export function answerOf(field: FormField, s: FieldState): unknown {
       if (typeof s.num === "number") return s.num;
       return s.num.trim() === "" ? undefined : Number(s.num);
     case "boolean":
+      if (field.noOther) return s.pick === "yes";
       return s.pick === null
         ? undefined
         : s.pick === OTHER
@@ -245,10 +254,10 @@ export function AskUserForm({
                 disabled={state.busy}
                 onClick={() => state.onAnswer({ outcome: "skipped" })}
               >
-                Skip
+                {form.skipLabel ?? "Skip"}
               </Button>
               <Button type="submit" loading={state.busy}>
-                Submit
+                {form.submitLabel ?? "Submit"}
               </Button>
             </Group>
           )}
@@ -321,15 +330,22 @@ function FieldInput({
             >
               <Stack gap={6} mt={4}>
                 {field.options.map((o) => (
-                  <Radio key={o} value={o} label={o} disabled={disabled} />
+                  <Radio
+                    key={o}
+                    value={o}
+                    label={optionLabel(field, o)}
+                    disabled={disabled}
+                  />
                 ))}
-                <Radio value={OTHER} label="Other" disabled={disabled} />
+                {!field.noOther && (
+                  <Radio value={OTHER} label="Other" disabled={disabled} />
+                )}
               </Stack>
             </Radio.Group>
           ) : (
             <Select
               {...common}
-              data={[...field.options, { value: OTHER, label: "Other…" }]}
+              data={selectData(field)}
               value={value.pick}
               clearable={!field.required}
               onChange={(pick) => onChange({ pick })}
@@ -352,15 +368,22 @@ function FieldInput({
             <Checkbox.Group {...common} value={selected} onChange={pickAll}>
               <Stack gap={6} mt={4}>
                 {field.options.map((o) => (
-                  <Checkbox key={o} value={o} label={o} disabled={disabled} />
+                  <Checkbox
+                    key={o}
+                    value={o}
+                    label={optionLabel(field, o)}
+                    disabled={disabled}
+                  />
                 ))}
-                <Checkbox value={OTHER} label="Other" disabled={disabled} />
+                {!field.noOther && (
+                  <Checkbox value={OTHER} label="Other" disabled={disabled} />
+                )}
               </Stack>
             </Checkbox.Group>
           ) : (
             <MultiSelect
               {...common}
-              data={[...field.options, { value: OTHER, label: "Other…" }]}
+              data={selectData(field)}
               value={selected}
               onChange={pickAll}
             />
@@ -392,17 +415,33 @@ function FieldInput({
               }
             />
           )}
-          <Checkbox
-            size="xs"
-            label="Other"
-            checked={value.other}
-            disabled={disabled}
-            onChange={(e) => onChange({ other: e.currentTarget.checked })}
-          />
+          {!field.noOther && (
+            <Checkbox
+              size="xs"
+              label="Other"
+              checked={value.other}
+              disabled={disabled}
+              onChange={(e) => onChange({ other: e.currentTarget.checked })}
+            />
+          )}
         </Stack>
       );
 
     case "boolean":
+      if (field.noOther) {
+        return (
+          <Checkbox
+            label={field.label}
+            description={field.help}
+            error={error}
+            disabled={disabled}
+            checked={value.pick === "yes"}
+            onChange={(e) =>
+              onChange({ pick: e.currentTarget.checked ? "yes" : "no" })
+            }
+          />
+        );
+      }
       return (
         <Stack gap={4}>
           <Radio.Group
@@ -420,4 +459,12 @@ function FieldInput({
         </Stack>
       );
   }
+}
+
+/** Dropdown items: each option with its label, then "Other…" if offered. */
+function selectData(field: Extract<FormField, { kind: "choice" | "multi" }>) {
+  return [
+    ...field.options.map((o) => ({ value: o, label: optionLabel(field, o) })),
+    ...(field.noOther ? [] : [{ value: OTHER, label: "Other…" }]),
+  ];
 }

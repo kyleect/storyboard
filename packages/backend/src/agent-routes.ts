@@ -62,6 +62,8 @@ export interface PickableAgent {
   name: string;
   description: string;
   scope: "project" | "global";
+  /** The session's project's default agent (default agent design 6). */
+  isDefault: boolean;
 }
 
 export function registerAgentRoutes(
@@ -130,7 +132,12 @@ export function registerAgentRoutes(
     app.get(base, async (req) => {
       const projectId = scopeOf(req);
       const q = ListQuery.parse(req.query);
-      return agents.list(projectId, q.deleted === "true");
+      const list = agents.list(projectId, q.deleted === "true");
+      // A project's list marks its default agent (default agent design 6).
+      const defaultId = projectId
+        ? store.getProject(projectId)?.default_agent_id
+        : null;
+      return list.map((a) => ({ ...a, isDefault: a.id === defaultId }));
     });
 
     app.post(base, async (req, reply) => {
@@ -233,11 +240,15 @@ export function registerAgentRoutes(
     const { id } = IdParams.parse(req.params);
     const session = store.getSession(id);
     if (!session) throw new AgentError("Session not found.", 404);
+    const defaultId = session.project_id
+      ? store.getProject(session.project_id)?.default_agent_id
+      : null;
     return agents.pickable(session.project_id).map((a): PickableAgent => ({
       id: a.id,
       name: a.name,
       description: a.description,
       scope: a.projectId === null ? "global" : "project",
+      isDefault: a.id === defaultId,
     }));
   });
 

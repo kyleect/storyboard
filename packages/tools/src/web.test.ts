@@ -24,6 +24,7 @@ const ctx: ToolContext = {
   requestInput: () => Promise.reject(new Error("Not used here.")),
   state: undefined,
   projectId: null,
+  projectName: null,
   entries: createEntryAccess({
     session: replaySessionEntries([]),
     sessionOps: [],

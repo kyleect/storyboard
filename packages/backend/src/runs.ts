@@ -131,7 +131,7 @@ export interface RunManagerOptions {
    * message (agents design 9).
    */
   systemPrompt?: (session: SessionRow) => string | undefined;
-  /** Generates memory note ids. Default: 8 random hex digits. */
+  /** Generates memory note ids. Default: 16 random hex digits. */
   newNoteId?: () => string;
   /** Kept in step with session-scoped changes, when given. */
   index?: SearchIndex;
@@ -865,6 +865,9 @@ export class RunManager {
           tools: this.toolsFor(agent),
           ...(runAgent ? { agent: runAgent } : {}),
           projectId: session?.project_id ?? null,
+          projectName: session?.project_id
+            ? (this.store.getProject(session.project_id)?.name ?? null)
+            : null,
           ...(this.options.entries
             ? {
                 sharedEntries: this.options.entries.shared(

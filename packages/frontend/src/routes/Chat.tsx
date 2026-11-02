@@ -24,9 +24,11 @@ import {
   readAskUserCall,
   type ApprovalAnswer,
   type ContentBlock,
+  type Form,
   type InputAnswer,
   type InputRequest,
   type Message,
+  type PromptRecord,
   type ToolResultMessage,
   type Usage,
 } from "@harness/core";
@@ -49,16 +51,25 @@ import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
 
-/** What `ask_user` calls need to draw their forms (input forms design). */
+/**
+ * What tool calls need to draw their forms: `ask_user`'s (input forms
+ * design) and other tools' (tool prompts design).
+ */
 interface Asks {
   /** Tool results by call id. */
   results: ReadonlyMap<string, ToolResultMessage>;
   /** The form waiting for an answer, if any. */
   open: InputRequest | undefined;
-  /** Answers sent, by call id, shown until the result is stored. */
-  submitted: ReadonlyMap<string, Record<string, unknown>>;
+  /** Forms answered, by call id, shown until the result is stored. */
+  submitted: ReadonlyMap<string, Sent>;
   busy: boolean;
   onAnswer: (request: InputRequest, answer: InputAnswer) => void;
+}
+
+/** A form the user answered, and the answers sent. */
+interface Sent {
+  form: Form;
+  answers: Record<string, unknown>;
 }
 
 interface ShownMessage {
@@ -199,21 +210,24 @@ export function Chat() {
     },
     onError,
   });
-  // Answers sent for each ask_user call, shown until its result is stored.
-  const [submitted, setSubmitted] = useState<
-    ReadonlyMap<string, Record<string, unknown>>
-  >(new Map());
+  // Answers sent for each form, shown until its call's result is stored.
+  const [submitted, setSubmitted] = useState<ReadonlyMap<string, Sent>>(
+    new Map(),
+  );
   const answerForm = useMutation({
     mutationFn: (a: {
       runId: string;
       requestId: string;
       callId: string;
+      form: Form;
       answer: InputAnswer;
     }) => api.answerInput(a.runId, a.requestId, a.answer),
     onSuccess: (_r, a) => {
       const { answer } = a;
       if (answer.outcome === "answered")
-        setSubmitted((m) => new Map(m).set(a.callId, answer.answers));
+        setSubmitted((m) =>
+          new Map(m).set(a.callId, { form: a.form, answers: answer.answers }),
+        );
     },
     onError,
   });
@@ -298,6 +312,7 @@ export function Chat() {
           runId: live.runId,
           requestId: request.requestId,
           callId: request.callId,
+          form: request.form,
           answer,
         });
     },
@@ -723,10 +738,71 @@ function BlockView({
               <Markdown size="sm">{note.text}</Markdown>
             </Paper>
           )}
+          <ToolPrompt callId={block.callId} asks={asks} />
         </Stack>
       );
     }
   }
+}
+
+/**
+ * The form another tool shows during its call, under the call (tool
+ * prompts D8): open while the run waits, then the answers until the result
+ * is stored, then the answer kept with the result (D9).
+ */
+function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
+  const result = asks.results.get(callId);
+  if (result?.prompt) return <PromptAnswer prompt={result.prompt} />;
+  if (result) return null;
+  const open = asks.open;
+  if (open?.callId === callId) {
+    return (
+      <AskUserForm
+        key={`open:${open.requestId}`}
+        form={open.form}
+        state={{
+          mode: "open",
+          requestId: open.requestId,
+          busy: asks.busy,
+          onAnswer: (answer) => asks.onAnswer(open, answer),
+        }}
+      />
+    );
+  }
+  const sent = asks.submitted.get(callId);
+  if (sent) {
+    return (
+      <AskUserForm
+        key="answered"
+        form={sent.form}
+        state={{ mode: "answered", answers: sent.answers }}
+      />
+    );
+  }
+  return null;
+}
+
+/** How the user answered a tool's form, kept with its result (D9). */
+function PromptAnswer({ prompt }: { prompt: PromptRecord }) {
+  return (
+    <Paper p="xs" withBorder bg="var(--mantine-color-default-hover)">
+      <Text size="xs" c="dimmed">
+        {prompt.title ?? "Your answer"}
+      </Text>
+      {prompt.skipped !== undefined ? (
+        <Text size="sm">{prompt.skipped}</Text>
+      ) : (
+        prompt.answers.map((a, i) => (
+          <Text size="sm" key={i}>
+            <Text span size="sm" c="dimmed">
+              {a.question}:
+            </Text>{" "}
+            {a.answer}
+          </Text>
+        ))
+      )}
+    </Paper>
+  );
 }
 
 /** Where an `ask_user` call's form stands. */
@@ -743,7 +819,7 @@ function askState(callId: string, asks: Asks): AskUserState {
   }
   if (result?.content === DECLINED) return { mode: "skipped" };
   const sent = asks.submitted.get(callId);
-  if (!result && sent) return { mode: "answered", answers: sent };
+  if (!result && sent) return { mode: "answered", answers: sent.answers };
   const open = asks.open;
   if (!result && open?.callId === callId) {
     return {

@@ -853,6 +853,124 @@ describe("asking the user (input forms)", () => {
     expect(results(saved)[0]?.content).toBe("Not run: the run was cancelled.");
   });
 
+  it("keeps a tool's form and answer with its result (tool prompts D9)", async () => {
+    const labelled: Form = {
+      title: "Save where?",
+      fields: [
+        {
+          name: "scope",
+          label: "Save to",
+          required: true,
+          noOther: true,
+          kind: "choice",
+          options: ["session", "global"],
+          labels: { global: "Every conversation" },
+        },
+      ],
+    };
+    const saver = defineTool({
+      name: "saver",
+      description: "Saves.",
+      input: z.object({}),
+      approval: "never",
+      execute: async (_i, ctx) => {
+        await ctx.requestInput(labelled);
+        return { data: "saved" };
+      },
+    });
+    const { saved, ctx, model } = setup(
+      [[call("c1", "saver", "{}")], [{ type: "text", text: "ok" }]],
+      {
+        tools: [saver],
+        requestInput: () =>
+          Promise.resolve<InputAnswer>({
+            outcome: "answered",
+            answers: { scope: "global" },
+          }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]?.prompt).toEqual({
+      title: "Save where?",
+      answers: [{ question: "Save to", answer: "Every conversation" }],
+    });
+  });
+
+  it("does not report a tool's error after its form was skipped", async () => {
+    const reports: ToolErrorReport[] = [];
+    const { saved, ctx, model } = setup(
+      [[call("c1", "asker", "{}")], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asker],
+        requestInput: () =>
+          Promise.resolve<InputAnswer>({ outcome: "skipped" }),
+        reportError: (r) => reports.push(r),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(reports).toEqual([]);
+    expect(results(saved)[0]?.prompt).toEqual({
+      title: "Story",
+      answers: [],
+      skipped: "Skip",
+    });
+  });
+
+  it("lets a tool ask only once per call (tool prompts D10)", async () => {
+    const twice = defineTool({
+      name: "twice",
+      description: "Asks twice.",
+      input: z.object({}),
+      approval: "never",
+      execute: async (_i, ctx) => {
+        await ctx.requestInput(form);
+        await ctx.requestInput(form);
+        return { data: "x" };
+      },
+    });
+    const { saved, ctx, model } = setup(
+      [[call("c1", "twice", "{}")], [{ type: "text", text: "ok" }]],
+      {
+        tools: [twice],
+        requestInput: () =>
+          Promise.resolve<InputAnswer>({
+            outcome: "answered",
+            answers: { g: "noir" },
+          }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]).toMatchObject({
+      content: "twice failed: A tool can ask the user only once per call.",
+      isError: true,
+      // The answered form is still kept.
+      prompt: { answers: [{ answer: "noir" }] },
+    });
+  });
+
+  it("does not keep ask_user forms as prompts; they are rebuilt from the call", async () => {
+    const asking = defineTool({
+      name: ASK_USER,
+      description: "Asks.",
+      input: z.object({}),
+      approval: "never",
+      execute: async (_i, ctx) => {
+        await ctx.requestInput(form);
+        return { data: "x" };
+      },
+    });
+    const { saved, ctx, model } = setup(
+      [[call("c1", ASK_USER, "{}")], [{ type: "text", text: "ok" }]],
+      {
+        tools: [asking],
+        requestInput: () =>
+          Promise.resolve<InputAnswer>({ outcome: "skipped" }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(results(saved)[0]).not.toHaveProperty("prompt");
+  });
+
   it("fails the call when the run cannot ask", async () => {
     const { events, saved, ctx, model } = setup(
       [[call("c1", "asker", "{}")], [{ type: "text", text: "ok" }]],

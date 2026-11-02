@@ -36,6 +36,7 @@ import {
   type ImportConflict,
   type MessageAgent,
   type PickableAgent,
+  type Project,
   type ToolMode,
 } from "../api";
 import { showError } from "./SessionActions";
@@ -62,6 +63,14 @@ function useRefresh(scope: AgentScope) {
 /** The tools an agent can select, by name. */
 function useSelectableTools() {
   return useQuery({ queryKey: ["agent-tools"], queryFn: api.agentTools });
+}
+
+function DefaultBadge() {
+  return (
+    <Badge size="xs" variant="light">
+      Default
+    </Badge>
+  );
 }
 
 function DeletedBadge() {
@@ -402,7 +411,13 @@ export function AgentsPanel({
                 </Text>
               }
               description={a.description || when(a.updatedAt)}
-              rightSection={a.deleted ? <DeletedBadge /> : undefined}
+              rightSection={
+                a.deleted ? (
+                  <DeletedBadge />
+                ) : a.isDefault ? (
+                  <DefaultBadge />
+                ) : undefined
+              }
             />
           ))}
         </Stack>
@@ -716,6 +731,89 @@ export function GlobalAgentsPage() {
   );
 }
 
+const NO_DEFAULT = "";
+
+/**
+ * The project's default agent: new sessions in it start with this agent
+ * (default agent design, decisions 1, 3, 4). The project's agents and the
+ * global ones are offered, or none.
+ */
+export function DefaultAgentSelect({
+  project,
+  disabled,
+}: {
+  project: Project;
+  disabled?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const own = useQuery({
+    queryKey: [
+      ...agentsKey({ scope: "project", id: project.id }),
+      "list",
+      false,
+    ],
+    queryFn: () => api.listAgents({ scope: "project", id: project.id }, false),
+  });
+  const global = useQuery({
+    queryKey: [...agentsKey({ scope: "global" }), "list", false],
+    queryFn: () => api.listAgents({ scope: "global" }, false),
+  });
+  const save = useMutation({
+    mutationFn: (defaultAgentId: string | null) =>
+      api.updateProject(project.id, { defaultAgentId }),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData<Project>(["project", project.id], updated);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+      await queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+    },
+    onError: showError("Could not set the default agent"),
+  });
+  const group = (
+    label: string,
+    scope: string,
+    agents: { id: string; name: string }[] | undefined,
+  ) =>
+    agents && agents.length > 0
+      ? [
+          {
+            group: label,
+            items: agents.map((a) => ({
+              value: a.id,
+              label: `${a.name} (${scope})`,
+            })),
+          },
+        ]
+      : [];
+  // A default that is not in the lists (for example, deleted just now)
+  // shows as none until the lists refresh.
+  const known = [...(own.data ?? []), ...(global.data ?? [])].some(
+    (a) => a.id === project.default_agent_id,
+  );
+  return (
+    <Select
+      w={280}
+      label="Default agent"
+      description="New sessions in this project start with it."
+      allowDeselect={false}
+      searchable
+      disabled={!!disabled || save.isPending}
+      value={known ? project.default_agent_id : NO_DEFAULT}
+      onChange={(v) => save.mutate(v === NO_DEFAULT || v === null ? null : v)}
+      data={[
+        { group: "", items: [{ value: NO_DEFAULT, label: "None" }] },
+        ...group("Project agents", "project", own.data),
+        ...group("Global agents", "global", global.data),
+      ]}
+      {...(own.isError ? { error: own.error.message } : {})}
+      {...(global.isError ? { error: global.error.message } : {})}
+      {...(own.isPending || global.isPending
+        ? { rightSection: <Loader size="xs" /> }
+        : {})}
+    />
+  );
+}
+
 /** A project's agents (decision 31). */
 export function ProjectAgentsPage() {
   const { projectId } = useParams({ from: "/projects/$projectId/agents" });
@@ -741,6 +839,7 @@ export function ProjectAgentsPage() {
         </Anchor>
         : sessions in this project can use these, as well as the global ones.
       </Text>
+      <DefaultAgentSelect project={project.data} disabled={trashed} />
       <AgentsPanel
         scope={{ scope: "project", id: projectId }}
         readOnly={
@@ -777,7 +876,10 @@ export function AgentPicker({
   const group = (scope: PickableAgent["scope"], label: string) => {
     const items = (agents.data ?? [])
       .filter((a) => a.scope === scope)
-      .map((a) => ({ value: a.id, label: `${a.name} (${scope})` }));
+      .map((a) => ({
+        value: a.id,
+        label: `${a.name} (${scope})${a.isDefault ? " · Default" : ""}`,
+      }));
     return items.length > 0 ? [{ group: label, items }] : [];
   };
   return (

@@ -176,3 +176,83 @@ describe("AskUserForm", () => {
     expect(screen.queryByRole("button", { name: "Skip" })).toBeNull();
   });
 });
+
+describe("AskUserForm for forms other tools show (tool prompts)", () => {
+  const scopeForm: Form = {
+    title: 'Save "a.md" where?',
+    description: "New markdown file, 3 characters: # A",
+    fields: [
+      {
+        name: "scope",
+        label: "Save to",
+        required: true,
+        noOther: true,
+        kind: "choice",
+        options: ["session", "project", "global"],
+        labels: {
+          session: "This conversation only",
+          project: 'Every conversation in "Ashfall" (suggested)',
+          global: "Every conversation",
+        },
+        default: "project",
+      },
+      {
+        name: "remember",
+        label: "Use this for the rest of this session",
+        required: false,
+        noOther: true,
+        kind: "boolean",
+        default: false,
+      },
+    ],
+    submitLabel: "Save",
+    skipLabel: "Don't save",
+  };
+
+  function openScope() {
+    const onAnswer = vi.fn<(a: InputAnswer) => void>();
+    renderUi(
+      <AskUserForm
+        form={scopeForm}
+        state={{ mode: "open", requestId: "r1", busy: false, onAnswer }}
+      />,
+    );
+    return onAnswer;
+  }
+
+  it("shows option labels, no Other, and the tool's button names", () => {
+    const onAnswer = openScope();
+    expect(
+      screen.getByText("New markdown file, 3 characters: # A"),
+    ).toBeTruthy();
+    expect(
+      (label('Every conversation in "Ashfall" (suggested)') as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(screen.queryByLabelText("Other")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    // The value is sent, not the label; an unticked checkbox is "no".
+    expect(onAnswer).toHaveBeenCalledWith({
+      outcome: "answered",
+      answers: { scope: "project", remember: false },
+    });
+  });
+
+  it("draws a yes/no without Other as a checkbox", () => {
+    const onAnswer = openScope();
+    click("This conversation only");
+    click("Use this for the rest of this session");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onAnswer).toHaveBeenCalledWith({
+      outcome: "answered",
+      answers: { scope: "session", remember: true },
+    });
+  });
+
+  it("skips with the tool's skip button", () => {
+    const onAnswer = openScope();
+    fireEvent.click(screen.getByRole("button", { name: "Don't save" }));
+    expect(onAnswer).toHaveBeenCalledWith({ outcome: "skipped" });
+  });
+});

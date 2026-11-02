@@ -159,12 +159,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   const events = options.events ?? runs.events;
-  registerAgentRoutes(app, {
-    store,
-    runs,
-    agents: options.agents ?? new AgentStore(store.db, now, newId),
-    events,
-  });
+  const agents = options.agents ?? new AgentStore(store.db, now, newId);
+  registerAgentRoutes(app, { store, runs, agents, events });
 
   app.get("/api/settings", async () => readSettings(store.db, env));
 
@@ -212,13 +208,23 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         return reply.code(409).send({ error: "The project is in the trash." });
     }
     const time = now();
-    const session = store.createSession(
+    let session = store.createSession(
       newId(),
       body.title ?? DEFAULT_TITLE,
       time,
       body.projectId ?? null,
     );
-    if (body.projectId !== undefined) store.touchProject(body.projectId, time);
+    if (body.projectId !== undefined) {
+      store.touchProject(body.projectId, time);
+      // The project's default agent, if it still has a live one
+      // (default agent design, decision 1).
+      const defaultId = store.getProject(body.projectId)?.default_agent_id;
+      const agent = defaultId ? agents.get(defaultId) : undefined;
+      if (agent && agents.usableIn(agent, body.projectId)) {
+        store.setSessionChoices(session.id, { agentId: agent.id });
+        session = { ...session, agent_id: agent.id };
+      }
+    }
     return reply.code(201).send(session);
   });
 
@@ -422,21 +428,41 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
-   * Renames the project or changes its description. A field left out is
-   * unchanged. Refused for a project in the trash.
+   * Renames the project, changes its description or sets its default
+   * agent (an agent id, or null for none). A field left out is unchanged.
+   * Refused for a project in the trash. The default agent must be a live
+   * agent of the project or a global one.
    */
   app.patch("/api/projects/:id", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
     const fields = z
-      .object({ name: Title.optional(), description: z.string().optional() })
-      .refine((f) => f.name !== undefined || f.description !== undefined, {
-        message: "Nothing to change",
+      .object({
+        name: Title.optional(),
+        description: z.string().optional(),
+        defaultAgentId: z.string().min(1).nullable().optional(),
       })
+      .refine(
+        (f) =>
+          f.name !== undefined ||
+          f.description !== undefined ||
+          f.defaultAgentId !== undefined,
+        { message: "Nothing to change" },
+      )
       .parse(req.body);
     const project = store.getProject(id);
     if (!project) return reply.code(404).send({ error: "Project not found." });
     if (project.trashed_at !== null)
       return reply.code(409).send({ error: "The project is in the trash." });
+    if (fields.defaultAgentId) {
+      const agent = agents.get(fields.defaultAgentId);
+      if (!agent) return reply.code(404).send({ error: "Agent not found." });
+      if (agent.deleted)
+        return reply.code(409).send({ error: "The agent is deleted." });
+      if (!agents.usableIn(agent, id))
+        return reply.code(409).send({
+          error: "The agent belongs to another project.",
+        });
+    }
     store.updateProject(id, defined(fields));
     store.touchProject(id, now());
     return store.getProject(id);

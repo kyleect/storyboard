@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type Project } from "../api";
+import { DefaultAgentSelect } from "./Agents";
 import { EditableTitle } from "./EditableTitle";
 import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
@@ -101,6 +102,7 @@ export function ProjectPage() {
           Agents
         </Button>
       </Group>
+      <DefaultAgentSelect project={project.data} disabled={trashed} />
       <Description
         key={project.data.description}
         initial={project.data.description}

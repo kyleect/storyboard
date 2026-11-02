@@ -51,10 +51,12 @@ export interface ProjectRow {
   last_used_at: string;
   /** When it was moved to the trash; null when it is not in the trash. */
   trashed_at: string | null;
+  /** The agent new sessions start with; null: none (default agent design). */
+  default_agent_id: string | null;
 }
 
 const PROJECT_COLUMNS =
-  "id, name, description, created_at, last_used_at, trashed_at";
+  "id, name, description, created_at, last_used_at, trashed_at, default_agent_id";
 
 /** An agent version a run used (agents design, decisions 13, 14). */
 export interface AgentRef {
@@ -319,6 +321,7 @@ export class Store {
       created_at: project.now,
       last_used_at: project.now,
       trashed_at: null,
+      default_agent_id: null,
     };
   }
 
@@ -350,7 +353,14 @@ export class Store {
   }
 
   /** A field left out is not changed. */
-  updateProject(id: string, fields: { name?: string; description?: string }) {
+  updateProject(
+    id: string,
+    fields: {
+      name?: string;
+      description?: string;
+      defaultAgentId?: string | null;
+    },
+  ) {
     if (fields.name !== undefined) {
       this.db
         .prepare("UPDATE projects SET name = ? WHERE id = ?")
@@ -360,6 +370,11 @@ export class Store {
       this.db
         .prepare("UPDATE projects SET description = ? WHERE id = ?")
         .run(fields.description, id);
+    }
+    if (fields.defaultAgentId !== undefined) {
+      this.db
+        .prepare("UPDATE projects SET default_agent_id = ? WHERE id = ?")
+        .run(fields.defaultAgentId, id);
     }
   }
 
@@ -441,6 +456,11 @@ export class Store {
         .prepare(
           "DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)",
         )
+        .run(id);
+      // The project's default may be one of its own agents; let go of it
+      // first so the foreign key doesn't block the delete.
+      this.db
+        .prepare("UPDATE projects SET default_agent_id = NULL WHERE id = ?")
         .run(id);
       this.db.prepare("DELETE FROM agents WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);

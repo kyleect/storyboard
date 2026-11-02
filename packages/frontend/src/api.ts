@@ -133,6 +133,8 @@ export interface Project {
   last_used_at: string;
   /** When it was moved to the trash; null when it is not in the trash. */
   trashed_at: string | null;
+  /** The agent new sessions start with; null: none. */
+  default_agent_id: string | null;
 }
 
 /** Everything in the trash. */
@@ -325,6 +327,11 @@ export interface AgentVersion extends AgentContent {
   createdAt: string;
 }
 
+/** An agent in a list; `isDefault` is set in a project's list. */
+export interface ListedAgent extends Agent {
+  isDefault: boolean;
+}
+
 export interface AgentDetail extends Agent {
   versions: AgentVersion[];
 }
@@ -348,6 +355,8 @@ export interface PickableAgent {
   name: string;
   description: string;
   scope: "project" | "global";
+  /** The project's default agent. */
+  isDefault: boolean;
 }
 
 /** A 409 from an import whose name is taken. */
@@ -499,7 +508,12 @@ export const api = {
   /** A field left out is unchanged. */
   updateProject: (
     id: string,
-    fields: { name?: string; description?: string },
+    fields: {
+      name?: string;
+      description?: string;
+      /** An agent id, or null for none. */
+      defaultAgentId?: string | null;
+    },
   ) => request<Project>("PATCH", `/api/projects/${id}`, fields),
   trashProject: (id: string) =>
     request<Project>("POST", `/api/projects/${id}/trash`),
@@ -574,7 +588,7 @@ export const api = {
       { seq },
     ),
   listAgents: (s: AgentScope, deleted: boolean) =>
-    request<Agent[]>(
+    request<ListedAgent[]>(
       "GET",
       `${agentsBase(s)}${deleted ? "?deleted=true" : ""}`,
     ),

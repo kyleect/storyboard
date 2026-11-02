@@ -10,7 +10,7 @@ import { sessionSearch } from "./search.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { runAnsweringForms, tempDatabase } from "./test-helpers.js";
 
 /* Search over files and memory (files and memory design, 3.6; plan S1-S8). */
 
@@ -456,7 +456,10 @@ describe("search through the tools", () => {
     const run = await api(app, "POST", `/api/sessions/${body.id}/messages`, {
       content: "Go",
     });
-    await expect.poll(() => runs.isActive(run.body.runId)).toBe(false);
+    // The user confirms the note's scope (tool prompts D1).
+    await runAnsweringForms(runs, body.id, run.body.runId, [
+      { scope: "session", remember: false },
+    ]);
     const result = store
       .listMessages(body.id)
       .map((m) => m.message)

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AskUserInput,
   checkAnswers,
+  describePrompt,
   readAskUserCall,
   readForm,
   type Form,
@@ -351,6 +352,109 @@ describe("checkAnswers", () => {
     expect(checkAnswers(f, { m: [] })).toEqual({
       ok: false,
       errors: { m: "Answer this question." },
+    });
+  });
+});
+
+describe("forms built by tools (tool prompts design)", () => {
+  const form: Form = {
+    title: "Save where?",
+    fields: [
+      {
+        name: "scope",
+        label: "Save to",
+        required: true,
+        noOther: true,
+        kind: "choice",
+        options: ["session", "global"],
+        labels: { session: "This conversation only" },
+      },
+      {
+        name: "kinds",
+        label: "Kinds",
+        required: false,
+        noOther: true,
+        kind: "multi",
+        options: ["file", "note"],
+        labels: { file: "Files", note: "Notes" },
+      },
+      {
+        name: "remember",
+        label: "Remember",
+        required: false,
+        noOther: true,
+        kind: "boolean",
+      },
+      {
+        name: "n",
+        label: "N",
+        required: false,
+        noOther: true,
+        kind: "number",
+        integer: true,
+      },
+    ],
+    submitLabel: "Save",
+    skipLabel: "Don't save",
+  };
+
+  it("rejects free text when a question has no Other (D4)", () => {
+    expect(
+      checkAnswers(form, {
+        scope: "project",
+        kinds: ["file", "both"],
+        remember: "maybe",
+        n: "a few",
+      }),
+    ).toEqual({
+      ok: false,
+      errors: {
+        scope: "Pick one of the options.",
+        kinds: "Pick one of the options.",
+        remember: "Expected yes or no.",
+        n: "Expected a number.",
+      },
+    });
+    expect(
+      checkAnswers(form, { scope: "global", kinds: ["note"], remember: false }),
+    ).toEqual({
+      ok: true,
+      answers: { scope: "global", kinds: ["note"], remember: false },
+    });
+  });
+
+  it("records the answers as shown, with option labels (D6, D9)", () => {
+    expect(
+      describePrompt(form, {
+        outcome: "answered",
+        answers: { scope: "session", kinds: ["file", "note"], remember: true },
+      }),
+    ).toEqual({
+      title: "Save where?",
+      answers: [
+        { question: "Save to", answer: "This conversation only" },
+        { question: "Kinds", answer: "Files, Notes" },
+        { question: "Remember", answer: "Yes" },
+      ],
+    });
+    // An option without a label shows its value.
+    expect(
+      describePrompt(form, {
+        outcome: "answered",
+        answers: { scope: "global" },
+      }).answers,
+    ).toEqual([{ question: "Save to", answer: "global" }]);
+  });
+
+  it("records a skip with the skip button's text (D5)", () => {
+    expect(describePrompt(form, { outcome: "skipped" })).toEqual({
+      title: "Save where?",
+      answers: [],
+      skipped: "Don't save",
+    });
+    expect(describePrompt({ fields: [] }, { outcome: "skipped" })).toEqual({
+      answers: [],
+      skipped: "Skip",
     });
   });
 });

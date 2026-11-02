@@ -46,3 +46,42 @@ export function tempDir() {
   const dir = mkdtempSync(join(tmpdir(), "harness-test-"));
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
+
+/**
+ * Waits for a run to end, answering each form it shows with the next of
+ * `answers` (tool prompts design). Fails when a form is left without an
+ * answer, or the run takes longer than `timeoutMs`.
+ */
+export async function runAnsweringForms(
+  runs: {
+    isActive(runId: string): boolean;
+    snapshot(sessionId: string): {
+      activeRun: { inputs: { requestId: string }[] } | null;
+    };
+    answerInput(
+      runId: string,
+      requestId: string,
+      answer: { outcome: "answered"; answers: Record<string, unknown> },
+    ): void;
+  },
+  sessionId: string,
+  runId: string,
+  answers: Record<string, unknown>[],
+  timeoutMs = 5000,
+): Promise<void> {
+  const queue = [...answers];
+  const deadline = Date.now() + timeoutMs;
+  while (runs.isActive(runId)) {
+    if (Date.now() > deadline) throw new Error("The run did not end in time.");
+    const open = runs.snapshot(sessionId).activeRun?.inputs[0];
+    if (open) {
+      const next = queue.shift();
+      if (!next) throw new Error("The run showed a form with no answer left.");
+      runs.answerInput(runId, open.requestId, {
+        outcome: "answered",
+        answers: next,
+      });
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}

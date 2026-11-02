@@ -6,6 +6,10 @@ import { z } from "zod";
  * into a `Form`, which the UI draws and the answers are checked against.
  * Every question except free text also takes an "Other" answer: free text
  * in place of the value (D19, D21, D22).
+ *
+ * Tools can also build a `Form` themselves and show it with
+ * `ctx.requestInput` (tool prompts design). Such forms can label their
+ * options, leave out "Other" and name their buttons (D4, D5, D6).
  */
 
 /** The tool that shows a form (D1). */
@@ -85,7 +89,18 @@ const base = {
   /** Help text under the question. */
   help: z.string().optional(),
   required: z.boolean(),
+  /**
+   * True: no "Other" answer (tool prompts D4). Only forms built by tools
+   * set it; `ask_user` questions always offer "Other".
+   */
+  noOther: z.boolean().optional(),
 };
+
+/**
+ * What each option shows, by option value (tool prompts D6). An option
+ * without a label shows its value. Only forms built by tools set it.
+ */
+const labels = z.record(z.string(), z.string()).optional();
 
 /** A question, read from the model's schema. */
 export const FormField = z.discriminatedUnion("kind", [
@@ -101,12 +116,14 @@ export const FormField = z.discriminatedUnion("kind", [
     ...base,
     kind: z.literal("choice"),
     options: z.array(z.string()),
+    labels,
     default: z.string().optional(),
   }),
   z.object({
     ...base,
     kind: z.literal("multi"),
     options: z.array(z.string()),
+    labels,
     default: z.array(z.string()).optional(),
   }),
   z.object({
@@ -130,6 +147,10 @@ export const Form = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   fields: z.array(FormField),
+  /** The submit button's text. Default "Submit". */
+  submitLabel: z.string().optional(),
+  /** The skip button's text, for example "Don't save" (D5). Default "Skip". */
+  skipLabel: z.string().optional(),
 });
 export type Form = z.infer<typeof Form>;
 
@@ -145,6 +166,67 @@ export const InputAnswer = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("skipped") }),
 ]);
 export type InputAnswer = z.infer<typeof InputAnswer>;
+
+/**
+ * A form a tool showed and how it was answered, kept with the call's result
+ * as one line of text per question (tool prompts D9). `ask_user` forms are
+ * not recorded this way: they are rebuilt from the call.
+ */
+export const PromptRecord = z.object({
+  title: z.string().optional(),
+  /** Answered questions, as shown to the user. */
+  answers: z.array(z.object({ question: z.string(), answer: z.string() })),
+  /** The skip button's text, when the form was skipped. */
+  skipped: z.string().optional(),
+});
+export type PromptRecord = z.infer<typeof PromptRecord>;
+
+/** An option as shown: its label, or the value itself. */
+export const optionLabel = (
+  field: { labels?: Record<string, string> | undefined },
+  value: string,
+): string => field.labels?.[value] ?? value;
+
+/** One answer as text, as the user saw it. */
+function answerText(field: FormField, value: unknown): string {
+  switch (field.kind) {
+    case "choice":
+      return typeof value === "string" ? optionLabel(field, value) : "";
+    case "multi":
+      return Array.isArray(value)
+        ? value.map((v) => optionLabel(field, String(v))).join(", ")
+        : "";
+    case "boolean":
+      return typeof value === "boolean"
+        ? value
+          ? "Yes"
+          : "No"
+        : String(value);
+    default:
+      return String(value);
+  }
+}
+
+/** Records a tool's form and its answer for the call's result (D9). */
+export function describePrompt(form: Form, answer: InputAnswer): PromptRecord {
+  const title = form.title !== undefined ? { title: form.title } : {};
+  if (answer.outcome === "skipped") {
+    return { ...title, answers: [], skipped: form.skipLabel ?? "Skip" };
+  }
+  return {
+    ...title,
+    answers: form.fields.flatMap((f) =>
+      answer.answers[f.name] === undefined
+        ? []
+        : [
+            {
+              question: f.label,
+              answer: answerText(f, answer.answers[f.name]),
+            },
+          ],
+    ),
+  };
+}
 
 export type ReadFormResult =
   { ok: true; form: Form } | { ok: false; errors: string[] };
@@ -319,6 +401,7 @@ export type CheckAnswersResult =
 
 const ANSWER_THIS = "Answer this question.";
 const WRITE_OTHER = 'Write your answer in "Other".';
+const PICK_ONE = "Pick one of the options.";
 
 /** Free text given as "Other": a string with something in it. */
 const otherText = (v: unknown): string | undefined =>
@@ -343,6 +426,7 @@ function checkField(
     case "choice": {
       if (typeof value === "string" && field.options.includes(value))
         return { value };
+      if (field.noOther) return { error: PICK_ONE };
       const other = otherText(value);
       // "Other" picked with an empty box (D24).
       return other !== undefined ? { value: other } : { error: WRITE_OTHER };
@@ -355,6 +439,7 @@ function checkField(
           picked.push(v);
           continue;
         }
+        if (field.noOther) return { error: PICK_ONE };
         const other = otherText(v);
         if (other === undefined) return { error: WRITE_OTHER };
         picked.push(other);
@@ -375,11 +460,13 @@ function checkField(
           return { error: `The highest allowed is ${field.maximum}.` };
         return { value };
       }
+      if (field.noOther) return { error: "Expected a number." };
       const other = otherText(value);
       return other !== undefined ? { value: other } : { error: WRITE_OTHER };
     }
     case "boolean": {
       if (typeof value === "boolean") return { value };
+      if (field.noOther) return { error: "Expected yes or no." };
       const other = otherText(value);
       return other !== undefined ? { value: other } : { error: WRITE_OTHER };
     }

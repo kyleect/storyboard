@@ -138,17 +138,23 @@ export interface SearchResult {
 /** Searches files or notes; implemented by the backend for one session. */
 export type EntrySearch = (query: SearchQuery) => Promise<SearchResult>;
 
+/**
+ * One scope, several, or (left out) every scope this session has. Several
+ * are listed in the usual order (session, project, global), once each.
+ */
+export type ScopeFilter = Scope | readonly Scope[];
+
 /** What tools use to reach files and notes (`ToolContext.entries`). */
 export interface EntryAccess {
   /** The scopes this session has: no project scope in a standalone one. */
   readonly scopes: readonly Scope[];
   /** Every scope's files when `scope` is left out (decision 9). */
-  listFiles(scope?: Scope): FileInfo[];
+  listFiles(scope?: ScopeFilter): FileInfo[];
   readFile(scope: Scope, key: string): FileEntry | undefined;
   /** Creates or replaces. Returns true when the file is new. */
   writeFile(scope: Scope, key: string, type: FileType, value: string): boolean;
   deleteFile(scope: Scope, key: string): boolean;
-  listNotes(scope?: Scope): NoteEntry[];
+  listNotes(scope?: ScopeFilter): NoteEntry[];
   /** Returns the new note's id. */
   addNote(scope: Scope, text: string): string;
   updateNote(scope: Scope, id: string, text: string): boolean;
@@ -157,7 +163,7 @@ export interface EntryAccess {
   search(
     kind: EntryKind,
     query: string,
-    scope: Scope | undefined,
+    scope: ScopeFilter | undefined,
     limit: number,
   ): Promise<SearchResult>;
 }
@@ -240,7 +246,9 @@ export function sessionEntryVersions(
 }
 
 const randomNoteId = (): string => {
-  const bytes = new Uint8Array(4);
+  // 16 hex digits, so an id is effectively never in two scopes (tool
+  // prompts D18).
+  const bytes = new Uint8Array(8);
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 };
@@ -254,7 +262,7 @@ export interface EntryAccessOptions {
   shared?: SharedEntries;
   inProject: boolean;
   author: EntryAuthor;
-  /** Generates note ids. Default: 8 random hex digits. */
+  /** Generates note ids. Default: 16 random hex digits. */
   newNoteId?: () => string;
   /** Search. Left out: searching fails with an EntryError. */
   search?: EntrySearch;
@@ -276,10 +284,12 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
         : `The ${scope} scope is not available.`,
     );
   };
-  const listScopes = (scope?: Scope): Scope[] => {
+  const listScopes = (scope?: ScopeFilter): Scope[] => {
     if (scope === undefined) return scopes;
-    requireScope(scope);
-    return [scope];
+    const wanted: readonly Scope[] =
+      typeof scope === "string" ? [scope] : scope;
+    wanted.forEach(requireScope);
+    return scopes.filter((s) => wanted.includes(s));
   };
   const sessionOp = (op: EntryOp) => {
     applyEntryOp(session, op);

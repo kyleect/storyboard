@@ -18,6 +18,7 @@ function context(answer: InputAnswer) {
     update: () => {},
     state: undefined,
     projectId: null,
+    projectName: null,
     entries: createEntryAccess({
       session: replaySessionEntries([]),
       sessionOps: [],

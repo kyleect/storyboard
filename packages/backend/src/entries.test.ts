@@ -12,7 +12,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { runAnsweringForms, tempDatabase } from "./test-helpers.js";
 
 /* Files and memory (files and memory design): routes, tools, purge. */
 
@@ -83,12 +83,18 @@ async function newProject(app: FastifyInstance) {
   return body.id as string;
 }
 
-async function send(app: FastifyInstance, runs: RunManager, id: string) {
+/** Sends a message and waits for the run, answering its forms in order. */
+async function send(
+  app: FastifyInstance,
+  runs: RunManager,
+  id: string,
+  answers: Record<string, unknown>[] = [],
+) {
   const run = await api(app, "POST", `/api/sessions/${id}/messages`, {
     content: "Go",
   });
   expect(run.status).toBe(202);
-  await expect.poll(() => runs.isActive(run.body.runId)).toBe(false);
+  await runAnsweringForms(runs, id, run.body.runId as string, answers);
   return run.body.runId as string;
 }
 
@@ -238,7 +244,7 @@ describe("project files", () => {
 
 describe("the model's tools", () => {
   it("writes every scope, with versions naming the session and run", async () => {
-    const { app, runs, model } = await setup([
+    const { app, runs, model, store } = await setup([
       [
         call("c1", "files_write", {
           scope: "session",
@@ -265,7 +271,42 @@ describe("the model's tools", () => {
     ]);
     const p = await newProject(app);
     const id = await newSession(app, p);
-    const runId = await send(app, runs, id);
+    // The user confirms the scope of each new file and note (tool prompts).
+    const runId = await send(app, runs, id, [
+      { scope: "session" },
+      { scope: "global" },
+      { scope: "project", remember: false },
+    ]);
+    const prompts = store
+      .listMessages(id)
+      .flatMap((m) => (m.message.role === "tool" ? [m.message.prompt] : []));
+    expect(prompts).toEqual([
+      {
+        title: 'Save "plan.md" where?',
+        answers: [
+          { question: "Save to", answer: "This conversation only (suggested)" },
+        ],
+      },
+      {
+        title: 'Save "style" where?',
+        answers: [
+          { question: "Save to", answer: "Every conversation (suggested)" },
+        ],
+      },
+      {
+        title: "Save this note where?",
+        answers: [
+          {
+            question: "Save to",
+            answer: 'Every conversation in "P" (suggested)',
+          },
+          {
+            question: "Use this for my notes for the rest of this session",
+            answer: "No",
+          },
+        ],
+      },
+    ]);
 
     const first = model.requests[0] as ChatRequest;
     expect(first.messages[0]).toEqual({
@@ -325,7 +366,7 @@ describe("session files and notes", () => {
         { type: "finish", reason: "stop" },
       ],
       [
-        call("c2", "files_read", { scope: "session", key: "a" }),
+        call("c2", "files_read", { key: "a" }),
         { type: "finish", reason: "tool_calls" },
       ],
       [
@@ -334,7 +375,7 @@ describe("session files and notes", () => {
       ],
     ]);
     const id = await newSession(app);
-    await send(app, runs, id);
+    await send(app, runs, id, [{ scope: "session", remember: false }]);
 
     const put = await api(app, "PUT", `/api/sessions/${id}/files/a`, {
       type: "plain",
@@ -469,7 +510,7 @@ describe("purge", () => {
       ],
     ]);
     const id = await newSession(app);
-    await send(app, runs, id);
+    await send(app, runs, id, [{ scope: "global" }]);
     await api(app, "POST", `/api/sessions/${id}/trash`);
     expect((await api(app, "DELETE", `/api/sessions/${id}`)).status).toBe(200);
     const g = await api(app, "GET", "/api/global/files/g");

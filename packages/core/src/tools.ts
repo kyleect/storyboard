@@ -27,6 +27,8 @@ export interface ToolContext {
   state: unknown;
   /** The session's project; null for a standalone session. */
   projectId: string | null;
+  /** The project's name, for forms; null for a standalone session. */
+  projectName: string | null;
   /**
    * Files and memory notes (files and memory design, decision 21). Changes
    * to session-scoped entries are recorded with this call's result, and
@@ -35,8 +37,10 @@ export interface ToolContext {
   entries: EntryAccess;
   /**
    * Shows the user a form in the chat and waits for the answer, for as long
-   * as it takes (input forms design, D2). Rejects when the run is cancelled
-   * or the run cannot ask.
+   * as it takes (input forms design, D2). Rejects when the run is cancelled,
+   * the run cannot ask, or the tool already asked during this call (tool
+   * prompts D10). A tool's form and its answer are kept with the call's
+   * result (D9).
    */
   requestInput: (form: Form) => Promise<InputAnswer>;
 }
