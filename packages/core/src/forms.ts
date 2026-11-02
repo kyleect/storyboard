@@ -110,6 +110,12 @@ export const FormField = z.discriminatedUnion("kind", [
     multiline: z.boolean(),
     minLength: z.number().optional(),
     maxLength: z.number().optional(),
+    /**
+     * A regular expression the whole answer must match, and the error shown
+     * when it doesn't (tool prompts Q20). Only forms built by tools set it.
+     */
+    pattern: z.string().optional(),
+    patternMessage: z.string().optional(),
     default: z.string().optional(),
   }),
   z.object({
@@ -421,6 +427,10 @@ function checkField(
         return { error: `Write at least ${field.minLength} characters.` };
       if (field.maxLength !== undefined && value.length > field.maxLength)
         return { error: `Write at most ${field.maxLength} characters.` };
+      if (field.pattern !== undefined && !new RegExp(field.pattern).test(value))
+        return {
+          error: field.patternMessage ?? "This is not in the expected form.",
+        };
       return { value };
     }
     case "choice": {

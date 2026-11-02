@@ -67,7 +67,12 @@ export class EntryError extends Error {
   override name = "EntryError";
 }
 
-const FILE_KEY = /^[A-Za-z0-9._-]+$/;
+/**
+ * The file key rule as a pattern, for forms that ask for a key (tool
+ * prompts Q20).
+ */
+export const FILE_KEY_PATTERN = "^[A-Za-z0-9._-]+$";
+const FILE_KEY = new RegExp(FILE_KEY_PATTERN);
 
 /** Letters, digits, "-", "_" and "."; case-sensitive (decision 6). */
 export function checkFileKey(key: string): void {

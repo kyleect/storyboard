@@ -80,9 +80,11 @@ function context(
 }
 
 describe("files_write", () => {
-  it("asks where a new file goes, with the suggestion preselected", async () => {
+  const NAME_RULE = 'Use only letters, digits, "-", "_" and ".".';
+
+  it("asks for a new file's name and scope, with the suggestions filled in", async () => {
     const { ctx, forms, sessionOps } = context({
-      answers: [answer({ scope: "project" })],
+      answers: [answer({ name: "a.md", scope: "project" })],
     });
     expect(
       await filesWrite.execute(
@@ -94,9 +96,20 @@ describe("files_write", () => {
     });
     expect(forms).toEqual([
       {
-        title: 'Save "a.md" where?',
-        description: "New markdown file, 3 characters: # A",
+        title: "Save a new file",
+        description: "markdown file, 3 characters: # A",
         fields: [
+          {
+            name: "name",
+            label: "Name",
+            help: 'Letters, digits, "-", "_" and "." only; case-sensitive (for example characters.alice.md).',
+            required: true,
+            kind: "text",
+            multiline: false,
+            pattern: "^[A-Za-z0-9._-]+$",
+            patternMessage: NAME_RULE,
+            default: "a.md",
+          },
           {
             name: "scope",
             label: "Save to",
@@ -105,9 +118,9 @@ describe("files_write", () => {
             kind: "choice",
             options: ["session", "project", "global"],
             labels: {
-              session: "This conversation only",
-              project: 'Every conversation in "Ashfall" (suggested)',
-              global: "Every conversation",
+              session: "session",
+              project: "project (Ashfall) (suggested)",
+              global: "global",
             },
             default: "project",
           },
@@ -120,38 +133,70 @@ describe("files_write", () => {
     expect(ctx.entries.readFile("project", "a.md")?.value).toBe("# A");
   });
 
-  it("tells the model when the user overrode its suggestion", async () => {
-    const { ctx } = context({ answers: [answer({ scope: "session" })] });
+  it("needs only a value: no name, scope or type (Q18, Q19)", async () => {
+    const { ctx, forms } = context({
+      answers: [answer({ name: "hello.md", scope: "session" })],
+    });
+    expect(await filesWrite.execute({ value: "Hello" }, ctx)).toEqual({
+      data: {
+        scope: "session",
+        key: "hello.md",
+        type: "markdown",
+        created: true,
+      },
+    });
+    expect(forms[0]?.fields[0]).not.toHaveProperty("default");
+    expect(forms[0]?.fields[1]).not.toHaveProperty("default");
+    expect(forms[0]?.fields[1]).toMatchObject({
+      labels: { project: "project (Ashfall)" },
+    });
+  });
+
+  it("tells the model when the user changed the name or the scope", async () => {
+    const { ctx } = context({
+      answers: [answer({ name: "b.md", scope: "session" })],
+    });
     expect(
       await filesWrite.execute(
-        { key: "a", type: "plain", value: "x", scope: "global" },
+        { key: "a.md", type: "plain", value: "x", scope: "global" },
         ctx,
       ),
     ).toEqual({
       data: {
         scope: "session",
-        key: "a",
+        key: "b.md",
         type: "plain",
         created: true,
-        note: "The user chose the session scope instead of your suggestion (global).",
+        note: 'The user named the file "b.md" instead of your suggestion ("a.md"). The user chose the session scope instead of your suggestion (global).',
       },
     });
   });
 
-  it("preselects nothing without a suggestion", async () => {
-    const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    await filesWrite.execute({ key: "a", type: "plain", value: "x" }, ctx);
-    expect(forms[0]?.fields[0]).not.toHaveProperty("default");
-    expect(forms[0]?.fields[0]).toMatchObject({
-      labels: { project: 'Every conversation in "Ashfall"' },
+  it("replaces a file the user names that exists in the scope picked (Q21)", async () => {
+    const { ctx } = context({
+      answers: [answer({ name: "old", scope: "global" })],
     });
+    ctx.entries.writeFile("global", "old", "plain", "before");
+    expect(
+      await filesWrite.execute(
+        { key: "new", type: "plain", value: "after" },
+        ctx,
+      ),
+    ).toEqual({
+      data: {
+        scope: "global",
+        key: "old",
+        type: "plain",
+        created: false,
+        note: 'The user named the file "old" instead of your suggestion ("new"). This replaced the existing "old" in the global scope.',
+      },
+    });
+    expect(ctx.entries.readFile("global", "old")?.value).toBe("after");
   });
 
   it("saves a file that exists in one scope there, without asking", async () => {
-    const { ctx, forms } = context({
-      answers: [answer({ scope: "global" })],
-    });
-    await filesWrite.execute({ key: "a", type: "plain", value: "1" }, ctx);
+    const { ctx, forms } = context();
+    ctx.entries.writeFile("global", "a", "plain", "1");
     expect(
       await filesWrite.execute(
         { key: "a", type: "plain", value: "2", scope: "session" },
@@ -166,7 +211,7 @@ describe("files_write", () => {
         note: '"a" already exists in the global scope, so it was saved there.',
       },
     });
-    expect(forms).toHaveLength(1);
+    expect(forms).toEqual([]);
     expect(ctx.entries.readFile("global", "a")?.value).toBe("2");
   });
 
@@ -203,42 +248,40 @@ describe("files_write", () => {
     expect(ctx.entries.listFiles()).toEqual([]);
   });
 
-  it("rejects a bad key or value before asking", async () => {
-    const { ctx, forms } = context();
+  it("puts a bad suggested name in the form to be fixed; rejects bad JSON before asking", async () => {
+    const { ctx, forms } = context({
+      answers: [answer({ name: "a-b", scope: "session" })],
+    });
     expect(
       await filesWrite.execute({ key: "a/b", type: "plain", value: "" }, ctx),
-    ).toMatchObject({
-      isError: true,
-      details: { reason: "rejected", key: "a/b" },
-    });
+    ).toMatchObject({ data: { key: "a-b" } });
+    expect(forms[0]?.fields[0]).toMatchObject({ default: "a/b" });
     expect(
       await filesWrite.execute({ key: "a", type: "json", value: "{" }, ctx),
     ).toMatchObject({
       isError: true,
       details: { reason: "rejected", key: "a", type: "json" },
     });
-    expect(forms).toEqual([]);
+    expect(forms).toHaveLength(1);
   });
 
   it("offers only the scopes a standalone session has", async () => {
     const { ctx, forms } = context({
       inProject: false,
-      answers: [answer({ scope: "global" })],
+      answers: [answer({ name: "a", scope: "global" })],
     });
     await filesWrite.execute(
       { key: "a", type: "plain", value: "x", scope: "project" },
       ctx,
     );
-    expect(forms[0]?.fields[0]).toMatchObject({
+    expect(forms[0]?.fields[1]).toMatchObject({
       options: ["session", "global"],
     });
-    expect(forms[0]?.fields[0]).not.toHaveProperty("default");
+    expect(forms[0]?.fields[1]).not.toHaveProperty("default");
   });
 
-  it("takes an optional suggested scope and rejects an unknown type", () => {
-    expect(filesWrite.parse({ key: "a", type: "plain", value: "" }).ok).toBe(
-      true,
-    );
+  it("takes only a value, and rejects an unknown type", () => {
+    expect(filesWrite.parse({ value: "" }).ok).toBe(true);
     expect(filesWrite.parse({ key: "a", type: "html", value: "" }).ok).toBe(
       false,
     );
@@ -446,9 +489,9 @@ describe("files_list and memory_list", () => {
           kind: "multi",
           options: ["session", "project", "global"],
           labels: {
-            session: "This conversation only",
-            project: 'Every conversation in "Ashfall"',
-            global: "Every conversation (suggested)",
+            session: "session",
+            project: "project (Ashfall)",
+            global: "global (suggested)",
           },
           default: ["global"],
         },
@@ -576,6 +619,8 @@ describe("entriesInstruction", () => {
     expect(entriesInstruction(true)).toMatch(/in a project: yes\.$/);
     expect(entriesInstruction(false)).toMatch(/in a project: no\.$/);
     expect(entriesInstruction(true)).toMatch(/^You can keep information/);
-    expect(entriesInstruction(true)).toMatch(/suggest a scope/);
+    expect(entriesInstruction(true)).toMatch(
+      /leave out what you don't know, such as a file's name or scope/,
+    );
   });
 });

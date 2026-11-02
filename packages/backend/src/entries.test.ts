@@ -275,8 +275,8 @@ describe("the model's tools", () => {
     const id = await newSession(app, p);
     // The user confirms the scope of each new file and note (tool prompts).
     const runId = await send(app, runs, id, [
-      { scope: "session" },
-      { scope: "global" },
+      { name: "plan.md", scope: "session" },
+      { name: "style", scope: "global" },
       { scope: "project", remember: false },
     ]);
     const prompts = store
@@ -284,15 +284,17 @@ describe("the model's tools", () => {
       .flatMap((m) => (m.message.role === "tool" ? [m.message.prompt] : []));
     expect(prompts).toEqual([
       {
-        title: 'Save "plan.md" where?',
+        title: "Save a new file",
         answers: [
-          { question: "Save to", answer: "This conversation only (suggested)" },
+          { question: "Name", answer: "plan.md" },
+          { question: "Save to", answer: "session (suggested)" },
         ],
       },
       {
-        title: 'Save "style" where?',
+        title: "Save a new file",
         answers: [
-          { question: "Save to", answer: "Every conversation (suggested)" },
+          { question: "Name", answer: "style" },
+          { question: "Save to", answer: "global (suggested)" },
         ],
       },
       {
@@ -300,7 +302,7 @@ describe("the model's tools", () => {
         answers: [
           {
             question: "Save to",
-            answer: 'Every conversation in "P" (suggested)',
+            answer: "project (P) (suggested)",
           },
           {
             question: "Use this for my notes for the rest of this session",
@@ -512,7 +514,7 @@ describe("purge", () => {
       ],
     ]);
     const id = await newSession(app);
-    await send(app, runs, id, [{ scope: "global" }]);
+    await send(app, runs, id, [{ name: "g", scope: "global" }]);
     await api(app, "POST", `/api/sessions/${id}/trash`);
     expect((await api(app, "DELETE", `/api/sessions/${id}`)).status).toBe(200);
     const g = await api(app, "GET", "/api/global/files/g");

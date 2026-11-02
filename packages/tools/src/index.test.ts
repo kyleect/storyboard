@@ -9,6 +9,7 @@ describe("allTools", () => {
       "web_search",
       "read_webpage",
       "ask_user",
+      "read_wiki",
       "files_list",
       "files_read",
       "files_write",

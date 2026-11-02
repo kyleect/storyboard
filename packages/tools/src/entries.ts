@@ -3,6 +3,7 @@ import {
   checkFileKey,
   checkFileValue,
   defineTool,
+  FILE_KEY_PATTERN,
   EntryError,
   FileType,
   type Form,
@@ -85,6 +86,7 @@ const notDone = (text: string): ToolOutput => ({ data: text, isError: true });
 
 const KEY_RULE =
   'Letters, digits, "-", "_" and "." only; case-sensitive (for example characters.alice.md).';
+const FILE_KEY = new RegExp(FILE_KEY_PATTERN);
 
 // ---- Forms ---------------------------------------------------------------
 
@@ -92,13 +94,11 @@ const KEY_RULE =
 export function scopeLabel(scope: Scope, projectName: string | null): string {
   switch (scope) {
     case "session":
-      return "This conversation only";
+      return "session";
     case "project":
-      return projectName
-        ? `Every conversation in "${projectName}"`
-        : "Every conversation in this project";
+      return projectName ? `project (${projectName})` : "project";
     case "global":
-      return "Every conversation";
+      return "global";
   }
 }
 
@@ -372,55 +372,115 @@ export const filesRead = defineTool({
     }),
 });
 
+/** The question for a new file's name (tool prompts Q18, Q20). */
+const nameField = (suggested: string | undefined): FormField => ({
+  name: "name",
+  label: "Name",
+  help: KEY_RULE,
+  required: true,
+  kind: "text",
+  multiline: false,
+  pattern: FILE_KEY_PATTERN,
+  patternMessage: 'Use only letters, digits, "-", "_" and ".".',
+  ...(suggested ? { default: suggested } : {}),
+});
+
 export const filesWrite = defineTool({
   name: "files_write",
   description:
-    "Creates a file, or replaces its whole value. For a new file, suggest a scope; the user decides where it is saved, and the result says where it went. A file that already exists is saved in the scope it is in. The user can see and edit files too. type is how the value is shown: plain, markdown or json (json must be valid JSON).",
+    "Creates a file, or replaces its whole value. Call it as soon as you have the value, and leave out key or scope when you don't know them: for a new file the user is shown a form to name it and pick its scope, with your suggestions filled in. Don't ask the user for these in your reply. A file that already exists in one scope is saved there without asking. The result says the name and scope used. The user can see and edit files too. type is how the value is shown: plain, markdown (the default) or json (json must be valid JSON).",
   input: z.object({
-    key: z.string().describe(KEY_RULE),
-    type: FileType,
+    key: z
+      .string()
+      .optional()
+      .describe(`The file's name, if you have one to suggest. ${KEY_RULE}`),
+    type: FileType.optional(),
     value: z.string(),
     scope: SuggestedScope.optional(),
   }),
   approval: "never",
-  execute: ({ key, type, value, scope }, ctx) =>
+  execute: ({ key, type = "markdown", value, scope }, ctx) =>
     guarded({ key, type, scope }, async () => {
-      // A bad key or value fails before the user is asked.
-      checkFileKey(key);
+      // A bad value fails before the user is asked. A bad suggested name is
+      // shown in the form for the user to fix (Q18).
       checkFileValue(type, value);
-      const copies = fileCopies(ctx, key);
-      let target: Scope;
-      let note: string | undefined;
+      const named = key !== undefined && FILE_KEY.test(key) ? key : undefined;
+      const copies = named ? fileCopies(ctx, named) : [];
       const [only] = copies;
-      if (copies.length === 1 && only) {
+      const notes: string[] = [];
+      let target: Scope;
+      let name: string;
+      if (named && copies.length === 1 && only) {
         // Saved where it already is, without asking (D2).
         target = only;
+        name = named;
         if (scope && scope !== only)
-          note = `"${key}" already exists in the ${only} scope, so it was saved there.`;
-      } else {
-        const isNew = copies.length === 0;
-        const asked = await askScope(
-          ctx,
-          isNew ? ctx.entries.scopes : copies,
-          scope,
-          {
-            title: isNew ? `Save "${key}" where?` : `Replace which "${key}"?`,
-            description: isNew
-              ? `New ${type} file, ${value.length} characters: ${excerpt(value)}`
-              : several,
-            question: isNew ? "Save to" : "Copy",
-            submitLabel: "Save",
-            skipLabel: "Don't save",
-          },
-        );
+          notes.push(
+            `"${named}" already exists in the ${only} scope, so it was saved there.`,
+          );
+      } else if (named && copies.length > 1) {
+        const asked = await askScope(ctx, copies, scope, {
+          title: `Replace which "${named}"?`,
+          description: several,
+          question: "Copy",
+          submitLabel: "Save",
+          skipLabel: "Don't save",
+        });
         if (!asked)
           return notDone("Not saved: the user chose not to save this file.");
         target = asked.scope;
-        note = overrideNote(scope, target);
+        name = named;
+        const n = overrideNote(scope, target);
+        if (n) notes.push(n);
+      } else {
+        // A new file: the user names it and picks its scope (Q18, D1).
+        const choices = ctx.entries.scopes;
+        const marked = scope && choices.includes(scope) ? [scope] : [];
+        const answer = await ctx.requestInput({
+          title: "Save a new file",
+          description: `${type} file, ${value.length} characters: ${excerpt(value)}`,
+          fields: [
+            nameField(key),
+            {
+              name: "scope",
+              label: "Save to",
+              required: true,
+              noOther: true,
+              kind: "choice",
+              options: [...choices],
+              labels: labelsFor(ctx, choices, marked),
+              ...(marked[0] ? { default: marked[0] } : {}),
+            },
+          ],
+          submitLabel: "Save",
+          skipLabel: "Don't save",
+        });
+        if (answer.outcome === "skipped")
+          return notDone("Not saved: the user chose not to save this file.");
+        name = String(answer.answers["name"]);
+        target = answer.answers["scope"] as Scope;
+        checkFileKey(name);
+        if (key !== undefined && name !== key)
+          notes.push(
+            `The user named the file "${name}" instead of your suggestion ("${key}").`,
+          );
+        const n = overrideNote(scope, target);
+        if (n) notes.push(n);
       }
-      const created = ctx.entries.writeFile(target, key, type, value);
+      const created = ctx.entries.writeFile(target, name, type, value);
+      // A name the user typed can already exist in the scope picked (Q21).
+      if (!created && !(named && copies.length > 0))
+        notes.push(
+          `This replaced the existing "${name}" in the ${target} scope.`,
+        );
       return {
-        data: { scope: target, key, type, created, ...(note ? { note } : {}) },
+        data: {
+          scope: target,
+          key: name,
+          type,
+          created,
+          ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
+        },
       };
     }),
 });
@@ -668,7 +728,7 @@ export function entriesInstruction(inProject: boolean): string {
     "",
     "Memory: short notes you write for yourself. Search memory with memory_search when earlier knowledge could help, and save what is worth remembering with memory_add.",
     "",
-    "Both are kept at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). When you save something new, suggest a scope; the user decides where it goes, and the result says where it went. Lists and searches cover every scope unless you name some, and the user can change the scopes you name.",
+    "Both are kept at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). To save something new, call the tool right away with your suggestions and leave out what you don't know, such as a file's name or scope; the user fills in or changes them in a form, and the result says what was used. Don't ask the user for them in your reply. Lists and searches cover every scope unless you name some, and the user can change the scopes you name.",
     "",
     `This conversation is in a project: ${inProject ? "yes" : "no"}.`,
   ].join("\n");

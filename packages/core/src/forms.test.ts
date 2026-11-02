@@ -423,6 +423,30 @@ describe("forms built by tools (tool prompts design)", () => {
     });
   });
 
+  it("checks a text answer against a pattern (Q20)", () => {
+    const named: Form = {
+      fields: [
+        {
+          name: "name",
+          label: "Name",
+          required: true,
+          kind: "text",
+          multiline: false,
+          pattern: "^[a-z]+$",
+          patternMessage: "Lowercase letters only.",
+        },
+      ],
+    };
+    expect(checkAnswers(named, { name: "Ab" })).toEqual({
+      ok: false,
+      errors: { name: "Lowercase letters only." },
+    });
+    expect(checkAnswers(named, { name: "ab" })).toEqual({
+      ok: true,
+      answers: { name: "ab" },
+    });
+  });
+
   it("records the answers as shown, with option labels (D6, D9)", () => {
     expect(
       describePrompt(form, {

@@ -256,3 +256,41 @@ describe("AskUserForm for forms other tools show (tool prompts)", () => {
     expect(onAnswer).toHaveBeenCalledWith({ outcome: "skipped" });
   });
 });
+
+describe("AskUserForm name check (tool prompts Q20)", () => {
+  it("shows a pattern error next to the field and does not save", () => {
+    const onAnswer = vi.fn<(a: InputAnswer) => void>();
+    renderUi(
+      <AskUserForm
+        form={{
+          title: "Save a new file",
+          fields: [
+            {
+              name: "name",
+              label: "Name",
+              required: true,
+              kind: "text",
+              multiline: false,
+              pattern: "^[A-Za-z0-9._-]+$",
+              patternMessage: 'Use only letters, digits, "-", "_" and ".".',
+              default: "a/b",
+            },
+          ],
+          submitLabel: "Save",
+        }}
+        state={{ mode: "open", requestId: "r1", busy: false, onAnswer }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      screen.getByText('Use only letters, digits, "-", "_" and ".".'),
+    ).toBeTruthy();
+    expect(onAnswer).not.toHaveBeenCalled();
+    type("Name", "a-b");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onAnswer).toHaveBeenCalledWith({
+      outcome: "answered",
+      answers: { name: "a-b" },
+    });
+  });
+});
