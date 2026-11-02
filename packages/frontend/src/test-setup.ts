@@ -2,9 +2,10 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 /*
- * jsdom has no matchMedia, ResizeObserver or document.fonts, which Mantine
- * uses (the autosize Textarea listens on document.fonts); these stand-ins
- * do nothing.
+ * jsdom has no matchMedia, ResizeObserver, document.fonts or
+ * scrollIntoView, which Mantine uses (the autosize Textarea listens on
+ * document.fonts; a Select's dropdown scrolls to its selected option);
+ * these stand-ins do nothing.
  */
 
 window.matchMedia ??= (query: string) => ({
@@ -29,5 +30,7 @@ if (!("fonts" in document)) {
     value: { addEventListener: () => {}, removeEventListener: () => {} },
   });
 }
+
+Element.prototype.scrollIntoView ??= () => {};
 
 afterEach(cleanup);

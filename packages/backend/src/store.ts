@@ -267,6 +267,7 @@ export class Store {
         )
         .run(id);
       this.db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
+      this.db.prepare("DELETE FROM errors WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM runs WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
       this.db

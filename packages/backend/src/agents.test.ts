@@ -586,7 +586,13 @@ describe("sessions and agents", () => {
 
     // Deleting clears the pick, and the event names the session.
     await api(app, "DELETE", `/api/agents/${a.id}`);
-    expect(received.map((e) => [e.type, e.data.clearedSessions])).toEqual([
+    expect(
+      received.map((e) =>
+        e.type === "agents.changed"
+          ? [e.type, e.data.clearedSessions]
+          : [e.type],
+      ),
+    ).toEqual([
       ["agents.changed", []],
       ["agents.changed", []],
       ["agents.changed", [s]],

@@ -450,6 +450,7 @@ describe("loadMigrations", () => {
       "chunks_fts_idx",
       "entries",
       "entry_versions",
+      "errors",
       "events",
       "messages",
       "projects",

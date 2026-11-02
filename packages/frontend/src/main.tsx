@@ -17,6 +17,7 @@ import { token } from "./api";
 import { GlobalAgentsPage, ProjectAgentsPage } from "./routes/Agents";
 import { Chat } from "./routes/Chat";
 import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/Entries";
+import { ErrorsPage } from "./routes/Errors";
 import { Home, Layout } from "./routes/Layout";
 import { ProjectPage } from "./routes/ProjectPage";
 import { Settings } from "./routes/Settings";
@@ -53,6 +54,11 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: "/agents",
     component: GlobalAgentsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/errors",
+    component: ErrorsPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

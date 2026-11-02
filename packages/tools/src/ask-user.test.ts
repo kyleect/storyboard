@@ -100,6 +100,9 @@ describe("ask_user", () => {
     expect(result.data).toMatch(
       /^The form was not shown:\n- list: .*free text is not supported/,
     );
+    expect(result.details).toEqual({
+      formErrors: [expect.stringMatching(/^list: /) as unknown],
+    });
   });
 
   it("runs without asking, and tells the model about Other", () => {

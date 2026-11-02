@@ -8,7 +8,12 @@ import {
 } from "./events.js";
 import type { Form, InputAnswer } from "./forms.js";
 import { ScriptedModel, type ScriptStep } from "./fake-model.js";
-import { runLoop, type ApprovalRequest, type LoopContext } from "./loop.js";
+import {
+  runLoop,
+  type ApprovalRequest,
+  type LoopContext,
+  type ToolErrorReport,
+} from "./loop.js";
 import type {
   AssistantMessage,
   Message,
@@ -17,7 +22,8 @@ import type {
 import type { ChatRequest } from "./model.js";
 import { FakeSharedEntries } from "./fake-shared-entries.js";
 import { buildMessageContent } from "./message-state.js";
-import { defineTool, ToolRunError, type Tool } from "./tools.js";
+import { ASK_USER, DECLINED } from "./forms.js";
+import { defineTool, ToolError, ToolRunError, type Tool } from "./tools.js";
 
 const request: ChatRequest = {
   kind: "chat",
@@ -887,6 +893,242 @@ describe("cancelling", () => {
     expect((await running).reason).toBe("cancelled");
     expect(results(saved)[0]?.content).toBe("Not run: the run was cancelled.");
     expect(model.requests).toHaveLength(1);
+  });
+});
+
+describe("reporting errors (error reporting plan, P2)", () => {
+  /** Runs one call of `tool`, collecting what is reported. */
+  async function reportsFor(
+    tool: Tool,
+    args = '{"text":"a"}',
+    extra: Partial<LoopContext> = {},
+  ) {
+    const reports: ToolErrorReport[] = [];
+    const { saved, ctx, model } = setup(
+      [[call("c1", tool.name, args)], [{ type: "text", text: "ok" }]],
+      { tools: [tool], reportError: (r) => reports.push(r), ...extra },
+    );
+    const result = await runLoop(model, request, ctx);
+    return { reports, saved, result };
+  }
+
+  it("reports a ToolError with its details, stack and arguments", async () => {
+    const tool = defineTool({
+      ...echoSpec,
+      execute: () => {
+        throw new ToolError("HTTP 404 Not Found", {
+          details: { status: 404 },
+        });
+      },
+    });
+    const { reports, saved } = await reportsFor(tool);
+    const stored = saved.find((s) => s.message.role === "tool");
+    expect(reports).toEqual([
+      {
+        kind: "tool_threw",
+        callId: "c1",
+        toolName: "echo",
+        messageId: stored?.id,
+        message: "echo failed: HTTP 404 Not Found",
+        details: { status: 404 },
+        stack: expect.stringContaining("HTTP 404 Not Found") as unknown,
+        arguments: { text: "a" },
+        endsRun: false,
+      },
+    ]);
+    // The model gets the message only; the details stay out of it.
+    expect(stored?.message).toMatchObject({
+      content: "echo failed: HTTP 404 Not Found",
+      isError: true,
+    });
+    expect(JSON.stringify(stored?.message)).not.toContain("404}");
+  });
+
+  it("reports any thrown error, without details", async () => {
+    const tool = defineTool({
+      ...echoSpec,
+      execute: () => {
+        throw new TypeError("boom");
+      },
+    });
+    const { reports } = await reportsFor(tool);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      kind: "tool_threw",
+      message: "echo failed: boom",
+      stack: expect.stringContaining("TypeError: boom") as unknown,
+    });
+    expect(reports[0]).not.toHaveProperty("details");
+  });
+
+  it("reports a returned error in full, with its details", async () => {
+    const long = "x".repeat(50);
+    const tool = defineTool({
+      ...echoSpec,
+      execute: () => ({
+        data: { error: long },
+        isError: true,
+        details: { key: "k" },
+      }),
+    });
+    const { reports, saved } = await reportsFor(tool, '{"text":"a"}', {
+      errorLimit: 10,
+    });
+    expect(reports).toEqual([
+      expect.objectContaining({
+        kind: "tool_returned_error",
+        message: JSON.stringify({ error: long }),
+        details: { key: "k" },
+        arguments: { text: "a" },
+        endsRun: false,
+      }),
+    ]);
+    expect(reports[0]).not.toHaveProperty("stack");
+    expect(results(saved)[0]?.content).toMatch(/more characters/);
+  });
+
+  it("ignores details on a result that is not an error", async () => {
+    const tool = defineTool({
+      ...echoSpec,
+      execute: () => ({ data: "fine", details: { x: 1 } }),
+    });
+    const { reports } = await reportsFor(tool);
+    expect(reports).toEqual([]);
+  });
+
+  it("reports unknown tools, malformed calls and invalid arguments", async () => {
+    const reports: ToolErrorReport[] = [];
+    const { ctx, model } = setup(
+      [
+        [
+          call("c1", "nope", "{}"),
+          call("c2", "echo", "{bad"),
+          call("c3", "echo", '{"text":5}'),
+        ],
+        [{ type: "text", text: "sorry" }],
+      ],
+      { reportError: (r) => reports.push(r) },
+    );
+    await runLoop(model, request, ctx);
+    expect(reports.map((r) => [r.kind, r.callId, r.arguments])).toEqual([
+      ["unknown_tool", "c1", {}],
+      ["malformed_call", "c2", "{bad"],
+      ["invalid_arguments", "c3", { text: 5 }],
+    ]);
+    expect(reports[0]?.message).toBe('Unknown tool "nope".');
+    expect(reports[2]?.message).toMatch(/^Invalid arguments for echo:/);
+  });
+
+  it("reports a ToolRunError as ending the run, unprefixed", async () => {
+    const tool = defineTool({
+      ...echoSpec,
+      execute: () => {
+        throw new ToolRunError("cannot go on", { details: { why: "x" } });
+      },
+    });
+    const { reports, result } = await reportsFor(tool);
+    expect(result).toMatchObject({ reason: "failed", error: "cannot go on" });
+    expect(reports).toEqual([
+      expect.objectContaining({
+        kind: "tool_threw",
+        message: "cannot go on",
+        details: { why: "x" },
+        endsRun: true,
+      }),
+    ]);
+  });
+
+  it("does not report a denied call", async () => {
+    const tool = defineTool({
+      ...echoSpec,
+      approval: "ask",
+      execute: () => ({ data: "x" }),
+    });
+    const { reports } = await reportsFor(tool, '{"text":"a"}', {
+      approve: () => Promise.resolve({ choice: "deny" }),
+    });
+    expect(reports).toEqual([]);
+  });
+
+  it("does not report calls cut off at the token limit", async () => {
+    const reports: ToolErrorReport[] = [];
+    const { ctx, model } = setup(
+      [
+        [
+          call("c1", "echo", '{"text":"a"}'),
+          { type: "finish", reason: "length" },
+        ],
+        [{ type: "text", text: "ok" }],
+      ],
+      { reportError: (r) => reports.push(r) },
+    );
+    await runLoop(model, request, ctx);
+    expect(reports).toEqual([]);
+  });
+
+  it("does not report a call stopped by cancelling", async () => {
+    const controller = new AbortController();
+    const tool = defineTool({
+      ...echoSpec,
+      execute: (_i, ctx) =>
+        new Promise((_resolve, reject) => {
+          ctx.signal.addEventListener("abort", () =>
+            reject(new Error("aborted")),
+          );
+          controller.abort();
+        }),
+    });
+    const reports: ToolErrorReport[] = [];
+    const { ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')]],
+      { tools: [tool], reportError: (r) => reports.push(r) },
+      controller.signal,
+    );
+    expect((await runLoop(model, request, ctx)).reason).toBe("cancelled");
+    expect(reports).toEqual([]);
+  });
+
+  it("does not report a declined ask_user form, but reports its other errors", async () => {
+    const declining = defineTool({
+      name: ASK_USER,
+      description: "Asks.",
+      input: z.object({}),
+      approval: "never",
+      execute: () => ({ data: DECLINED, isError: true }),
+    });
+    expect((await reportsFor(declining, "{}")).reports).toEqual([]);
+
+    // Other ask_user errors (a form that could not be shown) are reported.
+    const bad = defineTool({
+      name: ASK_USER,
+      description: "Asks.",
+      input: z.object({}),
+      approval: "never",
+      execute: () => ({ data: "The form was not shown", isError: true }),
+    });
+    expect((await reportsFor(bad, "{}")).reports).toEqual([
+      expect.objectContaining({ kind: "tool_returned_error" }),
+    ]);
+
+    const asking = defineTool({
+      name: ASK_USER,
+      description: "Asks.",
+      input: z.object({}),
+      approval: "never",
+      execute: async (_i, ctx) => {
+        await ctx.requestInput({ title: "T", fields: [] });
+        return { data: "x" };
+      },
+    });
+    // No requestInput in the context: asking throws.
+    const { reports } = await reportsFor(asking, "{}");
+    expect(reports).toEqual([
+      expect.objectContaining({
+        kind: "tool_threw",
+        toolName: ASK_USER,
+        message: `${ASK_USER} failed: This run cannot ask the user for input.`,
+      }),
+    ]);
   });
 });
 

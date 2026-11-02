@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createEntryAccess,
   replaySessionEntries,
+  ToolError,
   type ToolContext,
 } from "@harness/core";
 import {
+  errorText,
   htmlToMarkdown,
   MAX_SEARCH_RESULTS,
   parseDuckDuckGoResults,
@@ -36,13 +38,33 @@ const PAGE = `<html><head><title>T</title>
 <h1>Hello</h1><p>A <a href="https://example.com">link</a>.</p></body></html>`;
 
 /** Replaces fetch; records the URLs asked for. */
-function fakeFetch(status: number, body: string) {
+function fakeFetch(status: number, body: string, init: ResponseInit = {}) {
   const urls: string[] = [];
   vi.stubGlobal("fetch", (url: string) => {
     urls.push(url);
-    return Promise.resolve(new Response(body, { status }));
+    return Promise.resolve(new Response(body, { status, ...init }));
   });
   return urls;
+}
+
+/** Makes fetch fail the way Node's does for an unknown host. */
+function failingFetch() {
+  const dns = Object.assign(new Error("getaddrinfo ENOTFOUND x.test"), {
+    code: "ENOTFOUND",
+  });
+  vi.stubGlobal("fetch", () =>
+    Promise.reject(new TypeError("fetch failed", { cause: dns })),
+  );
+}
+
+/** The ToolError a promise rejects with. */
+async function toolError(promise: Promise<unknown>): Promise<ToolError> {
+  const err = await promise.then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(ToolError);
+  return err as ToolError;
 }
 
 afterEach(() => {
@@ -221,11 +243,18 @@ describe("web_search", () => {
     });
   });
 
+  const SEARCH_URL = "https://lite.duckduckgo.com/lite/?q=x";
+
   it("throws when the page has nothing usable", async () => {
-    fakeFetch(200, "<html><body><p>Something else</p></body></html>");
-    await expect(webSearch.execute({ query: "x" }, ctx)).rejects.toThrow(
-      /no results that could be read/,
-    );
+    const body = "<html><body><p>Something else</p></body></html>";
+    fakeFetch(200, body);
+    const err = await toolError(webSearch.execute({ query: "x" }, ctx));
+    expect(err.message).toMatch(/no results that could be read/);
+    expect(err.details).toMatchObject({
+      url: SEARCH_URL,
+      status: 200,
+      bodyLength: body.length,
+    });
   });
 
   it("throws when DuckDuckGo serves a bot check", async () => {
@@ -233,15 +262,31 @@ describe("web_search", () => {
       200,
       `<html><body><form id="challenge-form"></form></body></html>`,
     );
-    await expect(webSearch.execute({ query: "x" }, ctx)).rejects.toThrow(
-      /bot check/,
-    );
+    const err = await toolError(webSearch.execute({ query: "x" }, ctx));
+    expect(err.message).toMatch(/bot check/);
+    expect(err.details).toMatchObject({ url: SEARCH_URL, status: 200 });
   });
 
-  it("throws when the request fails", async () => {
-    fakeFetch(500, "");
-    await expect(webSearch.execute({ query: "x" }, ctx)).rejects.toThrow(
-      /error trying search the internet/,
+  it("says which status the server answered with", async () => {
+    fakeFetch(503, "", { statusText: "Service Unavailable" });
+    const err = await toolError(webSearch.execute({ query: "x" }, ctx));
+    expect(err.message).toBe(
+      "The search failed: the server answered HTTP 503 Service Unavailable.",
+    );
+    expect(err.details).toEqual({
+      url: SEARCH_URL,
+      finalUrl: SEARCH_URL,
+      status: 503,
+      statusText: "Service Unavailable",
+      contentType: "text/plain;charset=UTF-8",
+    });
+  });
+
+  it("says why the request failed", async () => {
+    failingFetch();
+    const err = await toolError(webSearch.execute({ query: "x" }, ctx));
+    expect(err.message).toBe(
+      "The search failed: fetch failed (getaddrinfo ENOTFOUND x.test)",
     );
   });
 });
@@ -255,10 +300,87 @@ describe("read_webpage", () => {
     expect(urls).toEqual(["https://example.com/a"]);
   });
 
-  it("throws when the request fails", async () => {
-    fakeFetch(404, "");
-    await expect(
+  it("says which status the server answered with", async () => {
+    fakeFetch(404, "", { statusText: "Not Found" });
+    const err = await toolError(
       readWebpage.execute({ url: "https://example.com/a" }, ctx),
-    ).rejects.toThrow(/error fetching url/);
+    );
+    expect(err.message).toBe(
+      "Could not read https://example.com/a: the server answered HTTP 404 Not Found.",
+    );
+    expect(err.details).toMatchObject({
+      url: "https://example.com/a",
+      status: 404,
+      statusText: "Not Found",
+    });
+  });
+
+  it("leaves out a missing status text", async () => {
+    fakeFetch(500, "");
+    const err = await toolError(
+      readWebpage.execute({ url: "https://example.com/a" }, ctx),
+    );
+    expect(err.message).toBe(
+      "Could not read https://example.com/a: the server answered HTTP 500.",
+    );
+  });
+
+  it("says why the request failed, with the causes in the details", async () => {
+    failingFetch();
+    const err = await toolError(
+      readWebpage.execute({ url: "https://x.test/" }, ctx),
+    );
+    expect(err.message).toBe(
+      "Could not read https://x.test/: fetch failed (getaddrinfo ENOTFOUND x.test)",
+    );
+    expect(err.details).toEqual({
+      url: "https://x.test/",
+      error: "TypeError",
+      causes: [
+        {
+          name: "Error",
+          message: "getaddrinfo ENOTFOUND x.test",
+          code: "ENOTFOUND",
+        },
+      ],
+    });
+    expect(err.cause).toBeInstanceOf(TypeError);
+  });
+
+  it("says when the body cannot be read", async () => {
+    const response = new Response("x");
+    vi.spyOn(response, "text").mockRejectedValue(new Error("terminated"));
+    vi.stubGlobal("fetch", () => Promise.resolve(response));
+    const err = await toolError(
+      readWebpage.execute({ url: "https://example.com/a" }, ctx),
+    );
+    expect(err.message).toBe(
+      "Could not read https://example.com/a: the response could not be read: terminated",
+    );
+  });
+});
+
+describe("errorText", () => {
+  it("adds the causes that say something new", () => {
+    const inner = Object.assign(new Error(""), { code: "ECONNRESET" });
+    const middle = new Error("socket closed", { cause: inner });
+    expect(errorText(new Error("fetch failed", { cause: middle }))).toBe(
+      "fetch failed (socket closed: ECONNRESET)",
+    );
+    expect(errorText(new Error("plain"))).toBe("plain");
+    expect(errorText("text")).toBe("text");
+  });
+
+  it("uses an AggregateError's errors when it has no message", () => {
+    const all = new AggregateError(
+      [
+        new Error("connect ECONNREFUSED ::1:80"),
+        new Error("connect ECONNREFUSED 127.0.0.1:80"),
+      ],
+      "",
+    );
+    expect(errorText(new TypeError("fetch failed", { cause: all }))).toBe(
+      "fetch failed (connect ECONNREFUSED ::1:80; connect ECONNREFUSED 127.0.0.1:80)",
+    );
   });
 });

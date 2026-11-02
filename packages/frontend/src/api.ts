@@ -356,7 +356,73 @@ export interface ImportConflict {
   deleted: boolean;
 }
 
+/** A recorded error (error reporting plan, P5). */
+export interface ErrorEntry {
+  id: string;
+  sessionId: string;
+  sessionTitle: string;
+  /** Null: a standalone session. */
+  projectId: string | null;
+  projectName: string | null;
+  runId: string | null;
+  /** The tool result message, for the link to the transcript. */
+  messageId: string | null;
+  callId: string | null;
+  source: "tool" | "run";
+  kind:
+    | "tool_threw"
+    | "tool_returned_error"
+    | "unknown_tool"
+    | "invalid_arguments"
+    | "malformed_call"
+    | "run_failed";
+  toolName: string | null;
+  message: string;
+  details: Record<string, unknown> | null;
+  stack: string | null;
+  arguments: unknown;
+  createdAt: string;
+}
+
+/** Narrows the errors list. `projectId: "none"`: standalone sessions. */
+export interface ErrorFilter {
+  sessionId?: string;
+  projectId?: string;
+  source?: "tool" | "run";
+  tool?: string;
+}
+
+/** The values the global console's filters can take. */
+export interface ErrorFilterOptions {
+  sessions: { id: string; title: string; projectId: string | null }[];
+  projects: { id: string; name: string }[];
+  tools: string[];
+  /** Whether there are failed runs. */
+  runs: boolean;
+}
+
+/** Query keys for errors; invalidate ["errors"] to refresh every console. */
+export const errorsKey = (filter: ErrorFilter = {}) => ["errors", filter];
+export const errorFiltersKey = ["errors", "filters"];
+
 export const api = {
+  listErrors: (filter: ErrorFilter = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(filter).filter(
+        (e): e is [string, string] => e[1] !== undefined,
+      ),
+    ).toString();
+    return request<ErrorEntry[]>("GET", `/api/errors${q ? `?${q}` : ""}`);
+  },
+  errorFilters: () => request<ErrorFilterOptions>("GET", "/api/errors/filters"),
+  /** One session's errors, or every error the global console shows. */
+  clearErrors: (sessionId?: string) =>
+    request<{ cleared: number }>(
+      "DELETE",
+      `/api/errors${
+        sessionId ? `?${new URLSearchParams({ sessionId }).toString()}` : ""
+      }`,
+    ),
   listModels: () => request<ModelInfo[]>("GET", "/api/models"),
   /** Starts loading a model on the router; GET /api/models shows progress. */
   loadModel: (model: string) =>
@@ -545,7 +611,7 @@ export const api = {
     request<SettingsView>("PUT", "/api/settings", patch),
 };
 
-/** The app-wide event stream (agents.changed). */
+/** The app-wide event stream (agents.changed, errors.changed). */
 export function appEventsUrl(): string {
   return `/api/events?${new URLSearchParams({ token: token ?? "" }).toString()}`;
 }

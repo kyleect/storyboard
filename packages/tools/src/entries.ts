@@ -17,17 +17,33 @@ const Scope = z
     "session: this conversation only. project: every conversation in this project. global: every conversation.",
   );
 
-const fail = (error: string): ToolOutput => ({
+/** What a call was about, for error details. */
+type Target = Record<string, string | undefined>;
+
+/**
+ * Why a call failed, for the errors console (error reporting plan, P3):
+ * "not_found" for a missing file or note, "rejected" for an `EntryError`
+ * (a bad key, a missing project scope, invalid JSON).
+ */
+type Reason = "not_found" | "rejected";
+
+const fail = (error: string, reason: Reason, target: Target): ToolOutput => ({
   data: { error },
   isError: true,
+  details: {
+    reason,
+    ...Object.fromEntries(
+      Object.entries(target).filter(([, v]) => v !== undefined),
+    ),
+  },
 });
 
 /** Bad keys, a missing project scope and invalid JSON become error results. */
-const guarded = (run: () => ToolOutput): ToolOutput => {
+const guarded = (target: Target, run: () => ToolOutput): ToolOutput => {
   try {
     return run();
   } catch (err) {
-    if (err instanceof EntryError) return fail(err.message);
+    if (err instanceof EntryError) return fail(err.message, "rejected", target);
     throw err;
   }
 };
@@ -42,7 +58,9 @@ export const filesList = defineTool({
   input: z.object({ scope: Scope.optional() }),
   approval: "never",
   execute: ({ scope }, ctx) =>
-    guarded(() => ({ data: { files: ctx.entries.listFiles(scope) } })),
+    guarded({ scope }, () => ({
+      data: { files: ctx.entries.listFiles(scope) },
+    })),
 });
 
 export const filesRead = defineTool({
@@ -51,9 +69,13 @@ export const filesRead = defineTool({
   input: z.object({ scope: Scope, key: z.string().describe(KEY_RULE) }),
   approval: "never",
   execute: ({ scope, key }, ctx) =>
-    guarded(() => {
+    guarded({ scope, key }, () => {
       const file = ctx.entries.readFile(scope, key);
-      if (!file) return fail(`There is no ${scope} file "${key}".`);
+      if (!file)
+        return fail(`There is no ${scope} file "${key}".`, "not_found", {
+          scope,
+          key,
+        });
       return {
         data: { scope, key, type: file.type, value: file.value },
       };
@@ -72,7 +94,7 @@ export const filesWrite = defineTool({
   }),
   approval: "never",
   execute: ({ scope, key, type, value }, ctx) =>
-    guarded(() => {
+    guarded({ scope, key, type }, () => {
       const created = ctx.entries.writeFile(scope, key, type, value);
       return { data: { scope, key, type, created } };
     }),
@@ -85,10 +107,13 @@ export const filesDelete = defineTool({
   input: z.object({ scope: Scope, key: z.string().describe(KEY_RULE) }),
   approval: "never",
   execute: ({ scope, key }, ctx) =>
-    guarded(() =>
+    guarded({ scope, key }, () =>
       ctx.entries.deleteFile(scope, key)
         ? { data: { scope, key, deleted: true } }
-        : fail(`There is no ${scope} file "${key}".`),
+        : fail(`There is no ${scope} file "${key}".`, "not_found", {
+            scope,
+            key,
+          }),
     ),
 });
 
@@ -99,7 +124,9 @@ export const memoryList = defineTool({
   input: z.object({ scope: Scope.optional() }),
   approval: "never",
   execute: ({ scope }, ctx) =>
-    guarded(() => ({ data: { notes: ctx.entries.listNotes(scope) } })),
+    guarded({ scope }, () => ({
+      data: { notes: ctx.entries.listNotes(scope) },
+    })),
 });
 
 export const memoryAdd = defineTool({
@@ -109,7 +136,9 @@ export const memoryAdd = defineTool({
   input: z.object({ scope: Scope, text: z.string().min(1) }),
   approval: "never",
   execute: ({ scope, text }, ctx) =>
-    guarded(() => ({ data: { scope, id: ctx.entries.addNote(scope, text) } })),
+    guarded({ scope }, () => ({
+      data: { scope, id: ctx.entries.addNote(scope, text) },
+    })),
 });
 
 export const memoryUpdate = defineTool({
@@ -118,10 +147,13 @@ export const memoryUpdate = defineTool({
   input: z.object({ scope: Scope, id: z.string(), text: z.string().min(1) }),
   approval: "never",
   execute: ({ scope, id, text }, ctx) =>
-    guarded(() =>
+    guarded({ scope, id }, () =>
       ctx.entries.updateNote(scope, id, text)
         ? { data: { scope, id, updated: true } }
-        : fail(`There is no ${scope} memory note "${id}".`),
+        : fail(`There is no ${scope} memory note "${id}".`, "not_found", {
+            scope,
+            id,
+          }),
     ),
 });
 
@@ -131,21 +163,25 @@ export const memoryDelete = defineTool({
   input: z.object({ scope: Scope, id: z.string() }),
   approval: "never",
   execute: ({ scope, id }, ctx) =>
-    guarded(() =>
+    guarded({ scope, id }, () =>
       ctx.entries.deleteNote(scope, id)
         ? { data: { scope, id, deleted: true } }
-        : fail(`There is no ${scope} memory note "${id}".`),
+        : fail(`There is no ${scope} memory note "${id}".`, "not_found", {
+            scope,
+            id,
+          }),
     ),
 });
 
 /** Like `guarded`, for the async search tools. */
 const guardedAsync = async (
+  target: Target,
   run: () => Promise<ToolOutput>,
 ): Promise<ToolOutput> => {
   try {
     return await run();
   } catch (err) {
-    if (err instanceof EntryError) return fail(err.message);
+    if (err instanceof EntryError) return fail(err.message, "rejected", target);
     throw err;
   }
 };
@@ -164,7 +200,7 @@ export const filesSearch = defineTool({
   input: z.object({ query: Query, scope: Scope.optional(), limit: Limit }),
   approval: "never",
   execute: ({ query, scope, limit }, ctx) =>
-    guardedAsync(async () => {
+    guardedAsync({ scope }, async () => {
       const result = await ctx.entries.search("file", query, scope, limit ?? 5);
       return {
         data: {
@@ -186,7 +222,7 @@ export const memorySearch = defineTool({
   input: z.object({ query: Query, scope: Scope.optional(), limit: Limit }),
   approval: "never",
   execute: ({ query, scope, limit }, ctx) =>
-    guardedAsync(async () => {
+    guardedAsync({ scope }, async () => {
       const result = await ctx.entries.search("note", query, scope, limit ?? 5);
       return {
         data: {

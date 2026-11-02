@@ -86,25 +86,33 @@ describe("files tools", () => {
     ).toEqual({
       data: { error: 'There is no session file "nope".' },
       isError: true,
+      details: { reason: "not_found", scope: "session", key: "nope" },
     });
     expect(
-      (await filesRead.execute({ scope: "session", key: "a/b" }, ctx)).isError,
-    ).toBe(true);
+      await filesRead.execute({ scope: "session", key: "a/b" }, ctx),
+    ).toMatchObject({
+      isError: true,
+      details: { reason: "rejected", scope: "session", key: "a/b" },
+    });
     expect(
-      (
-        await filesWrite.execute(
-          { scope: "session", key: "a", type: "json", value: "{" },
-          ctx,
-        )
-      ).isError,
-    ).toBe(true);
+      await filesWrite.execute(
+        { scope: "session", key: "a", type: "json", value: "{" },
+        ctx,
+      ),
+    ).toMatchObject({
+      isError: true,
+      details: { reason: "rejected", scope: "session", key: "a", type: "json" },
+    });
     expect(await filesList.execute({ scope: "project" }, ctx)).toEqual({
       data: {
         error:
           "This conversation is not in a project, so there is no project scope.",
       },
       isError: true,
+      details: { reason: "rejected", scope: "project" },
     });
+    // A scope left out is left out of the details too.
+    expect(await filesList.execute({}, ctx)).not.toHaveProperty("details");
   });
 
   it("rejects an unknown type in the input", () => {
@@ -139,13 +147,21 @@ describe("memory tools", () => {
       await memoryDelete.execute({ scope: "project", id: "n1" }, ctx),
     ).toEqual({ data: { scope: "project", id: "n1", deleted: true } });
     expect(
-      (
-        await memoryUpdate.execute(
-          { scope: "project", id: "n1", text: "x" },
-          ctx,
-        )
-      ).isError,
-    ).toBe(true);
+      await memoryUpdate.execute(
+        { scope: "project", id: "n1", text: "x" },
+        ctx,
+      ),
+    ).toEqual({
+      data: { error: 'There is no project memory note "n1".' },
+      isError: true,
+      details: { reason: "not_found", scope: "project", id: "n1" },
+    });
+    expect(
+      await memoryDelete.execute({ scope: "project", id: "n1" }, ctx),
+    ).toMatchObject({
+      isError: true,
+      details: { reason: "not_found", scope: "project", id: "n1" },
+    });
   });
 });
 

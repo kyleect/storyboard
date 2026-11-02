@@ -3,9 +3,12 @@ import { z } from "zod";
 import type { Message } from "./messages.js";
 import {
   defineTool,
+  errorCauses,
   latestToolState,
   serializeResult,
   ToolDefinitionError,
+  ToolError,
+  ToolRunError,
   truncate,
 } from "./tools.js";
 
@@ -109,5 +112,47 @@ describe("truncate", () => {
   it("cuts long text and says how much was cut", () => {
     expect(truncate("abc", 3)).toBe("abc");
     expect(truncate("abcdef", 2)).toBe("ab… [4 more characters]");
+  });
+});
+
+describe("errorCauses", () => {
+  it("lists the cause chain, outermost first, with Node error codes", () => {
+    const dns = Object.assign(new Error("getaddrinfo ENOTFOUND x.test"), {
+      code: "ENOTFOUND",
+    });
+    const err = new TypeError("fetch failed", { cause: dns });
+    expect(errorCauses(err)).toEqual([
+      {
+        name: "Error",
+        message: "getaddrinfo ENOTFOUND x.test",
+        code: "ENOTFOUND",
+      },
+    ]);
+  });
+
+  it("handles a non-error cause, no cause and a cycle", () => {
+    expect(errorCauses(new Error("a", { cause: "text" }))).toEqual([
+      { name: "Error", message: "text" },
+    ]);
+    expect(errorCauses(new Error("a"))).toEqual([]);
+    expect(errorCauses("not an error")).toEqual([]);
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as { cause?: unknown }).cause = b;
+    expect(errorCauses(a)).toEqual([{ name: "Error", message: "b" }]);
+  });
+});
+
+describe("ToolError", () => {
+  it("keeps details and cause; ToolRunError is a ToolError", () => {
+    const cause = new Error("inner");
+    const err = new ToolError("outer", { details: { a: 1 }, cause });
+    expect(err.details).toEqual({ a: 1 });
+    expect(err.cause).toBe(cause);
+    expect(err.name).toBe("ToolError");
+    const run = new ToolRunError("stop");
+    expect(run).toBeInstanceOf(ToolError);
+    expect(run.details).toBeUndefined();
+    expect(run.name).toBe("ToolRunError");
   });
 });

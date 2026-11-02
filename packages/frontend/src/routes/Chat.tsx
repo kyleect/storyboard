@@ -16,8 +16,8 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useParams, useRouterState } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import {
   ASK_USER,
   DECLINED,
@@ -42,6 +42,7 @@ import { ApprovalDialog } from "./ApprovalDialog";
 import { AskUserForm, type AskUserState } from "./AskUserForm";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
+import { messageAnchor, SessionErrorsPanel } from "./Errors";
 import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
@@ -92,6 +93,40 @@ export function Chat() {
   const [draft, setDraft] = useState("");
   // Chat, or the session's files or memory (plan U3).
   const [tab, setTab] = useState<string>("chat");
+
+  // "Show in transcript" (error reporting plan, P7): scrolls to a message,
+  // from the errors panel, or from the address (#message-<id>) when opened
+  // from the errors page.
+  const hash = useRouterState({ select: (s) => s.location.hash }).replace(
+    /^#/,
+    "",
+  );
+  const hashTarget = hash.startsWith(messageAnchor("")) ? hash : null;
+  // The anchor to scroll to once it is shown, and the hash already handled.
+  const pendingScroll = useRef<string | null>(null);
+  const handledHash = useRef<string | null>(null);
+  const messageCount = detail.data?.messages.length ?? 0;
+  useEffect(() => {
+    if (hashTarget && handledHash.current !== hashTarget) {
+      pendingScroll.current = hashTarget;
+    }
+    const target = pendingScroll.current;
+    if (!target || tab !== "chat") return;
+    const el = document.getElementById(target);
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    pendingScroll.current = null;
+    if (target === hashTarget) handledHash.current = hashTarget;
+  }, [hashTarget, tab, messageCount]);
+  const showInTranscript = (messageId: string) => {
+    const target = messageAnchor(messageId);
+    const el = tab === "chat" ? document.getElementById(target) : null;
+    if (el) el.scrollIntoView({ block: "center" });
+    else {
+      pendingScroll.current = target;
+      setTab("chat");
+    }
+  };
 
   const onError = (err: Error) =>
     notifications.show({
@@ -352,7 +387,9 @@ export function Chat() {
           <Stack gap="sm" pr="md">
             {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
             {shown.map((m) => (
-              <MessageView key={m.id} {...m} notes={notes} asks={asks} />
+              <div key={m.id} id={messageAnchor(m.id)}>
+                <MessageView {...m} notes={notes} asks={asks} />
+              </div>
             ))}
             {toolRunning && (
               <Group gap="xs">
@@ -364,6 +401,14 @@ export function Chat() {
             )}
           </Stack>
         </ScrollArea>
+      )}
+
+      {/* Errors of a session in the trash are not shown (Q6). */}
+      {tab === "chat" && !trashed && (
+        <SessionErrorsPanel
+          sessionId={sessionId}
+          onShowInTranscript={showInTranscript}
+        />
       )}
 
       {tab === "chat" && (

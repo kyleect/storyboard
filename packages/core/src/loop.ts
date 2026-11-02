@@ -5,7 +5,7 @@ import {
   type SharedEntries,
 } from "./entries.js";
 import type { ApprovalAnswer, InputRequest } from "./events.js";
-import type { Form, InputAnswer } from "./forms.js";
+import { ASK_USER, DECLINED, type Form, type InputAnswer } from "./forms.js";
 import type {
   AssistantMessage,
   ContentBlock,
@@ -20,6 +20,7 @@ import {
   latestToolState,
   serializeResult,
   toolDefinitions,
+  ToolError,
   ToolRunError,
   truncate,
   type Tool,
@@ -36,6 +37,33 @@ export interface ApprovalRequest {
   callId: string;
   name: string;
   arguments: unknown;
+}
+
+/** What went wrong in a reported tool call (error reporting plan, P2). */
+export type ToolErrorKind =
+  | "tool_threw"
+  | "tool_returned_error"
+  | "unknown_tool"
+  | "invalid_arguments"
+  | "malformed_call";
+
+/** A tool error, for the errors console (error reporting plan, P2). */
+export interface ToolErrorReport {
+  kind: ToolErrorKind;
+  callId: string;
+  toolName: string;
+  /** The tool result message that holds the error. */
+  messageId: string;
+  /** The full error text: what the model got, before it was cut. */
+  message: string;
+  /** What the tool gave (`ToolOutput.details` or `ToolError.details`). */
+  details?: Record<string, unknown>;
+  /** The stack trace, for a thrown error. */
+  stack?: string;
+  /** The call's arguments; the raw text for a malformed call. */
+  arguments: unknown;
+  /** True when the error ends the run (`ToolRunError`). */
+  endsRun: boolean;
 }
 
 export interface LoopContext extends RunContext {
@@ -76,6 +104,13 @@ export interface LoopContext extends RunContext {
     message: AssistantMessage | ToolResultMessage,
     usage?: Usage,
   ) => void;
+  /**
+   * Called for each tool error worth showing in the errors console, after
+   * its tool result is stored: a tool threw or returned an error (except
+   * an `ask_user` form the user declined or skipped), an unknown tool, invalid arguments or
+   * a malformed call. Not for denied calls or calls not run.
+   */
+  reportError?: (report: ToolErrorReport) => void;
   /** Error text sent to the model is cut to this length. Default 2,000. */
   errorLimit?: number;
   /** `tool.result` previews are cut to this length. Default 500. */
@@ -150,7 +185,7 @@ export async function runLoop(
     return withUsage;
   };
 
-  /** Stores a tool result and sends `tool.result`. */
+  /** Stores a tool result and sends `tool.result`. Returns its id. */
   const addResult = (
     call: ToolCall,
     result: {
@@ -190,9 +225,13 @@ export async function runLoop(
         ...(result.error !== undefined ? { error: result.error } : {}),
       },
     });
+    return messageId;
   };
 
-  /** An error result; text longer than the limit is cut, the full kept. */
+  /**
+   * An error result; text longer than the limit is cut, the full kept.
+   * Returns its message id.
+   */
   const addError = (
     call: ToolCall,
     text: string,
@@ -200,7 +239,7 @@ export async function runLoop(
     note?: ToolResultMessage["note"],
   ) => {
     const content = truncate(text, errorLimit);
-    addResult(call, {
+    return addResult(call, {
       content,
       isError: true,
       ...(content !== text ? { error: text } : {}),
@@ -342,20 +381,61 @@ export async function runLoop(
     call: ToolCall,
     malformedError: string | undefined,
   ): Promise<string | undefined> {
+    /** Adds an error result and reports it. */
+    const addReported = (
+      kind: ToolErrorKind,
+      text: string,
+      extra: {
+        durationMs?: number;
+        note?: ToolResultMessage["note"];
+        details?: Record<string, unknown> | undefined;
+        stack?: string | undefined;
+        endsRun?: boolean;
+      } = {},
+    ) => {
+      const messageId = addError(call, text, extra.durationMs, extra.note);
+      report(kind, messageId, text, extra);
+    };
+    const report = (
+      kind: ToolErrorKind,
+      messageId: string,
+      text: string,
+      extra: {
+        details?: Record<string, unknown> | undefined;
+        stack?: string | undefined;
+        endsRun?: boolean;
+      },
+    ) => {
+      ctx.reportError?.({
+        kind,
+        callId: call.callId,
+        toolName: call.name,
+        messageId,
+        message: text,
+        ...(extra.details !== undefined ? { details: extra.details } : {}),
+        ...(extra.stack !== undefined ? { stack: extra.stack } : {}),
+        arguments: call.arguments,
+        endsRun: extra.endsRun ?? false,
+      });
+    };
+
     if (malformedError !== undefined) {
-      addError(call, malformedError);
+      addReported("malformed_call", malformedError);
       return;
     }
     const tool = ctx.tools.find((t) => t.name === call.name);
     // The user's note from the approval prompt, kept on the call's result.
     let note: ToolResultMessage["note"];
     if (!tool) {
-      addError(call, `Unknown tool "${call.name}".`);
+      addReported("unknown_tool", `Unknown tool "${call.name}".`);
       return;
     }
     const parsed = tool.parse(call.arguments);
     if (!parsed.ok) {
-      addError(call, `Invalid arguments for ${tool.name}:\n${parsed.error}`);
+      addReported(
+        "invalid_arguments",
+        `Invalid arguments for ${tool.name}:\n${parsed.error}`,
+      );
       return;
     }
 
@@ -450,7 +530,7 @@ export async function runLoop(
       });
       const text = serializeResult(output.data);
       const content = output.isError ? truncate(text, errorLimit) : text;
-      addResult(call, {
+      const messageId = addResult(call, {
         content,
         isError: output.isError ?? false,
         data: output.data,
@@ -461,18 +541,30 @@ export async function runLoop(
         ...(note ? { note } : {}),
         durationMs: elapsed(),
       });
+      // A declined or skipped form is the user's choice, not an error (O1).
+      const declined = tool.name === ASK_USER && output.data === DECLINED;
+      if (output.isError && !declined) {
+        report("tool_returned_error", messageId, text, {
+          details: output.details,
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const thrown = {
+        durationMs: elapsed(),
+        note,
+        details: err instanceof ToolError ? err.details : undefined,
+        stack: err instanceof Error ? err.stack : undefined,
+      };
       if (err instanceof ToolRunError) {
-        addError(call, message, elapsed(), note);
+        addReported("tool_threw", message, { ...thrown, endsRun: true });
         return message;
       }
-      addError(
-        call,
-        ctx.signal.aborted ? notRun() : `${tool.name} failed: ${message}`,
-        elapsed(),
-        note,
-      );
+      if (ctx.signal.aborted) {
+        addError(call, notRun(), elapsed(), note);
+        return;
+      }
+      addReported("tool_threw", `${tool.name} failed: ${message}`, thrown);
     }
   }
 }

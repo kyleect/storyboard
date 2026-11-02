@@ -29,6 +29,7 @@ export const askUser = defineTool({
       return {
         data: `The form was not shown:\n${read.errors.map((e) => `- ${e}`).join("\n")}`,
         isError: true,
+        details: { formErrors: read.errors },
       };
     }
     const answer = await ctx.requestInput(read.form);

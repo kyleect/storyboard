@@ -48,6 +48,12 @@ export interface ToolOutput {
   state?: unknown;
   /** Marks the result as an error; the run continues. */
   isError?: boolean;
+  /**
+   * Extra detail about an error result for the errors console (error
+   * reporting plan, P1). Read only when `isError` is true; never sent to
+   * the model.
+   */
+  details?: Record<string, unknown>;
 }
 
 export interface Tool {
@@ -75,12 +81,79 @@ export interface ToolSpec<S extends z.ZodType> {
   ) => Promise<ToolOutput> | ToolOutput;
 }
 
+/** Options for `ToolError` and `ToolRunError`. */
+export interface ToolErrorOptions {
+  /** Extra detail for the errors console; never sent to the model. */
+  details?: Record<string, unknown>;
+  cause?: unknown;
+}
+
+/**
+ * Thrown by a tool that failed. The model gets the message, as for any
+ * thrown error; the errors console also gets `details` (error reporting
+ * plan, P1).
+ */
+export class ToolError extends Error {
+  override name = "ToolError";
+  readonly details: Record<string, unknown> | undefined;
+
+  constructor(message: string, options: ToolErrorOptions = {}) {
+    super(
+      message,
+      options.cause !== undefined ? { cause: options.cause } : undefined,
+    );
+    this.details = options.details;
+  }
+}
+
 /**
  * Thrown by a tool when continuing the run is pointless. Ends the run as
  * failed instead of returning an error result to the model (6.6).
  */
-export class ToolRunError extends Error {
+export class ToolRunError extends ToolError {
   override name = "ToolRunError";
+}
+
+/** One error in a cause chain, for error details. */
+export interface ErrorCause {
+  name: string;
+  message: string;
+  /** A Node error code, such as "ENOTFOUND", when there is one. */
+  code?: string;
+}
+
+/**
+ * The causes of an error, outermost first, not including the error itself.
+ * Stops at 10, and at a cycle.
+ */
+export function errorCauses(err: unknown): ErrorCause[] {
+  const causes: ErrorCause[] = [];
+  const seen = new Set<unknown>([err]);
+  let cause = err instanceof Error ? err.cause : undefined;
+  while (cause !== undefined && !seen.has(cause) && causes.length < 10) {
+    seen.add(cause);
+    causes.push(describeError(cause));
+    cause = cause instanceof Error ? cause.cause : undefined;
+  }
+  return causes;
+}
+
+function describeError(err: unknown): ErrorCause {
+  if (!(err instanceof Error)) return { name: "Error", message: String(err) };
+  const code = (err as { code?: unknown }).code;
+  // An AggregateError (e.g. every address of a host refused) often has no
+  // message of its own; its errors say what happened.
+  const message =
+    err.message === "" && err instanceof AggregateError
+      ? err.errors
+          .map((e) => (e instanceof Error ? e.message : String(e)))
+          .join("; ")
+      : err.message;
+  return {
+    name: err.name,
+    message,
+    ...(typeof code === "string" ? { code } : {}),
+  };
 }
 
 export class ToolDefinitionError extends Error {

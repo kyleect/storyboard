@@ -4,17 +4,29 @@
  * window refetches what it shows when its stream opens or reopens.
  */
 
-export type AppEvent = {
-  type: "agents.changed";
-  data: {
-    /** The agent created, saved, deleted, restored or imported. */
-    agentId: string;
-    /** Null: a global agent. */
-    projectId: string | null;
-    /** Sessions whose pick was cleared (a delete; decision 23). */
-    clearedSessions: string[];
-  };
-};
+export type AppEvent =
+  | {
+      type: "agents.changed";
+      data: {
+        /** The agent created, saved, deleted, restored or imported. */
+        agentId: string;
+        /** Null: a global agent. */
+        projectId: string | null;
+        /** Sessions whose pick was cleared (a delete; decision 23). */
+        clearedSessions: string[];
+      };
+    }
+  | {
+      /**
+       * An error was recorded, or errors were cleared (error reporting
+       * plan, P6).
+       */
+      type: "errors.changed";
+      data: {
+        /** The session whose errors changed; null: a global Clear. */
+        sessionId: string | null;
+      };
+    };
 
 type Listener = (event: AppEvent) => void;
 

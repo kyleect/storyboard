@@ -193,6 +193,10 @@ export function Layout() {
             label="Agents"
           />
           <NavLink
+            renderRoot={(props) => <Link {...props} to="/errors" />}
+            label="Errors"
+          />
+          <NavLink
             renderRoot={(props) => <Link {...props} to="/settings" />}
             label="Settings"
           />

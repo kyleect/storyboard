@@ -24,6 +24,8 @@ import {
   type Usage,
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
+import { AppEvents } from "./app-events.js";
+import { ErrorStore, type NewError } from "./errors-store.js";
 import { cleanTitle, requestTitle } from "./auto-title.js";
 import type { Settings } from "./settings.js";
 import type { EntryStore } from "./entries-store.js";
@@ -135,6 +137,10 @@ export interface RunManagerOptions {
   index?: SearchIndex;
   /** The search tools' backend for a session. Left out: search fails. */
   search?: (session: SessionRow) => EntrySearch;
+  /** Where tool errors and failed runs are recorded. Default: over `store.db`. */
+  errors?: ErrorStore;
+  /** App-wide events (`errors.changed`). Default: a new one. */
+  events?: AppEvents;
   now?: () => string;
   newId?: () => string;
 }
@@ -162,6 +168,10 @@ export class RunManager {
   readonly tools: readonly Tool[];
   /** Tools every agent gets (agents design 8). */
   readonly alwaysOnTools: readonly string[];
+  /** Tool errors and failed runs (error reporting plan, P4). */
+  readonly errors: ErrorStore;
+  /** App-wide events; `errors.changed` is published here. */
+  readonly events: AppEvents;
 
   constructor(private readonly options: RunManagerOptions) {
     this.store = options.store;
@@ -169,6 +179,30 @@ export class RunManager {
     this.alwaysOnTools = options.alwaysOnTools ?? [];
     this.now = options.now ?? (() => new Date().toISOString());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.errors = options.errors ?? new ErrorStore(this.store.db, this.newId);
+    this.events = options.events ?? new AppEvents();
+  }
+
+  /** Records an error and tells every window (error reporting plan, P6). */
+  private recordError(error: NewError) {
+    this.errors.record(error, this.now());
+    this.events.publish({
+      type: "errors.changed",
+      data: { sessionId: error.sessionId },
+    });
+  }
+
+  /**
+   * Clears one session's errors, or every error the global console shows
+   * when `sessionId` is left out (O2). Returns how many were deleted.
+   */
+  clearErrors(sessionId?: string): number {
+    const cleared = this.errors.clear(sessionId);
+    this.events.publish({
+      type: "errors.changed",
+      data: { sessionId: sessionId ?? null },
+    });
+    return cleared;
   }
 
   /**
@@ -816,6 +850,8 @@ export class RunManager {
       }
     };
 
+    // A ToolRunError is recorded as its tool error only (O4).
+    let endedByTool = false;
     const execute = async () => {
       try {
         const result = await runLoop(this.options.model(settings), request, {
@@ -865,6 +901,22 @@ export class RunManager {
               );
             }),
           onMessage: saveMessage,
+          reportError: (report) => {
+            if (report.endsRun) endedByTool = true;
+            this.recordError({
+              sessionId,
+              runId,
+              messageId: report.messageId,
+              callId: report.callId,
+              source: "tool",
+              kind: report.kind,
+              toolName: report.toolName,
+              message: report.message,
+              details: report.details,
+              stack: report.stack,
+              arguments: report.arguments,
+            });
+          },
           cancelledText: () => (this.shuttingDown ? STOPPED_CALL : undefined),
         });
         const status =
@@ -882,6 +934,15 @@ export class RunManager {
           result.usage,
           result.error,
         );
+        if (result.reason === "failed" && !endedByTool) {
+          this.recordError({
+            sessionId,
+            runId,
+            source: "run",
+            kind: "run_failed",
+            message: result.error ?? "",
+          });
+        }
       } catch (err) {
         // Unexpected (for example a database error). Record what we can.
         const message = err instanceof Error ? err.message : String(err);
@@ -894,6 +955,14 @@ export class RunManager {
             data: { error: message },
           });
           this.store.endRun(runId, "failed", this.now(), undefined, message);
+          this.recordError({
+            sessionId,
+            runId,
+            source: "run",
+            kind: "run_failed",
+            message,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         } catch {
           // The database itself failed; recover() will handle it next start.
         }

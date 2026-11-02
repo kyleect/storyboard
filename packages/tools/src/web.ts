@@ -1,7 +1,7 @@
 import { createDocument } from "@mixmark-io/domino";
 import TurndownService from "turndown";
 import { z } from "zod";
-import { defineTool } from "@harness/core";
+import { defineTool, errorCauses, ToolError } from "@harness/core";
 
 /*
  * Web tools. Fetched HTML is converted to Markdown with Turndown. The
@@ -184,6 +184,68 @@ export function searchResultsToMarkdown(results: SearchResult[]): string {
     .join("\n");
 }
 
+/**
+ * The text of an error and its causes, for a message: "fetch failed
+ * (getaddrinfo ENOTFOUND example.com)". Node's fetch only says "fetch
+ * failed"; the reason is in its causes.
+ */
+export function errorText(err: unknown): string {
+  const top = err instanceof Error ? err.message : String(err);
+  const causes = errorCauses(err)
+    .map((c) => c.message || c.code || c.name)
+    .filter((m) => m !== "" && m !== top);
+  return causes.length > 0 ? `${top} (${causes.join(": ")})` : top;
+}
+
+/**
+ * Fetches a URL and reads its body. Throws a `ToolError` that says why,
+ * starting with `what`, when the request fails, the server answers with an
+ * error status or the body cannot be read (error reporting plan, P3).
+ */
+async function fetchText(
+  url: string,
+  what: string,
+): Promise<{ response: Response; text: string }> {
+  const failed = (err: unknown, step: string): ToolError =>
+    new ToolError(`${what}: ${step}${errorText(err)}`, {
+      cause: err,
+      details: {
+        url,
+        error: err instanceof Error ? err.name : "Error",
+        causes: errorCauses(err),
+      },
+    });
+
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (err) {
+    throw failed(err, "");
+  }
+  if (!response.ok) {
+    const status = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+    throw new ToolError(`${what}: the server answered ${status}.`, {
+      details: responseDetails(url, response),
+    });
+  }
+  try {
+    return { response, text: await response.text() };
+  } catch (err) {
+    throw failed(err, "the response could not be read: ");
+  }
+}
+
+/** What a response says about itself, for error details. */
+function responseDetails(url: string, response: Response) {
+  return {
+    url,
+    finalUrl: response.url || url,
+    status: response.status,
+    statusText: response.statusText,
+    contentType: response.headers.get("content-type"),
+  };
+}
+
 export const webSearch = defineTool({
   name: "web_search",
   description: "Search the internet using a query",
@@ -193,26 +255,26 @@ export const webSearch = defineTool({
   approval: "never",
   execute: async ({ query }) => {
     const q = encodeURIComponent(query);
-    const response = await fetch(`https://lite.duckduckgo.com/lite/?q=${q}`);
-
-    if (!response.ok) {
-      throw new Error(
-        "There was an error trying search the internet. No additional details found.",
-      );
-    }
-
-    const text = await response.text();
+    const url = `https://lite.duckduckgo.com/lite/?q=${q}`;
+    const { response, text } = await fetchText(url, "The search failed");
     const page = parseDuckDuckGoResults(text);
 
     if (page.kind === "challenge") {
-      throw new Error(
+      throw new ToolError(
         "The search engine asked for a bot check instead of returning results. Try again later.",
+        { details: responseDetails(url, response) },
       );
     }
 
     if (page.kind === "unrecognized") {
-      throw new Error(
+      throw new ToolError(
         "The search engine returned a page with no results that could be read.",
+        {
+          details: {
+            ...responseDetails(url, response),
+            bodyLength: text.length,
+          },
+        },
       );
     }
 
@@ -230,15 +292,7 @@ export const readWebpage = defineTool({
   }),
   approval: "never",
   execute: async ({ url }) => {
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(
-        "There was an error fetching url. No additional details found.",
-      );
-    }
-
-    const text = await response.text();
+    const { text } = await fetchText(url, `Could not read ${url}`);
 
     return {
       data: {

@@ -12,7 +12,13 @@ import {
   type RunAgent,
   type Usage,
 } from "@harness/core";
-import { appEventsUrl, entriesKey, eventsUrl, type SessionDetail } from "./api";
+import {
+  appEventsUrl,
+  entriesKey,
+  errorsKey,
+  eventsUrl,
+  type SessionDetail,
+} from "./api";
 
 /*
  * The in-flight run of each session, built from streamed events. A run can
@@ -207,6 +213,12 @@ export function useSessionEvents(
               queryKey: entriesKey({ scope: "session", id: sessionId }),
             });
           }
+          // The session's errors panel (error reporting plan, P6).
+          if (event.data.isError) {
+            void queryClient.invalidateQueries({
+              queryKey: errorsKey({ sessionId }),
+            });
+          }
           break;
         case "tool.approval_requested":
           state.update(sessionId, (run) => ({
@@ -241,6 +253,9 @@ export function useSessionEvents(
               color: "red",
               title: "Run failed",
               message: event.data.error,
+            });
+            void queryClient.invalidateQueries({
+              queryKey: errorsKey({ sessionId }),
             });
           }
           answering.delete(event.runId);
@@ -320,19 +335,25 @@ export function useSessionEvents(
 }
 
 /** An event on the app-wide stream (agents plan, P7). */
-interface AppEvent {
-  type: "agents.changed";
-  data: {
-    agentId: string;
-    projectId: string | null;
-    clearedSessions: string[];
-  };
-}
+type AppEvent =
+  | {
+      type: "agents.changed";
+      data: {
+        agentId: string;
+        projectId: string | null;
+        clearedSessions: string[];
+      };
+    }
+  | {
+      /** Errors recorded or cleared (error reporting plan, P6). */
+      type: "errors.changed";
+      data: { sessionId: string | null };
+    };
 
 /**
  * Listens to the app-wide stream for the whole app. Its events are not
- * replayed, so agent data is refetched whenever the stream opens or
- * reopens, then on each `agents.changed`.
+ * replayed, so agent data and errors are refetched whenever the stream
+ * opens or reopens, then on each `agents.changed` or `errors.changed`.
  */
 export function useAppEvents() {
   const queryClient = useQueryClient();
@@ -341,6 +362,8 @@ export function useAppEvents() {
       void queryClient.invalidateQueries({ queryKey: ["agents"] });
       void queryClient.invalidateQueries({ queryKey: ["session-agents"] });
     };
+    const refreshErrors = () =>
+      void queryClient.invalidateQueries({ queryKey: ["errors"] });
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 500;
@@ -350,9 +373,15 @@ export function useAppEvents() {
         delay = 500;
         // Anything that changed before the stream opened was not sent.
         refreshAgents();
+        refreshErrors();
       };
       source.onmessage = (msg: MessageEvent<string>) => {
         const event = JSON.parse(msg.data) as AppEvent;
+        if (event.type === "errors.changed") {
+          // Every list: the global one shows every session's errors.
+          refreshErrors();
+          return;
+        }
         if (event.type !== "agents.changed") return;
         refreshAgents();
         // A deleted agent is cleared from the sessions that had it picked.

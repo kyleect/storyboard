@@ -18,7 +18,7 @@ import {
 } from "@harness/core";
 import { registerAgentRoutes } from "./agent-routes.js";
 import { AgentStore } from "./agents-store.js";
-import { AppEvents, type AppEvent } from "./app-events.js";
+import type { AppEvents, AppEvent } from "./app-events.js";
 import { EntryStore } from "./entries-store.js";
 import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
@@ -43,7 +43,7 @@ export interface ServerOptions {
   entries?: EntryStore;
   /** Agents. Default: over `store.db`. */
   agents?: AgentStore;
-  /** The app-wide event stream's source. Default: a new one. */
+  /** The app-wide event stream's source. Default: the run manager's. */
   events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
   keepaliveMs?: number;
@@ -158,7 +158,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     entries: options.entries ?? new EntryStore(store.db, now, newId),
   });
 
-  const events = options.events ?? new AppEvents();
+  const events = options.events ?? runs.events;
   registerAgentRoutes(app, {
     store,
     runs,
@@ -545,6 +545,46 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       return reply.code(404).send({ error: "Run not found." });
     runs.answerInput(id, requestId, answer);
     return { ok: true };
+  });
+
+  /**
+   * Errors of sessions not in the trash, newest first (error reporting
+   * plan, P5). `projectId=none` means standalone sessions; `source` is
+   * "tool" or "run"; `tool` is a tool name.
+   */
+  app.get("/api/errors", async (req) => {
+    const q = z
+      .object({
+        sessionId: z.string().min(1).optional(),
+        projectId: z.string().min(1).optional(),
+        source: z.enum(["tool", "run"]).optional(),
+        tool: z.string().min(1).optional(),
+      })
+      .parse(req.query);
+    return runs.errors.list({
+      ...(q.sessionId !== undefined ? { sessionId: q.sessionId } : {}),
+      ...(q.projectId !== undefined
+        ? { projectId: q.projectId === "none" ? null : q.projectId }
+        : {}),
+      ...(q.source !== undefined ? { source: q.source } : {}),
+      ...(q.tool !== undefined ? { toolName: q.tool } : {}),
+    });
+  });
+
+  /** The sessions, projects and tools that have errors, for the filters. */
+  app.get("/api/errors/filters", async () => runs.errors.filterOptions());
+
+  /**
+   * Clear: one session's errors with `?sessionId=`, else every error the
+   * global console shows, whatever its filters (O2).
+   */
+  app.delete("/api/errors", async (req, reply) => {
+    const { sessionId } = z
+      .object({ sessionId: z.string().min(1).optional() })
+      .parse(req.query);
+    if (sessionId !== undefined && !store.getSession(sessionId))
+      return reply.code(404).send({ error: "Session not found." });
+    return { cleared: runs.clearErrors(sessionId) };
   });
 
   /** Every tool, with its approval default and whether it asks now. */
