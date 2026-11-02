@@ -2,7 +2,7 @@ import type { Tool } from "@harness/core";
 import { askUser } from "./ask-user.js";
 import { currentDate, currentTime } from "./clock.js";
 import { entryTools } from "./entries.js";
-import { webSearch, readWebpage } from "./web.js";
+import { webSearch, readWebpage, readWiki } from "./web.js";
 
 export { askUser, currentDate, currentTime };
 export * from "./entries.js";
@@ -14,5 +14,6 @@ export const allTools: readonly Tool[] = [
   webSearch,
   readWebpage,
   askUser,
+  readWiki,
   ...entryTools,
 ];

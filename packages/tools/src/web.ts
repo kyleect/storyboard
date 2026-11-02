@@ -301,3 +301,25 @@ export const readWebpage = defineTool({
     };
   },
 });
+
+export const readWiki = defineTool({
+  name: "read_wiki",
+  description: "Read a wikipedia article for a given topic",
+  input: z.object({
+    topic: z.string(),
+  }),
+  approval: "never",
+  execute: async ({ topic }) => {
+    const topicSlug = topic.split(" ").join("_");
+    const { text } = await fetchText(
+      `https://en.wikipedia.org/wiki/${topicSlug}`,
+      `Could not fetch wikipedia topic ${topicSlug}`,
+    );
+
+    return {
+      data: {
+        wiki_markdown: htmlToMarkdown(text),
+      },
+    };
+  },
+});
