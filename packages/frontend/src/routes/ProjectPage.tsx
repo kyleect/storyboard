@@ -36,7 +36,11 @@ export function ProjectPage() {
     queryFn: () => api.listSessions(projectId),
   });
 
-  const save = async (fields: { name?: string; description?: string }) => {
+  const save = async (fields: {
+    name?: string;
+    description?: string;
+    systemPrompt?: string;
+  }) => {
     const updated = await api.updateProject(projectId, fields);
     queryClient.setQueryData<Project>(["project", projectId], updated);
     // Editing counts as using the project; the picker shows the name.
@@ -103,11 +107,22 @@ export function ProjectPage() {
         </Button>
       </Group>
       <DefaultAgentSelect project={project.data} disabled={trashed} />
-      <Description
-        key={project.data.description}
+      <SavedText
+        key={`d:${project.data.description}`}
+        label="Description"
+        what="description"
         initial={project.data.description}
         disabled={trashed}
         onSave={(description) => save({ description })}
+      />
+      <SavedText
+        key={`p:${project.data.system_prompt}`}
+        label="System prompt"
+        help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none."
+        what="system prompt"
+        initial={project.data.system_prompt}
+        disabled={trashed}
+        onSave={(systemPrompt) => save({ systemPrompt })}
       />
 
       <Group justify="space-between">
@@ -165,15 +180,25 @@ export function ProjectPage() {
   );
 }
 
-/** The description, saved with its button. Remounted when it changes. */
-function Description({
+/**
+ * A project text (its description or system prompt), saved with its
+ * button. Remounted when it changes.
+ */
+function SavedText({
+  label,
+  help,
+  what,
   initial,
   disabled,
   onSave,
 }: {
+  label: string;
+  help?: string;
+  /** For the button and the error: "description", "system prompt". */
+  what: string;
   initial: string;
   disabled: boolean;
-  onSave: (description: string) => Promise<void>;
+  onSave: (text: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
@@ -181,7 +206,8 @@ function Description({
   return (
     <Stack gap="xs">
       <Textarea
-        label="Description"
+        label={label}
+        description={help}
         autosize
         minRows={2}
         maxRows={12}
@@ -199,11 +225,11 @@ function Description({
           onClick={() => {
             setSaving(true);
             onSave(draft)
-              .catch(showError("Could not save the description"))
+              .catch(showError(`Could not save the ${what}`))
               .finally(() => setSaving(false));
           }}
         >
-          Save description
+          Save {what}
         </Button>
       )}
     </Stack>

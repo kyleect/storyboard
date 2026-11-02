@@ -48,6 +48,8 @@ async function setup(
   env: NodeJS.ProcessEnv = {},
 ) {
   const t = tempDatabase();
+  // No global system prompt, so the system message is only what each test sets.
+  writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
@@ -844,6 +846,7 @@ describe("with llama-server's wire format", () => {
         ...DEFAULTS,
         llamaServerUrl: llamaUrl,
         autoRename: false,
+        systemPrompt: "",
       }),
       model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
       tools: allTools,

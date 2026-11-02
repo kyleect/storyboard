@@ -40,6 +40,12 @@ export const Settings = z.object({
   titleModel: z.string(),
   /** The system prompt of the title call (decision 3). */
   titlePrompt: z.string().min(1),
+  /**
+   * The global system prompt: first in the system message of every chat
+   * run, before the project's and the agent's (system prompts design,
+   * decisions 1 to 3). Empty: none.
+   */
+  systemPrompt: z.string(),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -56,6 +62,15 @@ export const DEFAULTS: Settings = {
   titleModel: "",
   titlePrompt:
     "Write a short title (at most 6 words) for a writing session that starts with the user's message below. Reply with the title only.",
+  systemPrompt: [
+    "You are a writing partner in Story Board, where the user writes short stories with your help.",
+    "",
+    "Help the user plan, draft, revise and talk through their stories. Their voice and choices come first: offer suggestions and options, and change no more than they ask for.",
+    "",
+    "When you need information or a decision from the user, ask with the ask_user tool rather than in your reply, and put related questions in one form. Don't ask for anything a tool asks the user itself: to save a file or a note, call the tool with your best suggestion (a file name, a scope), and the user confirms or changes it in a form.",
+    "",
+    "Before relying on earlier work, such as characters, settings, plot notes or style choices, look for it with files_search and memory_search.",
+  ].join("\n"),
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -70,6 +85,7 @@ const ENV: Record<keyof Settings, string> = {
   autoRenameSource: "HARNESS_AUTO_RENAME_SOURCE",
   titleModel: "HARNESS_TITLE_MODEL",
   titlePrompt: "HARNESS_TITLE_PROMPT",
+  systemPrompt: "HARNESS_SYSTEM_PROMPT",
 };
 
 const NUMERIC = new Set<keyof Settings>([

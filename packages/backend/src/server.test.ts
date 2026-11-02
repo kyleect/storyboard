@@ -37,6 +37,9 @@ async function setup(
     settings: () => ({
       ...readSettings(t.db, {}).effective,
       autoRename: false,
+      // No global system prompt, so the system message is only what each
+      // test sets.
+      systemPrompt: "",
     }),
     model: () => model,
   });

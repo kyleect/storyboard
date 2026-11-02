@@ -135,6 +135,8 @@ export interface Project {
   trashed_at: string | null;
   /** The agent new sessions start with; null: none. */
   default_agent_id: string | null;
+  /** Sent after the global system prompt; empty when there is none. */
+  system_prompt: string;
 }
 
 /** Everything in the trash. */
@@ -212,6 +214,11 @@ export interface Settings {
   titleModel: string;
   /** The system prompt of the title call. */
   titlePrompt: string;
+  /**
+   * The global system prompt, before the project's and the agent's in
+   * every chat run. Empty: none.
+   */
+  systemPrompt: string;
 }
 
 export interface SettingsView {
@@ -513,6 +520,7 @@ export const api = {
       description?: string;
       /** An agent id, or null for none. */
       defaultAgentId?: string | null;
+      systemPrompt?: string;
     },
   ) => request<Project>("PATCH", `/api/projects/${id}`, fields),
   trashProject: (id: string) =>

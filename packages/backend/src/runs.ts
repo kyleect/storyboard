@@ -127,8 +127,9 @@ export interface RunManagerOptions {
   entries?: EntryStore;
   /**
    * A system message put before the transcript of every model call; not
-   * stored. Undefined: none. An agent's prompt goes before it, in the same
-   * message (agents design 9).
+   * stored. Undefined: none. The global, project and agent prompts go
+   * before it, in that order, in the same message (agents design 9; system
+   * prompts design, decisions 1 and 2).
    */
   systemPrompt?: (session: SessionRow) => string | undefined;
   /** Generates memory note ids. Default: 16 random hex digits. */
@@ -798,10 +799,15 @@ export class RunManager {
     };
     const control = new RunControl();
     const base = session ? this.options.systemPrompt?.(session) : undefined;
-    // The agent's prompt, then the files and memory instruction (design 9).
+    const project = session?.project_id
+      ? this.store.getProject(session.project_id)
+      : undefined;
+    // Global, project and agent prompts, then the files and memory
+    // instruction (system prompts design, decisions 1 and 2). Empty ones
+    // are left out.
     const system =
-      [agent?.prompt, base]
-        .filter((p): p is string => p !== undefined && p !== "")
+      [settings.systemPrompt, project?.system_prompt, agent?.prompt, base]
+        .filter((p): p is string => p !== undefined && p.trim() !== "")
         .join("\n\n") || undefined;
     const request: ChatRequest = {
       kind: "chat",
@@ -865,9 +871,7 @@ export class RunManager {
           tools: this.toolsFor(agent),
           ...(runAgent ? { agent: runAgent } : {}),
           projectId: session?.project_id ?? null,
-          projectName: session?.project_id
-            ? (this.store.getProject(session.project_id)?.name ?? null)
-            : null,
+          projectName: project?.name ?? null,
           ...(this.options.entries
             ? {
                 sharedEntries: this.options.entries.shared(

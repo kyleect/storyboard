@@ -10,7 +10,7 @@ import { allTools, entriesInstruction } from "@harness/tools";
 import { EntryStore } from "./entries-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
-import { readSettings } from "./settings.js";
+import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
 import { runAnsweringForms, tempDatabase } from "./test-helpers.js";
 
@@ -26,6 +26,8 @@ afterEach(async () => {
 
 async function setup(scripts: ScriptStep[][] = []) {
   const t = tempDatabase();
+  // No global system prompt, so the system message is only what each test sets.
+  writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let clock = 0;
   const now = () => `2026-11-01T00:00:${String(++clock).padStart(2, "0")}Z`;

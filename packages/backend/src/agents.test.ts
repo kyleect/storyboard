@@ -14,7 +14,7 @@ import { AgentStore, type AgentContent } from "./agents-store.js";
 import { AppEvents, type AppEvent } from "./app-events.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
-import { readSettings } from "./settings.js";
+import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
 import { tempDatabase } from "./test-helpers.js";
 
@@ -50,6 +50,8 @@ const content = (over: Partial<AgentContent> = {}): AgentContent => ({
 
 async function setup(scripts: ScriptStep[][] = []) {
   const t = tempDatabase();
+  // No global system prompt, so the system message is only what each test sets.
+  writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let tick = 0;
   // Increasing times, so versions and events order predictably.
@@ -730,6 +732,52 @@ describe("sessions and agents", () => {
     });
     await waitIdle(runs, res.body.runId as string);
     expect(systemOf(model.requests[0])).toBe("BASE");
+  });
+});
+
+describe("system prompts (system prompts design)", () => {
+  it("sends global, project and agent prompts in that order, then the base", async () => {
+    const { app, runs, model, t } = await setup([answer, answer, answer]);
+    writeSettings(t.db, { systemPrompt: "Global." });
+    const p = await newProject(app);
+    const patched = await api(app, "PATCH", `/api/projects/${p}`, {
+      systemPrompt: "Project.",
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.system_prompt).toBe("Project.");
+    const a = await newAgent(app);
+    const send = async (session: string, agentId?: string) => {
+      const res = await api(app, "POST", `/api/sessions/${session}/messages`, {
+        content: "Hi",
+        ...(agentId ? { agentId } : {}),
+      });
+      await waitIdle(runs, res.body.runId as string);
+    };
+
+    await send(await newSession(app, p), a.id);
+    expect(systemOf(model.requests[0])).toBe(
+      "Global.\n\nProject.\n\nBe terse.\n\nBASE",
+    );
+    // A standalone session has no project prompt.
+    await send(await newSession(app));
+    expect(systemOf(model.requests[1])).toBe("Global.\n\nBASE");
+    // Empty or blank prompts are left out.
+    writeSettings(t.db, { systemPrompt: "  " });
+    await api(app, "PATCH", `/api/projects/${p}`, { systemPrompt: "" });
+    await send(await newSession(app, p));
+    expect(systemOf(model.requests[2])).toBe("BASE");
+  });
+
+  it("has a default global prompt, overridden by HARNESS_SYSTEM_PROMPT", () => {
+    const t = tempDatabase();
+    cleanups.push(t.cleanup);
+    expect(readSettings(t.db, {}).effective.systemPrompt).toMatch(
+      /^You are a writing partner in Story Board/,
+    );
+    expect(
+      readSettings(t.db, { HARNESS_SYSTEM_PROMPT: "From env." }).effective
+        .systemPrompt,
+    ).toBe("From env.");
   });
 });
 

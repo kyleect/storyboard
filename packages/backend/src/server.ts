@@ -428,10 +428,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
-   * Renames the project, changes its description or sets its default
-   * agent (an agent id, or null for none). A field left out is unchanged.
-   * Refused for a project in the trash. The default agent must be a live
-   * agent of the project or a global one.
+   * Renames the project, changes its description or system prompt, or sets
+   * its default agent (an agent id, or null for none). A field left out is
+   * unchanged. Refused for a project in the trash. The default agent must be
+   * a live agent of the project or a global one.
    */
   app.patch("/api/projects/:id", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
@@ -440,12 +440,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         name: Title.optional(),
         description: z.string().optional(),
         defaultAgentId: z.string().min(1).nullable().optional(),
+        systemPrompt: z.string().optional(),
       })
       .refine(
         (f) =>
           f.name !== undefined ||
           f.description !== undefined ||
-          f.defaultAgentId !== undefined,
+          f.defaultAgentId !== undefined ||
+          f.systemPrompt !== undefined,
         { message: "Nothing to change" },
       )
       .parse(req.body);

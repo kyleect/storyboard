@@ -33,8 +33,16 @@ import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
 
-/** The fields the main form saves; the session titles section has its own. */
-type MainSettings = Omit<SettingsShape, keyof TitleSettings>;
+/**
+ * The fields the main form saves; the system prompt and session titles
+ * sections have their own.
+ */
+type MainSettings = Omit<
+  SettingsShape,
+  keyof TitleSettings | keyof PromptSettings
+>;
+
+type PromptSettings = Pick<SettingsShape, "systemPrompt">;
 
 type TitleSettings = Pick<
   SettingsShape,
@@ -222,12 +230,58 @@ export function Settings() {
         </Stack>
       </form>
       <Divider />
+      <SystemPrompt view={query.data} />
+      <Divider />
       <SessionTitles view={query.data} />
       <Divider />
       <ToolApprovals />
       <Divider />
       <TrashSection />
     </Stack>
+  );
+}
+
+/**
+ * The global system prompt (system prompts design, decision 3), with its
+ * own Save.
+ */
+function SystemPrompt({ view }: { view: SettingsView }) {
+  const save = useSaveSettings();
+  const form = useForm<PromptSettings>({
+    initialValues: { systemPrompt: view.effective.systemPrompt },
+  });
+
+  useEffect(() => {
+    const values = { systemPrompt: view.effective.systemPrompt };
+    form.setValues(values);
+    form.resetDirty(values);
+    // Only when fresh data arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  const envNote = envNoteFor(view);
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack>
+        <Title order={4}>System prompt</Title>
+        <Textarea
+          label="Global system prompt"
+          description={
+            envNote("systemPrompt") ??
+            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none."
+          }
+          autosize
+          minRows={4}
+          maxRows={20}
+          disabled={!!view.overriddenByEnv.systemPrompt}
+          {...form.getInputProps("systemPrompt")}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
   );
 }
 

@@ -53,10 +53,15 @@ export interface ProjectRow {
   trashed_at: string | null;
   /** The agent new sessions start with; null: none (default agent design). */
   default_agent_id: string | null;
+  /**
+   * Sent after the global system prompt and before the agent's (system
+   * prompts design, decision 4). Empty when there is none.
+   */
+  system_prompt: string;
 }
 
 const PROJECT_COLUMNS =
-  "id, name, description, created_at, last_used_at, trashed_at, default_agent_id";
+  "id, name, description, created_at, last_used_at, trashed_at, default_agent_id, system_prompt";
 
 /** An agent version a run used (agents design, decisions 13, 14). */
 export interface AgentRef {
@@ -322,6 +327,7 @@ export class Store {
       last_used_at: project.now,
       trashed_at: null,
       default_agent_id: null,
+      system_prompt: "",
     };
   }
 
@@ -359,8 +365,14 @@ export class Store {
       name?: string;
       description?: string;
       defaultAgentId?: string | null;
+      systemPrompt?: string;
     },
   ) {
+    if (fields.systemPrompt !== undefined) {
+      this.db
+        .prepare("UPDATE projects SET system_prompt = ? WHERE id = ?")
+        .run(fields.systemPrompt, id);
+    }
     if (fields.name !== undefined) {
       this.db
         .prepare("UPDATE projects SET name = ? WHERE id = ?")
