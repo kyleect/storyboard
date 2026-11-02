@@ -11,6 +11,7 @@ import {
   NavLink,
   Paper,
   ScrollArea,
+  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -33,6 +34,7 @@ import {
   type EntryScope,
   type EntryVersion,
 } from "../api";
+import { Markdown } from "./Markdown";
 import { showError } from "./SessionActions";
 
 /*
@@ -51,8 +53,35 @@ const FILE_TYPES: { value: FileType; label: string }[] = [
 const KEY_RULE = 'Letters, digits, "-", "_" and "." only. Case-sensitive.';
 const FILE_KEY = /^[A-Za-z0-9._-]+$/;
 
-/** Plain and Markdown as text; JSON pretty-printed (plan U1). */
-function ValueView({ type, value }: { type?: FileType; value: string }) {
+/**
+ * Plain as text; JSON pretty-printed (plan U1); Markdown rendered, with a
+ * switch to its source (markdown rendering plan M2, M3). Exported for tests.
+ */
+export function ValueView({ type, value }: { type?: FileType; value: string }) {
+  const [showSource, setShowSource] = useState(false);
+  if (type === "markdown" && value !== "") {
+    return (
+      <Stack gap="xs">
+        <SegmentedControl
+          size="xs"
+          w="fit-content"
+          value={showSource ? "source" : "rendered"}
+          onChange={(v) => setShowSource(v === "source")}
+          data={[
+            { value: "rendered", label: "Rendered" },
+            { value: "source", label: "Source" },
+          ]}
+        />
+        {showSource ? (
+          <SourceView value={value} />
+        ) : (
+          <Paper p="sm" withBorder>
+            <Markdown>{value}</Markdown>
+          </Paper>
+        )}
+      </Stack>
+    );
+  }
   if (type === "json") {
     let pretty = value;
     try {
@@ -62,6 +91,11 @@ function ValueView({ type, value }: { type?: FileType; value: string }) {
     }
     return <Code block>{pretty}</Code>;
   }
+  return <SourceView value={value} />;
+}
+
+/** A value as stored, in monospace. */
+function SourceView({ value }: { value: string }) {
   return (
     <Paper p="sm" withBorder>
       <Text size="sm" ff="monospace" style={{ whiteSpace: "pre-wrap" }}>

@@ -43,6 +43,7 @@ import { AskUserForm, type AskUserState } from "./AskUserForm";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
+import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
@@ -551,7 +552,8 @@ export function Chat() {
 /** Approval notes by call id. */
 type Notes = ReadonlyMap<string, NonNullable<ToolResultMessage["note"]>>;
 
-function MessageView({
+/** Exported for tests. */
+export function MessageView({
   message,
   model,
   reasoningEffort,
@@ -567,7 +569,7 @@ function MessageView({
         <Text size="xs" c="dimmed">
           You
         </Text>
-        <Text style={{ whiteSpace: "pre-wrap" }}>{message.content}</Text>
+        <Markdown>{message.content}</Markdown>
       </Paper>
     );
   }
@@ -603,9 +605,7 @@ function MessageView({
         <Text size="xs" c="dimmed">
           Your edit to this session's files or memory
         </Text>
-        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-          {message.content}
-        </Text>
+        <Markdown size="sm">{message.content}</Markdown>
       </Paper>
     );
   }
@@ -670,7 +670,7 @@ function BlockView({
 }) {
   switch (block.type) {
     case "text":
-      return <Text style={{ whiteSpace: "pre-wrap" }}>{block.text}</Text>;
+      return <Markdown>{block.text}</Markdown>;
     case "reasoning":
       return live ? (
         <LiveReasoning text={block.text} usage={usage} />
@@ -720,9 +720,7 @@ function BlockView({
               <Text size="xs" c="dimmed">
                 Your note ({note.choice === "deny" ? "denied" : "allowed"})
               </Text>
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {note.text}
-              </Text>
+              <Markdown size="sm">{note.text}</Markdown>
             </Paper>
           )}
         </Stack>
