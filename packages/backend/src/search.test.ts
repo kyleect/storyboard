@@ -291,6 +291,21 @@ describe("sessionSearch", () => {
     return { ...db, search };
   }
 
+  it("returns every match when no limit is given", async () => {
+    const { search } = await seeded("embed-a");
+    const result = await search({
+      kind: "note",
+      query: "lake",
+      scopes: ["session", "project", "global"],
+    });
+    expect(result.hits[0]).toMatchObject({ key: "lake" });
+    expect(result.hits.map((h) => h.key).sort()).toEqual([
+      "gale",
+      "lake",
+      "lamp",
+    ]);
+  });
+
   it("finds by meaning what keywords miss, and merges both rankings", async () => {
     const { search } = await seeded("embed-a");
     const result = await search({

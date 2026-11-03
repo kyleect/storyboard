@@ -627,7 +627,21 @@ const Query = z
   .min(1)
   .describe("Words or a description of what to find.");
 /** Plan S3: 1 to 20 results, 5 when left out. */
-const Limit = z.number().int().min(1).max(20).optional();
+const Limit = z
+  .number()
+  .int()
+  .min(1)
+  .max(20)
+  .optional()
+  .describe("How many results to return, 1 to 20. Defaults to 5.");
+/** Notes are short, so every match comes back unless a limit is given. */
+const NoteLimit = z
+  .number()
+  .int()
+  .min(1)
+  .max(100)
+  .optional()
+  .describe("Most notes to return, 1 to 100. Leave out to get every match.");
 
 export const filesSearch = defineTool({
   name: "files_search",
@@ -669,8 +683,12 @@ export const filesSearch = defineTool({
 export const memorySearch = defineTool({
   name: "memory_search",
   description:
-    "Searches your memory notes by keywords and by meaning. Covers every scope unless you name some in scopes. Returns the best matching notes with their scope.",
-  input: z.object({ query: Query, scopes: Scopes.optional(), limit: Limit }),
+    "Searches your memory notes by keywords and by meaning. Covers every scope unless you name some in scopes. Returns every matching note with its scope, best first.",
+  input: z.object({
+    query: Query,
+    scopes: Scopes.optional(),
+    limit: NoteLimit,
+  }),
   approval: "never",
   execute: ({ query, scopes, limit }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
@@ -686,7 +704,7 @@ export const memorySearch = defineTool({
         "note",
         query,
         covered.scopes,
-        limit ?? 5,
+        limit,
       );
       return {
         data: {

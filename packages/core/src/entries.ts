@@ -118,7 +118,8 @@ export interface SearchQuery {
   kind: EntryKind;
   query: string;
   scopes: readonly Scope[];
-  limit: number;
+  /** Most hits to return; left out: every match. */
+  limit?: number | undefined;
   signal?: AbortSignal;
 }
 
@@ -169,7 +170,8 @@ export interface EntryAccess {
     kind: EntryKind,
     query: string,
     scope: ScopeFilter | undefined,
-    limit: number,
+    /** Left out: every match. */
+    limit?: number,
   ): Promise<SearchResult>;
 }
 

@@ -45,7 +45,8 @@ export function sessionSearch(options: SessionSearchOptions): EntrySearch {
           : null,
       global: q.scopes.includes("global"),
     };
-    const candidates = Math.max(50, q.limit * 5);
+    // With no limit every match is a candidate (-1: no SQL LIMIT).
+    const candidates = q.limit === undefined ? -1 : Math.max(50, q.limit * 5);
     const keyword = index.keyword(q.kind, filter, q.query, candidates);
 
     let nearest: ChunkRow[] = [];

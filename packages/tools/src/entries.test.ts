@@ -606,11 +606,27 @@ describe("search tools", () => {
     expect(queries).toEqual([]);
   });
 
+  it("memory_search returns every match when no limit is given", async () => {
+    const { ctx, queries } = withSearch({ hits: [], mode: "keyword+meaning" });
+    await memorySearch.execute({ query: "x" }, ctx);
+    expect(queries).toEqual([
+      {
+        kind: "note",
+        query: "x",
+        scopes: ["session", "project", "global"],
+        limit: undefined,
+      },
+    ]);
+  });
+
   it("bounds limit to 1-20 and scopes to 1-3, and needs a query", () => {
     expect(filesSearch.parse({ query: "x", limit: 21 }).ok).toBe(false);
     expect(filesSearch.parse({ query: "x", limit: 0 }).ok).toBe(false);
     expect(filesSearch.parse({ query: "x", scopes: [] }).ok).toBe(false);
     expect(memorySearch.parse({ query: "" }).ok).toBe(false);
+    expect(memorySearch.parse({ query: "x", limit: 0 }).ok).toBe(false);
+    expect(memorySearch.parse({ query: "x", limit: 100 }).ok).toBe(true);
+    expect(memorySearch.parse({ query: "x", limit: 101 }).ok).toBe(false);
   });
 });
 
