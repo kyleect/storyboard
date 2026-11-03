@@ -1,4 +1,5 @@
 import type { EntrySearch, SearchHit, SearchResult } from "@harness/core";
+import { withTaskPrefix } from "./embed-prefix.js";
 import type { ChunkRow, SearchIndex } from "./search-index.js";
 
 /*
@@ -54,7 +55,11 @@ export function sessionSearch(options: SessionSearchOptions): EntrySearch {
       notice = "No embedding model is set, so this was a keyword search only.";
     } else {
       try {
-        const [vector] = await options.embed(model, [q.query], q.signal);
+        const [vector] = await options.embed(
+          model,
+          [withTaskPrefix(model, "query", q.query)],
+          q.signal,
+        );
         if (vector) {
           nearest = index.nearest(q.kind, filter, model, vector, candidates);
         }

@@ -1,3 +1,4 @@
+import { withTaskPrefix } from "./embed-prefix.js";
 import type { SearchIndex } from "./search-index.js";
 
 /*
@@ -104,7 +105,7 @@ export class Embedder {
       try {
         vectors = await this.options.embed(
           model,
-          batch.map((c) => c.text),
+          batch.map((c) => withTaskPrefix(model, "document", c.text)),
           this.controller.signal,
         );
       } catch (err) {
