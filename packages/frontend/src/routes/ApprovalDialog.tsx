@@ -27,7 +27,8 @@ const CHOICES: { choice: ApprovalChoice; label: string; color?: string }[] = [
  * Asks whether a tool call may run (tools design 6.5). Closing it leaves the
  * request open; the run keeps waiting until it is answered. A note typed in
  * the box goes with Allow once or Deny; the other two choices are disabled
- * while there is one (approval notes design, D2 and D6).
+ * while there is one (approval notes design, D2 and D6). A tool that always
+ * asks offers only Allow once and Deny.
  */
 export function ApprovalDialog({
   request,
@@ -44,6 +45,10 @@ export function ApprovalDialog({
 }) {
   const [note, setNote] = useState("");
   const text = note.trim();
+  // A tool that always asks can only be allowed once or denied.
+  const choices = request.alwaysAsks
+    ? CHOICES.filter((c) => c.choice === "once" || c.choice === "deny")
+    : CHOICES;
   return (
     <Modal
       opened={opened}
@@ -64,7 +69,7 @@ export function ApprovalDialog({
           onChange={(e) => setNote(e.currentTarget.value)}
         />
         <Group gap="xs" justify="flex-end">
-          {CHOICES.map((c) => {
+          {choices.map((c) => {
             const takesNote = NOTE_CHOICES.includes(c.choice);
             const blocked = !takesNote && text !== "";
             const button = (

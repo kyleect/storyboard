@@ -517,6 +517,66 @@ const echoSpec = {
   approval: "never" as const,
 };
 
+describe("a tool that always asks", () => {
+  const fixed = (run: () => void = () => {}): Tool =>
+    defineTool({
+      ...echoSpec,
+      approval: "always",
+      execute: (input) => {
+        run();
+        return { data: input.text };
+      },
+    });
+
+  it("asks without needsApproval and marks the request", async () => {
+    let ran = false;
+    const { events, approvals, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      { tools: [fixed(() => (ran = true))] },
+    );
+    await runLoop(model, request, ctx);
+    expect(ran).toBe(true);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ name: "echo", alwaysAsks: true });
+    expect(
+      events.find((e) => e.type === "tool.approval_requested")?.data,
+    ).toMatchObject({ alwaysAsks: true });
+  });
+
+  it("does not mark a request for a tool that can be switched off", async () => {
+    const { events, approvals, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      {
+        tools: [
+          defineTool({
+            ...echoSpec,
+            approval: "ask",
+            execute: (input) => ({ data: input.text }),
+          }),
+        ],
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(approvals[0]).not.toHaveProperty("alwaysAsks");
+    expect(
+      events.find((e) => e.type === "tool.approval_requested")?.data,
+    ).not.toHaveProperty("alwaysAsks");
+  });
+
+  it("does not run when denied", async () => {
+    let ran = false;
+    const { ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      {
+        tools: [fixed(() => (ran = true))],
+        approve: () => Promise.resolve({ choice: "deny" }),
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(ran).toBe(false);
+  });
+});
+
 describe("approval", () => {
   const asking = (run: () => void = () => {}): Tool =>
     defineTool({

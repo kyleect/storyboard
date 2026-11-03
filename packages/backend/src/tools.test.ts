@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 /** Records its calls. `ask` makes it ask before running by default. */
-function recorder(name: string, approval: "ask" | "never") {
+function recorder(name: string, approval: "ask" | "never" | "always") {
   const calls: string[] = [];
   const tool = defineTool({
     name,
@@ -200,6 +200,20 @@ describe("a run with tools", () => {
     expect((model.requests[2] as ChatRequest).messages.at(-1)?.role).toBe(
       "tool",
     );
+  });
+
+  it("reads the copy limit from settings and HARNESS_COPY_LIMIT, 1 to 200", async () => {
+    const { t } = await setup([], []);
+    expect(readSettings(t.db, {}).effective.copyLimit).toBe(20);
+    writeSettings(t.db, { copyLimit: 5 });
+    expect(readSettings(t.db, {}).effective.copyLimit).toBe(5);
+    expect(
+      readSettings(t.db, { HARNESS_COPY_LIMIT: "50" }).effective.copyLimit,
+    ).toBe(50);
+    expect(() => readSettings(t.db, { HARNESS_COPY_LIMIT: "201" })).toThrow(
+      /HARNESS_COPY_LIMIT/,
+    );
+    expect(() => writeSettings(t.db, { copyLimit: 0 })).toThrow();
   });
 
   it("reads the loop limit from HARNESS_LOOP_LIMIT", async () => {
@@ -406,6 +420,7 @@ describe("approval", () => {
         description: "The rec tool.",
         askByDefault: true,
         ask: false,
+        fixed: false,
       },
     ]);
     const other = await newSession(app);
@@ -645,12 +660,14 @@ describe("tool settings", () => {
         description: "The asks tool.",
         askByDefault: true,
         ask: true,
+        fixed: false,
       },
       {
         name: "quiet",
         description: "The quiet tool.",
         askByDefault: false,
         ask: false,
+        fixed: false,
       },
     ]);
     expect(
@@ -901,5 +918,86 @@ describe("with llama-server's wire format", () => {
       "tool",
       "assistant",
     ]);
+  });
+});
+
+describe("a tool that always asks", () => {
+  it("is listed as fixed, and its setting cannot be changed", async () => {
+    const fixed = recorder("fixed", "always");
+    const { app } = await setup([], [fixed.tool]);
+
+    expect((await api(app, "GET", "/api/tools")).body).toEqual([
+      {
+        name: "fixed",
+        description: "The fixed tool.",
+        askByDefault: true,
+        ask: true,
+        fixed: true,
+      },
+    ]);
+    const res = await api(app, "PUT", "/api/tools/fixed/approval", {
+      ask: false,
+    });
+    expect(res.status).toBe(409);
+    expect((await api(app, "GET", "/api/tools")).body).toMatchObject([
+      { ask: true, fixed: true },
+    ]);
+  });
+
+  it("offers only once and deny, and refuses session and always", async () => {
+    const fixed = recorder("fixed", "always");
+    const { app, runs } = await setup(
+      [[call("a", "fixed")], answer],
+      [fixed.tool],
+    );
+    const id = await newSession(app);
+    const runId = await send(app, id);
+    const { approval } = await openApproval(app, id);
+    expect(approval).toMatchObject({ name: "fixed", alwaysAsks: true });
+
+    const url = `/api/runs/${runId}/approvals/${approval.requestId}`;
+    for (const choice of ["session", "always"]) {
+      expect((await api(app, "POST", url, { choice })).status).toBe(400);
+    }
+    // Still open: nothing ran, and nothing was allowed.
+    expect(fixed.calls).toEqual([]);
+    expect((await api(app, "POST", url, { choice: "once" })).status).toBe(200);
+    await waitIdle(runs, runId);
+    expect(fixed.calls).toEqual(["a"]);
+    expect((await api(app, "GET", "/api/tools")).body).toMatchObject([
+      { ask: true },
+    ]);
+  });
+
+  it("asks again in a session where the user allowed it for the session", async () => {
+    const fixed = recorder("fixed", "always");
+    const { app, runs, store } = await setup(
+      [[call("a", "fixed")], answer, [call("b", "fixed")], answer],
+      [fixed.tool],
+    );
+    const id = await newSession(app);
+    store.allowToolForSession(id, "fixed", "2026-11-02T00:00:00Z");
+
+    const first = await send(app, id);
+    const open = await openApproval(app, id);
+    await api(
+      app,
+      "POST",
+      `/api/runs/${first}/approvals/${open.approval.requestId}`,
+      { choice: "once" },
+    );
+    await waitIdle(runs, first);
+
+    const second = await send(app, id);
+    const again = await openApproval(app, id);
+    expect(again.approval.name).toBe("fixed");
+    await api(
+      app,
+      "POST",
+      `/api/runs/${second}/approvals/${again.approval.requestId}`,
+      { choice: "deny" },
+    );
+    await waitIdle(runs, second);
+    expect(fixed.calls).toEqual(["a"]);
   });
 });

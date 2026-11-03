@@ -30,6 +30,8 @@ import {
   ToolError,
   ToolRunError,
   truncate,
+  type AgentAccess,
+  type ProjectAccess,
   type Tool,
 } from "./tools.js";
 
@@ -44,6 +46,8 @@ export interface ApprovalRequest {
   callId: string;
   name: string;
   arguments: unknown;
+  /** True for a tool that always asks: Allow once and Deny only. */
+  alwaysAsks?: boolean | undefined;
 }
 
 /** What went wrong in a reported tool call (error reporting plan, P2). */
@@ -140,7 +144,35 @@ export interface LoopContext extends RunContext {
   newNoteId?: () => string;
   /** Searches files and notes. Left out: the search tools fail. */
   searchEntries?: EntrySearch;
+  /** Projects. Left out: the tools that use them fail. */
+  projects?: ProjectAccess;
+  /** The session's agents. Left out: the tools that use them fail. */
+  agents?: AgentAccess;
+  /** The most keys or ids one copy or move call may name. Default 20. */
+  copyLimit?: number;
 }
+
+export const DEFAULT_COPY_LIMIT = 20;
+
+const unavailable = (what: string) => (): never => {
+  throw new ToolError(`${what} are not available in this run.`);
+};
+
+/** What a tool gets for projects when the run has none. */
+export const NO_PROJECTS: ProjectAccess = {
+  list: unavailable("Projects"),
+  current: unavailable("Projects"),
+  create: unavailable("Projects"),
+  push: unavailable("Projects"),
+};
+
+/** What a tool gets for agents when the run has none. */
+export const NO_AGENTS: AgentAccess = {
+  list: unavailable("Agents"),
+  current: unavailable("Agents"),
+  pending: unavailable("Agents"),
+  choose: unavailable("Agents"),
+};
 
 export type LoopEnd = "stop" | "iteration_limit" | "cancelled" | "failed";
 
@@ -175,7 +207,7 @@ export async function runLoop(
   const errorLimit = ctx.errorLimit ?? DEFAULT_ERROR_LIMIT;
   const previewLimit = ctx.previewLimit ?? DEFAULT_PREVIEW_LIMIT;
   const needsApproval =
-    ctx.needsApproval ?? ((tool: Tool) => tool.approval === "ask");
+    ctx.needsApproval ?? ((tool: Tool) => tool.approval !== "never");
   const definitions = toolDefinitions(ctx.tools);
   const notRun = () => ctx.cancelledText?.() ?? CANCELLED;
   const transcript: Message[] = [...request.messages];
@@ -461,6 +493,7 @@ export async function runLoop(
 
     if (needsApproval(tool)) {
       const requestId = newId();
+      const alwaysAsks = tool.approval === "always";
       emit({
         type: "tool.approval_requested",
         data: {
@@ -468,6 +501,7 @@ export async function runLoop(
           callId: call.callId,
           name: call.name,
           arguments: call.arguments,
+          ...(alwaysAsks ? { alwaysAsks } : {}),
         },
       });
       let answer: ApprovalAnswer | undefined;
@@ -479,6 +513,7 @@ export async function runLoop(
               callId: call.callId,
               name: call.name,
               arguments: call.arguments,
+              ...(alwaysAsks ? { alwaysAsks } : {}),
             },
             ctx.signal,
           ),
@@ -560,6 +595,9 @@ export async function runLoop(
         projectId: ctx.projectId ?? null,
         projectName: ctx.projectName ?? null,
         entries,
+        projects: ctx.projects ?? NO_PROJECTS,
+        agents: ctx.agents ?? NO_AGENTS,
+        copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
         requestInput: ask,
       });
       const text = serializeResult(output.data);

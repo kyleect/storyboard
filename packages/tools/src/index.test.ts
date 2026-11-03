@@ -20,6 +20,16 @@ describe("allTools", () => {
       "memory_update",
       "memory_delete",
       "memory_search",
+      "files_copy",
+      "memory_copy",
+      "files_move",
+      "memory_move",
+      "projects_list",
+      "project_view",
+      "project_create",
+      "agents_list",
+      "agent_view",
+      "agent_change",
     ]);
   });
 });

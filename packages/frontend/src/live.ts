@@ -128,6 +128,13 @@ export function useSessionEvents(
             queryKey: entriesKey({ scope: "session", id: sessionId }),
           });
           break;
+        case "session.agent_changed":
+          // A tool changed the session's agent; the picker reads it from
+          // the session (agent tools design, Q18).
+          void queryClient.invalidateQueries({
+            queryKey: ["session", sessionId],
+          });
+          break;
         case "session.renamed":
           // Renamed automatically or by the user, here or in another
           // window (auto-rename plan, decision 8).
@@ -345,6 +352,11 @@ type AppEvent =
       };
     }
   | {
+      /** A tool created a project (agent tools design, Q17). */
+      type: "projects.changed";
+      data: { projectId: string };
+    }
+  | {
       /** Errors recorded or cleared (error reporting plan, P6). */
       type: "errors.changed";
       data: { sessionId: string | null };
@@ -353,7 +365,8 @@ type AppEvent =
 /**
  * Listens to the app-wide stream for the whole app. Its events are not
  * replayed, so agent data and errors are refetched whenever the stream
- * opens or reopens, then on each `agents.changed` or `errors.changed`.
+ * opens or reopens, then on each `agents.changed`, `projects.changed` or
+ * `errors.changed`.
  */
 export function useAppEvents() {
   const queryClient = useQueryClient();
@@ -364,6 +377,8 @@ export function useAppEvents() {
     };
     const refreshErrors = () =>
       void queryClient.invalidateQueries({ queryKey: ["errors"] });
+    const refreshProjects = () =>
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 500;
@@ -374,12 +389,17 @@ export function useAppEvents() {
         // Anything that changed before the stream opened was not sent.
         refreshAgents();
         refreshErrors();
+        refreshProjects();
       };
       source.onmessage = (msg: MessageEvent<string>) => {
         const event = JSON.parse(msg.data) as AppEvent;
         if (event.type === "errors.changed") {
           // Every list: the global one shows every session's errors.
           refreshErrors();
+          return;
+        }
+        if (event.type === "projects.changed") {
+          refreshProjects();
           return;
         }
         if (event.type !== "agents.changed") return;

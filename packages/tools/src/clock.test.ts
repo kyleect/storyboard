@@ -3,6 +3,8 @@ import {
   createEntryAccess,
   replaySessionEntries,
   type ToolContext,
+  NO_AGENTS,
+  NO_PROJECTS,
 } from "@harness/core";
 import { currentDate, currentTime } from "./clock.js";
 
@@ -16,6 +18,9 @@ const ctx: ToolContext = {
   state: undefined,
   projectId: null,
   projectName: null,
+  projects: NO_PROJECTS,
+  agents: NO_AGENTS,
+  copyLimit: 20,
   entries: createEntryAccess({
     session: replaySessionEntries([]),
     sessionOps: [],

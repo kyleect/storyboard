@@ -748,6 +748,8 @@ export function entriesInstruction(inProject: boolean): string {
     "",
     "Both are kept at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). To save something new, call the tool right away with your suggestions and leave out what you don't know, such as a file's name or scope; the user fills in or changes them in a form, and the result says what was used. Don't ask the user for them in your reply. Lists and searches cover every scope unless you name some, and the user can change the scopes you name.",
     "",
+    "To copy entries to another scope, call files_copy or memory_copy; files_move and memory_move also delete the originals. Suggest where from and to and the user decides in a form, and each call needs the user's approval. To send entries to another project, give its id from projects_list. A project can only send to another project, never pull from one.",
+    "",
     `This conversation is in a project: ${inProject ? "yes" : "no"}.`,
   ].join("\n");
 }

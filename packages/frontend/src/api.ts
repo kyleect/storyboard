@@ -193,6 +193,8 @@ export interface ToolView {
   description: string;
   askByDefault: boolean;
   ask: boolean;
+  /** True for a tool that always asks: its setting cannot be changed. */
+  fixed: boolean;
 }
 
 export interface Settings {
@@ -202,6 +204,8 @@ export interface Settings {
   port: number;
   /** The most model calls one run makes. */
   loopLimit: number;
+  /** The most files or notes one copy or move call may name. */
+  copyLimit: number;
   /** Days in the trash before deletion at startup; 0: never. */
   trashRetentionDays: number;
   /** The router model used for embeddings; empty: keyword search only. */

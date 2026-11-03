@@ -8,6 +8,8 @@ import {
   type InputAnswer,
   type SearchResult,
   type ToolContext,
+  NO_AGENTS,
+  NO_PROJECTS,
 } from "@harness/core";
 import { FakeSharedEntries } from "@harness/core/testing";
 import {
@@ -64,6 +66,9 @@ function context(
     state: options.state,
     projectId: inProject ? "p" : null,
     projectName: inProject ? "Ashfall" : null,
+    projects: NO_PROJECTS,
+    agents: NO_AGENTS,
+    copyLimit: 20,
     entries: createEntryAccess({
       session: replaySessionEntries([]),
       sessionOps,

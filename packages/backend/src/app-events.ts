@@ -18,6 +18,14 @@ export type AppEvent =
     }
   | {
       /**
+       * A project was created by a tool (agent tools design, Q17), so every
+       * window can refresh its project list.
+       */
+      type: "projects.changed";
+      data: { projectId: string };
+    }
+  | {
+      /**
        * An error was recorded, or errors were cleared (error reporting
        * plan, P6).
        */

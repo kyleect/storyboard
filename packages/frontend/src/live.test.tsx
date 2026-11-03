@@ -7,7 +7,7 @@ import {
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
-import { useSessionEvents } from "./live";
+import { useAppEvents, useSessionEvents } from "./live";
 import { EditableTitle } from "./routes/EditableTitle";
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
@@ -106,5 +106,76 @@ describe("session.renamed", () => {
     );
     expect(await screen.findByText("The Keeper's Letter")).toBeTruthy();
     expect(screen.queryByText("New session")).toBeNull();
+  });
+});
+
+describe("session.agent_changed", () => {
+  it("refetches the session so the agent picker shows the new pick", async () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    let agentId: string | null = null;
+    function AgentLabel() {
+      const query = useQuery({
+        queryKey: ["session", "s1"],
+        queryFn: () =>
+          Promise.resolve({
+            ...detail,
+            session: { ...detail.session, agent_id: agentId },
+          } as SessionDetail),
+      });
+      useSessionEvents("s1", query.data);
+      return (
+        <div>
+          {query.data ? `agent: ${query.data.session.agent_id ?? "none"}` : ""}
+        </div>
+      );
+    }
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentLabel />
+        </QueryClientProvider>
+      </MantineProvider>,
+    );
+    expect(await screen.findByText("agent: none")).toBeTruthy();
+
+    // A tool changed the pick; the session now says so.
+    agentId = "a1";
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        runId: null,
+        sessionId: "s1",
+        time: "2026-11-02T00:00:01Z",
+        type: "session.agent_changed",
+        data: { agentId: "a1" },
+      }),
+    );
+    expect(await screen.findByText("agent: a1")).toBeTruthy();
+  });
+});
+
+describe("projects.changed", () => {
+  it("refreshes the project list", async () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    function Events() {
+      useAppEvents();
+      return null;
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Events />
+      </QueryClientProvider>,
+    );
+    expect(FakeEventSource.last).toBeDefined();
+    invalidate.mockClear();
+
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        type: "projects.changed",
+        data: { projectId: "p1" },
+      }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["projects"] });
   });
 });

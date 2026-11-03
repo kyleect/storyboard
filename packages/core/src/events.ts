@@ -154,6 +154,11 @@ export const ToolApprovalRequested = event(
     callId: z.string(),
     name: z.string(),
     arguments: z.unknown(),
+    /**
+     * True when the tool always asks: only Allow once and Deny are offered,
+     * and "session" and "always" are refused.
+     */
+    alwaysAsks: z.boolean().optional(),
   }),
 );
 
@@ -306,10 +311,20 @@ export const SessionRenamed = event(
   }),
 );
 
+/**
+ * The session's agent was changed by a tool (agent tools design, Q18, Q4 of
+ * the plan). It applies from the next run. `agentId` null: no agent.
+ */
+export const SessionAgentChanged = event(
+  "session.agent_changed",
+  z.object({ agentId: z.string().nullable() }),
+);
+
 export const SessionEventBody = z.discriminatedUnion("type", [
   SessionTrashed,
   SessionEntriesChanged,
   SessionRenamed,
+  SessionAgentChanged,
 ]);
 export type SessionEventBody = z.infer<typeof SessionEventBody>;
 

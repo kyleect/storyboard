@@ -5,6 +5,8 @@ import {
   type Form,
   type InputAnswer,
   type ToolContext,
+  NO_AGENTS,
+  NO_PROJECTS,
 } from "@harness/core";
 import { askUser } from "./ask-user.js";
 
@@ -19,6 +21,9 @@ function context(answer: InputAnswer) {
     state: undefined,
     projectId: null,
     projectName: null,
+    projects: NO_PROJECTS,
+    agents: NO_AGENTS,
+    copyLimit: 20,
     entries: createEntryAccess({
       session: replaySessionEntries([]),
       sessionOps: [],

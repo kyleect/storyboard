@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { EntryAccess } from "./entries.js";
 import type { Form, InputAnswer } from "./forms.js";
-import type { Message, ToolDefinition } from "./messages.js";
+import type { FileType, Message, ToolDefinition } from "./messages.js";
 
 /*
  * Tools (tools design, section 6). A tool declares its input with Zod,
@@ -9,8 +9,103 @@ import type { Message, ToolDefinition } from "./messages.js";
  * save per-session state with its result.
  */
 
-/** A tool's approval default: ask before running, or run without asking. */
-export type ApprovalDefault = "ask" | "never";
+/**
+ * A tool's approval default: ask before running ("ask"), run without asking
+ * ("never"), or ask every time with no way to switch it off ("always": the
+ * settings cannot change it, and the prompt offers only Allow once and
+ * Deny).
+ */
+export type ApprovalDefault = "ask" | "never" | "always";
+
+/** The most the "copy limit" setting can be set to (a call's key list is bounded by it). */
+export const COPY_LIMIT_MAX = 200;
+
+/** A project as `projects_list` shows it. */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  description: string;
+}
+
+/** The session's project, as `project_view` shows it. */
+export interface ProjectInfo extends ProjectSummary {
+  /** The name of the agent new sessions start with; null: none. */
+  defaultAgent: string | null;
+  /** Empty when there is none. */
+  systemPrompt: string;
+}
+
+/**
+ * A way to send files and notes to a project. It can only write: nothing in
+ * the project can be read through it (agent tools design, Q6, Q2 of the
+ * plan).
+ */
+export interface ProjectPush {
+  /** Whether the project has a live file with this key. */
+  hasFile(key: string): boolean;
+  /** Creates or replaces a file. */
+  putFile(key: string, type: FileType, value: string): void;
+  /** Adds a note with a new id; returns the id. */
+  addNote(text: string): string;
+}
+
+/** Projects, for the tools that list, view, create and send to them. */
+export interface ProjectAccess {
+  /** Projects not in the trash, by name. */
+  list(): ProjectSummary[];
+  /** The session's project; null for a standalone session. */
+  current(): ProjectInfo | null;
+  /** Creates a project. It has no default agent. */
+  create(input: {
+    name: string;
+    description: string;
+    systemPrompt: string;
+  }): ProjectSummary;
+  /**
+   * A write-only handle for a project other than the session's own, or one
+   * just created. Throws an `EntryError` when there is no such project or it
+   * is in the trash.
+   */
+  push(projectId: string): ProjectPush;
+}
+
+/** An agent as `agents_list` and `agent_view` show it. */
+export interface AgentSummary {
+  id: string;
+  name: string;
+  scope: "global" | "project";
+  /** The project's name for a project agent; null for a global one. */
+  projectName: string | null;
+  description: string;
+  toolMode: "allow" | "deny";
+  tools: string[];
+}
+
+/** The agent a run uses. */
+export interface CurrentAgent extends AgentSummary {
+  version: number;
+  /** The agent's system prompt, as of the version this run started with. */
+  prompt: string;
+}
+
+/** The session's agents, for the tools that list, view and change them. */
+export interface AgentAccess {
+  /** The agents the session can pick: its project's, then global ones. */
+  list(): AgentSummary[];
+  /** The agent this run started with; null: none. */
+  current(): CurrentAgent | null;
+  /**
+   * An agent change waiting for the next run: the session's pick when it
+   * differs from this run's agent. `agent` null means "no agent". Undefined:
+   * nothing is pending.
+   */
+  pending(): { agent: AgentSummary | null } | undefined;
+  /**
+   * Sets the session's agent; it applies from the next run. Throws a
+   * `ToolError` when the agent does not exist or the session cannot use it.
+   */
+  choose(agentId: string | null): void;
+}
 
 export interface ToolContext {
   /** Fires when the run is cancelled. */
@@ -35,6 +130,15 @@ export interface ToolContext {
    * only when the tool succeeds.
    */
   entries: EntryAccess;
+  /** Projects: list, view, create, and send entries to. */
+  projects: ProjectAccess;
+  /** The session's agents: list, view, change. */
+  agents: AgentAccess;
+  /**
+   * The most keys or ids one copy or move call may name (a setting). Asking
+   * for everything in a scope is not limited by it.
+   */
+  copyLimit: number;
   /**
    * Shows the user a form in the chat and waits for the answer, for as long
    * as it takes (input forms design, D2). Rejects when the run is cancelled,

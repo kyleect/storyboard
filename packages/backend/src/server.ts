@@ -24,7 +24,11 @@ import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { DEFAULT_TITLE, type Store } from "./store.js";
-import { listToolSettings, setToolAsks } from "./tool-settings.js";
+import {
+  FixedApprovalError,
+  listToolSettings,
+  setToolAsks,
+} from "./tool-settings.js";
 
 /*
  * HTTP routes (design doc 6.10, 6.14). Routes are thin adapters over the
@@ -139,6 +143,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     }
     if (err instanceof EntryError) {
       return reply.code(400).send({ error: err.message });
+    }
+    if (err instanceof FixedApprovalError) {
+      return reply.code(409).send({ error: err.message });
     }
     if (err instanceof z.ZodError) {
       return reply
@@ -618,7 +625,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   /** Every tool, with its approval default and whether it asks now. */
   app.get("/api/tools", async () => listToolSettings(store.db, runs.tools));
 
-  /** Sets whether a tool asks before running (either way, 6.5). */
+  /**
+   * Sets whether a tool asks before running (either way, 6.5). 409 for a
+   * tool that always asks.
+   */
   app.put("/api/tools/:name/approval", async (req, reply) => {
     const { name } = z.object({ name: z.string() }).parse(req.params);
     const { ask } = z.object({ ask: z.boolean() }).parse(req.body);

@@ -22,6 +22,7 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { COPY_LIMIT_MAX } from "@harness/core";
 import {
   api,
   type Session,
@@ -56,6 +57,7 @@ function mainSettings(s: SettingsShape): MainSettings {
     reasoningEffort: s.reasoningEffort,
     port: s.port,
     loopLimit: s.loopLimit,
+    copyLimit: s.copyLimit,
     trashRetentionDays: s.trashRetentionDays,
     embeddingModel: s.embeddingModel,
   };
@@ -104,6 +106,7 @@ export function Settings() {
       reasoningEffort: "",
       port: 0,
       loopLimit: 1,
+      copyLimit: 1,
       trashRetentionDays: 0,
       embeddingModel: "",
     },
@@ -114,6 +117,10 @@ export function Settings() {
         Number.isInteger(v) && v >= 0 && v <= 65535 ? null : "0–65535",
       loopLimit: (v) =>
         Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
+      copyLimit: (v) =>
+        Number.isInteger(v) && v >= 1 && v <= COPY_LIMIT_MAX
+          ? null
+          : `A whole number, 1 to ${COPY_LIMIT_MAX}`,
       trashRetentionDays: (v) =>
         Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
     },
@@ -208,6 +215,18 @@ export function Settings() {
             min={1}
             disabled={!!env.loopLimit}
             {...form.getInputProps("loopLimit")}
+          />
+          <NumberInput
+            label="Copy limit"
+            description={
+              envNote("copyLimit") ??
+              `The most files or notes one copy or move call may name, 1 to ${COPY_LIMIT_MAX}. Copying everything in a scope is not limited.`
+            }
+            allowDecimal={false}
+            min={1}
+            max={COPY_LIMIT_MAX}
+            disabled={!!env.copyLimit}
+            {...form.getInputProps("copyLimit")}
           />
           <NumberInput
             label="Days in the trash"
@@ -408,11 +427,15 @@ function ToolApprovals() {
         <Switch
           key={t.name}
           label={`${t.name}: ask before running`}
-          description={`${t.description} Default: ${
-            t.askByDefault ? "asks" : "runs without asking"
-          }.`}
+          description={
+            t.fixed
+              ? `${t.description} Always asks; this cannot be changed.`
+              : `${t.description} Default: ${
+                  t.askByDefault ? "asks" : "runs without asking"
+                }.`
+          }
           checked={t.ask}
-          disabled={setAsks.isPending}
+          disabled={setAsks.isPending || t.fixed}
           onChange={(e) =>
             setAsks.mutate({ name: t.name, ask: e.currentTarget.checked })
           }

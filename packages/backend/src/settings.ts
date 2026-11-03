@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
+import { COPY_LIMIT_MAX, DEFAULT_COPY_LIMIT } from "@harness/core";
 
 /*
  * Stored settings (design doc, "Configuration details"). Precedence, highest
@@ -19,6 +20,11 @@ export const Settings = z.object({
   port: z.number().int().min(0).max(65535),
   /** The most model calls one run makes (design doc 6.17). */
   loopLimit: z.number().int().min(1),
+  /**
+   * The most files or notes one copy or move call may name (agent tools
+   * design, Q11). Asking for everything in a scope is not limited by it.
+   */
+  copyLimit: z.number().int().min(1).max(COPY_LIMIT_MAX),
   /**
    * Days an item stays in the trash before it is purged at startup. 0: never
    * purged automatically (sessions and projects design, Q3d, Q3f).
@@ -55,6 +61,7 @@ export const DEFAULTS: Settings = {
   reasoningEffort: "",
   port: 4317,
   loopLimit: 20,
+  copyLimit: DEFAULT_COPY_LIMIT,
   trashRetentionDays: 30,
   embeddingModel: "",
   autoRename: true,
@@ -88,6 +95,7 @@ const ENV: Record<keyof Settings, string> = {
   reasoningEffort: "HARNESS_REASONING_EFFORT",
   port: "HARNESS_PORT",
   loopLimit: "HARNESS_LOOP_LIMIT",
+  copyLimit: "HARNESS_COPY_LIMIT",
   trashRetentionDays: "HARNESS_TRASH_RETENTION_DAYS",
   embeddingModel: "HARNESS_EMBEDDING_MODEL",
   autoRename: "HARNESS_AUTO_RENAME",
@@ -100,6 +108,7 @@ const ENV: Record<keyof Settings, string> = {
 const NUMERIC = new Set<keyof Settings>([
   "port",
   "loopLimit",
+  "copyLimit",
   "trashRetentionDays",
 ]);
 

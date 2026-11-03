@@ -19,6 +19,16 @@ export interface ToolView {
   askByDefault: boolean;
   /** Whether it asks now: the setting, else the default. */
   ask: boolean;
+  /** True for a tool that always asks: the setting cannot change it. */
+  fixed: boolean;
+}
+
+/** Whether the tool asks every time, whatever the settings say. */
+export const alwaysAsks = (tool: Tool): boolean => tool.approval === "always";
+
+/** Thrown when a setting is changed for a tool that always asks. */
+export class FixedApprovalError extends Error {
+  override name = "FixedApprovalError";
 }
 
 function readStored(db: Database): z.infer<typeof Stored> {
@@ -32,6 +42,7 @@ function readStored(db: Database): z.infer<typeof Stored> {
 
 /** Whether the tool asks before running, by setting or by default. */
 export function toolAsks(db: Database, tool: Tool): boolean {
+  if (alwaysAsks(tool)) return true;
   return readStored(db)[tool.name]?.ask ?? tool.approval === "ask";
 }
 
@@ -43,13 +54,19 @@ export function listToolSettings(
   return tools.map((t) => ({
     name: t.name,
     description: t.description,
-    askByDefault: t.approval === "ask",
-    ask: stored[t.name]?.ask ?? t.approval === "ask",
+    askByDefault: t.approval !== "never",
+    ask: alwaysAsks(t) || (stored[t.name]?.ask ?? t.approval === "ask"),
+    fixed: alwaysAsks(t),
   }));
 }
 
 /** Sets whether the tool asks. A value equal to the default is not stored. */
 export function setToolAsks(db: Database, tool: Tool, ask: boolean) {
+  if (alwaysAsks(tool)) {
+    throw new FixedApprovalError(
+      `${tool.name} always asks for approval; this cannot be changed.`,
+    );
+  }
   const stored = Object.fromEntries(
     Object.entries(readStored(db)).filter(([name]) => name !== tool.name),
   );

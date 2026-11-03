@@ -37,7 +37,8 @@ import {
   type SessionRow,
   type Store,
 } from "./store.js";
-import { setToolAsks, toolAsks } from "./tool-settings.js";
+import { alwaysAsks, setToolAsks, toolAsks } from "./tool-settings.js";
+import { agentAccess, projectAccess } from "./tool-access.js";
 
 /** Choices sent with a message or continue; they become the session's. */
 export interface RunChoices {
@@ -471,6 +472,17 @@ export class RunManager {
       throw new RunError("No open approval request with that id.", 404);
     }
     const tool = this.tools.find((t) => t.name === open.request.name);
+    // A tool that always asks can only be allowed once or denied.
+    if (
+      tool &&
+      alwaysAsks(tool) &&
+      (choice === "session" || choice === "always")
+    ) {
+      throw new RunError(
+        `${tool.name} always asks; it can only be allowed once or denied.`,
+        400,
+      );
+    }
     if (choice === "session") {
       this.store.allowToolForSession(
         run.sessionId,
@@ -885,10 +897,43 @@ export class RunManager {
           ...(this.options.search && session
             ? { searchEntries: this.options.search(session) }
             : {}),
+          ...(session
+            ? {
+                projects: projectAccess({
+                  store: this.store,
+                  entries: this.options.entries,
+                  agents: this.options.agents,
+                  events: this.events,
+                  session,
+                  author: { by: "model", sessionId, runId },
+                  newId: this.newId,
+                  now: this.now,
+                  newNoteId: this.options.newNoteId,
+                }),
+                agents: agentAccess({
+                  store: this.store,
+                  agents: this.options.agents,
+                  session,
+                  runAgent: agent,
+                  checkChoice: (agentId) =>
+                    this.checkAgentChoice(sessionId, { agentId }),
+                  agentChanged: (agentId) =>
+                    this.publish({
+                      runId: null,
+                      sessionId,
+                      time: this.now(),
+                      type: "session.agent_changed",
+                      data: { agentId },
+                    }),
+                }),
+              }
+            : {}),
+          copyLimit: settings.copyLimit,
           maxIterations: settings.loopLimit,
           needsApproval: (tool) =>
             toolAsks(this.store.db, tool) &&
-            !this.store.isToolAllowedForSession(sessionId, tool.name),
+            (alwaysAsks(tool) ||
+              !this.store.isToolAllowedForSession(sessionId, tool.name)),
           approve: (req, signal) =>
             new Promise<ApprovalAnswer>((resolve) => {
               approvals.set(req.requestId, { request: req, resolve });
