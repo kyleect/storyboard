@@ -377,7 +377,7 @@ describe("auto-rename settings", () => {
       autoRenameSource: "model",
       titleModel: "",
       titlePrompt:
-        "Write a short title (at most 6 words) for a writing session that starts with the user's message below. Reply with the title only.",
+        "Write a short title (at most 6 words) for a chat session that starts with the user's message below. Reply with the title only.",
     });
   });
 

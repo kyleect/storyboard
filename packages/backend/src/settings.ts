@@ -61,7 +61,7 @@ export const DEFAULTS: Settings = {
   autoRenameSource: "model",
   titleModel: "",
   titlePrompt:
-    "Write a short title (at most 6 words) for a writing session that starts with the user's message below. Reply with the title only.",
+    "Write a short title (at most 6 words) for a chat session that starts with the user's message below. Reply with the title only.",
   systemPrompt: `
 You work inside a harness that gives you tools. Use them instead of guessing or asking the user to do things you can do yourself.
 
