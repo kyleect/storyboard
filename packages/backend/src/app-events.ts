@@ -17,6 +17,17 @@ export type AppEvent =
       };
     }
   | {
+      /** A skill was created, saved, deleted or restored (skills design). */
+      type: "skills.changed";
+      data: {
+        skillId: string;
+        /** Set for a project's skill. */
+        projectId: string | null;
+        /** Set for an agent's skill. */
+        agentId: string | null;
+      };
+    }
+  | {
       /**
        * A project was created by a tool (agent tools design, Q17), so every
        * window can refresh its project list.

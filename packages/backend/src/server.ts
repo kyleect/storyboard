@@ -22,6 +22,8 @@ import type { AppEvents, AppEvent } from "./app-events.js";
 import { EntryStore } from "./entries-store.js";
 import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
+import { registerSkillRoutes } from "./skill-routes.js";
+import { SkillStore } from "./skills-store.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { DEFAULT_TITLE, type Store } from "./store.js";
 import {
@@ -47,6 +49,8 @@ export interface ServerOptions {
   entries?: EntryStore;
   /** Agents. Default: over `store.db`. */
   agents?: AgentStore;
+  /** Skills. Default: over `store.db`. */
+  skills?: SkillStore;
   /** The app-wide event stream's source. Default: the run manager's. */
   events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
@@ -168,6 +172,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const events = options.events ?? runs.events;
   const agents = options.agents ?? new AgentStore(store.db, now, newId);
   registerAgentRoutes(app, { store, runs, agents, events });
+  registerSkillRoutes(app, {
+    store,
+    agents,
+    skills: options.skills ?? new SkillStore(store.db, now, newId),
+    events,
+  });
 
   app.get("/api/settings", async () => readSettings(store.db, env));
 

@@ -17,6 +17,7 @@ import {
   type HarnessEvent,
   type Message,
   type RunAgent,
+  type RunSkill,
   type ModelAdapter,
   type StoredEvent,
   type Tool,
@@ -24,6 +25,7 @@ import {
   type Usage,
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
+import type { SkillStore } from "./skills-store.js";
 import { AppEvents } from "./app-events.js";
 import { ErrorStore, type NewError } from "./errors-store.js";
 import { cleanTitle, requestTitle } from "./auto-title.js";
@@ -121,6 +123,20 @@ export interface RunManagerOptions {
   alwaysOnTools?: readonly string[];
   /** Agents. Left out: sessions cannot pick one. */
   agents?: AgentStore;
+  /** Skills. Left out: no run has any. */
+  skills?: SkillStore;
+  /**
+   * Names of the tools that are offered only when a skill is in scope (skills
+   * design, decision 9). They are also in `alwaysOnTools`, so an agent's
+   * selection cannot remove them.
+   */
+  skillTools?: readonly string[];
+  /**
+   * The skill list for the system message, or undefined for none (skills
+   * design, decisions 6, 11). It goes after the agent prompt and before
+   * `systemPrompt`.
+   */
+  skillsPrompt?: (skills: readonly RunSkill[]) => string | undefined;
   /**
    * Project and global files and notes for tools. Left out: tools see
    * session scope only.
@@ -729,11 +745,17 @@ export class RunManager {
   }
 
   /** The tools a run gets with this agent (agents design 6, 8, 35). */
-  private toolsFor(agent: Agent | null): readonly Tool[] {
-    if (!agent) return this.tools;
+  private toolsFor(agent: Agent | null, hasSkills: boolean): readonly Tool[] {
+    // The skill tools are offered only when a skill is in scope (skills
+    // design, decision 9).
+    const skillTools = new Set(this.options.skillTools ?? []);
+    const offered = hasSkills
+      ? this.tools
+      : this.tools.filter((t) => !skillTools.has(t.name));
+    if (!agent) return offered;
     const alwaysOn = new Set(this.alwaysOnTools);
     const listed = new Set(agent.tools);
-    return this.tools.filter(
+    return offered.filter(
       (t) =>
         alwaysOn.has(t.name) ||
         (agent.toolMode === "allow" ? listed.has(t.name) : !listed.has(t.name)),
@@ -814,11 +836,24 @@ export class RunManager {
     const project = session?.project_id
       ? this.store.getProject(session.project_id)
       : undefined;
-    // Global, project and agent prompts, then the files and memory
-    // instruction (system prompts design, decisions 1 and 2). Empty ones
-    // are left out.
+    // The skills in scope, as they are now; the run keeps them to the end
+    // (skills design, decisions 1, 13).
+    const skills: readonly RunSkill[] =
+      this.options.skills?.inScope(
+        session?.project_id ?? null,
+        agent?.id ?? null,
+      ) ?? [];
+    // Global, project and agent prompts, then the skill list, then the files
+    // and memory instruction (system prompts design, decisions 1 and 2;
+    // skills design 11). Empty ones are left out.
     const system =
-      [settings.systemPrompt, project?.system_prompt, agent?.prompt, base]
+      [
+        settings.systemPrompt,
+        project?.system_prompt,
+        agent?.prompt,
+        this.options.skillsPrompt?.(skills),
+        base,
+      ]
         .filter((p): p is string => p !== undefined && p.trim() !== "")
         .join("\n\n") || undefined;
     const request: ChatRequest = {
@@ -880,7 +915,8 @@ export class RunManager {
           newId: this.newId,
           now: this.now,
           ...(continuing ? { continueMessage: continuing } : {}),
-          tools: this.toolsFor(agent),
+          tools: this.toolsFor(agent, skills.length > 0),
+          skills,
           ...(runAgent ? { agent: runAgent } : {}),
           projectId: session?.project_id ?? null,
           projectName: project?.name ?? null,

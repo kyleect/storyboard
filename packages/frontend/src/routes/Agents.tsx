@@ -40,6 +40,7 @@ import {
   type ToolMode,
 } from "../api";
 import { showError } from "./SessionActions";
+import { SkillsPanel } from "./Skills";
 
 /*
  * Agents (agents design, decisions 15 and 30 to 37): a page per scope with
@@ -580,6 +581,19 @@ function AgentView({
         Tools
       </Text>
       <ToolsSummary toolMode={a.toolMode} tools={a.tools} known={known} />
+      <Text size="xs" c="dimmed">
+        Skills
+      </Text>
+      <SkillsPanel
+        owner={{ scope: "agent", id: a.id }}
+        readOnly={
+          a.deleted
+            ? "The agent is deleted, so its skills can be read but not changed."
+            : readOnly
+              ? "The project is in the trash, so these can be read but not changed."
+              : undefined
+        }
+      />
       {versions && (
         <VersionsModal
           scope={scope}

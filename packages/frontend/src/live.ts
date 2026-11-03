@@ -357,6 +357,14 @@ type AppEvent =
       data: { projectId: string };
     }
   | {
+      type: "skills.changed";
+      data: {
+        skillId: string;
+        projectId: string | null;
+        agentId: string | null;
+      };
+    }
+  | {
       /** Errors recorded or cleared (error reporting plan, P6). */
       type: "errors.changed";
       data: { sessionId: string | null };
@@ -365,7 +373,8 @@ type AppEvent =
 /**
  * Listens to the app-wide stream for the whole app. Its events are not
  * replayed, so agent data and errors are refetched whenever the stream
- * opens or reopens, then on each `agents.changed`, `projects.changed` or
+ * opens or reopens, then on each `agents.changed`, `projects.changed`,
+ * `skills.changed` or
  * `errors.changed`.
  */
 export function useAppEvents() {
@@ -375,6 +384,8 @@ export function useAppEvents() {
       void queryClient.invalidateQueries({ queryKey: ["agents"] });
       void queryClient.invalidateQueries({ queryKey: ["session-agents"] });
     };
+    const refreshSkills = () =>
+      void queryClient.invalidateQueries({ queryKey: ["skills"] });
     const refreshErrors = () =>
       void queryClient.invalidateQueries({ queryKey: ["errors"] });
     const refreshProjects = () =>
@@ -388,6 +399,7 @@ export function useAppEvents() {
         delay = 500;
         // Anything that changed before the stream opened was not sent.
         refreshAgents();
+        refreshSkills();
         refreshErrors();
         refreshProjects();
       };
@@ -400,6 +412,10 @@ export function useAppEvents() {
         }
         if (event.type === "projects.changed") {
           refreshProjects();
+          return;
+        }
+        if (event.type === "skills.changed") {
+          refreshSkills();
           return;
         }
         if (event.type !== "agents.changed") return;

@@ -2,7 +2,13 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { embedTexts, LlamaServerAdapter } from "@harness/core";
-import { allTools, entriesInstruction, entryTools } from "@harness/tools";
+import {
+  allTools,
+  entriesInstruction,
+  entryTools,
+  skillsInstruction,
+  skillTools,
+} from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
@@ -10,6 +16,7 @@ import { Embedder } from "./embedder.js";
 import { EntryStore } from "./entries-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
+import { SkillStore } from "./skills-store.js";
 import { SearchIndex } from "./search-index.js";
 import { sessionSearch } from "./search.js";
 import { buildServer } from "./server.js";
@@ -37,6 +44,7 @@ async function main() {
   const index = new SearchIndex(db);
   const entries = new EntryStore(db, undefined, undefined, index);
   const agents = new AgentStore(db);
+  const skills = new SkillStore(db);
   const settings = () => readSettings(db).effective;
   const embed = (model: string, texts: string[], signal?: AbortSignal) =>
     embedTexts(settings().llamaServerUrl, model, texts, {
@@ -48,9 +56,13 @@ async function main() {
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
-    // Every agent gets the files and memory tools (agents design 8, P5).
-    alwaysOnTools: entryTools.map((t) => t.name),
+    // Every agent gets the files and memory tools (agents design 8, P5), and
+    // the skill tool whenever a skill is in scope (skills design 9).
+    alwaysOnTools: [...entryTools, ...skillTools].map((t) => t.name),
     agents,
+    skills,
+    skillTools: skillTools.map((t) => t.name),
+    skillsPrompt: skillsInstruction,
     entries,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),
     index,
@@ -82,6 +94,7 @@ async function main() {
     runs,
     entries,
     agents,
+    skills,
     token,
     logger: true,
     onSettingsSaved: () => embedder.settingsChanged(),

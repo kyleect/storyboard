@@ -32,6 +32,7 @@ import {
   truncate,
   type AgentAccess,
   type ProjectAccess,
+  type RunSkill,
   type Tool,
 } from "./tools.js";
 
@@ -150,6 +151,8 @@ export interface LoopContext extends RunContext {
   agents?: AgentAccess;
   /** The most keys or ids one copy or move call may name. Default 20. */
   copyLimit?: number;
+  /** The skills in scope for the run (skills design). Left out: none. */
+  skills?: readonly RunSkill[];
 }
 
 export const DEFAULT_COPY_LIMIT = 20;
@@ -598,6 +601,7 @@ export async function runLoop(
         projects: ctx.projects ?? NO_PROJECTS,
         agents: ctx.agents ?? NO_AGENTS,
         copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
+        skills: ctx.skills ?? [],
         requestInput: ask,
       });
       const text = serializeResult(output.data);

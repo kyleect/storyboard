@@ -461,6 +461,8 @@ describe("loadMigrations", () => {
       "session_tool_approvals",
       "sessions",
       "settings",
+      "skill_versions",
+      "skills",
     ]);
     expect(migrate(db, loadMigrations(MIGRATIONS_DIR))).toEqual([]);
   });

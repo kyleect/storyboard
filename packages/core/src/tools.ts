@@ -107,6 +107,21 @@ export interface AgentAccess {
   choose(agentId: string | null): void;
 }
 
+/** Where a skill is defined (skills design, decision 1). */
+export type SkillScope = "global" | "project" | "agent";
+
+/**
+ * A skill as a run sees it: its content when the run started (skills design,
+ * decision 13). `name` is the slug the model uses.
+ */
+export interface RunSkill {
+  name: string;
+  displayName: string;
+  description: string;
+  body: string;
+  scope: SkillScope;
+}
+
 export interface ToolContext {
   /** Fires when the run is cancelled. */
   signal: AbortSignal;
@@ -139,6 +154,11 @@ export interface ToolContext {
    * for everything in a scope is not limited by it.
    */
   copyLimit: number;
+  /**
+   * The skills in scope for this run, as they were when it started (skills
+   * design, decisions 1, 13). Empty when there are none.
+   */
+  skills: readonly RunSkill[];
   /**
    * Shows the user a form in the chat and waits for the answer, for as long
    * as it takes (input forms design, D2). Rejects when the run is cancelled,

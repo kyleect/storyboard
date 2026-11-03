@@ -30,6 +30,7 @@ describe("allTools", () => {
       "agents_list",
       "agent_view",
       "agent_change",
+      "skill_load",
     ]);
   });
 });

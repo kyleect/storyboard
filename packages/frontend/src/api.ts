@@ -370,6 +370,61 @@ export interface PickableAgent {
   isDefault: boolean;
 }
 
+/** What each version of a skill holds (skills design). */
+export interface SkillContent {
+  displayName: string;
+  description: string;
+  body: string;
+}
+
+export type SkillScopeName = "global" | "project" | "agent";
+
+export interface Skill extends SkillContent {
+  id: string;
+  /** The name the model uses: the slug of the display name. */
+  name: string;
+  scope: SkillScopeName;
+  projectId: string | null;
+  agentId: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  deleted: boolean;
+}
+
+export interface SkillVersion extends SkillContent {
+  seq: number;
+  /** The slug in that version. */
+  name: string;
+  /** A deletion; the content is what the skill had then. */
+  deleted: boolean;
+  createdAt: string;
+}
+
+export interface SkillDetail extends Skill {
+  versions: SkillVersion[];
+}
+
+/** Where skills live: global, in a project, or in an agent. */
+export type SkillOwner =
+  | { scope: "global" }
+  | { scope: "project"; id: string }
+  | { scope: "agent"; id: string };
+
+/** The query key prefix for an owner's skills. */
+export const skillsKey = (o: SkillOwner) => [
+  "skills",
+  o.scope,
+  o.scope === "global" ? null : o.id,
+];
+
+const skillsBase = (o: SkillOwner) =>
+  o.scope === "global"
+    ? "/api/global/skills"
+    : o.scope === "project"
+      ? `/api/projects/${o.id}/skills`
+      : `/api/agents/${o.id}/skills`;
+
 /** A 409 from an import whose name is taken. */
 export interface ImportConflict {
   agentId: string;
@@ -632,12 +687,27 @@ export const api = {
   /** The tools an agent can select (all but the files and memory tools). */
   agentTools: () =>
     request<{ name: string; description: string }[]>("GET", "/api/agent-tools"),
+  listSkills: (o: SkillOwner, deleted: boolean) =>
+    request<Skill[]>(
+      "GET",
+      `${skillsBase(o)}${deleted ? "?deleted=true" : ""}`,
+    ),
+  getSkill: (id: string) => request<SkillDetail>("GET", `/api/skills/${id}`),
+  createSkill: (o: SkillOwner, c: SkillContent) =>
+    request<SkillDetail>("POST", skillsBase(o), c),
+  /** Saves a new version. */
+  saveSkill: (id: string, c: SkillContent) =>
+    request<SkillDetail>("PUT", `/api/skills/${id}`, c),
+  deleteSkill: (id: string) => request<unknown>("DELETE", `/api/skills/${id}`),
+  /** Makes an earlier version current; also restores a deleted skill. */
+  restoreSkill: (id: string, seq: number) =>
+    request<SkillDetail>("POST", `/api/skills/${id}/restore`, { seq }),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<SettingsView>("PUT", "/api/settings", patch),
 };
 
-/** The app-wide event stream (agents.changed, errors.changed). */
+/** The app-wide event stream (agents.changed, skills.changed, errors.changed). */
 export function appEventsUrl(): string {
   return `/api/events?${new URLSearchParams({ token: token ?? "" }).toString()}`;
 }

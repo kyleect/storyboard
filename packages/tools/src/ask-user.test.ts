@@ -24,6 +24,7 @@ function context(answer: InputAnswer) {
     projects: NO_PROJECTS,
     agents: NO_AGENTS,
     copyLimit: 20,
+    skills: [],
     entries: createEntryAccess({
       session: replaySessionEntries([]),
       sessionOps: [],

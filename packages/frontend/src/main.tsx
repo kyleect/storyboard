@@ -21,6 +21,7 @@ import { ErrorsPage } from "./routes/Errors";
 import { Home, Layout } from "./routes/Layout";
 import { ProjectPage } from "./routes/ProjectPage";
 import { Settings } from "./routes/Settings";
+import { GlobalSkillsPage, ProjectSkillsPage } from "./routes/Skills";
 
 const rootRoute = createRootRoute({ component: Layout });
 const routeTree = rootRoute.addChildren([
@@ -47,6 +48,11 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/skills",
+    component: ProjectSkillsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: "/files",
     component: GlobalEntriesPage,
   }),
@@ -54,6 +60,11 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: "/agents",
     component: GlobalAgentsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/skills",
+    component: GlobalSkillsPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

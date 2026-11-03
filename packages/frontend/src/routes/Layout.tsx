@@ -145,6 +145,20 @@ export function Layout() {
                 Project agents
               </Anchor>
             )}
+            {picked !== null && (
+              <Anchor
+                size="xs"
+                renderRoot={(props) => (
+                  <Link
+                    {...props}
+                    to="/projects/$projectId/skills"
+                    params={{ projectId: picked }}
+                  />
+                )}
+              >
+                Project skills
+              </Anchor>
+            )}
             {projects.isError && (
               <Text c="red" size="xs">
                 {projects.error.message}
@@ -191,6 +205,10 @@ export function Layout() {
           <NavLink
             renderRoot={(props) => <Link {...props} to="/agents" />}
             label="Agents"
+          />
+          <NavLink
+            renderRoot={(props) => <Link {...props} to="/skills" />}
+            label="Skills"
           />
           <NavLink
             renderRoot={(props) => <Link {...props} to="/errors" />}

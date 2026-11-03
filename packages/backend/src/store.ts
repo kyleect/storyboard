@@ -469,6 +469,21 @@ export class Store {
           "DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)",
         )
         .run(id);
+      // The project's skills, and those of its agents (skills design,
+      // decisions 20, 21), before the agents they point at.
+      this.db
+        .prepare(
+          `DELETE FROM skill_versions WHERE skill_id IN (
+             SELECT id FROM skills WHERE project_id = ?
+               OR agent_id IN (SELECT id FROM agents WHERE project_id = ?))`,
+        )
+        .run(id, id);
+      this.db
+        .prepare(
+          `DELETE FROM skills WHERE project_id = ?
+             OR agent_id IN (SELECT id FROM agents WHERE project_id = ?)`,
+        )
+        .run(id, id);
       // The project's default may be one of its own agents; let go of it
       // first so the foreign key doesn't block the delete.
       this.db

@@ -105,6 +105,19 @@ export function ProjectPage() {
         >
           Agents
         </Button>
+        <Button
+          size="xs"
+          variant="default"
+          renderRoot={(props) => (
+            <Link
+              {...props}
+              to="/projects/$projectId/skills"
+              params={{ projectId }}
+            />
+          )}
+        >
+          Skills
+        </Button>
       </Group>
       <DefaultAgentSelect project={project.data} disabled={trashed} />
       <SavedText
