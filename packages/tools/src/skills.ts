@@ -76,16 +76,35 @@ export const skillTools = [skillLoad];
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
- * The skill list for the system message (skills decisions 6, 8, 11), or
- * undefined when no skill is in scope. A scope is shown only for a name that
- * is in more than one scope. The wording is Claude's draft, for review.
+ * The skills in scope, one per line with its description; a scope is shown
+ * only for a name that is in more than one scope (skills decisions 2, 6). It
+ * is what `{{skills}}` expands to (placeholders design, decisions 8, 9).
+ * Empty when there are none.
+ */
+export function skillsList(skills: readonly RunSkill[]): string {
+  const names = byName(skills);
+  return skills
+    .map((s) => {
+      const label =
+        (names.get(s.name)?.length ?? 0) > 1
+          ? `${s.name} (${s.scope})`
+          : s.name;
+      return `- ${label}: ${oneLine(s.description)}`;
+    })
+    .join("\n");
+}
+
+/**
+ * The skill list for the system message with its introduction (skills
+ * decisions 6, 8, 11), or undefined when no skill is in scope. It is used
+ * where no prompt has `{{skills}}` (placeholders design, decision 10). The
+ * wording is Claude's draft, for review.
  */
 export function skillsInstruction(
   skills: readonly RunSkill[],
 ): string | undefined {
   if (skills.length === 0) return undefined;
-  const names = byName(skills);
-  const shared = [...names.values()].some((s) => s.length > 1);
+  const shared = [...byName(skills).values()].some((s) => s.length > 1);
   return [
     `You have skills: written instructions for particular kinds of work. When the user's request matches a skill's description, call ${SKILL_LOAD} with its name before you start, then follow what it returns.${
       shared
@@ -93,12 +112,6 @@ export function skillsInstruction(
         : ""
     }`,
     "",
-    ...skills.map((s) => {
-      const label =
-        (names.get(s.name)?.length ?? 0) > 1
-          ? `${s.name} (${s.scope})`
-          : s.name;
-      return `- ${label}: ${oneLine(s.description)}`;
-    }),
+    skillsList(skills),
   ].join("\n");
 }

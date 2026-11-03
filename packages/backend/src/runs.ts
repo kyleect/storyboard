@@ -41,6 +41,11 @@ import {
 } from "./store.js";
 import { alwaysAsks, setToolAsks, toolAsks } from "./tool-settings.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
+import {
+  expandPlaceholders,
+  toolsList,
+  usesPlaceholder,
+} from "./placeholders.js";
 
 /** Choices sent with a message or continue; they become the session's. */
 export interface RunChoices {
@@ -137,6 +142,11 @@ export interface RunManagerOptions {
    * `systemPrompt`.
    */
   skillsPrompt?: (skills: readonly RunSkill[]) => string | undefined;
+  /**
+   * What `{{skills}}` expands to: one line per skill (placeholders design,
+   * decision 8). Left out: it expands to nothing.
+   */
+  skillsList?: (skills: readonly RunSkill[]) => string;
   /**
    * Project and global files and notes for tools. Left out: tools see
    * session scope only.
@@ -843,15 +853,31 @@ export class RunManager {
         session?.project_id ?? null,
         agent?.id ?? null,
       ) ?? [];
+    const tools = this.toolsFor(agent, skills.length > 0);
+    // The prompts the user wrote may place the lists with {{skills}} and
+    // {{tools}}; they are filled in once, here, from what this run has
+    // (placeholders design, decisions 1, 6, 12). Where no prompt has
+    // {{skills}} the skill list goes after them, as before (decision 10).
+    const written = [
+      settings.systemPrompt,
+      project?.system_prompt,
+      agent?.prompt,
+    ];
+    const values = {
+      skills: this.options.skillsList?.(skills) ?? "",
+      tools: toolsList(tools),
+    };
+    const expanded = written.map((p) =>
+      p === undefined ? p : expandPlaceholders(p, values),
+    );
+    const placed = written.some((p) => usesPlaceholder(p, "skills"));
     // Global, project and agent prompts, then the skill list, then the files
     // and memory instruction (system prompts design, decisions 1 and 2;
     // skills design 11). Empty ones are left out.
     const system =
       [
-        settings.systemPrompt,
-        project?.system_prompt,
-        agent?.prompt,
-        this.options.skillsPrompt?.(skills),
+        ...expanded,
+        placed ? undefined : this.options.skillsPrompt?.(skills),
         base,
       ]
         .filter((p): p is string => p !== undefined && p.trim() !== "")
@@ -915,7 +941,7 @@ export class RunManager {
           newId: this.newId,
           now: this.now,
           ...(continuing ? { continueMessage: continuing } : {}),
-          tools: this.toolsFor(agent, skills.length > 0),
+          tools,
           skills,
           ...(runAgent ? { agent: runAgent } : {}),
           projectId: session?.project_id ?? null,

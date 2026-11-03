@@ -7,6 +7,7 @@ import {
   entriesInstruction,
   entryTools,
   skillsInstruction,
+  skillsList,
   skillTools,
 } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
@@ -63,6 +64,7 @@ async function main() {
     skills,
     skillTools: skillTools.map((t) => t.name),
     skillsPrompt: skillsInstruction,
+    skillsList,
     entries,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),
     index,

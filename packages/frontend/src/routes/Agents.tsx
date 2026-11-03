@@ -668,6 +668,7 @@ function AgentEditor({
       />
       <Textarea
         label="System prompt"
+        description="Write {{skills}} or {{tools}} to put the list of skills or tools the chat has at that place."
         autosize
         minRows={8}
         maxRows={30}

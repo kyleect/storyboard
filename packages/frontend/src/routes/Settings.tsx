@@ -170,7 +170,7 @@ export function Settings() {
             label="Default reasoning effort"
             description={
               envNote("reasoningEffort") ??
-              "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
+              "For sessions with none chosen. Levels are those of the default model. Clear it to send none. Write {{skills}} or {{tools}} to put the list of skills or tools the chat has at that place."
             }
             placeholder="Not sent (the server decides)"
             model={form.values.model || undefined}
