@@ -45,6 +45,7 @@ const content = (over: Partial<AgentContent> = {}): AgentContent => ({
   prompt: "Be terse.",
   toolMode: "allow",
   tools: [],
+  toolApproval: {},
   ...over,
 });
 
@@ -299,6 +300,7 @@ describe("agent files", () => {
         prompt: "You review code.",
         toolMode: "allow",
         tools: ["alpha"],
+        toolApproval: {},
       },
       // The always-on tool is dropped silently; the unknown one is named.
       warnings: ["Dropped tool this harness does not have: Read."],
@@ -314,6 +316,7 @@ describe("agent files", () => {
       prompt: "P",
       toolMode: "deny",
       tools: [],
+      toolApproval: {},
     });
   });
 

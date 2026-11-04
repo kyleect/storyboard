@@ -206,8 +206,12 @@ export function Chat() {
     }) => api.answerApproval(a.runId, a.requestId, a.answer),
     onSuccess: (_r, a) => {
       // "Always allow" changes the tool's setting.
-      if (a.answer.choice === "always")
+      if (a.answer.choice === "always") {
         void queryClient.invalidateQueries({ queryKey: ["tools"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["agent-tool-approvals"],
+        });
+      }
     },
     onError,
   });

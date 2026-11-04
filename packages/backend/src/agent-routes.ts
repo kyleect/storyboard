@@ -12,6 +12,7 @@ import type { AppEvents } from "./app-events.js";
 import { defaultAgentFor } from "./default-agent.js";
 import type { RunManager } from "./runs.js";
 import type { Store } from "./store.js";
+import { alwaysAsks, listToolSettings } from "./tool-settings.js";
 
 /*
  * Routes for agents (agents plan 1.2):
@@ -39,6 +40,7 @@ const AgentBody = z.object({
   prompt: z.string(),
   toolMode: ToolMode,
   tools: z.array(z.string()),
+  toolApproval: z.record(z.string(), z.boolean()).default({}),
 });
 const ListQuery = z.object({
   deleted: z.enum(["true", "false"]).optional(),
@@ -81,10 +83,19 @@ export function registerAgentRoutes(
   const alwaysOn = new Set(runs.alwaysOnTools);
   const selectable = () => runs.tools.filter((t) => !alwaysOn.has(t.name));
 
-  /** The always-on tools are not part of a selection (decision 8). */
+  const fixed = new Set(runs.tools.filter(alwaysAsks).map((t) => t.name));
+
+  /**
+   * The always-on tools are not part of a selection (decision 8). A tool
+   * that always asks has no setting of the agent's (agent tool approval
+   * design, Q2). Names with no such tool are kept, as in `tools`.
+   */
   const clean = (c: AgentContent): AgentContent => ({
     ...c,
     tools: c.tools.filter((t) => !alwaysOn.has(t)),
+    toolApproval: Object.fromEntries(
+      Object.entries(c.toolApproval).filter(([name]) => !fixed.has(name)),
+    ),
   });
 
   const announce = (agent: Agent, clearedSessions: string[] = []) =>
@@ -164,6 +175,7 @@ export function registerAgentRoutes(
         body.markdown,
         runs.tools.map((t) => t.name),
         runs.alwaysOnTools,
+        [...fixed],
       );
       const existing = agents.getByName(projectId, parsed.content.name);
       if (existing && !body.replace) {
@@ -251,6 +263,20 @@ export function registerAgentRoutes(
       isDefault: a.id === defaultId,
     }));
   });
+
+  /**
+   * Every tool with whether it is always on and its setting now, for the
+   * editor's approval choices (agent tool approval design, Q3, Q5).
+   */
+  app.get("/api/agent-tool-approvals", async () =>
+    listToolSettings(store.db, runs.tools).map((t) => ({
+      name: t.name,
+      description: t.description,
+      alwaysOn: alwaysOn.has(t.name),
+      ask: t.ask,
+      fixed: t.fixed,
+    })),
+  );
 
   /** The tools an agent can select: every tool but the always-on ones. */
   app.get("/api/agent-tools", async () =>

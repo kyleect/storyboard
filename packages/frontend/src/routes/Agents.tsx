@@ -37,6 +37,7 @@ import {
   type MessageAgent,
   type PickableAgent,
   type Project,
+  type ToolApprovalInfo,
   type ToolMode,
 } from "../api";
 import { showError } from "./SessionActions";
@@ -64,6 +65,14 @@ function useRefresh(scope: AgentScope) {
 /** The tools an agent can select, by name. */
 function useSelectableTools() {
   return useQuery({ queryKey: ["agent-tools"], queryFn: api.agentTools });
+}
+
+/** Every tool with its setting now, for the approval choices. */
+function useToolApprovals() {
+  return useQuery({
+    queryKey: ["agent-tool-approvals"],
+    queryFn: api.agentToolApprovals,
+  });
 }
 
 function DefaultBadge() {
@@ -106,12 +115,15 @@ function TextBox({ value }: { value: string }) {
 function ToolsSummary({
   toolMode,
   tools,
+  toolApproval,
   known,
 }: {
   toolMode: ToolMode;
   tools: string[];
+  toolApproval: Record<string, boolean>;
   known: Set<string> | undefined;
 }) {
+  const approvals = Object.entries(toolApproval);
   const label =
     toolMode === "allow"
       ? tools.length === 0
@@ -138,6 +150,24 @@ function ToolsSummary({
             </Badge>
           ))}
         </Group>
+      )}
+      {approvals.length > 0 && (
+        <>
+          <Text size="sm">Approval this agent sets:</Text>
+          <Group gap={4}>
+            {approvals.map(([t, ask]) => (
+              <Badge
+                key={t}
+                size="sm"
+                variant="light"
+                color={ask ? "orange" : "teal"}
+                tt="none"
+              >
+                {t}: {ask ? "asks" : "no approval"}
+              </Badge>
+            ))}
+          </Group>
+        </>
       )}
     </Stack>
   );
@@ -168,7 +198,12 @@ function VersionContent({
       <Text size="xs" c="dimmed">
         Tools
       </Text>
-      <ToolsSummary toolMode={v.toolMode} tools={v.tools} known={known} />
+      <ToolsSummary
+        toolMode={v.toolMode}
+        tools={v.tools}
+        toolApproval={v.toolApproval}
+        known={known}
+      />
     </Stack>
   );
 }
@@ -580,7 +615,12 @@ function AgentView({
       <Text size="xs" c="dimmed">
         Tools
       </Text>
-      <ToolsSummary toolMode={a.toolMode} tools={a.tools} known={known} />
+      <ToolsSummary
+        toolMode={a.toolMode}
+        tools={a.tools}
+        toolApproval={a.toolApproval}
+        known={known}
+      />
       <Text size="xs" c="dimmed">
         Skills
       </Text>
@@ -607,6 +647,57 @@ function AgentView({
 }
 
 /** Creates an agent, or saves `existing` as a new version. */
+const FOLLOW = "follow";
+const ASK = "ask";
+const SKIP = "skip";
+
+/**
+ * Whether calls to a tool ask, for this agent (agent tool approval design,
+ * Q1, Q2, Q4, Q5): the tool's own setting, or the agent's own choice. A tool
+ * that always asks is locked, and the choice is disabled for a tool the
+ * agent does not have.
+ */
+export function ApprovalSelect({
+  tool,
+  value,
+  disabled,
+  onChange,
+}: {
+  tool: ToolApprovalInfo | undefined;
+  value: boolean | undefined;
+  disabled: boolean;
+  onChange: (value: boolean | undefined) => void;
+}) {
+  const fixed = tool?.fixed ?? false;
+  return (
+    <Select
+      size="xs"
+      w={200}
+      aria-label={`Approval for ${tool?.name ?? "this tool"}`}
+      allowDeselect={false}
+      disabled={disabled || fixed || !tool}
+      value={
+        fixed ? "always" : value === undefined ? FOLLOW : value ? ASK : SKIP
+      }
+      onChange={(v) =>
+        onChange(v === ASK ? true : v === SKIP ? false : undefined)
+      }
+      data={
+        fixed
+          ? [{ value: "always", label: "Always asks" }]
+          : [
+              {
+                value: FOLLOW,
+                label: `Tool's setting (${tool?.ask ? "asks" : "doesn't ask"})`,
+              },
+              { value: ASK, label: "Ask" },
+              { value: SKIP, label: "Don't ask" },
+            ]
+      }
+    />
+  );
+}
+
 function AgentEditor({
   scope,
   existing,
@@ -620,6 +711,7 @@ function AgentEditor({
 }) {
   const refresh = useRefresh(scope);
   const tools = useSelectableTools();
+  const approvals = useToolApprovals();
   const [name, setName] = useState(existing?.name ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
   const [prompt, setPrompt] = useState(existing?.prompt ?? "");
@@ -628,6 +720,29 @@ function AgentEditor({
     existing?.toolMode ?? "allow",
   );
   const [picked, setPicked] = useState<string[]>(existing?.tools ?? []);
+  // The agent's own approval choices, by tool; a tool not here follows its
+  // own setting.
+  const [approval, setApproval] = useState<Record<string, boolean>>(
+    existing?.toolApproval ?? {},
+  );
+  const setAsks = (tool: string, ask: boolean | undefined) =>
+    setApproval((old) => {
+      const rest = Object.fromEntries(
+        Object.entries(old).filter(([name]) => name !== tool),
+      );
+      return ask === undefined ? rest : { ...rest, [tool]: ask };
+    });
+  const approvalOf = (name: string) =>
+    approvals.data?.find((t) => t.name === name);
+  // Whether the agent has the tool, for the choice's disabled state.
+  const hasTool = (name: string) =>
+    toolMode === "allow" ? picked.includes(name) : !picked.includes(name);
+  const alwaysOn = (approvals.data ?? []).filter((t) => t.alwaysOn);
+  // Stored choices for tools that no longer exist, shown so they can be
+  // removed.
+  const missingApproval = approvals.data
+    ? Object.keys(approval).filter((t) => !approvalOf(t))
+    : [];
   const known = new Set(tools.data?.map((t) => t.name) ?? []);
   // Stored names with no such tool, shown so they can be removed (P6).
   const missing = tools.data ? picked.filter((t) => !known.has(t)) : [];
@@ -640,6 +755,7 @@ function AgentEditor({
         prompt,
         toolMode,
         tools: picked,
+        toolApproval: approval,
       };
       return existing
         ? api.saveAgent(existing.id, c)
@@ -653,7 +769,7 @@ function AgentEditor({
   });
 
   return (
-    <Stack gap="xs">
+    <Stack gap="lg">
       <TextInput
         label="Name"
         description="Unique among this scope's agents. Case-sensitive."
@@ -675,12 +791,15 @@ function AgentEditor({
         value={prompt}
         onChange={(e) => setPrompt(e.currentTarget.value)}
       />
-      <Stack gap={4}>
+
+      <Stack mt="xl">
         <Text size="sm" fw={500}>
           Tools
         </Text>
         <Text size="xs" c="dimmed">
-          The files and memory tools are always on.
+          The files and memory tools are always on. For each tool, you can also
+          choose whether this agent asks before a call, or follows the
+          tool&apos;s own setting.
         </Text>
         <SegmentedControl
           size="xs"
@@ -692,17 +811,34 @@ function AgentEditor({
             { value: "deny", label: "Every tool except the ticked ones" },
           ]}
         />
-        {tools.isPending && <Loader size="xs" />}
+        {(tools.isPending || approvals.isPending) && <Loader size="xs" />}
         {tools.isError && <Alert color="red">{tools.error.message}</Alert>}
+        {approvals.isError && (
+          <Alert color="red">{approvals.error.message}</Alert>
+        )}
         <Checkbox.Group value={picked} onChange={setPicked}>
-          <Stack gap={6} mt={4}>
+          <Stack gap="xl" mt={4}>
             {tools.data?.map((t) => (
-              <Checkbox
-                key={t.name}
-                value={t.name}
-                label={t.name}
-                description={t.description}
-              />
+              <Stack>
+                <Group
+                  key={t.name}
+                  justify="space-between"
+                  align="flex-start"
+                  wrap="nowrap"
+                >
+                  <Checkbox
+                    value={t.name}
+                    label={t.name}
+                    description={t.description}
+                  />
+                </Group>
+                <ApprovalSelect
+                  tool={approvalOf(t.name)}
+                  value={approval[t.name]}
+                  disabled={!hasTool(t.name)}
+                  onChange={(ask) => setAsks(t.name, ask)}
+                />
+              </Stack>
             ))}
             {missing.map((t) => (
               <Checkbox
@@ -715,6 +851,55 @@ function AgentEditor({
             ))}
           </Stack>
         </Checkbox.Group>
+        {alwaysOn.length > 0 && (
+          <Stack gap="lg" mt="xl">
+            <Text size="xs" c="dimmed">
+              Tools Always Enabled
+            </Text>
+            {alwaysOn.map((t) => (
+              <Stack>
+                <Group
+                  key={t.name}
+                  justify="space-between"
+                  align="flex-start"
+                  wrap="nowrap"
+                >
+                  <Stack gap={0}>
+                    <Text size="sm">{t.name}</Text>
+                    <Text size="xs" c="dimmed">
+                      {t.description}
+                    </Text>
+                  </Stack>
+                </Group>
+                <ApprovalSelect
+                  tool={t}
+                  value={approval[t.name]}
+                  disabled={false}
+                  onChange={(ask) => setAsks(t.name, ask)}
+                />
+              </Stack>
+            ))}
+          </Stack>
+        )}
+        {missingApproval.map((t) => (
+          <Group key={t} justify="space-between" wrap="nowrap">
+            <Stack gap={0}>
+              <Text size="sm" c="red">
+                {t} (missing)
+              </Text>
+              <Text size="xs" c="dimmed">
+                No tool has this name any more. Remove its approval setting.
+              </Text>
+            </Stack>
+            <Button
+              size="compact-xs"
+              variant="default"
+              onClick={() => setAsks(t, undefined)}
+            >
+              Remove
+            </Button>
+          </Group>
+        ))}
       </Stack>
       <Group gap="xs">
         <Button

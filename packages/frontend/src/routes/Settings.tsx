@@ -398,10 +398,15 @@ function ToolApprovals() {
   const setAsks = useMutation({
     mutationFn: (t: { name: string; ask: boolean }) =>
       api.setToolAsks(t.name, t.ask),
-    onSuccess: (updated: ToolView) =>
+    onSuccess: (updated: ToolView) => {
       queryClient.setQueryData<ToolView[]>(["tools"], (old) =>
         old?.map((t) => (t.name === updated.name ? updated : t)),
-      ),
+      );
+      // The agent editor shows each tool's setting.
+      void queryClient.invalidateQueries({
+        queryKey: ["agent-tool-approvals"],
+      });
+    },
     onError: (err: Error) =>
       notifications.show({
         color: "red",

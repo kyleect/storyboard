@@ -40,6 +40,22 @@ function readStored(db: Database): z.infer<typeof Stored> {
   return parsed.success ? parsed.data : {};
 }
 
+/**
+ * Whether a call asks, and whether the agent's own setting decides it (agent
+ * tool approval design, section 3): a tool that always asks, else the
+ * agent's setting for the tool, else the tool's setting, else its default.
+ */
+export function toolApproval(
+  db: Database,
+  tool: Tool,
+  agent: { toolApproval: Readonly<Record<string, boolean>> } | null | undefined,
+): { ask: boolean; byAgent: boolean } {
+  if (alwaysAsks(tool)) return { ask: true, byAgent: false };
+  const own = agent?.toolApproval[tool.name];
+  if (own !== undefined) return { ask: own, byAgent: true };
+  return { ask: toolAsks(db, tool), byAgent: false };
+}
+
 /** Whether the tool asks before running, by setting or by default. */
 export function toolAsks(db: Database, tool: Tool): boolean {
   if (alwaysAsks(tool)) return true;

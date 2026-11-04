@@ -563,6 +563,18 @@ describe("a tool that always asks", () => {
     ).not.toHaveProperty("alwaysAsks");
   });
 
+  it("is not marked as the agent's setting", async () => {
+    const { events, approvals, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      { tools: [fixed()], agentDecides: () => true },
+    );
+    await runLoop(model, request, ctx);
+    expect(approvals[0]).not.toHaveProperty("agentSetting");
+    expect(
+      events.find((e) => e.type === "tool.approval_requested")?.data,
+    ).not.toHaveProperty("agentSetting");
+  });
+
   it("does not run when denied", async () => {
     let ran = false;
     const { ctx, model } = setup(
@@ -1391,5 +1403,44 @@ describe("runLoop with files and memory", () => {
     );
     await runLoop(model, request, ctx);
     expect(results(saved)[0]?.entries).toBeUndefined();
+  });
+});
+
+describe("a tool the agent's setting makes ask", () => {
+  const optional = (): Tool =>
+    defineTool({
+      ...echoSpec,
+      approval: "never",
+      execute: (input) => ({ data: input.text }),
+    });
+  const script = [
+    [call("c1", "echo", '{"text":"a"}')],
+    [{ type: "text" as const, text: "ok" }],
+  ];
+
+  it("marks the request when the agent decides", async () => {
+    const { events, approvals, ctx, model } = setup(script, {
+      tools: [optional()],
+      needsApproval: () => true,
+      agentDecides: () => true,
+    });
+    await runLoop(model, request, ctx);
+    expect(approvals[0]).toMatchObject({ name: "echo", agentSetting: true });
+    expect(
+      events.find((e) => e.type === "tool.approval_requested")?.data,
+    ).toMatchObject({ agentSetting: true });
+  });
+
+  it("does not mark it otherwise", async () => {
+    const { events, approvals, ctx, model } = setup(script, {
+      tools: [optional()],
+      needsApproval: () => true,
+      agentDecides: () => false,
+    });
+    await runLoop(model, request, ctx);
+    expect(approvals[0]).not.toHaveProperty("agentSetting");
+    expect(
+      events.find((e) => e.type === "tool.approval_requested")?.data,
+    ).not.toHaveProperty("agentSetting");
   });
 });

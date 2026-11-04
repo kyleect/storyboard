@@ -20,6 +20,12 @@ export interface AgentContent {
   /** "allow": only `tools`; "deny": every tool but `tools` (decision 6). */
   toolMode: ToolMode;
   tools: string[];
+  /**
+   * Tool name to true (ask before each call) or false (don't ask), for the
+   * tools this agent has its own say on. A tool not named follows its own
+   * setting (agent tool approval design, Q1).
+   */
+  toolApproval: Record<string, boolean>;
 }
 
 export interface Agent extends AgentContent {
@@ -59,6 +65,7 @@ interface AgentRow {
   prompt: string;
   tool_mode: ToolMode;
   tools: string;
+  tool_approval: string;
   version: number;
   created_at: string;
   updated_at: string;
@@ -72,12 +79,13 @@ interface VersionRow {
   prompt: string;
   tool_mode: ToolMode;
   tools: string;
+  tool_approval: string;
   deleted: number;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, project_id, name, description, prompt, tool_mode, tools, version, created_at, updated_at, deleted_at";
+  "id, project_id, name, description, prompt, tool_mode, tools, tool_approval, version, created_at, updated_at, deleted_at";
 
 const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
@@ -87,6 +95,7 @@ const toAgent = (r: AgentRow): Agent => ({
   prompt: r.prompt,
   toolMode: r.tool_mode,
   tools: JSON.parse(r.tools) as string[],
+  toolApproval: JSON.parse(r.tool_approval) as Record<string, boolean>,
   version: r.version,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -100,6 +109,7 @@ const toVersion = (r: VersionRow): AgentVersion => ({
   prompt: r.prompt,
   toolMode: r.tool_mode,
   tools: JSON.parse(r.tools) as string[],
+  toolApproval: JSON.parse(r.tool_approval) as Record<string, boolean>,
   deleted: r.deleted === 1,
   createdAt: r.created_at,
 });
@@ -173,8 +183,8 @@ export class AgentStore {
       const now = this.now();
       this.db
         .prepare(
-          `INSERT INTO agents (id, project_id, name, description, prompt, tool_mode, tools, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          `INSERT INTO agents (id, project_id, name, description, prompt, tool_mode, tools, tool_approval, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           id,
@@ -184,6 +194,7 @@ export class AgentStore {
           c.prompt,
           c.toolMode,
           JSON.stringify(c.tools),
+          JSON.stringify(c.toolApproval),
           now,
           now,
         );
@@ -282,7 +293,7 @@ export class AgentStore {
     return (
       this.db
         .prepare(
-          `SELECT seq, name, description, prompt, tool_mode, tools, deleted, created_at
+          `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, deleted, created_at
            FROM agent_versions WHERE agent_id = ? ORDER BY seq`,
         )
         .all(id) as VersionRow[]
@@ -292,7 +303,7 @@ export class AgentStore {
   version(id: string, seq: number): AgentVersion | undefined {
     const row = this.db
       .prepare(
-        `SELECT seq, name, description, prompt, tool_mode, tools, deleted, created_at
+        `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, deleted, created_at
          FROM agent_versions WHERE agent_id = ? AND seq = ?`,
       )
       .get(id, seq) as VersionRow | undefined;
@@ -329,7 +340,8 @@ export class AgentStore {
     this.db
       .prepare(
         `UPDATE agents SET name = ?, description = ?, prompt = ?, tool_mode = ?,
-           tools = ?, version = ?, updated_at = ?, deleted_at = ?
+           tools = ?, tool_approval = ?, version = ?, updated_at = ?,
+           deleted_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -338,6 +350,7 @@ export class AgentStore {
         c.prompt,
         c.toolMode,
         JSON.stringify(c.tools),
+        JSON.stringify(c.toolApproval),
         seq,
         now,
         deleted ? now : null,
@@ -356,8 +369,8 @@ export class AgentStore {
   ) {
     this.db
       .prepare(
-        `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_mode, tools, deleted, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_mode, tools, tool_approval, deleted, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         agentId,
@@ -367,6 +380,7 @@ export class AgentStore {
         c.prompt,
         c.toolMode,
         JSON.stringify(c.tools),
+        JSON.stringify(c.toolApproval),
         deleted ? 1 : 0,
         now,
       );

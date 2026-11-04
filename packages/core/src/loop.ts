@@ -49,6 +49,12 @@ export interface ApprovalRequest {
   arguments: unknown;
   /** True for a tool that always asks: Allow once and Deny only. */
   alwaysAsks?: boolean | undefined;
+  /**
+   * True when the agent's own setting for the tool is why it asks: Allow
+   * once, Allow for this session and Deny only (agent tool approval design,
+   * Q9).
+   */
+  agentSetting?: boolean | undefined;
 }
 
 /** What went wrong in a reported tool call (error reporting plan, P2). */
@@ -84,6 +90,11 @@ export interface LoopContext extends RunContext {
   maxIterations: number;
   /** Whether a call to this tool needs approval. Default: the tool's own. */
   needsApproval?: (tool: Tool) => boolean;
+  /**
+   * Whether the agent's own setting for this tool decides that it asks.
+   * Only asked for a tool that does not always ask. Default: no.
+   */
+  agentDecides?: (tool: Tool) => boolean;
   /**
    * Waits for the user's answer to an approval request, for as long as it
    * takes (6.5). When `signal` aborts, the loop stops waiting on its own;
@@ -497,6 +508,7 @@ export async function runLoop(
     if (needsApproval(tool)) {
       const requestId = newId();
       const alwaysAsks = tool.approval === "always";
+      const agentSetting = !alwaysAsks && ctx.agentDecides?.(tool) === true;
       emit({
         type: "tool.approval_requested",
         data: {
@@ -505,6 +517,7 @@ export async function runLoop(
           name: call.name,
           arguments: call.arguments,
           ...(alwaysAsks ? { alwaysAsks } : {}),
+          ...(agentSetting ? { agentSetting } : {}),
         },
       });
       let answer: ApprovalAnswer | undefined;
@@ -517,6 +530,7 @@ export async function runLoop(
               name: call.name,
               arguments: call.arguments,
               ...(alwaysAsks ? { alwaysAsks } : {}),
+              ...(agentSetting ? { agentSetting } : {}),
             },
             ctx.signal,
           ),

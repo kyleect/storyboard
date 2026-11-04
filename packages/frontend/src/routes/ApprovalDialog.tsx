@@ -28,7 +28,9 @@ const CHOICES: { choice: ApprovalChoice; label: string; color?: string }[] = [
  * request open; the run keeps waiting until it is answered. A note typed in
  * the box goes with Allow once or Deny; the other two choices are disabled
  * while there is one (approval notes design, D2 and D6). A tool that always
- * asks offers only Allow once and Deny.
+ * asks offers only Allow once and Deny; one the agent's own setting makes ask
+ * has no "Always allow this tool", which sets the global setting the agent's
+ * overrides (agent tool approval design, Q9).
  */
 export function ApprovalDialog({
   request,
@@ -48,7 +50,9 @@ export function ApprovalDialog({
   // A tool that always asks can only be allowed once or denied.
   const choices = request.alwaysAsks
     ? CHOICES.filter((c) => c.choice === "once" || c.choice === "deny")
-    : CHOICES;
+    : request.agentSetting
+      ? CHOICES.filter((c) => c.choice !== "always")
+      : CHOICES;
   return (
     <Modal
       opened={opened}
@@ -61,6 +65,12 @@ export function ApprovalDialog({
           The model wants to run <Code>{request.name}</Code> with:
         </Text>
         <Code block>{JSON.stringify(request.arguments, null, 2)}</Code>
+        {request.agentSetting && (
+          <Text size="xs" c="dimmed">
+            This agent asks before using this tool, so it cannot be always
+            allowed here.
+          </Text>
+        )}
         <Textarea
           autosize
           minRows={2}

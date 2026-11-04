@@ -39,7 +39,7 @@ import {
   type SessionRow,
   type Store,
 } from "./store.js";
-import { alwaysAsks, setToolAsks, toolAsks } from "./tool-settings.js";
+import { alwaysAsks, setToolAsks, toolApproval } from "./tool-settings.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
 import {
   expandPlaceholders,
@@ -506,6 +506,13 @@ export class RunManager {
     ) {
       throw new RunError(
         `${tool.name} always asks; it can only be allowed once or denied.`,
+        400,
+      );
+    }
+    // The global setting would not change what the agent's own setting says.
+    if (open.request.agentSetting && choice === "always") {
+      throw new RunError(
+        `The agent's own setting asks for ${open.request.name}; it can only be allowed once, for this session, or denied.`,
         400,
       );
     }
@@ -992,10 +999,14 @@ export class RunManager {
             : {}),
           copyLimit: settings.copyLimit,
           maxIterations: settings.loopLimit,
+          // The agent's own setting, then the tool's (agent tool approval
+          // design, section 3). The agent is the one this run started with.
           needsApproval: (tool) =>
-            toolAsks(this.store.db, tool) &&
+            toolApproval(this.store.db, tool, agent).ask &&
             (alwaysAsks(tool) ||
               !this.store.isToolAllowedForSession(sessionId, tool.name)),
+          agentDecides: (tool) =>
+            toolApproval(this.store.db, tool, agent).byAgent,
           approve: (req, signal) =>
             new Promise<ApprovalAnswer>((resolve) => {
               approvals.set(req.requestId, { request: req, resolve });

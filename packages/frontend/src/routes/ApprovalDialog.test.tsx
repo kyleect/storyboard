@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ApprovalAnswer } from "@harness/core";
 import { ApprovalDialog } from "./ApprovalDialog";
 
-function setup(alwaysAsks = false) {
+function setup(alwaysAsks = false, agentSetting = false) {
   const answers: ApprovalAnswer[] = [];
   render(
     <MantineProvider>
@@ -15,6 +15,7 @@ function setup(alwaysAsks = false) {
           name: "write_entry",
           arguments: { text: "a" },
           ...(alwaysAsks ? { alwaysAsks } : {}),
+          ...(agentSetting ? { agentSetting } : {}),
         }}
         opened
         busy={false}
@@ -91,5 +92,31 @@ describe("ApprovalDialog", () => {
     fireEvent.click(button("Allow once"));
     fireEvent.click(button("Deny"));
     expect(answers).toEqual([{ choice: "once" }, { choice: "deny" }]);
+  });
+
+  it("leaves out Always allow when the agent's setting makes the tool ask", () => {
+    const { answers, button } = setup(false, true);
+    expect(
+      screen.queryByRole("button", { name: "Always allow this tool" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/This agent asks before using this tool/),
+    ).toBeDefined();
+    fireEvent.click(button("Allow for this session"));
+    fireEvent.click(button("Allow once"));
+    fireEvent.click(button("Deny"));
+    expect(answers).toEqual([
+      { choice: "session" },
+      { choice: "once" },
+      { choice: "deny" },
+    ]);
+  });
+
+  it("shows no such line otherwise", () => {
+    setup();
+    expect(screen.queryByText(/This agent asks before/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Always allow this tool" }),
+    ).toBeDefined();
   });
 });

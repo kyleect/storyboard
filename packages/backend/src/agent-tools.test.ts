@@ -193,6 +193,7 @@ const agentContent = (name: string) => ({
   prompt: `You are ${name}.`,
   toolMode: "deny" as const,
   tools: ["web_search"],
+  toolApproval: {},
 });
 
 describe("agents_list, agent_view and agent_change", () => {

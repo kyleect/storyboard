@@ -115,6 +115,7 @@ const agentContent = (over: Partial<AgentContent> = {}): AgentContent => ({
   prompt: "",
   toolMode: "allow",
   tools: [],
+  toolApproval: {},
   ...over,
 });
 

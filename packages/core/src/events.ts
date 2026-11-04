@@ -159,6 +159,12 @@ export const ToolApprovalRequested = event(
      * and "session" and "always" are refused.
      */
     alwaysAsks: z.boolean().optional(),
+    /**
+     * True when the agent's own setting for the tool is why it asks: the
+     * global "always" choice would not change that, so it is refused
+     * (agent tool approval design, Q9).
+     */
+    agentSetting: z.boolean().optional(),
   }),
 );
 

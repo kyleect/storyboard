@@ -324,6 +324,23 @@ export interface AgentContent {
   /** "allow": only `tools`; "deny": every tool but `tools`. */
   toolMode: ToolMode;
   tools: string[];
+  /**
+   * Tool name to true (ask before each call) or false (don't ask). A tool
+   * not named follows its own setting.
+   */
+  toolApproval: Record<string, boolean>;
+}
+
+/** A tool as the agent editor's approval choices list it. */
+export interface ToolApprovalInfo {
+  name: string;
+  description: string;
+  /** The files, memory and skill tools, which an agent cannot switch off. */
+  alwaysOn: boolean;
+  /** Whether the tool asks now, by its setting or default. */
+  ask: boolean;
+  /** True for a tool that always asks: no setting can change it. */
+  fixed: boolean;
 }
 
 export interface Agent extends AgentContent {
@@ -692,6 +709,8 @@ export const api = {
   /** The tools an agent can select (all but the files and memory tools). */
   agentTools: () =>
     request<{ name: string; description: string }[]>("GET", "/api/agent-tools"),
+  agentToolApprovals: () =>
+    request<ToolApprovalInfo[]>("GET", "/api/agent-tool-approvals"),
   listSkills: (o: SkillOwner, deleted: boolean) =>
     request<Skill[]>(
       "GET",
