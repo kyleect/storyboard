@@ -74,9 +74,9 @@ export function Layout() {
   return (
     <AppShell navbar={{ width: 260, breakpoint: "sm" }} padding="md">
       <AppShell.Navbar p="sm">
-        <Stack gap="sm" h="100%">
+        <Stack gap="xs" h="100%">
           <Group justify="space-between">
-            <Title order={4}>Harness</Title>
+            <Title order={3}>🤖</Title>
             <Button
               size="compact-xs"
               radius="sm"
@@ -151,81 +151,83 @@ export function Layout() {
             </Stack>
           </ScrollArea>
 
-          <Stack>
-            <Collapse
-              expanded={projectLinksExpanded}
-              onClick={toggleProjectLinks}
-            >
-              <Stack gap="xs">
-                {picked !== null && (
-                  <Anchor
-                    size="xs"
-                    renderRoot={(props) => (
-                      <Link
-                        {...props}
-                        to="/projects/$projectId"
-                        params={{ projectId: picked }}
-                      />
-                    )}
-                  >
-                    Open project page
-                  </Anchor>
-                )}
-                {picked !== null && (
-                  <Anchor
-                    size="xs"
-                    renderRoot={(props) => (
-                      <Link
-                        {...props}
-                        to="/projects/$projectId/files"
-                        params={{ projectId: picked }}
-                      />
-                    )}
-                  >
-                    Project files & memory
-                  </Anchor>
-                )}
-                {picked !== null && (
-                  <Anchor
-                    size="xs"
-                    renderRoot={(props) => (
-                      <Link
-                        {...props}
-                        to="/projects/$projectId/agents"
-                        params={{ projectId: picked }}
-                      />
-                    )}
-                  >
-                    Project agents
-                  </Anchor>
-                )}
-                {picked !== null && (
-                  <Anchor
-                    size="xs"
-                    renderRoot={(props) => (
-                      <Link
-                        {...props}
-                        to="/projects/$projectId/skills"
-                        params={{ projectId: picked }}
-                      />
-                    )}
-                  >
-                    Project skills
-                  </Anchor>
-                )}
-              </Stack>
-            </Collapse>
+          {picked && (
+            <Stack>
+              <Collapse
+                expanded={projectLinksExpanded}
+                onClick={toggleProjectLinks}
+              >
+                <Stack gap="xs">
+                  {picked !== null && (
+                    <Anchor
+                      size="xs"
+                      renderRoot={(props) => (
+                        <Link
+                          {...props}
+                          to="/projects/$projectId"
+                          params={{ projectId: picked }}
+                        />
+                      )}
+                    >
+                      Open project page
+                    </Anchor>
+                  )}
+                  {picked !== null && (
+                    <Anchor
+                      size="xs"
+                      renderRoot={(props) => (
+                        <Link
+                          {...props}
+                          to="/projects/$projectId/files"
+                          params={{ projectId: picked }}
+                        />
+                      )}
+                    >
+                      Project files & memory
+                    </Anchor>
+                  )}
+                  {picked !== null && (
+                    <Anchor
+                      size="xs"
+                      renderRoot={(props) => (
+                        <Link
+                          {...props}
+                          to="/projects/$projectId/agents"
+                          params={{ projectId: picked }}
+                        />
+                      )}
+                    >
+                      Project agents
+                    </Anchor>
+                  )}
+                  {picked !== null && (
+                    <Anchor
+                      size="xs"
+                      renderRoot={(props) => (
+                        <Link
+                          {...props}
+                          to="/projects/$projectId/skills"
+                          params={{ projectId: picked }}
+                        />
+                      )}
+                    >
+                      Project skills
+                    </Anchor>
+                  )}
+                </Stack>
+              </Collapse>
 
-            <Button
-              onClick={toggleProjectLinks}
-              size="compact-xs"
-              variant="outline"
-            >
-              {projectLinksExpanded ? "Close" : "Project Links"}
-            </Button>
-          </Stack>
+              <Button
+                onClick={toggleProjectLinks}
+                size="compact-xs"
+                variant="outline"
+              >
+                {projectLinksExpanded ? "Close" : "Project Links"}
+              </Button>
+            </Stack>
+          )}
 
-          <Stack gap="xs">
+          <Stack gap={0} p={0}>
             <NavLink
               renderRoot={(props) => <Link {...props} to="/agents" />}
               label="Agents"
