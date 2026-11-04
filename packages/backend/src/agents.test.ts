@@ -974,3 +974,147 @@ describe("default agent", () => {
     expect(agents.get(a.id)).toBeUndefined();
   });
 });
+
+describe("global default agent", () => {
+  const setGlobal = (app: FastifyInstance, id: string) =>
+    api(app, "PUT", "/api/settings", { defaultAgentId: id });
+  const stored = async (app: FastifyInstance) =>
+    (
+      (await api(app, "GET", "/api/settings")).body as unknown as {
+        effective: { defaultAgentId: string };
+      }
+    ).effective.defaultAgentId;
+  const marks = (res: { body: unknown }) =>
+    (res.body as { id: string; isDefault: boolean }[])
+      .filter((x) => x.isDefault)
+      .map((x) => x.id);
+
+  it("starts with none, and is set, changed and cleared", async () => {
+    const { app } = await setup();
+    const a = await newAgent(app, { name: "A" });
+    const b = await newAgent(app, { name: "B" });
+    expect(await stored(app)).toBe("");
+    expect((await setGlobal(app, a.id)).status).toBe(200);
+    expect(await stored(app)).toBe(a.id);
+    await setGlobal(app, b.id);
+    expect(await stored(app)).toBe(b.id);
+    expect((await setGlobal(app, "")).status).toBe(200);
+    expect(await stored(app)).toBe("");
+  });
+
+  it("refuses unknown, deleted and project agents, and stores nothing", async () => {
+    const { app } = await setup();
+    const p = await newProject(app);
+    const own = await newAgent(app, { name: "Own" }, p);
+    const gone = await newAgent(app, { name: "Gone" });
+    await api(app, "DELETE", `/api/agents/${gone.id}`);
+    expect((await setGlobal(app, "nope")).status).toBe(404);
+    expect((await setGlobal(app, gone.id)).status).toBe(409);
+    expect((await setGlobal(app, own.id)).status).toBe(409);
+    expect(await stored(app)).toBe("");
+    // Other settings are still saved without it.
+    expect(
+      (await api(app, "PUT", "/api/settings", { loopLimit: 7 })).status,
+    ).toBe(200);
+  });
+
+  it("is picked by standalone sessions and by projects with no default", async () => {
+    const { app, store } = await setup();
+    const p = await newProject(app);
+    const g = await newAgent(app, { name: "G" });
+    const before = await newSession(app);
+    const beforeP = await newSession(app, p);
+    await setGlobal(app, g.id);
+    expect(store.getSession(await newSession(app))?.agent_id).toBe(g.id);
+    expect(store.getSession(await newSession(app, p))?.agent_id).toBe(g.id);
+    // Sessions that already exist are unchanged.
+    expect(store.getSession(before)?.agent_id).toBeNull();
+    expect(store.getSession(beforeP)?.agent_id).toBeNull();
+    // The pick can be changed to no agent.
+    const s = await newSession(app);
+    await api(app, "PATCH", `/api/sessions/${s}`, { agentId: null });
+    expect(store.getSession(s)?.agent_id).toBeNull();
+    // Cleared, new sessions get none again.
+    await setGlobal(app, "");
+    expect(store.getSession(await newSession(app))?.agent_id).toBeNull();
+  });
+
+  it("is overridden by the project's default", async () => {
+    const { app, store } = await setup();
+    const p = await newProject(app);
+    const q = await newProject(app, "Q");
+    const g = await newAgent(app, { name: "G" });
+    const own = await newAgent(app, { name: "Own" }, p);
+    const other = await newAgent(app, { name: "Other" });
+    await setGlobal(app, g.id);
+    await api(app, "PATCH", `/api/projects/${p}`, { defaultAgentId: own.id });
+    await api(app, "PATCH", `/api/projects/${q}`, {
+      defaultAgentId: other.id,
+    });
+    expect(store.getSession(await newSession(app, p))?.agent_id).toBe(own.id);
+    expect(store.getSession(await newSession(app, q))?.agent_id).toBe(other.id);
+    // Removing the project's default hands the project back to the global one.
+    await api(app, "PATCH", `/api/projects/${p}`, { defaultAgentId: null });
+    expect(store.getSession(await newSession(app, p))?.agent_id).toBe(g.id);
+  });
+
+  it("is cleared when the agent is deleted, and not set again on restore", async () => {
+    const { app, store } = await setup();
+    const g = await newAgent(app, { name: "G" });
+    const other = await newAgent(app, { name: "Other" });
+    await setGlobal(app, g.id);
+    // Deleting another agent leaves it alone.
+    await api(app, "DELETE", `/api/agents/${other.id}`);
+    expect(await stored(app)).toBe(g.id);
+    await api(app, "DELETE", `/api/agents/${g.id}`);
+    expect(await stored(app)).toBe("");
+    expect(store.getSession(await newSession(app))?.agent_id).toBeNull();
+    await api(app, "POST", `/api/agents/${g.id}/restore`, { seq: 1 });
+    expect(await stored(app)).toBe("");
+  });
+
+  it("gives no agent when the stored one cannot be used", async () => {
+    const { app, store, t } = await setup();
+    const p = await newProject(app);
+    const own = await newAgent(app, { name: "Own" }, p);
+    // Not reachable through the API: a project's agent, and an unknown id.
+    writeSettings(t.db, { defaultAgentId: own.id });
+    expect(store.getSession(await newSession(app, p))?.agent_id).toBeNull();
+    writeSettings(t.db, { defaultAgentId: "nope" });
+    expect(store.getSession(await newSession(app))?.agent_id).toBeNull();
+  });
+
+  it("marks the agent a new session would get, in the picker and the lists", async () => {
+    const { app } = await setup();
+    const p = await newProject(app);
+    const own = await newAgent(app, { name: "Own" }, p);
+    const g = await newAgent(app, { name: "G" });
+    const alone = await newSession(app);
+    const inP = await newSession(app, p);
+    await setGlobal(app, g.id);
+    // The global list, a standalone session's picker, and a project session
+    // with no default of its own.
+    expect(marks(await api(app, "GET", "/api/global/agents"))).toEqual([g.id]);
+    expect(
+      marks(await api(app, "GET", `/api/sessions/${alone}/agents`)),
+    ).toEqual([g.id]);
+    expect(marks(await api(app, "GET", `/api/sessions/${inP}/agents`))).toEqual(
+      [g.id],
+    );
+    expect(marks(await api(app, "GET", `/api/projects/${p}/agents`))).toEqual(
+      [],
+    );
+    // With a project default, the project's wins in its picker and list.
+    await api(app, "PATCH", `/api/projects/${p}`, { defaultAgentId: own.id });
+    expect(marks(await api(app, "GET", `/api/sessions/${inP}/agents`))).toEqual(
+      [own.id],
+    );
+    expect(marks(await api(app, "GET", `/api/projects/${p}/agents`))).toEqual([
+      own.id,
+    ]);
+    // A standalone session still shows the global one.
+    expect(
+      marks(await api(app, "GET", `/api/sessions/${alone}/agents`)),
+    ).toEqual([g.id]);
+  });
+});

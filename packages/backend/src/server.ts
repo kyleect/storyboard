@@ -19,6 +19,7 @@ import {
 import { registerAgentRoutes } from "./agent-routes.js";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
+import { defaultAgentFor } from "./default-agent.js";
 import { EntryStore } from "./entries-store.js";
 import { registerEntryRoutes } from "./entry-routes.js";
 import { RunError, type RunManager } from "./runs.js";
@@ -171,7 +172,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   const events = options.events ?? runs.events;
   const agents = options.agents ?? new AgentStore(store.db, now, newId);
-  registerAgentRoutes(app, { store, runs, agents, events });
+  registerAgentRoutes(app, { store, runs, agents, events, env });
   registerSkillRoutes(app, {
     store,
     agents,
@@ -181,7 +182,22 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   app.get("/api/settings", async () => readSettings(store.db, env));
 
-  app.put("/api/settings", async (req) => {
+  app.put("/api/settings", async (req, reply) => {
+    // The global default agent must be a live global agent, or empty.
+    const defaultAgentId = z
+      .object({ defaultAgentId: z.string().optional() })
+      .passthrough()
+      .safeParse(req.body).data?.defaultAgentId;
+    if (defaultAgentId) {
+      const agent = agents.get(defaultAgentId);
+      if (!agent) return reply.code(404).send({ error: "Agent not found." });
+      if (agent.deleted)
+        return reply.code(409).send({ error: "The agent is deleted." });
+      if (agent.projectId !== null)
+        return reply.code(409).send({
+          error: "Only a global agent can be the global default.",
+        });
+    }
     writeSettings(store.db, req.body);
     options.onSettingsSaved?.();
     return readSettings(store.db, env);
@@ -231,16 +247,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       time,
       body.projectId ?? null,
     );
-    if (body.projectId !== undefined) {
-      store.touchProject(body.projectId, time);
-      // The project's default agent, if it still has a live one
-      // (default agent design, decision 1).
-      const defaultId = store.getProject(body.projectId)?.default_agent_id;
-      const agent = defaultId ? agents.get(defaultId) : undefined;
-      if (agent && agents.usableIn(agent, body.projectId)) {
-        store.setSessionChoices(session.id, { agentId: agent.id });
-        session = { ...session, agent_id: agent.id };
-      }
+    if (body.projectId !== undefined) store.touchProject(body.projectId, time);
+    // The project's default agent, else the global one, if it is still live
+    // (default agent design decision 1; global default agent design, section
+    // 3).
+    const agent = defaultAgentFor(
+      { store, agents, env },
+      body.projectId ?? null,
+    );
+    if (agent) {
+      store.setSessionChoices(session.id, { agentId: agent.id });
+      session = { ...session, agent_id: agent.id };
     }
     return reply.code(201).send(session);
   });

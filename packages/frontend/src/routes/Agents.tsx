@@ -741,12 +741,70 @@ export function GlobalAgentsPage() {
       <Text size="sm" c="dimmed">
         Global: every session can use these.
       </Text>
+      <GlobalDefaultAgentSelect />
       <AgentsPanel scope={{ scope: "global" }} />
     </Stack>
   );
 }
 
 const NO_DEFAULT = "";
+
+/**
+ * The global default agent: new sessions start with it unless their project
+ * has a default of its own (global default agent design, decisions 1 to 6).
+ * Global agents are offered, or none.
+ */
+function GlobalDefaultAgentSelect() {
+  const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+  });
+  const global = useQuery({
+    queryKey: [...agentsKey({ scope: "global" }), "list", false],
+    queryFn: () => api.listAgents({ scope: "global" }, false),
+  });
+  const save = useMutation({
+    mutationFn: (defaultAgentId: string) =>
+      api.saveSettings({ defaultAgentId }),
+    onSuccess: async (view) => {
+      queryClient.setQueryData(["settings"], view);
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+      await queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+    },
+    onError: showError("Could not set the default agent"),
+  });
+  const current = settings.data?.effective.defaultAgentId ?? NO_DEFAULT;
+  // A default that is not in the list (for example, deleted just now) shows
+  // as none until the list refreshes.
+  const known = (global.data ?? []).some((a) => a.id === current);
+  const env = settings.data?.overriddenByEnv.defaultAgentId;
+  return (
+    <Select
+      w={280}
+      label="Default agent"
+      description={
+        env
+          ? `Set by ${env}.`
+          : "New sessions start with it, unless their project has a default of its own."
+      }
+      allowDeselect={false}
+      searchable
+      disabled={!!env || save.isPending}
+      value={known ? current : NO_DEFAULT}
+      onChange={(v) => save.mutate(v ?? NO_DEFAULT)}
+      data={[
+        { value: NO_DEFAULT, label: "None" },
+        ...(global.data ?? []).map((a) => ({ value: a.id, label: a.name })),
+      ]}
+      {...(settings.isError ? { error: settings.error.message } : {})}
+      {...(global.isError ? { error: global.error.message } : {})}
+      {...(settings.isPending || global.isPending
+        ? { rightSection: <Loader size="xs" /> }
+        : {})}
+    />
+  );
+}
 
 /**
  * The project's default agent: new sessions in it start with this agent
@@ -773,6 +831,14 @@ export function DefaultAgentSelect({
     queryKey: [...agentsKey({ scope: "global" }), "list", false],
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+  });
+  // With none, new sessions start with the global default, if there is one.
+  const globalDefault = (global.data ?? []).find(
+    (a) => a.id === settings.data?.effective.defaultAgentId,
+  );
   const save = useMutation({
     mutationFn: (defaultAgentId: string | null) =>
       api.updateProject(project.id, { defaultAgentId }),
@@ -816,7 +882,17 @@ export function DefaultAgentSelect({
       value={known ? project.default_agent_id : NO_DEFAULT}
       onChange={(v) => save.mutate(v === NO_DEFAULT || v === null ? null : v)}
       data={[
-        { group: "", items: [{ value: NO_DEFAULT, label: "None" }] },
+        {
+          group: "",
+          items: [
+            {
+              value: NO_DEFAULT,
+              label: globalDefault
+                ? `None (global default: ${globalDefault.name})`
+                : "None",
+            },
+          ],
+        },
         ...group("Project agents", "project", own.data),
         ...group("Global agents", "global", global.data),
       ]}

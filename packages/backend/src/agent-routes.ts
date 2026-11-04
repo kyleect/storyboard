@@ -9,6 +9,7 @@ import {
   type AgentStore,
 } from "./agents-store.js";
 import type { AppEvents } from "./app-events.js";
+import { defaultAgentFor } from "./default-agent.js";
 import type { RunManager } from "./runs.js";
 import type { Store } from "./store.js";
 
@@ -73,6 +74,7 @@ export function registerAgentRoutes(
     runs: RunManager;
     agents: AgentStore;
     events: AppEvents;
+    env?: NodeJS.ProcessEnv | undefined;
   },
 ) {
   const { store, runs, agents, events } = deps;
@@ -133,10 +135,10 @@ export function registerAgentRoutes(
       const projectId = scopeOf(req);
       const q = ListQuery.parse(req.query);
       const list = agents.list(projectId, q.deleted === "true");
-      // A project's list marks its default agent (default agent design 6).
-      const defaultId = projectId
-        ? store.getProject(projectId)?.default_agent_id
-        : null;
+      // A list marks the agent a new session in its scope starts with:
+      // the project's default, else the global one (default agent design 6;
+      // global default agent design, Q9).
+      const defaultId = defaultAgentFor(deps, projectId)?.id;
       return list.map((a) => ({ ...a, isDefault: a.id === defaultId }));
     });
 
@@ -240,9 +242,7 @@ export function registerAgentRoutes(
     const { id } = IdParams.parse(req.params);
     const session = store.getSession(id);
     if (!session) throw new AgentError("Session not found.", 404);
-    const defaultId = session.project_id
-      ? store.getProject(session.project_id)?.default_agent_id
-      : null;
+    const defaultId = defaultAgentFor(deps, session.project_id)?.id;
     return agents.pickable(session.project_id).map((a): PickableAgent => ({
       id: a.id,
       name: a.name,

@@ -52,6 +52,12 @@ export const Settings = z.object({
    * decisions 1 to 3). Empty: none.
    */
   systemPrompt: z.string(),
+  /**
+   * The global agent a new session starts with when its project has no
+   * default of its own (global default agent design, decision 5). Empty:
+   * none.
+   */
+  defaultAgentId: z.string(),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -87,6 +93,7 @@ Replies
 - Be direct and brief. Say what you did and what you found, not how you went about it.
 - Use Markdown for structure when it helps.
   `.trim(),
+  defaultAgentId: "",
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -103,6 +110,7 @@ const ENV: Record<keyof Settings, string> = {
   titleModel: "HARNESS_TITLE_MODEL",
   titlePrompt: "HARNESS_TITLE_PROMPT",
   systemPrompt: "HARNESS_SYSTEM_PROMPT",
+  defaultAgentId: "HARNESS_DEFAULT_AGENT_ID",
 };
 
 const NUMERIC = new Set<keyof Settings>([

@@ -224,7 +224,8 @@ export class AgentStore {
   /**
    * Marks the agent deleted, records the deletion as a version, and clears
    * it from every session that has it picked (decision 23). Returns the
-   * sessions cleared. Also clears it as any project's default agent.
+   * sessions cleared. Also clears it as any project's default agent, and as
+   * the global default.
    */
   delete(id: string): { agent: Agent; sessions: string[] } {
     return this.db.transaction(() => {
@@ -247,6 +248,11 @@ export class AgentStore {
           "UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?",
         )
         .run(id);
+      // Nor the global default (global default agent design, Q7). Restoring
+      // it does not set it again.
+      this.db
+        .prepare("DELETE FROM settings WHERE key = ? AND value = ?")
+        .run("defaultAgentId", JSON.stringify(id));
       return { agent: this.write(agent, agent, true), sessions };
     })();
   }

@@ -223,6 +223,11 @@ export interface Settings {
    * every chat run. Empty: none.
    */
   systemPrompt: string;
+  /**
+   * The global agent a new session starts with when its project has no
+   * default of its own. Empty: none.
+   */
+  defaultAgentId: string;
 }
 
 export interface SettingsView {

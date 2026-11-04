@@ -36,11 +36,11 @@ import { showError, useSessionActions } from "./SessionActions";
 
 /**
  * The fields the main form saves; the system prompt and session titles
- * sections have their own.
+ * sections have their own, and the default agent is set on the agents page.
  */
 type MainSettings = Omit<
   SettingsShape,
-  keyof TitleSettings | keyof PromptSettings
+  keyof TitleSettings | keyof PromptSettings | "defaultAgentId"
 >;
 
 type PromptSettings = Pick<SettingsShape, "systemPrompt">;
