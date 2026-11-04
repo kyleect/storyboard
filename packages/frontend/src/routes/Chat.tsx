@@ -50,6 +50,7 @@ import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
+import { TranscriptScroll } from "./TranscriptScroll";
 
 /**
  * What tool calls need to draw their forms: `ask_user`'s (input forms
@@ -399,7 +400,7 @@ export function Chat() {
       )}
 
       {tab === "chat" && (
-        <ScrollArea style={{ flex: 1 }}>
+        <TranscriptScroll>
           <Stack gap="sm" pr="md">
             {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
             {shown.map((m) => (
@@ -416,7 +417,7 @@ export function Chat() {
               </Group>
             )}
           </Stack>
-        </ScrollArea>
+        </TranscriptScroll>
       )}
 
       {/* Errors of a session in the trash are not shown (Q6). */}
