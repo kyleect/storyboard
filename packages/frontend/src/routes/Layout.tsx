@@ -2,6 +2,7 @@ import {
   Anchor,
   AppShell,
   Button,
+  Collapse,
   Group,
   NavLink,
   ScrollArea,
@@ -18,6 +19,7 @@ import { useAppEvents } from "../live";
 import { usePicked } from "../picked";
 import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
+import { useDisclosure } from "@mantine/hooks";
 
 const NO_PROJECT = "none";
 const NEW_PROJECT = "new";
@@ -29,6 +31,8 @@ export function Layout() {
   const projectActions = useProjectActions();
   const picked = usePicked((s) => s.projectId);
   const pick = usePicked((s) => s.pick);
+  const [projectLinksExpanded, { toggle: toggleProjectLinks }] =
+    useDisclosure(false);
   // Agent changes from any window (agents plan, P7).
   useAppEvents();
 
@@ -74,7 +78,9 @@ export function Layout() {
           <Group justify="space-between">
             <Title order={4}>Harness</Title>
             <Button
-              size="xs"
+              size="compact-xs"
+              radius="sm"
+              variant="gradient"
               onClick={() => create.mutate()}
               loading={create.isPending}
             >
@@ -84,15 +90,14 @@ export function Layout() {
           <Stack gap={4}>
             <Select
               aria-label="Project"
-              size="xs"
               allowDeselect={false}
               data={[
-                { value: NO_PROJECT, label: "No project" },
+                { value: NO_PROJECT, label: "No project selected" },
+                { value: NEW_PROJECT, label: "New project…" },
                 ...(projects.data ?? []).map((p) => ({
                   value: p.id,
-                  label: p.name,
+                  label: `🗂️  ${p.name}`,
                 })),
-                { value: NEW_PROJECT, label: "New project…" },
               ]}
               value={picked ?? NO_PROJECT}
               onChange={(value) => {
@@ -103,62 +108,7 @@ export function Layout() {
                 }
               }}
             />
-            {picked !== null && (
-              <Anchor
-                size="xs"
-                renderRoot={(props) => (
-                  <Link
-                    {...props}
-                    to="/projects/$projectId"
-                    params={{ projectId: picked }}
-                  />
-                )}
-              >
-                Open project page
-              </Anchor>
-            )}
-            {picked !== null && (
-              <Anchor
-                size="xs"
-                renderRoot={(props) => (
-                  <Link
-                    {...props}
-                    to="/projects/$projectId/files"
-                    params={{ projectId: picked }}
-                  />
-                )}
-              >
-                Project files & memory
-              </Anchor>
-            )}
-            {picked !== null && (
-              <Anchor
-                size="xs"
-                renderRoot={(props) => (
-                  <Link
-                    {...props}
-                    to="/projects/$projectId/agents"
-                    params={{ projectId: picked }}
-                  />
-                )}
-              >
-                Project agents
-              </Anchor>
-            )}
-            {picked !== null && (
-              <Anchor
-                size="xs"
-                renderRoot={(props) => (
-                  <Link
-                    {...props}
-                    to="/projects/$projectId/skills"
-                    params={{ projectId: picked }}
-                  />
-                )}
-              >
-                Project skills
-              </Anchor>
-            )}
+
             {projects.isError && (
               <Text c="red" size="xs">
                 {projects.error.message}
@@ -176,48 +126,127 @@ export function Layout() {
                 No sessions.
               </Text>
             )}
-            {sessions.data?.map((s) => (
-              <NavLink
-                key={s.id}
-                renderRoot={(props) => (
-                  <Link
-                    {...props}
-                    to="/sessions/$sessionId"
-                    params={{ sessionId: s.id }}
-                  />
-                )}
-                label={s.title}
-                description={new Date(s.created_at).toLocaleString()}
-                active={params.sessionId === s.id}
-                rightSection={
-                  <Group gap={4} wrap="nowrap">
-                    <UsageBadge usage={s.usage} />
-                    <SessionMenu session={s} />
-                  </Group>
-                }
-              />
-            ))}
+            <Stack gap="xs">
+              {sessions.data?.map((s) => (
+                <NavLink
+                  key={s.id}
+                  renderRoot={(props) => (
+                    <Link
+                      {...props}
+                      to="/sessions/$sessionId"
+                      params={{ sessionId: s.id }}
+                    />
+                  )}
+                  label={s.title}
+                  description={new Date(s.created_at).toLocaleString()}
+                  active={params.sessionId === s.id}
+                  rightSection={
+                    <Group gap={4} wrap="nowrap">
+                      <UsageBadge usage={s.usage} />
+                      <SessionMenu session={s} />
+                    </Group>
+                  }
+                />
+              ))}
+            </Stack>
           </ScrollArea>
-          <NavLink
-            renderRoot={(props) => <Link {...props} to="/files" />}
-            label="Files & memory"
-          />
-          <NavLink
-            renderRoot={(props) => <Link {...props} to="/agents" />}
-            label="Agents"
-          />
-          <NavLink
-            renderRoot={(props) => <Link {...props} to="/skills" />}
-            label="Skills"
-          />
-          <NavLink
-            renderRoot={(props) => <Link {...props} to="/errors" />}
-            label="Errors"
-          />
-          <NavLink
-            renderRoot={(props) => <Link {...props} to="/settings" />}
-            label="Settings"
-          />
+
+          <Stack>
+            <Collapse
+              expanded={projectLinksExpanded}
+              onClick={toggleProjectLinks}
+            >
+              <Stack gap="xs">
+                {picked !== null && (
+                  <Anchor
+                    size="xs"
+                    renderRoot={(props) => (
+                      <Link
+                        {...props}
+                        to="/projects/$projectId"
+                        params={{ projectId: picked }}
+                      />
+                    )}
+                  >
+                    Open project page
+                  </Anchor>
+                )}
+                {picked !== null && (
+                  <Anchor
+                    size="xs"
+                    renderRoot={(props) => (
+                      <Link
+                        {...props}
+                        to="/projects/$projectId/files"
+                        params={{ projectId: picked }}
+                      />
+                    )}
+                  >
+                    Project files & memory
+                  </Anchor>
+                )}
+                {picked !== null && (
+                  <Anchor
+                    size="xs"
+                    renderRoot={(props) => (
+                      <Link
+                        {...props}
+                        to="/projects/$projectId/agents"
+                        params={{ projectId: picked }}
+                      />
+                    )}
+                  >
+                    Project agents
+                  </Anchor>
+                )}
+                {picked !== null && (
+                  <Anchor
+                    size="xs"
+                    renderRoot={(props) => (
+                      <Link
+                        {...props}
+                        to="/projects/$projectId/skills"
+                        params={{ projectId: picked }}
+                      />
+                    )}
+                  >
+                    Project skills
+                  </Anchor>
+                )}
+              </Stack>
+            </Collapse>
+
+            <Button
+              onClick={toggleProjectLinks}
+              size="compact-xs"
+              variant="outline"
+            >
+              {projectLinksExpanded ? "Close" : "Project Links"}
+            </Button>
+          </Stack>
+
+          <Stack gap="xs">
+            <NavLink
+              renderRoot={(props) => <Link {...props} to="/agents" />}
+              label="Agents"
+            />
+            <NavLink
+              renderRoot={(props) => <Link {...props} to="/skills" />}
+              label="Skills"
+            />
+            <NavLink
+              renderRoot={(props) => <Link {...props} to="/files" />}
+              label="Files & memory"
+            />
+            <NavLink
+              renderRoot={(props) => <Link {...props} to="/errors" />}
+              label="Errors"
+            />
+            <NavLink
+              renderRoot={(props) => <Link {...props} to="/settings" />}
+              label="Settings"
+            />
+          </Stack>
         </Stack>
       </AppShell.Navbar>
       <AppShell.Main>
