@@ -1,5 +1,5 @@
 import { parse, stringify } from "yaml";
-import type { AgentContent } from "./agents-store.js";
+import type { AgentContent, AgentInput } from "./agents-store.js";
 import { AgentError } from "./agents-store.js";
 
 /*
@@ -15,6 +15,9 @@ import { AgentError } from "./agents-store.js";
  *     - web_fetch
  *   skipApproval:     # tools it does not ask about
  *     - web_search
+ *   subagent: true    # can be started with start_subagent
+ *   childReminders: 3 # reminders as a subagent (else the global setting)
+ *   childPrompt: ...  # line added when it runs as a subagent ("" for none)
  *   ---
  *
  *   The system prompt.
@@ -22,9 +25,11 @@ import { AgentError } from "./agents-store.js";
  * Without `tools` or `disallowedTools`, every tool is on (a deny list with
  * nothing in it), as in Claude Code. `requireApproval` and `skipApproval`
  * are written only when not empty (agent tool approval design, Q10).
+ * `subagent`, `childReminders` and `childPrompt` are written only when set
+ * (agent delegation design).
  */
 
-export function agentToMarkdown(agent: AgentContent): string {
+export function agentToMarkdown(agent: AgentInput): string {
   const approvals = Object.entries(agent.toolApproval);
   const asks = approvals.filter(([, ask]) => ask).map(([name]) => name);
   const skips = approvals.filter(([, ask]) => !ask).map(([name]) => name);
@@ -34,6 +39,11 @@ export function agentToMarkdown(agent: AgentContent): string {
     [agent.toolMode === "allow" ? "tools" : "disallowedTools"]: agent.tools,
     ...(asks.length > 0 ? { requireApproval: asks } : {}),
     ...(skips.length > 0 ? { skipApproval: skips } : {}),
+    ...(agent.subagent ? { subagent: true } : {}),
+    ...(agent.childReminders != null
+      ? { childReminders: agent.childReminders }
+      : {}),
+    ...(agent.childPrompt != null ? { childPrompt: agent.childPrompt } : {}),
   };
   return `---\n${stringify(front)}---\n\n${agent.prompt}\n`;
 }
@@ -152,6 +162,30 @@ export function agentFromMarkdown(
     ...Object.fromEntries(skips.filter(usable).map((t) => [t, false])),
   };
 
+  if (f.subagent !== undefined && typeof f.subagent !== "boolean") {
+    throw new AgentError('"subagent" must be true or false.', 400);
+  }
+  const reminders = f.childReminders;
+  if (
+    reminders !== undefined &&
+    reminders !== null &&
+    (typeof reminders !== "number" ||
+      !Number.isInteger(reminders) ||
+      reminders < 0)
+  ) {
+    throw new AgentError(
+      '"childReminders" must be a whole number, 0 or more.',
+      400,
+    );
+  }
+  if (
+    f.childPrompt !== undefined &&
+    f.childPrompt !== null &&
+    typeof f.childPrompt !== "string"
+  ) {
+    throw new AgentError('"childPrompt" must be text.', 400);
+  }
+
   // The blank line after the front matter and the final newline are the
   // file's, not the prompt's.
   const body = (match[2] ?? "").replace(/^\n/, "").replace(/\n$/, "");
@@ -164,6 +198,9 @@ export function agentFromMarkdown(
       toolMode: hasAllow ? "allow" : "deny",
       tools,
       toolApproval,
+      childReminders: typeof reminders === "number" ? reminders : null,
+      childPrompt: typeof f.childPrompt === "string" ? f.childPrompt : null,
+      subagent: f.subagent === true,
     },
     warnings: [
       ...(unknown.length > 0

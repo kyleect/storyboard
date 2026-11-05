@@ -189,6 +189,7 @@ export const Message = z.discriminatedUnion("role", [
   EditMessage,
 ]);
 export type Message = z.infer<typeof Message>;
+export type UserMessage = z.infer<typeof UserMessage>;
 export type AssistantMessage = z.infer<typeof AssistantMessage>;
 export type ToolResultMessage = z.infer<typeof ToolResultMessage>;
 export type EditMessage = z.infer<typeof EditMessage>;

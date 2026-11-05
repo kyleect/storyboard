@@ -48,12 +48,15 @@ export function ApprovalDialog({
   onAnswer,
   onCheck,
   onRefresh,
+  from,
 }: {
   request: ApprovalRequest;
   opened: boolean;
   busy: boolean;
   onClose: () => void;
   onAnswer: (answer: ApprovalAnswer) => void;
+  /** The subagent that asks, when it is not the top-level agent. */
+  from?: string;
   /** For a request with a review: the problems with a selection. */
   onCheck?: (
     selection: Selection,
@@ -72,6 +75,7 @@ export function ApprovalDialog({
         onAnswer={onAnswer}
         onCheck={onCheck}
         onRefresh={onRefresh}
+        from={from}
       />
     );
   }
@@ -82,7 +86,22 @@ export function ApprovalDialog({
       busy={busy}
       onClose={onClose}
       onAnswer={onAnswer}
+      from={from}
     />
+  );
+}
+
+/** Says which subagent is asking, when it is not the top-level agent. */
+function FromSubagent({ name }: { name: string }) {
+  return (
+    <Group gap="xs">
+      <Badge size="xs" variant="light" color="teal">
+        subagent
+      </Badge>
+      <Text size="sm" fw={500}>
+        {name} is asking
+      </Text>
+    </Group>
   );
 }
 
@@ -93,12 +112,14 @@ function ArgumentsDialog({
   busy,
   onClose,
   onAnswer,
+  from,
 }: {
   request: ApprovalRequest;
   opened: boolean;
   busy: boolean;
   onClose: () => void;
   onAnswer: (answer: ApprovalAnswer) => void;
+  from: string | undefined;
 }) {
   const [note, setNote] = useState("");
   const text = note.trim();
@@ -116,6 +137,7 @@ function ArgumentsDialog({
       size="lg"
     >
       <Stack gap="sm">
+        {from && <FromSubagent name={from} />}
         <Text size="sm">
           The model wants to run <Code>{request.name}</Code> with:
         </Text>
@@ -224,9 +246,11 @@ function ChangesDialog({
   onAnswer,
   onCheck,
   onRefresh,
+  from,
 }: {
   request: ApprovalRequest;
   review: Review;
+  from: string | undefined;
   opened: boolean;
   busy: boolean;
   onClose: () => void;
@@ -306,6 +330,7 @@ function ChangesDialog({
       size="lg"
     >
       <Stack gap="sm">
+        {from && <FromSubagent name={from} />}
         <Text size="sm">
           The model wants to run <Code>{request.name}</Code>. Untick a change to
           leave it out.

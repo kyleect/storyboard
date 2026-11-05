@@ -9,6 +9,7 @@ import {
   Loader,
   Modal,
   NavLink,
+  NumberInput,
   Paper,
   ScrollArea,
   SegmentedControl,
@@ -82,6 +83,40 @@ function DefaultBadge() {
     <Badge size="xs" variant="light">
       Default
     </Badge>
+  );
+}
+
+function BuiltinBadge() {
+  return (
+    <Badge size="xs" variant="light" color="teal">
+      built-in
+    </Badge>
+  );
+}
+
+/** What an agent's subagent settings say, for its page. */
+function SubagentSummary({ agent }: { agent: AgentContent }) {
+  return (
+    <Stack gap={2}>
+      <Text size="sm">
+        {agent.subagent
+          ? "Can be started by other agents."
+          : "Cannot be started by other agents."}
+      </Text>
+      <Text size="xs" c="dimmed">
+        Reminders:{" "}
+        {agent.childReminders === null
+          ? "the global setting"
+          : agent.childReminders}
+        . Line:{" "}
+        {agent.childPrompt === null
+          ? "the global setting"
+          : agent.childPrompt === ""
+            ? "none"
+            : "its own"}
+        .
+      </Text>
+    </Stack>
   );
 }
 
@@ -310,7 +345,12 @@ const fileName = (name: string) =>
     .map((c) => (c < " " || '\\/:*?"<>|'.includes(c) ? "_" : c))
     .join("")}.md`;
 
-type Mode = { mode: "view" } | { mode: "edit" } | { mode: "new" };
+type Mode =
+  | { mode: "view" }
+  | { mode: "edit" }
+  | { mode: "new" }
+  /** A new agent started from another (a built-in one's Copy). */
+  | { mode: "copy"; source: AgentDetail };
 
 /**
  * A scope's agents: list on the left, the selected agent on the right.
@@ -434,7 +474,9 @@ export function AgentsPanel({
           {list.data?.map((a) => (
             <NavLink
               key={a.id}
-              active={selected === a.id && mode.mode !== "new"}
+              active={
+                selected === a.id && mode.mode !== "new" && mode.mode !== "copy"
+              }
               onClick={() => {
                 setSelected(a.id);
                 setMode({ mode: "view" });
@@ -452,8 +494,11 @@ export function AgentsPanel({
               rightSection={
                 a.deleted ? (
                   <DeletedBadge />
-                ) : a.isDefault ? (
-                  <DefaultBadge />
+                ) : a.isDefault || a.builtin ? (
+                  <Group gap={4} wrap="nowrap">
+                    {a.builtin && <BuiltinBadge />}
+                    {a.isDefault && <DefaultBadge />}
+                  </Group>
                 ) : undefined
               }
             />
@@ -461,9 +506,10 @@ export function AgentsPanel({
         </Stack>
       </Stack>
       <Stack style={{ flex: 1, minWidth: 0 }}>
-        {mode.mode === "new" && !readOnly ? (
+        {(mode.mode === "new" || mode.mode === "copy") && !readOnly ? (
           <AgentEditor
             scope={scope}
+            {...(mode.mode === "copy" ? { copyOf: mode.source } : {})}
             onSaved={(id) => {
               setSelected(id);
               setMode({ mode: "view" });
@@ -478,6 +524,7 @@ export function AgentsPanel({
             readOnly={!!readOnly}
             editing={mode.mode === "edit"}
             onEdit={() => setMode({ mode: "edit" })}
+            onCopy={(source) => setMode({ mode: "copy", source })}
             onDone={() => setMode({ mode: "view" })}
             onGone={() => setSelected(null)}
           />
@@ -497,6 +544,7 @@ function AgentView({
   readOnly,
   editing,
   onEdit,
+  onCopy,
   onDone,
   onGone,
 }: {
@@ -505,6 +553,7 @@ function AgentView({
   readOnly: boolean;
   editing: boolean;
   onEdit: () => void;
+  onCopy: (source: AgentDetail) => void;
   onDone: () => void;
   onGone: () => void;
 }) {
@@ -539,7 +588,7 @@ function AgentView({
   }
   const a = agent.data;
 
-  if (editing && !readOnly && !a.deleted) {
+  if (editing && !readOnly && !a.deleted && !a.builtin) {
     return (
       <AgentEditor
         scope={scope}
@@ -561,11 +610,18 @@ function AgentView({
             v{a.version}
           </Badge>
           {a.deleted && <DeletedBadge />}
+          {a.builtin && <BuiltinBadge />}
         </Group>
         <Group gap="xs" wrap="nowrap">
-          <Button size="xs" variant="default" onClick={() => setVersions(true)}>
-            Versions ({a.versions.length})
-          </Button>
+          {!a.builtin && (
+            <Button
+              size="xs"
+              variant="default"
+              onClick={() => setVersions(true)}
+            >
+              Versions ({a.versions.length})
+            </Button>
+          )}
           <Button
             size="xs"
             variant="default"
@@ -574,7 +630,14 @@ function AgentView({
           >
             Export
           </Button>
-          {!readOnly && !a.deleted && (
+          {/* A built-in agent cannot be changed; Copy starts a new agent
+              from it (agent delegation design, B8a). */}
+          {!readOnly && a.builtin && (
+            <Button size="xs" variant="light" onClick={() => onCopy(a)}>
+              Copy
+            </Button>
+          )}
+          {!readOnly && !a.deleted && !a.builtin && (
             <>
               <Button size="xs" variant="light" onClick={onEdit}>
                 Edit
@@ -606,10 +669,16 @@ function AgentView({
         </Group>
       </Group>
       <Text size="xs" c="dimmed">
-        {a.deleted ? "Deleted" : "Changed"} {when(a.updatedAt)}
+        {a.builtin
+          ? "Built in. It cannot be changed or deleted; Copy makes an agent of your own from it."
+          : `${a.deleted ? "Deleted" : "Changed"} ${when(a.updatedAt)}`}
         {a.deleted && ". Open Versions to restore it."}
       </Text>
       {a.description && <Text size="sm">{a.description}</Text>}
+      <Text size="xs" c="dimmed">
+        As a subagent
+      </Text>
+      <SubagentSummary agent={a} />
       <Text size="xs" c="dimmed">
         System prompt
       </Text>
@@ -729,29 +798,44 @@ export function ApprovalSelect({
 function AgentEditor({
   scope,
   existing,
+  copyOf,
   onSaved,
   onCancel,
 }: {
   scope: AgentScope;
   existing?: AgentDetail;
+  /** Starts a new agent with this one's content (a built-in agent's Copy). */
+  copyOf?: AgentDetail;
   onSaved: (id: string) => void;
   onCancel: () => void;
 }) {
   const refresh = useRefresh(scope);
   const tools = useSelectableTools();
   const approvals = useToolApprovals();
-  const [name, setName] = useState(existing?.name ?? "");
-  const [description, setDescription] = useState(existing?.description ?? "");
-  const [prompt, setPrompt] = useState(existing?.prompt ?? "");
-  // A new agent starts as an allow list with nothing ticked (P8).
-  const [toolMode, setToolMode] = useState<ToolMode>(
-    existing?.toolMode ?? "allow",
+  // What the fields start with: the agent being edited, or the one copied.
+  const from = existing ?? copyOf;
+  const [name, setName] = useState(
+    existing ? existing.name : copyOf ? `${copyOf.name} (copy)` : "",
   );
-  const [picked, setPicked] = useState<string[]>(existing?.tools ?? []);
+  const [description, setDescription] = useState(from?.description ?? "");
+  const [prompt, setPrompt] = useState(from?.prompt ?? "");
+  // A new agent starts as an allow list with nothing ticked (P8).
+  const [toolMode, setToolMode] = useState<ToolMode>(from?.toolMode ?? "allow");
+  const [picked, setPicked] = useState<string[]>(from?.tools ?? []);
   // The agent's own approval choices, by tool; a tool not here follows its
   // own setting.
   const [approval, setApproval] = useState<Record<string, boolean>>(
-    existing?.toolApproval ?? {},
+    from?.toolApproval ?? {},
+  );
+  // As a subagent (agent delegation design, decisions 14 to 17, 20): off
+  // unless chosen; reminders and the line follow the global settings unless
+  // set here (null: not set).
+  const [subagent, setSubagent] = useState(existing?.subagent ?? false);
+  const [reminders, setReminders] = useState<number | null>(
+    from?.childReminders ?? null,
+  );
+  const [childLine, setChildLine] = useState<string | null>(
+    from?.childPrompt ?? null,
   );
   const setAsks = (tool: string, ask: boolean | undefined) =>
     setApproval((old) => {
@@ -784,6 +868,9 @@ function AgentEditor({
         toolMode,
         tools: picked,
         toolApproval: approval,
+        childReminders: reminders,
+        childPrompt: childLine,
+        subagent,
       };
       return existing
         ? api.saveAgent(existing.id, c)
@@ -819,6 +906,55 @@ function AgentEditor({
         value={prompt}
         onChange={(e) => setPrompt(e.currentTarget.value)}
       />
+
+      <Stack gap="xs">
+        <Text size="sm" fw={500}>
+          As a subagent
+        </Text>
+        <Switch
+          label="Can be started by other agents"
+          description="Other agents can hand work to this one with start_subagent. Off unless you turn it on."
+          checked={subagent}
+          onChange={(e) => setSubagent(e.currentTarget.checked)}
+        />
+        <Switch
+          label="Use the global number of reminders"
+          description="How many times it is reminded to hand back when it stops without doing so."
+          checked={reminders === null}
+          onChange={(e) => setReminders(e.currentTarget.checked ? null : 2)}
+        />
+        {reminders !== null && (
+          <NumberInput
+            aria-label="Reminders"
+            allowDecimal={false}
+            min={0}
+            w={120}
+            value={reminders}
+            onChange={(v) => setReminders(typeof v === "number" ? v : 0)}
+          />
+        )}
+        <Switch
+          label="Use the global subagent line"
+          description="Added at the end of its system message when it runs as a subagent."
+          checked={childLine === null}
+          onChange={(e) => setChildLine(e.currentTarget.checked ? null : "")}
+        />
+        {childLine !== null && (
+          <Textarea
+            aria-label="Subagent line"
+            autosize
+            minRows={2}
+            value={childLine}
+            onChange={(e) => setChildLine(e.currentTarget.value)}
+          />
+        )}
+        {childLine !== null && childLine.trim() === "" && (
+          <Alert color="yellow" p="xs">
+            Without this line, subagents might not work correctly: they may not
+            know to hand back or to ask you with a form.
+          </Alert>
+        )}
+      </Stack>
 
       <Stack mt="xl">
         <Text size="sm" fw={500}>
@@ -1007,8 +1143,11 @@ function GlobalDefaultAgentSelect() {
       value={known ? current : NO_DEFAULT}
       onChange={(v) => save.mutate(v ?? NO_DEFAULT)}
       data={[
-        { value: NO_DEFAULT, label: "None" },
-        ...(global.data ?? []).map((a) => ({ value: a.id, label: a.name })),
+        { value: NO_DEFAULT, label: "None (the built-in Dispatcher)" },
+        ...(global.data ?? []).map((a) => ({
+          value: a.id,
+          label: a.builtin ? `${a.name} (built-in)` : a.name,
+        })),
       ]}
       {...(settings.isError ? { error: settings.error.message } : {})}
       {...(global.isError ? { error: global.error.message } : {})}
@@ -1066,7 +1205,7 @@ export function DefaultAgentSelect({
   const group = (
     label: string,
     scope: string,
-    agents: { id: string; name: string }[] | undefined,
+    agents: { id: string; name: string; builtin?: boolean }[] | undefined,
   ) =>
     agents && agents.length > 0
       ? [
@@ -1074,7 +1213,7 @@ export function DefaultAgentSelect({
             group: label,
             items: agents.map((a) => ({
               value: a.id,
-              label: `${a.name} (${scope})`,
+              label: `${a.name} (${a.builtin ? "built-in" : scope})`,
             })),
           },
         ]
@@ -1102,7 +1241,7 @@ export function DefaultAgentSelect({
               value: NO_DEFAULT,
               label: globalDefault
                 ? `None (global default: ${globalDefault.name})`
-                : "None",
+                : "None (the built-in Dispatcher)",
             },
           ],
         },
@@ -1182,7 +1321,7 @@ export function AgentPicker({
       .filter((a) => a.scope === scope)
       .map((a) => ({
         value: a.id,
-        label: `${a.name} (${scope})${a.isDefault ? " · Default" : ""}`,
+        label: `${a.name} (${a.builtin ? "built-in" : scope})${a.isDefault ? " · Default" : ""}`,
       }));
     return items.length > 0 ? [{ group: label, items }] : [];
   };

@@ -22,10 +22,11 @@ function chat(message: Message, streaming = false) {
       notes={new Map()}
       asks={{
         results: new Map(),
-        open: undefined,
+        opens: [],
         submitted: new Map(),
         busy: false,
         onAnswer: () => {},
+        subagents: new Map(),
       }}
     />,
   );

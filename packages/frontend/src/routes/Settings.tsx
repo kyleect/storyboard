@@ -40,8 +40,25 @@ import { showError, useSessionActions } from "./SessionActions";
  */
 type MainSettings = Omit<
   SettingsShape,
-  keyof TitleSettings | keyof PromptSettings | "defaultAgentId"
+  | keyof TitleSettings
+  | keyof PromptSettings
+  | keyof SubagentSettings
+  | "defaultAgentId"
 >;
+
+/** The subagent settings have their own form (agent delegation design). */
+type SubagentSettings = Pick<
+  SettingsShape,
+  "childReminders" | "childPrompt" | "subagentDepth"
+>;
+
+function subagentSettings(s: SettingsShape): SubagentSettings {
+  return {
+    childReminders: s.childReminders,
+    childPrompt: s.childPrompt,
+    subagentDepth: s.subagentDepth,
+  };
+}
 
 type PromptSettings = Pick<SettingsShape, "systemPrompt">;
 
@@ -251,6 +268,8 @@ export function Settings() {
       <Divider />
       <SystemPrompt view={query.data} />
       <Divider />
+      <Subagents view={query.data} />
+      <Divider />
       <SessionTitles view={query.data} />
       <Divider />
       <ToolApprovals />
@@ -296,6 +315,84 @@ function SystemPrompt({ view }: { view: SettingsView }) {
           disabled={!!view.overriddenByEnv.systemPrompt}
           {...form.getInputProps("systemPrompt")}
         />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/**
+ * How subagents work (agent delegation design, decisions 12 to 17), with
+ * its own Save. Each agent can set its own reminders and line.
+ */
+function Subagents({ view }: { view: SettingsView }) {
+  const save = useSaveSettings();
+  const form = useForm<SubagentSettings>({
+    initialValues: subagentSettings(view.effective),
+    validate: {
+      childReminders: (v) =>
+        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+      subagentDepth: (v) =>
+        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+    },
+  });
+
+  useEffect(() => {
+    const values = subagentSettings(view.effective);
+    form.setValues(values);
+    form.resetDirty(values);
+    // Only when fresh data arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  const env = view.overriddenByEnv;
+  const envNote = envNoteFor(view);
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack>
+        <Title order={4}>Subagents</Title>
+        <NumberInput
+          label="Subagent depth"
+          description={
+            envNote("subagentDepth") ??
+            "How many levels deep an agent can start subagents. 0 turns subagents off; 1 lets only the top-level agent start them."
+          }
+          allowDecimal={false}
+          min={0}
+          disabled={!!env.subagentDepth}
+          {...form.getInputProps("subagentDepth")}
+        />
+        <NumberInput
+          label="Reminders"
+          description={
+            envNote("childReminders") ??
+            "How many times a subagent that stops without handing back is reminded to, before its last reply is taken as its result. Each reminder counts as one of its model calls. An agent can set its own."
+          }
+          allowDecimal={false}
+          min={0}
+          disabled={!!env.childReminders}
+          {...form.getInputProps("childReminders")}
+        />
+        <Textarea
+          label="Subagent line"
+          description={
+            envNote("childPrompt") ??
+            "Added at the very end of a subagent's system message. An agent can set its own."
+          }
+          autosize
+          minRows={3}
+          disabled={!!env.childPrompt}
+          {...form.getInputProps("childPrompt")}
+        />
+        {form.values.childPrompt.trim() === "" && (
+          <Alert color="yellow" p="xs">
+            Without this line, subagents might not work correctly: they may not
+            know to hand back or to ask you with a form.
+          </Alert>
+        )}
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save
         </Button>

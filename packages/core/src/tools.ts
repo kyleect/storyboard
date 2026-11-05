@@ -81,6 +81,10 @@ export interface AgentSummary {
   description: string;
   toolMode: "allow" | "deny";
   tools: string[];
+  /** Whether it can be started as a subagent (agent delegation design 26). */
+  subagent: boolean;
+  /** True for an agent that comes with the app (decision 42). */
+  builtin: boolean;
 }
 
 /** The agent a run uses. */
@@ -90,23 +94,51 @@ export interface CurrentAgent extends AgentSummary {
   prompt: string;
 }
 
-/** The session's agents, for the tools that list, view and change them. */
+/** The session's agents, for the tools that list and view them. */
 export interface AgentAccess {
   /** The agents the session can pick: its project's, then global ones. */
   list(): AgentSummary[];
   /** The agent this run started with; null: none. */
   current(): CurrentAgent | null;
+}
+
+/** How a subagent's run ended, as the tool that started it sees it. */
+export type SubagentOutcome =
+  | {
+      ok: true;
+      /** The agent's name. */
+      agent: string;
+      /** What it handed back (or its last text, decision 7). */
+      output: string;
+    }
+  | {
+      ok: false;
+      agent: string;
+      /** How it ended (decision 8). */
+      reason: "failed" | "cancelled" | "iteration_limit" | "no_output";
+      /** What went wrong, for the parent. */
+      message: string;
+      /** The last text the subagent wrote, when it wrote any. */
+      text: string;
+    };
+
+/** Starting subagents (agent delegation design). */
+export interface SubagentAccess {
+  /** How deep this run is: 0 for a top-level run (decision 25). */
+  depth: number;
+  /** Whether this run may start a subagent (the depth limit, decision 25). */
+  canStart: boolean;
   /**
-   * An agent change waiting for the next run: the session's pick when it
-   * differs from this run's agent. `agent` null means "no agent". Undefined:
-   * nothing is pending.
+   * Starts a run of the agent as a subagent and waits for it to end. Throws
+   * a `ToolError` when it cannot be started: no such agent, not marked as
+   * startable (decision 26), or the depth limit.
    */
-  pending(): { agent: AgentSummary | null } | undefined;
-  /**
-   * Sets the session's agent; it applies from the next run. Throws a
-   * `ToolError` when the agent does not exist or the session cannot use it.
-   */
-  choose(agentId: string | null): void;
+  start(input: {
+    agentId: string;
+    task: string;
+    /** The `start_subagent` call, so the child run can be tied to it. */
+    callId: string;
+  }): Promise<SubagentOutcome>;
 }
 
 /**
@@ -158,8 +190,10 @@ export interface ToolContext {
   data: DataAccess;
   /** Projects: list, view, create, and send entries to. */
   projects: ProjectAccess;
-  /** The session's agents: list, view, change. */
+  /** The session's agents: list, view. */
   agents: AgentAccess;
+  /** Starting subagents (agent delegation design). */
+  subagents: SubagentAccess;
   /**
    * The most keys or ids one copy or move call may name (a setting). Asking
    * for everything in a scope is not limited by it.
@@ -198,6 +232,12 @@ export interface ReviewPlan {
 }
 
 export interface ToolOutput {
+  /**
+   * Ends the run, and this text is its output: a subagent handing back
+   * (agent delegation design, decisions 5, 22). The calls after it in the
+   * same response are not run.
+   */
+  handback?: string;
   /** The structured result. The harness serializes it for the model. */
   data: unknown;
   /** Replaces this tool's state. Left out: the state is unchanged. */

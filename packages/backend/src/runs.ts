@@ -25,6 +25,9 @@ import {
   type StoredEvent,
   type Tool,
   type ToolResultMessage,
+  type UserMessage,
+  type LoopResult,
+  type SubagentOutcome,
   type Usage,
   dataEditNotice,
   replaySessionData,
@@ -99,28 +102,39 @@ interface ActiveRun {
   approvals: Map<string, OpenApproval>;
   /** Forms waiting for an answer, by request id (input forms design). */
   inputs: Map<string, OpenInput>;
+  /** For a subagent's run: the run and call that started it. */
+  parent: { runId: string; callId: string } | null;
   done: Promise<void>;
+}
+
+/** One active run as a reconnecting client sees it. */
+export interface RunSnapshot {
+  runId: string;
+  model: string | null;
+  reasoningEffort: string | null;
+  /** The agent version the run uses; null: none. */
+  agent: RunAgent | null;
+  /** The message being written now; null while a tool runs. */
+  message: {
+    messageId: string;
+    continuing: boolean;
+    content: ContentBlock[];
+  } | null;
+  /** Approval requests waiting for an answer (design D13, item 5). */
+  approvals: ApprovalRequest[];
+  /** Forms waiting for an answer (input forms design, D13). */
+  inputs: InputRequest[];
 }
 
 export interface Snapshot {
   lastEventId: number;
-  activeRun: {
-    runId: string;
-    model: string | null;
-    reasoningEffort: string | null;
-    /** The agent version the run uses; null: none. */
-    agent: RunAgent | null;
-    /** The message being written now; null while a tool runs. */
-    message: {
-      messageId: string;
-      continuing: boolean;
-      content: ContentBlock[];
-    } | null;
-    /** Approval requests waiting for an answer (design D13, item 5). */
-    approvals: ApprovalRequest[];
-    /** Forms waiting for an answer (input forms design, D13). */
-    inputs: InputRequest[];
-  } | null;
+  /** The session's top-level run. */
+  activeRun: RunSnapshot | null;
+  /**
+   * The subagent runs in progress, each with the run and call that started
+   * it (agent delegation design, decision 41).
+   */
+  childRuns: (RunSnapshot & { parentRunId: string; parentCallId: string })[];
 }
 
 export interface RunManagerOptions {
@@ -208,6 +222,23 @@ export interface RunManagerOptions {
   now?: () => string;
   newId?: () => string;
 }
+
+/** What a subagent run is told when it stops without handing back. */
+const CHILD_REMINDER =
+  "You have not handed back. If you are finished, call subagent_handback with your result. If you need something from the user, call ask_user.";
+
+/** What `startChild` needs to start a subagent's run. */
+interface ChildStart {
+  /** The run and `start_subagent` call that started it. */
+  parent: { runId: string; callId: string };
+  task: string;
+  depth: number;
+  /** The parent run's signal. */
+  signal: AbortSignal;
+}
+
+const START_SUBAGENT = "start_subagent";
+const SUBAGENT_HANDBACK = "subagent_handback";
 
 const INTERRUPTED_CALL =
   "Interrupted: the backend stopped before this call finished.";
@@ -481,7 +512,7 @@ export class RunManager {
    */
   continueLast(sessionId: string, choices: RunChoices = {}): { runId: string } {
     this.requireIdle(sessionId);
-    const last = this.store.listMessages(sessionId).at(-1);
+    const last = this.store.listMessages(sessionId, "top").at(-1);
     if (last?.message.role === "assistant") {
       if (last.message.content.some((b) => b.type === "tool_call")) {
         throw new RunError(
@@ -514,9 +545,18 @@ export class RunManager {
     return run.control.endReasoning();
   }
 
+  /**
+   * Stops a run. A subagent has no stop of its own (decision 38): stopping
+   * it stops the run it belongs to, and its parent's signal reaches it.
+   */
   cancel(runId: string): boolean {
-    const run = this.active.get(runId);
+    let run = this.active.get(runId);
     if (!run) return false;
+    while (run.parent) {
+      const up = this.active.get(run.parent.runId);
+      if (!up) break;
+      run = up;
+    }
     run.controller.abort();
     return true;
   }
@@ -673,21 +713,33 @@ export class RunManager {
 
   snapshot(sessionId: string): Snapshot {
     const lastEventId = this.store.lastEventId(sessionId);
-    const run = [...this.active.values()].find(
+    const runs = [...this.active.values()].filter(
       (r) => r.sessionId === sessionId,
     );
-    if (!run) return { lastEventId, activeRun: null };
+    const describe = (run: ActiveRun): RunSnapshot => ({
+      runId: run.runId,
+      model: run.generation.model,
+      reasoningEffort: run.generation.reasoningEffort,
+      agent: run.agent,
+      message: this.inFlight(this.store.runEvents(run.runId)),
+      approvals: [...run.approvals.values()].map((a) => a.request),
+      inputs: [...run.inputs.values()].map((i) => i.request),
+    });
+    const top = runs.find((r) => r.parent === null);
     return {
       lastEventId,
-      activeRun: {
-        runId: run.runId,
-        model: run.generation.model,
-        reasoningEffort: run.generation.reasoningEffort,
-        agent: run.agent,
-        message: this.inFlight(this.store.runEvents(run.runId)),
-        approvals: [...run.approvals.values()].map((a) => a.request),
-        inputs: [...run.inputs.values()].map((i) => i.request),
-      },
+      activeRun: top ? describe(top) : null,
+      childRuns: runs.flatMap((r) =>
+        r.parent
+          ? [
+              {
+                ...describe(r),
+                parentRunId: r.parent.runId,
+                parentCallId: r.parent.callId,
+              },
+            ]
+          : [],
+      ),
     };
   }
 
@@ -902,14 +954,26 @@ export class RunManager {
     }
   }
 
-  /** The tools a run gets with this agent (agents design 6, 8, 35). */
-  private toolsFor(agent: Agent | null, hasSkills: boolean): readonly Tool[] {
+  /**
+   * The tools a run gets with this agent (agents design 6, 8, 35). The
+   * handback tool is offered only in a subagent's run, and `start_subagent`
+   * not at the depth limit (agent delegation design, decisions 3, 4).
+   */
+  private toolsFor(
+    agent: Agent | null,
+    hasSkills: boolean,
+    run: { child: boolean; canStart: boolean },
+  ): readonly Tool[] {
     // The skill tools are offered only when a skill is in scope (skills
     // design, decision 9).
     const skillTools = new Set(this.options.skillTools ?? []);
-    const offered = hasSkills
-      ? this.tools
-      : this.tools.filter((t) => !skillTools.has(t.name));
+    const offered = (
+      hasSkills ? this.tools : this.tools.filter((t) => !skillTools.has(t.name))
+    ).filter(
+      (t) =>
+        (run.child || t.name !== SUBAGENT_HANDBACK) &&
+        (run.canStart || t.name !== START_SUBAGENT),
+    );
     if (!agent) return offered;
     const alwaysOn = new Set(this.alwaysOnTools);
     const listed = new Set(agent.tools);
@@ -959,20 +1023,101 @@ export class RunManager {
     continuing: { messageId: string; message: AssistantMessage } | null,
   ): { runId: string } {
     this.touchProject(sessionId);
+    const { runId } = this.launch(sessionId, continuing, null);
+    return { runId };
+  }
+
+  /**
+   * Runs `agentId` as a subagent of the run whose call started it, and waits
+   * for it. It is a run of its own: stored, with its own approvals and
+   * forms, answered by its own id (agent delegation design, decisions 1, 2).
+   */
+  private async startChild(
+    sessionId: string,
+    child: ChildStart,
+    agentId: string,
+  ): Promise<SubagentOutcome> {
+    const agents = this.options.agents;
+    const session = this.store.getSession(sessionId);
+    const agent = agents?.get(agentId);
+    const fail = (
+      name: string,
+      reason: "failed" | "no_output",
+      message: string,
+    ): SubagentOutcome => ({
+      ok: false,
+      agent: name,
+      reason,
+      message,
+      text: "",
+    });
+    if (!agents || !session || !agent) {
+      return fail(agentId, "failed", "No agent with that id.");
+    }
+    if (!agents.usableIn(agent, session.project_id)) {
+      return fail(agent.name, "failed", "This session cannot use that agent.");
+    }
+    if (!agent.subagent) {
+      return fail(agent.name, "failed", "That agent is not startable.");
+    }
+    const { finished } = this.launch(sessionId, null, { ...child, agent });
+    const result: LoopResult | undefined = await finished;
+    const text = result?.output?.trim() ?? "";
+    const gone = (
+      reason: "failed" | "cancelled" | "iteration_limit",
+      message: string,
+    ): SubagentOutcome => ({
+      ok: false,
+      agent: agent.name,
+      reason,
+      message,
+      text,
+    });
+    if (!result) return gone("failed", "It stopped unexpectedly.");
+    switch (result.reason) {
+      case "handed_back":
+      case "stop":
+        return text === ""
+          ? fail(agent.name, "no_output", "It ended with no output.")
+          : { ok: true, agent: agent.name, output: result.output ?? text };
+      case "iteration_limit":
+        return gone(
+          "iteration_limit",
+          `It used all ${this.options.settings().loopLimit} of its model calls.`,
+        );
+      case "cancelled":
+        return gone("cancelled", "It was cancelled.");
+      case "failed":
+        return gone("failed", result.error ?? "It failed.");
+    }
+  }
+
+  /**
+   * Starts a run: a top-level one, or (`child` set) a subagent's. Returns
+   * its id and a promise of how the loop ended.
+   */
+  private launch(
+    sessionId: string,
+    continuing: { messageId: string; message: AssistantMessage } | null,
+    child: (ChildStart & { agent: Agent }) | null,
+  ): { runId: string; finished: Promise<LoopResult | undefined> } {
     const settings = this.options.settings();
     const runId = this.newId();
+    const depth = child?.depth ?? 0;
     // The session's choices, else the default settings. Empty: not sent.
     const session = this.store.getSession(sessionId);
     // The session's agent as it is now; the run keeps this version to the
     // end (agents design 13, 24). One it can no longer use counts as none.
+    // A subagent's run uses the agent it was started as.
     const picked =
       session?.agent_id != null
         ? this.options.agents?.get(session.agent_id)
         : undefined;
-    const agent =
-      picked &&
-      session &&
-      this.options.agents?.usableIn(picked, session.project_id)
+    const agent = child
+      ? child.agent
+      : picked &&
+          session &&
+          this.options.agents?.usableIn(picked, session.project_id)
         ? picked
         : null;
     const runAgent: RunAgent | null = agent
@@ -1001,7 +1146,10 @@ export class RunManager {
         session?.project_id ?? null,
         agent?.id ?? null,
       ) ?? [];
-    const tools = this.toolsFor(agent, skills.length > 0);
+    const tools = this.toolsFor(agent, skills.length > 0, {
+      child: child !== null,
+      canStart: depth < settings.subagentDepth,
+    });
     // The schemas in scope, listed only when the run offers a schema or data
     // tool (schemas and data design, decisions 37, 41): global, project,
     // agent, then the session's own.
@@ -1027,6 +1175,11 @@ export class RunManager {
     // {{tools}}; they are filled in once, here, from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
     // {{skills}} the skill list goes after them, as before (decision 10).
+    // A subagent's system message is built the same way, with its own line
+    // at the very end: the agent's, else the global one (decisions 14, 17).
+    const childLine = child
+      ? (agent?.childPrompt ?? settings.childPrompt)
+      : undefined;
     const written = [
       settings.systemPrompt,
       project?.system_prompt,
@@ -1051,30 +1204,28 @@ export class RunManager {
         placed ? undefined : this.options.skillsPrompt?.(skills),
         schemasPlaced ? undefined : schemasText,
         base,
+        childLine,
       ]
         .filter((p): p is string => p !== undefined && p.trim() !== "")
         .join("\n\n") || undefined;
-    const request: ChatRequest = {
-      kind: "chat",
-      messages: [
-        ...(system ? [{ role: "system" as const, content: system }] : []),
-        ...this.store.listMessages(sessionId).map((m) => m.message),
-      ],
-      control,
-      ...(generation.model ? { model: generation.model } : {}),
-      ...(generation.reasoningEffort
-        ? { reasoningEffort: generation.reasoningEffort }
-        : {}),
-    };
     this.store.createRun({
       id: runId,
       sessionId,
       kind: "loop",
       now: this.now(),
       generation,
+      ...(child ? { parent: child.parent } : {}),
     });
 
     const controller = new AbortController();
+    // Cancelling the parent stops its subagent too (decision 38).
+    if (child) {
+      if (child.signal.aborted) controller.abort();
+      else
+        child.signal.addEventListener("abort", () => controller.abort(), {
+          once: true,
+        });
+    }
     const approvals = new Map<string, OpenApproval>();
     const inputs = new Map<string, OpenInput>();
     const emit = (event: HarnessEvent) => {
@@ -1110,9 +1261,33 @@ export class RunManager {
       }
     };
 
+    // A subagent's first message is the task, saved as its own (decision 28).
+    // Its request holds only its own messages; a top-level run's leaves out
+    // every subagent's (decision 29).
+    if (child) {
+      const taskId = this.newId();
+      const task: UserMessage = { role: "user", content: child.task };
+      saveMessage(taskId, task);
+    }
+    const request: ChatRequest = {
+      kind: "chat",
+      messages: [
+        ...(system ? [{ role: "system" as const, content: system }] : []),
+        ...this.store
+          .listMessages(sessionId, child ? { run: runId } : "top")
+          .map((m) => m.message),
+      ],
+      control,
+      ...(generation.model ? { model: generation.model } : {}),
+      ...(generation.reasoningEffort
+        ? { reasoningEffort: generation.reasoningEffort }
+        : {}),
+    };
+
     // A ToolRunError is recorded as its tool error only (O4).
     let endedByTool = false;
-    const execute = async () => {
+    const execute = async (): Promise<LoopResult | undefined> => {
+      let loopResult: LoopResult | undefined;
       try {
         const result = await runLoop(this.options.model(settings), request, {
           runId,
@@ -1125,6 +1300,35 @@ export class RunManager {
           tools,
           skills,
           ...(runAgent ? { agent: runAgent } : {}),
+          ...(child
+            ? {
+                parentRunId: child.parent.runId,
+                parentCallId: child.parent.callId,
+                child: {
+                  reminders: agent?.childReminders ?? settings.childReminders,
+                  reminderText: CHILD_REMINDER,
+                },
+              }
+            : {}),
+          // Files, notes, schemas and data are rebuilt from every message of
+          // the session, subagents' included (decision 30).
+          sessionMessages: () =>
+            this.store.listMessages(sessionId).map((m) => m.message),
+          subagents: {
+            depth,
+            canStart: depth < settings.subagentDepth,
+            start: ({ agentId, task, callId }) =>
+              this.startChild(
+                sessionId,
+                {
+                  parent: { runId, callId },
+                  task,
+                  depth: depth + 1,
+                  signal: controller.signal,
+                },
+                agentId,
+              ),
+          },
           projectId: session?.project_id ?? null,
           projectName: project?.name ?? null,
           ...(this.options.entries
@@ -1164,16 +1368,6 @@ export class RunManager {
                   agents: this.options.agents,
                   session,
                   runAgent: agent,
-                  checkChoice: (agentId) =>
-                    this.checkAgentChoice(sessionId, { agentId }),
-                  agentChanged: (agentId) =>
-                    this.publish({
-                      runId: null,
-                      sessionId,
-                      time: this.now(),
-                      type: "session.agent_changed",
-                      data: { agentId },
-                    }),
                 }),
               }
             : {}),
@@ -1224,6 +1418,7 @@ export class RunManager {
           },
           cancelledText: () => (this.shuttingDown ? STOPPED_CALL : undefined),
         });
+        loopResult = result;
         const status =
           result.reason === "failed"
             ? "failed"
@@ -1274,6 +1469,7 @@ export class RunManager {
       } finally {
         this.active.delete(runId);
       }
+      return loopResult;
     };
 
     const run: ActiveRun = {
@@ -1285,11 +1481,13 @@ export class RunManager {
       control,
       approvals,
       inputs,
+      parent: child?.parent ?? null,
       done: Promise.resolve(),
     };
     this.active.set(runId, run);
-    run.done = execute();
-    return { runId };
+    const finished = execute();
+    run.done = finished.then(() => undefined);
+    return { runId, finished };
   }
 }
 

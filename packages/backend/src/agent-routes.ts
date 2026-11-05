@@ -17,7 +17,8 @@ import { alwaysAsks, listToolSettings } from "./tool-settings.js";
 /*
  * Routes for agents (agents plan 1.2):
  *
- *   GET    /api/global/agents                 ?deleted=true includes deleted
+ *   GET    /api/global/agents                 ?deleted=true includes deleted;
+ *                                             the built-in agents come last
  *   POST   /api/global/agents                 create
  *   POST   /api/global/agents/import          { markdown, replace? }
  *   (the same three under /api/projects/:projectId)
@@ -41,6 +42,9 @@ const AgentBody = z.object({
   toolMode: ToolMode,
   tools: z.array(z.string()),
   toolApproval: z.record(z.string(), z.boolean()).default({}),
+  childReminders: z.number().int().min(0).nullable().default(null),
+  childPrompt: z.string().nullable().default(null),
+  subagent: z.boolean().default(false),
 });
 const ListQuery = z.object({
   deleted: z.enum(["true", "false"]).optional(),
@@ -67,6 +71,8 @@ export interface PickableAgent {
   scope: "project" | "global";
   /** The session's project's default agent (default agent design 6). */
   isDefault: boolean;
+  /** A built-in agent (read-only). */
+  builtin: boolean;
 }
 
 export function registerAgentRoutes(
@@ -145,7 +151,10 @@ export function registerAgentRoutes(
     app.get(base, async (req) => {
       const projectId = scopeOf(req);
       const q = ListQuery.parse(req.query);
-      const list = agents.list(projectId, q.deleted === "true");
+      const list = [
+        ...agents.list(projectId, q.deleted === "true"),
+        ...(projectId === null ? agents.builtins() : []),
+      ];
       // A list marks the agent a new session in its scope starts with:
       // the project's default, else the global one (default agent design 6;
       // global default agent design, Q9).
@@ -261,6 +270,7 @@ export function registerAgentRoutes(
       description: a.description,
       scope: a.projectId === null ? "global" : "project",
       isDefault: a.id === defaultId,
+      builtin: a.builtin,
     }));
   });
 

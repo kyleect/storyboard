@@ -15,7 +15,7 @@ import {
   skillTools,
   SKILL_LOAD,
 } from "@harness/tools";
-import { AgentStore, type AgentContent } from "./agents-store.js";
+import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents } from "./app-events.js";
 import {
   expandPlaceholders,
@@ -121,7 +121,7 @@ const skill = (over: Partial<SkillContent> = {}): SkillContent => ({
   ...over,
 });
 
-const agentContent = (over: Partial<AgentContent> = {}): AgentContent => ({
+const agentContent = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "",
@@ -201,7 +201,7 @@ async function say(
 ) {
   const res = await api(app, "POST", `/api/sessions/${session}/messages`, {
     content: "Hi",
-    ...(agentId ? { agentId } : {}),
+    agentId: agentId ?? null,
   });
   await expect.poll(() => runs.isActive(res.body.runId as string)).toBe(false);
 }

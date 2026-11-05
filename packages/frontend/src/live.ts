@@ -33,7 +33,8 @@ export interface LiveMessage {
   content: readonly ContentBlock[];
 }
 
-export interface LiveRun {
+/** What is tracked for each run in progress. */
+export interface LiveRunState {
   runId: string;
   model: string | null;
   reasoningEffort: string | null;
@@ -49,11 +50,47 @@ export interface LiveRun {
   usage?: Usage;
 }
 
+/** The session's top-level run, with the subagents' runs it started. */
+export interface LiveRun extends LiveRunState {
+  /** Subagents' runs in progress, by run id (agent delegation design). */
+  children: Record<string, LiveChild>;
+}
+
+/** A subagent's run, tied to the call that started it. */
+export interface LiveChild extends LiveRunState {
+  parentRunId: string;
+  parentCallId: string;
+}
+
+/** The runs of a session in progress, the top-level one first. */
+export function liveRuns(run: LiveRun | undefined): LiveRunState[] {
+  return run ? [run, ...Object.values(run.children)] : [];
+}
+
+/** The run with this id, top-level or a subagent's. */
+export function findLiveRun(
+  run: LiveRun | undefined,
+  runId: string | null,
+): LiveRunState | undefined {
+  if (!run) return undefined;
+  return (runId !== null ? run.children[runId] : undefined) ?? run;
+}
+
 interface LiveState {
   runs: Record<string, LiveRun | undefined>;
   connected: Record<string, boolean | undefined>;
   set: (sessionId: string, run: LiveRun | undefined) => void;
-  update: (sessionId: string, f: (run: LiveRun) => LiveRun) => void;
+  /**
+   * Changes the run `runId` names: a subagent's, or else the top-level run
+   * (events of a run that is not known apply to the top-level one).
+   */
+  update: (
+    sessionId: string,
+    runId: string | null,
+    f: (run: LiveRunState) => LiveRunState,
+  ) => void;
+  addChild: (sessionId: string, child: LiveChild) => void;
+  removeChild: (sessionId: string, runId: string) => void;
   setConnected: (sessionId: string, connected: boolean) => void;
 }
 
@@ -62,10 +99,45 @@ export const useLive = create<LiveState>((set) => ({
   connected: {},
   set: (sessionId, run) =>
     set((s) => ({ runs: { ...s.runs, [sessionId]: run } })),
-  update: (sessionId, f) =>
+  update: (sessionId, runId, f) =>
     set((s) => {
       const run = s.runs[sessionId];
-      return run ? { runs: { ...s.runs, [sessionId]: f(run) } } : s;
+      if (!run) return s;
+      const child = runId !== null ? run.children[runId] : undefined;
+      const next: LiveRun = child
+        ? {
+            ...run,
+            children: {
+              ...run.children,
+              [child.runId]: { ...child, ...f(child) },
+            },
+          }
+        : { ...run, ...f(run) };
+      return { runs: { ...s.runs, [sessionId]: next } };
+    }),
+  addChild: (sessionId, child) =>
+    set((s) => {
+      const run = s.runs[sessionId];
+      return run
+        ? {
+            runs: {
+              ...s.runs,
+              [sessionId]: {
+                ...run,
+                children: { ...run.children, [child.runId]: child },
+              },
+            },
+          }
+        : s;
+    }),
+  removeChild: (sessionId, runId) =>
+    set((s) => {
+      const run = s.runs[sessionId];
+      if (!run?.children[runId]) return s;
+      const children = Object.fromEntries(
+        Object.entries(run.children).filter(([id]) => id !== runId),
+      );
+      return { runs: { ...s.runs, [sessionId]: { ...run, children } } };
     }),
   setConnected: (sessionId, connected) =>
     set((s) => ({ connected: { ...s.connected, [sessionId]: connected } })),
@@ -88,7 +160,17 @@ export function useSessionEvents(
     if (!detail) return;
     const live = useLive.getState();
     const snapshot = detail.activeRun;
-    live.set(sessionId, snapshot ?? undefined);
+    live.set(
+      sessionId,
+      snapshot
+        ? {
+            ...snapshot,
+            children: Object.fromEntries(
+              detail.childRuns.map((c) => [c.runId, c]),
+            ),
+          }
+        : undefined,
+    );
 
     let lastId = detail.lastEventId;
     // Runs whose model has started answering (so it is loaded now).
@@ -156,8 +238,8 @@ export function useSessionEvents(
           void queryClient.invalidateQueries({ queryKey: ["sessions"] });
           void queryClient.invalidateQueries({ queryKey: ["trash"] });
           break;
-        case "run.started":
-          state.set(sessionId, {
+        case "run.started": {
+          const started = {
             runId: event.runId,
             model: event.data.model ?? null,
             reasoningEffort: event.data.reasoningEffort ?? null,
@@ -165,8 +247,21 @@ export function useSessionEvents(
             message: null,
             approvals: [],
             inputs: [],
-          });
+          };
+          const { parentRunId, parentCallId } = event.data;
+          if (parentRunId && parentCallId) {
+            // A subagent's run: kept under the run that started it, so the
+            // top-level run is not replaced (agent delegation design).
+            state.addChild(sessionId, {
+              ...started,
+              parentRunId,
+              parentCallId,
+            });
+          } else {
+            state.set(sessionId, { ...started, children: {} });
+          }
           break;
+        }
         case "message.started": {
           const cached = queryClient.getQueryData<SessionDetail>([
             "session",
@@ -176,7 +271,7 @@ export function useSessionEvents(
             (m) => m.id === event.data.messageId,
           );
           const continuing = event.data.continuing ?? false;
-          state.update(sessionId, (run) => ({
+          state.update(sessionId, event.runId, (run) => ({
             ...run,
             message: {
               messageId: event.data.messageId,
@@ -191,7 +286,11 @@ export function useSessionEvents(
         }
         case "message.finished": {
           // The message is stored before this event; show it as stored.
-          const run = useLive.getState().runs[sessionId];
+          const top = useLive.getState().runs[sessionId];
+          const run = findLiveRun(top, event.runId);
+          const parentCallId =
+            (event.runId !== null ? top?.children[event.runId] : undefined)
+              ?.parentCallId ?? null;
           queryClient.setQueryData<SessionDetail>(
             ["session", sessionId],
             (old) => {
@@ -203,6 +302,8 @@ export function useSessionEvents(
                 reasoningEffort: run?.reasoningEffort ?? null,
                 agent: run?.agent ?? null,
                 usage: event.data.usage ?? null,
+                runId: event.runId,
+                parentCallId,
               };
               const at = old.messages.findIndex(
                 (m) => m.id === event.data.messageId,
@@ -213,7 +314,10 @@ export function useSessionEvents(
               return { ...old, messages };
             },
           );
-          state.update(sessionId, (r) => ({ ...r, message: null }));
+          state.update(sessionId, event.runId, (r) => ({
+            ...r,
+            message: null,
+          }));
           break;
         }
         case "tool.result":
@@ -240,13 +344,13 @@ export function useSessionEvents(
           }
           break;
         case "tool.approval_requested":
-          state.update(sessionId, (run) => ({
+          state.update(sessionId, event.runId, (run) => ({
             ...run,
             approvals: [...run.approvals, event.data],
           }));
           break;
         case "input.requested":
-          state.update(sessionId, (run) => ({
+          state.update(sessionId, event.runId, (run) => ({
             ...run,
             inputs: [...run.inputs, event.data],
           }));
@@ -254,7 +358,7 @@ export function useSessionEvents(
         case "tool.approval_resolved":
         case "input.resolved":
         case "request.cancel":
-          state.update(sessionId, (run) => ({
+          state.update(sessionId, event.runId, (run) => ({
             ...run,
             approvals: run.approvals.filter(
               (a) => a.requestId !== event.data.requestId,
@@ -279,6 +383,21 @@ export function useSessionEvents(
           }
           answering.delete(event.runId);
           refreshModelInfo();
+          if (
+            event.runId &&
+            useLive.getState().runs[sessionId]?.children[event.runId]
+          ) {
+            // A subagent's run ended; the run that started it carries on. Its
+            // messages come from the refetch.
+            void queryClient
+              .invalidateQueries({ queryKey: ["session", sessionId] })
+              .then(() =>
+                useLive
+                  .getState()
+                  .removeChild(sessionId, event.runId as string),
+              );
+            break;
+          }
           // The session lists show each session's latest usage.
           void queryClient.invalidateQueries({ queryKey: ["sessions"] });
           void queryClient
@@ -297,7 +416,7 @@ export function useSessionEvents(
             answering.add(event.runId);
             refreshModelInfo();
           }
-          state.update(sessionId, (run) => {
+          state.update(sessionId, event.runId, (run) => {
             const usage =
               (event.type === "text.delta" ||
                 event.type === "reasoning.delta") &&

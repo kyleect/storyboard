@@ -5,6 +5,7 @@ import {
   ToolError,
   type ToolContext,
   NO_AGENTS,
+  NO_SUBAGENTS,
   NO_DATA,
   NO_PROJECTS,
 } from "@harness/core";
@@ -30,6 +31,7 @@ const ctx: ToolContext = {
   projectName: null,
   projects: NO_PROJECTS,
   agents: NO_AGENTS,
+  subagents: NO_SUBAGENTS,
   data: NO_DATA,
   copyLimit: 20,
   skills: [],

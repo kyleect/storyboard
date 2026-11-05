@@ -10,13 +10,13 @@ import {
   type Tool,
 } from "@harness/core";
 import { agentFromMarkdown, agentToMarkdown } from "./agent-files.js";
-import { AgentStore, type AgentContent } from "./agents-store.js";
+import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents, type AppEvent } from "./app-events.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 const TOKEN = "t".repeat(64);
 
@@ -39,7 +39,7 @@ const tool = (name: string): Tool =>
 const TOOLS = [tool("alpha"), tool("beta"), tool("gamma"), tool("files_read")];
 const ALWAYS_ON = ["files_read"];
 
-const content = (over: Partial<AgentContent> = {}): AgentContent => ({
+const content = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "Be terse.",
@@ -51,6 +51,7 @@ const content = (over: Partial<AgentContent> = {}): AgentContent => ({
 
 async function setup(scripts: ScriptStep[][] = []) {
   const t = tempDatabase();
+  clearBuiltinAgents(t.db);
   // No global system prompt, so the system message is only what each test sets.
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
@@ -128,7 +129,7 @@ async function newProject(app: FastifyInstance, name = "P") {
 
 async function newAgent(
   app: FastifyInstance,
-  over: Partial<AgentContent> = {},
+  over: Partial<AgentInput> = {},
   projectId?: string,
 ) {
   const base = projectId
@@ -273,7 +274,12 @@ describe("agent files", () => {
         toolMode === "allow" ? "tools:" : "disallowedTools:",
       );
       expect(agentFromMarkdown(md, ["alpha"], [])).toEqual({
-        content: c,
+        content: {
+          ...c,
+          childReminders: null,
+          childPrompt: null,
+          subagent: false,
+        },
         warnings: [],
       });
     }
@@ -301,6 +307,9 @@ describe("agent files", () => {
         toolMode: "allow",
         tools: ["alpha"],
         toolApproval: {},
+        childReminders: null,
+        childPrompt: null,
+        subagent: false,
       },
       // The always-on tool is dropped silently; the unknown one is named.
       warnings: ["Dropped tool this harness does not have: Read."],
@@ -317,6 +326,9 @@ describe("agent files", () => {
       toolMode: "deny",
       tools: [],
       toolApproval: {},
+      childReminders: null,
+      childPrompt: null,
+      subagent: false,
     });
   });
 
@@ -437,9 +449,12 @@ describe("agent routes", () => {
     expect(res.headers["content-disposition"]).toBe(
       "attachment; filename*=UTF-8''Ed_itor.md",
     );
-    expect(agentFromMarkdown(res.text, ["beta"], []).content).toEqual(
-      content({ name: "Ed/itor", tools: ["beta"] }),
-    );
+    expect(agentFromMarkdown(res.text, ["beta"], []).content).toEqual({
+      ...content({ name: "Ed/itor", tools: ["beta"] }),
+      childReminders: null,
+      childPrompt: null,
+      subagent: false,
+    });
   });
 
   it("imports, asks on a name clash, and replaces as a new version", async () => {
@@ -508,6 +523,7 @@ describe("sessions and agents", () => {
         description: "",
         scope: "project",
         isDefault: false,
+        builtin: false,
       },
       {
         id: g.id,
@@ -515,6 +531,7 @@ describe("sessions and agents", () => {
         description: "",
         scope: "global",
         isDefault: false,
+        builtin: false,
       },
     ]);
     const standalone = await newSession(app);
@@ -527,6 +544,7 @@ describe("sessions and agents", () => {
         description: "",
         scope: "global",
         isDefault: false,
+        builtin: false,
       },
     ]);
   });
@@ -752,7 +770,7 @@ describe("system prompts (system prompts design)", () => {
     const send = async (session: string, agentId?: string) => {
       const res = await api(app, "POST", `/api/sessions/${session}/messages`, {
         content: "Hi",
-        ...(agentId ? { agentId } : {}),
+        agentId: agentId ?? null,
       });
       await waitIdle(runs, res.body.runId as string);
     };

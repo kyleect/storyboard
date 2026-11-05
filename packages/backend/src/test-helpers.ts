@@ -92,10 +92,22 @@ export async function runAnsweringForms(
  * count what is in scope.
  */
 export function clearBuiltins(db: Database): void {
+  clearBuiltinAgents(db);
   db.exec(`
     DELETE FROM skill_versions WHERE skill_id IN (SELECT id FROM skills WHERE builtin = 1);
     DELETE FROM skills WHERE builtin = 1;
     DELETE FROM schema_versions WHERE schema_id IN (SELECT id FROM schemas WHERE builtin = 1);
     DELETE FROM schemas WHERE builtin = 1;
+  `);
+}
+
+/**
+ * Removes the built-in Dispatcher agent (agent delegation design, section 9),
+ * for tests where a new session should start with no agent.
+ */
+export function clearBuiltinAgents(db: Database): void {
+  db.exec(`
+    DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE builtin = 1);
+    DELETE FROM agents WHERE builtin = 1;
   `);
 }

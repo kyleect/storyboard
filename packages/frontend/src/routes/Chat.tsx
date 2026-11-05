@@ -39,7 +39,13 @@ import {
   type MessageAgent,
   type SessionDetail,
 } from "../api";
-import { useLive, useSessionEvents } from "../live";
+import {
+  liveRuns,
+  useLive,
+  useSessionEvents,
+  type LiveChild,
+  type LiveRunState,
+} from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { SchemasAndData } from "./Data";
@@ -61,12 +67,35 @@ import { TranscriptScroll } from "./TranscriptScroll";
 interface Asks {
   /** Tool results by call id. */
   results: ReadonlyMap<string, ToolResultMessage>;
-  /** The form waiting for an answer, if any. */
-  open: InputRequest | undefined;
+  /** The forms waiting for an answer, in any of the session's runs. */
+  opens: readonly OpenForm[];
   /** Forms answered, by call id, shown until the result is stored. */
   submitted: ReadonlyMap<string, Sent>;
   busy: boolean;
-  onAnswer: (request: InputRequest, answer: InputAnswer) => void;
+  onAnswer: (open: OpenForm, answer: InputAnswer) => void;
+  /**
+   * The work of the subagent each `start_subagent` call started, by call id
+   * (agent delegation design, decision 42).
+   */
+  subagents: ReadonlyMap<string, SubagentView>;
+  /** The anchor of a message to scroll to, so its subagent opens. */
+  reveal?: string | null;
+}
+
+/** A form waiting for an answer, with the run that must receive it. */
+interface OpenForm {
+  request: InputRequest;
+  runId: string;
+}
+
+/** A subagent's run under the call that started it. */
+interface SubagentView {
+  agentName: string;
+  /** Its messages, the task first, with the one being written now. */
+  messages: ShownMessage[];
+  running: boolean;
+  /** It is waiting for the user: a form or an approval is open. */
+  waiting: boolean;
 }
 
 /** A form the user answered, and the answers sent. */
@@ -104,6 +133,8 @@ export function Chat() {
     detail.isFetchedAfterMount ? detail.data : undefined,
   );
   const live = useLive((s) => s.runs[sessionId]);
+  // The session's runs in progress: the top-level one, then its subagents'.
+  const runs = liveRuns(live);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
   const [draft, setDraft] = useState("");
   // Chat, or the session's files or memory (plan U3).
@@ -119,6 +150,9 @@ export function Chat() {
   const hashTarget = hash.startsWith(messageAnchor("")) ? hash : null;
   // The anchor to scroll to once it is shown, and the hash already handled.
   const pendingScroll = useRef<string | null>(null);
+  // The message being shown from the errors panel, so the subagent that holds
+  // it opens.
+  const [revealed, setRevealed] = useState<string | null>(null);
   const handledHash = useRef<string | null>(null);
   const messageCount = detail.data?.messages.length ?? 0;
   useEffect(() => {
@@ -132,10 +166,11 @@ export function Chat() {
     el.scrollIntoView({ block: "center" });
     pendingScroll.current = null;
     if (target === hashTarget) handledHash.current = hashTarget;
-  }, [hashTarget, tab, messageCount]);
+  }, [hashTarget, tab, messageCount, revealed]);
   const showInTranscript = (messageId: string) => {
     const target = messageAnchor(messageId);
     const el = tab === "chat" ? document.getElementById(target) : null;
+    setRevealed(target);
     if (el) el.scrollIntoView({ block: "center" });
     else {
       pendingScroll.current = target;
@@ -257,32 +292,74 @@ export function Chat() {
   if (detail.isPending) return <Loader />;
   if (detail.isError) return <Alert color="red">{detail.error.message}</Alert>;
 
-  // Stored messages, with the in-flight one replacing or following them.
-  const liveShown: ShownMessage | undefined = live?.message
-    ? {
-        id: live.message.messageId,
-        message: { role: "assistant", content: [...live.message.content] },
-        model: live.model,
-        reasoningEffort: live.reasoningEffort,
-        agent: live.agent,
-        streaming: true,
-        usage: live.usage,
-      }
-    : undefined;
-  const shown: ShownMessage[] = detail.data.messages.map((m) =>
-    liveShown && m.id === liveShown.id
-      ? liveShown
-      : {
-          id: m.id,
-          message: m.message,
-          model: m.model,
-          reasoningEffort: m.reasoningEffort,
-          agent: m.agent,
-          streaming: false,
-        },
-  );
-  if (liveShown && !shown.some((m) => m.id === liveShown.id)) {
-    shown.push(liveShown);
+  // Stored messages, with the in-flight ones replacing or following them.
+  // A subagent's messages are grouped under the call that started it.
+  const inFlight = (run: LiveRunState): ShownMessage | undefined =>
+    run.message
+      ? {
+          id: run.message.messageId,
+          message: { role: "assistant", content: [...run.message.content] },
+          model: run.model,
+          reasoningEffort: run.reasoningEffort,
+          agent: run.agent,
+          streaming: true,
+          usage: run.usage,
+        }
+      : undefined;
+  const shown: ShownMessage[] = [];
+  const nested = new Map<string, ShownMessage[]>();
+  for (const m of detail.data.messages) {
+    const item: ShownMessage = {
+      id: m.id,
+      message: m.message,
+      model: m.model,
+      reasoningEffort: m.reasoningEffort,
+      agent: m.agent,
+      streaming: false,
+    };
+    if (m.parentCallId) {
+      nested.set(m.parentCallId, [...(nested.get(m.parentCallId) ?? []), item]);
+    } else {
+      shown.push(item);
+    }
+  }
+  const place = (list: ShownMessage[], item: ShownMessage) => {
+    const at = list.findIndex((m) => m.id === item.id);
+    if (at === -1) list.push(item);
+    else list[at] = item;
+  };
+  for (const run of runs) {
+    const item = inFlight(run);
+    if (!item) continue;
+    const callId =
+      "parentCallId" in run ? (run as LiveChild).parentCallId : null;
+    if (callId === null) {
+      place(shown, item);
+    } else {
+      const list = [...(nested.get(callId) ?? [])];
+      place(list, item);
+      nested.set(callId, list);
+    }
+  }
+  const children = Object.values(live?.children ?? {});
+  const subagents = new Map<string, SubagentView>();
+  for (const callId of new Set([
+    ...nested.keys(),
+    ...children.map((c) => c.parentCallId),
+  ])) {
+    const messages = nested.get(callId) ?? [];
+    const child = children.find((c) => c.parentCallId === callId);
+    subagents.set(callId, {
+      agentName:
+        child?.agent?.name ??
+        messages.find((m) => m.agent)?.agent?.name ??
+        "subagent",
+      messages,
+      running: child !== undefined,
+      waiting:
+        child !== undefined &&
+        (child.approvals.length > 0 || child.inputs.length > 0),
+    });
   }
   // Approval notes, stored on tool results, are shown under their calls.
   const notes = new Map<string, NonNullable<ToolResultMessage["note"]>>();
@@ -299,37 +376,52 @@ export function Chat() {
     cont.isPending ||
     setChoices.isPending;
   const last = shown.at(-1);
-  const reasoningNow = live?.message?.content.at(-1)?.type === "reasoning";
-  const pending = live?.approvals[0];
-  const openInput = live?.inputs[0];
-  // Between model calls: a tool is running (a form shows it is waiting).
-  const toolRunning = !!live && !live.message && !pending && !openInput;
+  const reasoningRun = runs.find(
+    (r) => r.message?.content.at(-1)?.type === "reasoning",
+  );
+  // What waits for the user in any run: the oldest approval and form first,
+  // each answered by the run that owns it (agent delegation design, 25, 26).
+  const approvals = runs.flatMap((run) =>
+    run.approvals.map((request) => ({ request, run })),
+  );
+  const opens: OpenForm[] = runs.flatMap((run) =>
+    run.inputs.map((request) => ({ request, runId: run.runId })),
+  );
+  const pendingEntry = approvals[0];
+  const pending = pendingEntry?.request;
+  const openInput = opens[0]?.request;
+  // Between model calls: a tool is running (a form shows it is waiting). A
+  // run waiting for its subagent is not the one writing.
+  const toolRunning =
+    !!live && !runs.some((r) => r.message) && !pending && !openInput;
   const asks: Asks = {
     results: new Map(
       detail.data.messages.flatMap((m) =>
         m.message.role === "tool" ? [[m.message.callId, m.message]] : [],
       ),
     ),
-    open: openInput,
+    opens,
     submitted,
     busy: answerForm.isPending,
-    onAnswer: (request, answer) => {
-      if (live)
-        answerForm.mutate({
-          runId: live.runId,
-          requestId: request.requestId,
-          callId: request.callId,
-          form: request.form,
-          answer,
-        });
-    },
+    subagents,
+    reveal: hashTarget ?? revealed,
+    onAnswer: (open, answer) =>
+      answerForm.mutate({
+        runId: open.runId,
+        requestId: open.request.requestId,
+        callId: open.request.callId,
+        form: open.request.form,
+        answer,
+      }),
   };
   const defaults = settings.data?.effective;
   // The model whose levels the reasoning picker shows.
   const levelsModel = detail.data.session.model || defaults?.model || undefined;
   // How full the context is: the running count while a call streams, else
   // the latest stored message's.
-  const contextUsage = live?.usage ?? latestUsage(detail.data.messages);
+  const contextUsage =
+    live?.usage ??
+    latestUsage(detail.data.messages.filter((m) => !m.parentCallId));
   // Session files and notes cannot change in the trash or during a run
   // (plan P5).
   const entriesReadOnly = trashed
@@ -496,10 +588,10 @@ export function Chat() {
                   Approval needed
                 </Button>
               )}
-              {reasoningNow && (
+              {reasoningRun && (
                 <Button
                   variant="light"
-                  onClick={() => stopThinking.mutate(live.runId)}
+                  onClick={() => stopThinking.mutate(reasoningRun.runId)}
                   loading={stopThinking.isPending}
                 >
                   Stop thinking
@@ -526,16 +618,19 @@ export function Chat() {
         </Group>
       )}
 
-      {live && pending && (
+      {pendingEntry && pending && (
         <ApprovalDialog
           key={pending.requestId}
           request={pending}
+          {...(pendingEntry.run.runId !== live?.runId
+            ? { from: pendingEntry.run.agent?.name ?? "a subagent" }
+            : {})}
           opened={dismissed !== pending.requestId}
           busy={answer.isPending}
           onClose={() => setDismissed(pending.requestId)}
           onAnswer={(a) =>
             answer.mutate({
-              runId: live.runId,
+              runId: pendingEntry.run.runId,
               requestId: pending.requestId,
               answer: a,
             })
@@ -543,9 +638,16 @@ export function Chat() {
           {...(pending.review
             ? {
                 onCheck: (selection: Selection) =>
-                  api.checkApproval(live.runId, pending.requestId, selection),
+                  api.checkApproval(
+                    pendingEntry.run.runId,
+                    pending.requestId,
+                    selection,
+                  ),
                 onRefresh: () =>
-                  api.refreshApproval(live.runId, pending.requestId),
+                  api.refreshApproval(
+                    pendingEntry.run.runId,
+                    pending.requestId,
+                  ),
               }
             : {})}
         />
@@ -598,12 +700,13 @@ export function MessageView({
   usage,
   notes,
   asks,
-}: ShownMessage & { notes: Notes; asks: Asks }) {
+  userLabel = "You",
+}: ShownMessage & { notes: Notes; asks: Asks; userLabel?: string }) {
   if (message.role === "user") {
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
         <Text size="xs" c="dimmed">
-          You
+          {userLabel}
         </Text>
         <Markdown>{message.content}</Markdown>
       </Paper>
@@ -760,10 +863,98 @@ function BlockView({
             </Paper>
           )}
           <ToolPrompt callId={block.callId} asks={asks} />
+          <SubagentPanel callId={block.callId} notes={notes} asks={asks} />
         </Stack>
       );
     }
   }
+}
+
+/**
+ * The work of the subagent a `start_subagent` call started, under the call:
+ * collapsed, and open while the subagent waits for the user (agent
+ * delegation design, decision 42). Its forms and approvals show inside it,
+ * labelled with its agent.
+ */
+function SubagentPanel({
+  callId,
+  notes,
+  asks,
+}: {
+  callId: string;
+  notes: Notes;
+  asks: Asks;
+}) {
+  const view = asks.subagents.get(callId);
+  // Null until the user chooses; then what they chose.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  if (!view) return null;
+  const holdsTarget =
+    !!asks.reveal &&
+    view.messages.some((m) => messageAnchor(m.id) === asks.reveal);
+  const expanded = chosen ?? (view.waiting || holdsTarget);
+  return (
+    <Paper
+      p="xs"
+      withBorder
+      data-subagent={callId}
+      bg="var(--mantine-color-default-hover)"
+    >
+      <Group gap="xs" wrap="nowrap">
+        <Badge size="xs" variant="light" color="teal">
+          subagent
+        </Badge>
+        <Text size="sm" fw={500}>
+          {view.agentName}
+        </Text>
+        {view.waiting ? (
+          <Badge size="xs" variant="filled" color="yellow">
+            waiting for you
+          </Badge>
+        ) : view.running ? (
+          <Group gap={4} wrap="nowrap">
+            <Loader size="xs" type="dots" />
+            <Text size="xs" c="dimmed">
+              working
+            </Text>
+          </Group>
+        ) : (
+          <Text size="xs" c="dimmed">
+            done
+          </Text>
+        )}
+        <UnstyledButton onClick={() => setChosen(!expanded)}>
+          <Text size="xs" c="blue">
+            {expanded ? "Hide its work" : "Show its work"}
+          </Text>
+        </UnstyledButton>
+      </Group>
+      {expanded && (
+        <Stack
+          gap="xs"
+          mt="xs"
+          pl="sm"
+          style={{ borderLeft: "2px solid var(--mantine-color-teal-light)" }}
+        >
+          {view.messages.length === 0 && (
+            <Text size="xs" c="dimmed">
+              Starting…
+            </Text>
+          )}
+          {view.messages.map((m, i) => (
+            <div key={m.id} id={messageAnchor(m.id)}>
+              <MessageView
+                {...m}
+                notes={notes}
+                asks={asks}
+                userLabel={i === 0 ? "Task from the agent" : "Reminder"}
+              />
+            </div>
+          ))}
+        </Stack>
+      )}
+    </Paper>
+  );
 }
 
 /**
@@ -775,15 +966,15 @@ function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
   const result = asks.results.get(callId);
   if (result?.prompt) return <PromptAnswer prompt={result.prompt} />;
   if (result) return null;
-  const open = asks.open;
-  if (open?.callId === callId) {
+  const open = asks.opens.find((o) => o.request.callId === callId);
+  if (open) {
     return (
       <AskUserForm
-        key={`open:${open.requestId}`}
-        form={open.form}
+        key={`open:${open.request.requestId}`}
+        form={open.request.form}
         state={{
           mode: "open",
-          requestId: open.requestId,
+          requestId: open.request.requestId,
           busy: asks.busy,
           onAnswer: (answer) => asks.onAnswer(open, answer),
         }}
@@ -841,11 +1032,11 @@ function askState(callId: string, asks: Asks): AskUserState {
   if (result?.content === DECLINED) return { mode: "skipped" };
   const sent = asks.submitted.get(callId);
   if (!result && sent) return { mode: "answered", answers: sent.answers };
-  const open = asks.open;
-  if (!result && open?.callId === callId) {
+  const open = asks.opens.find((o) => o.request.callId === callId);
+  if (!result && open) {
     return {
       mode: "open",
-      requestId: open.requestId,
+      requestId: open.request.requestId,
       busy: asks.busy,
       onAnswer: (answer) => asks.onAnswer(open, answer),
     };
