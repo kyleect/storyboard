@@ -4,6 +4,7 @@ import {
   Usage,
   type HarnessEvent,
   type StoredEvent,
+  type ToolDefinition,
 } from "@harness/core";
 
 /* Plain SQL over the encrypted database (design doc 6.11). */
@@ -135,6 +136,13 @@ export interface RunRow {
   /** The run whose `start_subagent` call started this one; null: top-level. */
   parent_run_id: string | null;
   parent_call_id: string | null;
+  /**
+   * The composed system message the run sent; null when the run had none,
+   * or was made before it was recorded.
+   */
+  system_prompt: string | null;
+  /** JSON list of the tool definitions the run offered; null as above. */
+  tools: string | null;
 }
 
 interface EventRow {
@@ -716,12 +724,14 @@ export class Store {
     generation?: Generation;
     /** For a subagent's run: the run and call that started it. */
     parent?: { runId: string; callId: string };
+    /** What the run sends to the model, kept for debugging. */
+    request?: { systemPrompt?: string; tools?: readonly ToolDefinition[] };
   }) {
     const generation = run.generation ?? NO_GENERATION;
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version, parent_run_id, parent_call_id)
-         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version, parent_run_id, parent_call_id, system_prompt, tools)
+         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -734,7 +744,18 @@ export class Store {
         generation.agent?.version ?? null,
         run.parent?.runId ?? null,
         run.parent?.callId ?? null,
+        run.request?.systemPrompt ?? null,
+        run.request?.tools ? JSON.stringify(run.request.tools) : null,
       );
+  }
+
+  /** The session's runs, oldest first. */
+  listRuns(sessionId: string): RunRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM runs WHERE session_id = ? ORDER BY started_at, rowid",
+      )
+      .all(sessionId) as RunRow[];
   }
 
   endRun(

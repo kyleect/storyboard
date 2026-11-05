@@ -18,6 +18,7 @@ import {
   type StoredEvent,
 } from "@harness/core";
 import { registerAgentRoutes } from "./agent-routes.js";
+import { buildSessionDebug } from "./session-debug.js";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
 import { defaultAgentFor } from "./default-agent.js";
@@ -288,6 +289,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       messages: store.listMessages(id),
       ...runs.snapshot(id),
     };
+  });
+
+  /**
+   * The session as a debugging export: the system prompt and tools each run
+   * sent, the transcript, and every event. Works for a session in the trash.
+   */
+  app.get("/api/sessions/:id/debug", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const session = store.getSession(id);
+    if (!session) return reply.code(404).send({ error: "Session not found." });
+    return buildSessionDebug(store, session, now());
   });
 
   /**

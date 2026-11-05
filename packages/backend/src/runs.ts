@@ -34,6 +34,7 @@ import {
   type DataOp,
   type SchemaChecker,
   type SchemaScope,
+  toolDefinitions,
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
 import type { DataStore } from "./data-store.js";
@@ -1215,6 +1216,12 @@ export class RunManager {
       now: this.now(),
       generation,
       ...(child ? { parent: child.parent } : {}),
+      // Kept so a session can be exported for debugging with the exact
+      // system message and tools the model was given.
+      request: {
+        ...(system ? { systemPrompt: system } : {}),
+        tools: toolDefinitions(tools),
+      },
     });
 
     const controller = new AbortController();

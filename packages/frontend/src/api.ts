@@ -13,6 +13,8 @@ import type {
   RunAgent,
   SchemaInfo,
   Selection,
+  StoredEvent,
+  ToolDefinition,
   Usage,
 } from "@harness/core";
 
@@ -207,6 +209,41 @@ export interface SessionDetail {
   activeRun: ActiveRunSnapshot | null;
   /** Subagents' runs in progress. */
   childRuns: ChildRunSnapshot[];
+}
+
+/** One run's request in a debugging export. */
+export interface DebugRun {
+  id: string;
+  parentRunId: string | null;
+  parentCallId: string | null;
+  kind: string;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  agent: { id: string; version: number } | null;
+  usage: unknown;
+  error: string | null;
+  /** The system message as sent; null: none, or not recorded. */
+  systemPrompt: string | null;
+  /** The tools the run offered; null when not recorded. */
+  tools: ToolDefinition[] | null;
+  request: "recorded" | "not_recorded";
+}
+
+/** A stored message with when it was created. */
+export type DebugMessage = StoredMessage & { createdAt: string | null };
+
+/** A session exported for debugging (`GET /api/sessions/:id/debug`). */
+export interface SessionDebug {
+  format: 1;
+  exportedAt: string;
+  session: Session;
+  project: Project | null;
+  runs: DebugRun[];
+  messages: DebugMessage[];
+  events: StoredEvent[];
 }
 
 /** A tool and whether it asks before running. */
@@ -938,6 +975,9 @@ export const api = {
       `${schemasBase(o)}/${encodeURIComponent(id)}/copy`,
       { to, name },
     ),
+  /** The session's composed prompts, transcript and every event. */
+  getSessionDebug: (id: string) =>
+    request<SessionDebug>("GET", `/api/sessions/${id}/debug`),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<SettingsView>("PUT", "/api/settings", patch),

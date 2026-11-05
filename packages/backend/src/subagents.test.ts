@@ -1072,3 +1072,84 @@ describe("after a crash", () => {
     ).toEqual(["p1"]);
   });
 });
+
+describe("the session debug export with a subagent", () => {
+  it("holds the subagent's run, prompt, tools, messages and events", async () => {
+    const c = await setup([
+      [],
+      [call("k1", "subagent_handback", { output: "Tightened." })],
+      text("All done"),
+    ]);
+    const boss = c.agents.create(
+      null,
+      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+    );
+    const editor = startable(c, "Editor");
+    c.scripts[0] = [
+      call("p1", "start_subagent", {
+        agentId: editor.id,
+        task: "Tighten chapter 1",
+      }),
+    ];
+    const id = await newSession(c, boss.id);
+    const parentRunId = await go(c, id);
+
+    const res = await api(c.app, "GET", `/api/sessions/${id}/debug`);
+    expect(res.status).toBe(200);
+    const debug = res.body as {
+      runs: {
+        id: string;
+        parentRunId: string | null;
+        parentCallId: string | null;
+        request: string;
+        systemPrompt: string | null;
+        tools: { name: string }[] | null;
+      }[];
+      messages: { runId: string | null; message: Json }[];
+      events: { runId: string | null; type: string; data: Json }[];
+    };
+
+    // Two runs: the parent, and the subagent tied to the call that started it.
+    expect(debug.runs).toHaveLength(2);
+    const parent = debug.runs.find((r) => r.id === parentRunId);
+    const child = debug.runs.find((r) => r.parentRunId === parentRunId);
+    expect(parent).toBeDefined();
+    expect(child).toMatchObject({ parentCallId: "p1", request: "recorded" });
+
+    // What was recorded is what each model call was sent (request 0 is the
+    // parent's first call, 1 the subagent's).
+    expect(parent?.systemPrompt).toBe(systemOf(request(c, 0)));
+    expect(child?.systemPrompt).toBe(systemOf(request(c, 1)));
+    expect(child?.systemPrompt).toContain("You are Editor.");
+    expect(parent?.systemPrompt).not.toContain("You are Editor.");
+    expect(child?.tools?.map((t) => t.name)).toEqual(toolNames(request(c, 1)));
+    expect(parent?.tools?.map((t) => t.name)).toEqual(toolNames(request(c, 0)));
+
+    // The subagent's own messages are in the transcript, owned by its run.
+    const own = debug.messages.filter((m) => m.runId === child?.id);
+    expect(own[0]?.message).toMatchObject({
+      role: "user",
+      content: "Tighten chapter 1",
+    });
+    expect(
+      own.some(
+        (m) =>
+          m.message.role === "tool" && m.message.name === "subagent_handback",
+      ),
+    ).toBe(true);
+
+    // And its events, which name the run that started it.
+    const started = debug.events.find(
+      (e) => e.runId === child?.id && e.type === "run.started",
+    );
+    expect(started?.data).toMatchObject({
+      parentRunId,
+      parentCallId: "p1",
+    });
+    expect(
+      debug.events.some(
+        (e) => e.runId === child?.id && e.type === "run.finished",
+      ),
+    ).toBe(true);
+  });
+});

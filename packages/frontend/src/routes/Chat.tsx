@@ -57,6 +57,7 @@ import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
+import { CopyDebugButton, DebugPanel } from "./DebugPanel";
 import { showError, useSessionActions } from "./SessionActions";
 import { TranscriptScroll } from "./TranscriptScroll";
 
@@ -137,7 +138,7 @@ export function Chat() {
   const runs = liveRuns(live);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
   const [draft, setDraft] = useState("");
-  // Chat, or the session's files or memory (plan U3).
+  // Chat, or the session's files, memory, data or debugging tools (plan U3).
   const [tab, setTab] = useState<string>("chat");
 
   // "Show in transcript" (error reporting plan, P7): scrolls to a message,
@@ -440,6 +441,7 @@ export function Chat() {
           onSave={(title) => actions.rename(sessionId, title)}
         />
         <Group gap="sm" wrap="nowrap">
+          <CopyDebugButton sessionId={sessionId} />
           <ContextMeter usage={contextUsage} model={levelsModel} />
           <Badge color={connected ? "green" : "gray"} variant="light">
             {connected ? "live" : "offline"}
@@ -479,12 +481,15 @@ export function Chat() {
           <Tabs.Tab value="files">Files</Tabs.Tab>
           <Tabs.Tab value="memory">Memory</Tabs.Tab>
           <Tabs.Tab value="data">Data</Tabs.Tab>
+          <Tabs.Tab value="debug">Debug</Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
       {tab !== "chat" && (
         <ScrollArea style={{ flex: 1 }}>
-          {tab === "data" ? (
+          {tab === "debug" ? (
+            <DebugPanel sessionId={sessionId} />
+          ) : tab === "data" ? (
             <SchemasAndData
               owner={{ scope: "session", id: sessionId }}
               readOnly={entriesReadOnly}
