@@ -191,9 +191,29 @@ export interface RunManagerOptions {
    */
   dataTools?: readonly string[];
   /**
+   * The schema list alone, one per line. It is what `{{schemas}}` expands
+   * to (decision 39). Empty for none.
+   */
+  schemasList?: (
+    schemas: readonly {
+      id: string;
+      name: string;
+      scope: SchemaScope;
+      description: string;
+    }[],
+  ) => string;
+  /**
+   * The data list, one per line with the schema's name, the data's name and
+   * its description.
+   * It is what `{{data}}` expands to. Empty for none.
+   */
+  dataList?: (
+    data: readonly { schema: string; name: string; description: string }[],
+  ) => string;
+  /**
    * The schema list with its instruction (decisions 37, 38), or undefined
-   * for none. It is what `{{schemas}}` expands to (decision 39), and goes
-   * after the skill list when no prompt has it (decision 41).
+   * for none. It goes after the skill list when no prompt has
+   * `{{schemas}}` (decision 41).
    */
   schemasPrompt?: (
     schemas: readonly {
@@ -1171,9 +1191,30 @@ export class RunManager {
             .map((s) => ({ ...s, scope: "session" as const })),
         ]
       : [];
+    // The data in scope, listed with the schemas and only when they are:
+    // global, project, agent, then the session's own. Data whose schema is
+    // not in scope is left out.
+    const schemaNames = new Map(schemas.map((s) => [s.id, s.name]));
+    const dataItems =
+      schemas.length > 0
+        ? [
+            ...(this.options.data?.dataInScope(dataOwner) ?? []),
+            ...[
+              ...replaySessionData(
+                this.store.listMessages(sessionId).map((m) => m.message),
+              ).data.values(),
+            ].filter((d) => !d.deleted),
+          ].flatMap((d) => {
+            const schema = schemaNames.get(d.schemaId);
+            return schema === undefined
+              ? []
+              : [{ schema, name: d.name, description: d.description }];
+          })
+        : [];
     const schemasText = this.options.schemasPrompt?.(schemas);
-    // The prompts the user wrote may place the lists with {{skills}} and
-    // {{tools}}; they are filled in once, here, from what this run has
+    // The prompts the user wrote may place the lists with {{skills}},
+    // {{tools}}, {{schemas}} and {{data}}; they are filled in once, here,
+    // from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
     // {{skills}} the skill list goes after them, as before (decision 10).
     // A subagent's system message is built the same way, with its own line
@@ -1189,7 +1230,8 @@ export class RunManager {
     const values = {
       skills: this.options.skillsList?.(skills) ?? "",
       tools: toolsList(tools),
-      schemas: schemasText ?? "",
+      schemas: this.options.schemasList?.(schemas) ?? "",
+      data: this.options.dataList?.(dataItems) ?? "",
     };
     const expanded = written.map((p) =>
       p === undefined ? p : expandPlaceholders(p, values),

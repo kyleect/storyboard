@@ -187,7 +187,7 @@ export function Settings() {
             label="Default reasoning effort"
             description={
               envNote("reasoningEffort") ??
-              "For sessions with none chosen. Levels are those of the default model. Clear it to send none. Write {{skills}}, {{tools}} or {{schemas}} to put the list of skills, tools or schemas the chat has at that place."
+              "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
             }
             placeholder="Not sent (the server decides)"
             model={form.values.model || undefined}
@@ -307,7 +307,7 @@ function SystemPrompt({ view }: { view: SettingsView }) {
           label="Global system prompt"
           description={
             envNote("systemPrompt") ??
-            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none."
+            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}} or {{data}} to put the list of skills, tools, schemas or data the chat has at that place."
           }
           autosize
           minRows={4}

@@ -1,14 +1,14 @@
 /*
  * Placeholders in the prompts the user writes (placeholders design). A
- * placeholder is `{{skills}}`, `{{tools}}` or `{{schemas}}` (schemas and data
- * design, decision 39); it is replaced, when a run starts, with what the run
- * has access to.
+ * placeholder is `{{skills}}`, `{{tools}}`, `{{schemas}}` or `{{data}}`
+ * (schemas and data design, decision 39); it is replaced, when a run starts,
+ * with what the run has access to.
  */
 
-export type PlaceholderName = "skills" | "tools" | "schemas";
+export type PlaceholderName = "skills" | "tools" | "schemas" | "data";
 
 /** A placeholder, with spaces inside the braces allowed. */
-const PLACEHOLDER = /\{\{\s*(skills|tools|schemas)\s*\}\}/g;
+const PLACEHOLDER = /\{\{\s*(skills|tools|schemas|data)\s*\}\}/g;
 
 /**
  * Replaces each placeholder in `text` with its value (decisions 1 to 5). One

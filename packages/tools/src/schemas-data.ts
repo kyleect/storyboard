@@ -784,22 +784,50 @@ export interface ListedSchema {
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
- * The schemas in scope, one per line with id, scope and description
- * (decision 37). Empty when there are none.
+ * The schemas in scope, one per line with name and description (decision
+ * 37); a scope is shown only for a name that is in more than one scope, as
+ * for skills. It is what `{{schemas}}` expands to (decision 39). Ids are not
+ * listed: `schemas_list` gives them. Empty when there are none.
  */
 export function schemasText(schemas: readonly ListedSchema[]): string {
+  const counts = new Map<string, number>();
+  for (const s of schemas) counts.set(s.name, (counts.get(s.name) ?? 0) + 1);
   return schemas
-    .map(
-      (s) => `- ${s.name} (id: ${s.id}, ${s.scope}): ${oneLine(s.description)}`,
-    )
+    .map((s) => {
+      const label =
+        (counts.get(s.name) ?? 0) > 1 ? `${s.name} (${s.scope})` : s.name;
+      return `- ${label}: ${oneLine(s.description)}`;
+    })
+    .join("\n");
+}
+
+/** A piece of data as the system message lists it. */
+export interface ListedData {
+  /** The name of the schema the data is made from. */
+  schema: string;
+  name: string;
+  description: string;
+}
+
+/**
+ * The data in scope, one per line with its schema's name, its own name and
+ * its description (left out when empty). It is what `{{data}}` expands to.
+ * Ids and values are not listed: `data_list` and `data_view` give them.
+ * Empty when there is none.
+ */
+export function dataText(data: readonly ListedData[]): string {
+  return data
+    .map((d) => {
+      const description = oneLine(d.description);
+      return `- ${oneLine(d.schema)}: ${oneLine(d.name)}${description ? ` - ${description}` : ""}`;
+    })
     .join("\n");
 }
 
 /**
  * The schema list with its instruction (decision 38), or undefined when no
- * schema is in scope. It is what `{{schemas}}` expands to (decision 39), and
- * what goes after the prompts when none has it (decision 41). The wording
- * is Claude's draft, for review.
+ * schema is in scope. It goes after the prompts when none has `{{schemas}}`
+ * (decision 41). The wording is Claude's draft, for review.
  */
 export function schemasInstruction(
   schemas: readonly ListedSchema[],

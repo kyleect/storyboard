@@ -455,4 +455,17 @@ export class DataStore {
       ...(owner.agentId !== null ? shared.listSchemas("agent") : []),
     ];
   }
+
+  /**
+   * Data in scope for a run, for the system message: global, the project's
+   * and the agent's, live ones only, whose schema is live too.
+   */
+  dataInScope(owner: DataOwner): DataRecord[] {
+    const shared = this.shared(owner);
+    return [
+      ...shared.listData("global"),
+      ...(owner.projectId !== null ? shared.listData("project") : []),
+      ...(owner.agentId !== null ? shared.listData("agent") : []),
+    ];
+  }
 }

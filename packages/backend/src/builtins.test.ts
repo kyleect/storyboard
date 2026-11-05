@@ -4,6 +4,7 @@ import { ScriptedModel, type ChatRequest } from "@harness/core";
 import {
   schemaDataTools,
   schemasInstruction,
+  schemasText,
   skillsInstruction,
   skillsList,
   skillTools,
@@ -54,6 +55,7 @@ function setup() {
     schemaChecker,
     dataTools: schemaDataTools.map((s) => s.name),
     schemasPrompt: schemasInstruction,
+    schemasList: schemasText,
   });
   const app = buildServer({
     store,
@@ -246,7 +248,7 @@ describe("built-ins in the system message (plan P7)", () => {
       (model.requests[0] as ChatRequest).messages.find(
         (m) => m.role === "system",
       )?.content ?? "";
-    expect(system).toContain("- Task (id: builtin-task, builtin):");
+    expect(system).toMatch(/^- Task: /m);
     expect(system).toContain("- schemas-and-data:");
   });
 });

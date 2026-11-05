@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import { embedTexts, LlamaServerAdapter } from "@harness/core";
 import {
   allTools,
+  dataText,
   entriesInstruction,
   entryTools,
   schemaDataTools,
   schemasInstruction,
+  schemasText,
   skillsInstruction,
   skillsList,
   skillTools,
@@ -80,6 +82,8 @@ async function main() {
     schemaChecker,
     dataTools: schemaDataTools.map((t) => t.name),
     schemasPrompt: schemasInstruction,
+    schemasList: schemasText,
+    dataList: dataText,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),
     index,
     search: (session) =>

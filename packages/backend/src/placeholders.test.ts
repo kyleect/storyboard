@@ -41,7 +41,12 @@ afterEach(async () => {
 });
 
 describe("expandPlaceholders (decisions 2 to 6)", () => {
-  const values = { skills: "- a: A.", tools: "- t: T.", schemas: "- S." };
+  const values = {
+    skills: "- a: A.",
+    tools: "- t: T.",
+    schemas: "- S.",
+    data: "- S: D.",
+  };
 
   it("replaces {{skills}} and {{tools}}, with spaces allowed inside", () => {
     expect(expandPlaceholders("{{skills}} and {{ tools }}", values)).toBe(
@@ -56,6 +61,14 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
     expect(usesPlaceholder("x {{schemas}}", "schemas")).toBe(true);
   });
 
+  it("replaces {{data}}", () => {
+    expect(expandPlaceholders("<d>{{ data }}</d>", values)).toBe(
+      "<d>- S: D.</d>",
+    );
+    expect(usesPlaceholder("x {{data}}", "data")).toBe(true);
+    expect(usesPlaceholder("x {{schemas}}", "data")).toBe(false);
+  });
+
   it("leaves anything else as typed", () => {
     const text = "{{skill}} {{Skills}} {{ }} {skills} {{{}}} {{agents}}";
     expect(expandPlaceholders(text, values)).toBe(text);
@@ -66,6 +79,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
       skills: "- a: see {{tools}}",
       tools: "NOPE",
       schemas: "",
+      data: "",
     });
     expect(out).toBe("- a: see {{tools}}");
   });
@@ -76,6 +90,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
         skills: "",
         tools: "",
         schemas: "",
+        data: "",
       }),
     ).toBe("A  B");
   });

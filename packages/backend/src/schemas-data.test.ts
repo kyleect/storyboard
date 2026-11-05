@@ -9,8 +9,10 @@ import {
   type ToolResultMessage,
 } from "@harness/core";
 import {
+  dataText,
   schemaDataTools,
   schemasInstruction,
+  schemasText,
   SKILL_LOAD,
 } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
@@ -327,6 +329,8 @@ async function setup(scripts: ScriptStep[][], ask = false) {
     schemaChecker,
     dataTools: schemaDataTools.map((x) => x.name),
     schemasPrompt: schemasInstruction,
+    schemasList: schemasText,
+    dataList: dataText,
     now,
   });
   const app = buildServer({
@@ -466,10 +470,11 @@ describe("schemas and data in runs", () => {
     );
     const system = systemOf(s.model.requests[0]);
     expect(system).toMatch(/^G\n\nYou have schemas:/);
-    expect(system).toContain("- Task (id: g1, global): A task.");
+    // The built-in Task has the same name, so the scope is shown.
+    expect(system).toContain("- Task (global): A task.");
   });
 
-  it("puts the list where {{schemas}} is written, once", async () => {
+  it("puts the list where {{schemas}} is written, once, without the introduction", async () => {
     const s = await setup([answer]);
     s.data
       .shared({ projectId: null, agentId: null })
@@ -486,8 +491,93 @@ describe("schemas and data in runs", () => {
       (await api(s.app, "POST", "/api/sessions", {})).body.id as string,
     );
     const system = systemOf(s.model.requests[0]) ?? "";
-    expect(system.startsWith("<schemas>\nYou have schemas:")).toBe(true);
-    expect(system.match(/You have schemas:/g)).toHaveLength(1);
+    expect(system.startsWith("<schemas>\n- ")).toBe(true);
+    expect(system).toContain("\n- Task (global): A task.\n");
+    expect(system).not.toContain("You have schemas:");
+  });
+
+  it("lists data as schema name, data name and description where {{data}} is written", async () => {
+    const s = await setup([
+      [
+        call("data_create", {
+          schemaId: "g1",
+          scope: "session",
+          name: "Scene 2",
+          description: "Draft scene 2.",
+          value: { task: "Draft scene 2" },
+        }),
+      ],
+      answer,
+      answer,
+    ]);
+    const g = s.data.shared({ projectId: null, agentId: null });
+    g.createSchema(
+      "global",
+      { id: "g1", name: "Scene", description: "A scene.", copiedFrom: null },
+      TASK,
+    );
+    g.putData(
+      "global",
+      {
+        id: "d1",
+        schemaId: "g1",
+        schemaVersion: 1,
+        name: "Chapter 1",
+        description: "Plan chapter 1.",
+        value: { task: "Plan chapter 1" },
+      },
+      { by: "user" },
+    );
+    writeSettings(s.t.db, {
+      systemPrompt: "<data>\n{{ data }}\n</data>",
+    });
+    const session = (await api(s.app, "POST", "/api/sessions", {})).body
+      .id as string;
+    await say(s, session);
+    // The system message is built once per run: the first run sees the
+    // global data, and the next one the session's data as well.
+    expect(
+      systemOf(s.model.requests[0])?.startsWith(
+        "<data>\n- Scene: Chapter 1 - Plan chapter 1.\n</data>",
+      ),
+    ).toBe(true);
+    await say(s, session);
+    expect(
+      systemOf(s.model.requests[2])?.startsWith(
+        "<data>\n- Scene: Chapter 1 - Plan chapter 1.\n- Scene: Scene 2 - Draft scene 2.\n</data>",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves data out when its schema is deleted, and expands {{data}} to nothing with none", async () => {
+    const s = await setup([answer]);
+    const g = s.data.shared({ projectId: null, agentId: null });
+    g.createSchema(
+      "global",
+      { id: "g1", name: "Scene", description: "A scene.", copiedFrom: null },
+      TASK,
+    );
+    g.putData(
+      "global",
+      {
+        id: "d1",
+        schemaId: "g1",
+        schemaVersion: 1,
+        name: "Chapter 1",
+        description: "d",
+        value: { task: "a" },
+      },
+      { by: "user" },
+    );
+    g.deleteSchema("g1");
+    writeSettings(s.t.db, { systemPrompt: "A{{data}}B" });
+    await say(
+      s,
+      (await api(s.app, "POST", "/api/sessions", {})).body.id as string,
+    );
+    const system = systemOf(s.model.requests[0]) ?? "";
+    expect(system.startsWith("AB\n\n")).toBe(true);
+    expect(system).not.toContain("Chapter 1");
   });
 
   it("leaves the list out when the run offers no schema or data tool", async () => {
