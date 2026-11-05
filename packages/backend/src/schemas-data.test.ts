@@ -210,11 +210,16 @@ describe("DataStore", () => {
       { by: "user" },
     );
     store.purgeProject("p1");
+    // The built-in schemas stay.
     const count = (table: string) =>
       (
-        t.db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as {
-          n: number;
-        }
+        t.db
+          .prepare(
+            table.startsWith("schema")
+              ? `SELECT count(*) AS n FROM ${table} WHERE ${table === "schemas" ? "id" : "schema_id"} NOT LIKE 'builtin-%'`
+              : `SELECT count(*) AS n FROM ${table}`,
+          )
+          .get() as { n: number }
       ).n;
     expect(
       ["schemas", "schema_versions", "data", "data_versions"].map(count),
@@ -429,8 +434,11 @@ describe("schemas and data in runs", () => {
     });
     expect(
       (
-        JSON.parse(schemas?.content ?? "") as { schemas: { name: string }[] }
+        JSON.parse(schemas?.content ?? "") as {
+          schemas: { name: string; scope: string }[];
+        }
       ).schemas
+        .filter((x) => x.scope !== "builtin")
         .map((x) => x.name)
         .sort(),
     ).toEqual(["Chore", "Task"]);

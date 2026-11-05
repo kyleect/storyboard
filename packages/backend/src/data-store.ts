@@ -43,6 +43,8 @@ export interface DataOwner {
 
 interface SchemaRow {
   id: string;
+  /** 1: a built-in schema (decision 45). */
+  builtin: number;
   project_id: string | null;
   agent_id: string | null;
   name: string;
@@ -72,7 +74,7 @@ const scopeOf = (r: {
 
 const toSchema = (r: SchemaRow): SchemaRecord => ({
   id: r.id,
-  scope: scopeOf(r),
+  scope: r.builtin === 1 ? "builtin" : scopeOf(r),
   name: r.name,
   description: r.description,
   version: r.version,
@@ -92,7 +94,7 @@ const toData = (r: DataRow): DataRecord => ({
 });
 
 const SCHEMA_COLUMNS =
-  "id, project_id, agent_id, name, description, version, copied_from, deleted_at";
+  "id, project_id, agent_id, name, description, version, copied_from, deleted_at, builtin";
 const DATA_COLUMNS =
   "id, project_id, agent_id, schema_id, schema_version, name, description, value, deleted_at";
 
@@ -121,6 +123,17 @@ export class DataStore {
           if (owner.agentId === null) return ["0", []];
           return ["agent_id = ?", [owner.agentId]];
       }
+    };
+    /**
+     * `where` for schemas: built-in ones are a scope of their own (plan P6),
+     * so the global scope leaves them out.
+     */
+    const schemaWhere = (
+      scope: SharedDataScope | "builtin",
+    ): [string, unknown[]] => {
+      if (scope === "builtin") return ["builtin = 1", []];
+      const [sql, args] = where(scope);
+      return [`(${sql}) AND builtin = 0`, args];
     };
     const owners = (scope: SharedDataScope) => ({
       project: scope === "project" ? owner.projectId : null,
@@ -191,7 +204,7 @@ export class DataStore {
 
     return {
       listSchemas(scope, includeDeleted = false) {
-        const [sql, args] = where(scope);
+        const [sql, args] = schemaWhere(scope);
         return (
           db
             .prepare(
@@ -217,7 +230,7 @@ export class DataStore {
       },
 
       nameTaken(scope, name, exceptId) {
-        const [sql, args] = where(scope);
+        const [sql, args] = schemaWhere(scope);
         return (
           db
             .prepare(
@@ -436,6 +449,7 @@ export class DataStore {
   inScope(owner: DataOwner): SchemaRecord[] {
     const shared = this.shared(owner);
     return [
+      ...shared.listSchemas("builtin"),
       ...shared.listSchemas("global"),
       ...(owner.projectId !== null ? shared.listSchemas("project") : []),
       ...(owner.agentId !== null ? shared.listSchemas("agent") : []),

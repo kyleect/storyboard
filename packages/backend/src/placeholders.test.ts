@@ -28,7 +28,7 @@ import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { SkillStore, type SkillContent } from "./skills-store.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltins, tempDatabase } from "./test-helpers.js";
 
 /* Placeholders (placeholders design). */
 
@@ -133,6 +133,7 @@ const agentContent = (over: Partial<AgentContent> = {}): AgentContent => ({
 
 async function setup(scripts: ScriptStep[][]) {
   const t = tempDatabase();
+  clearBuiltins(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let tick = 0;

@@ -27,7 +27,7 @@ import {
   type SkillOwner,
 } from "./skills-store.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltins, tempDatabase } from "./test-helpers.js";
 
 const TOKEN = "t".repeat(64);
 
@@ -71,6 +71,7 @@ const GLOBAL: SkillOwner = { scope: "global" };
 
 async function setup(scripts: ScriptStep[][] = []) {
   const t = tempDatabase();
+  clearBuiltins(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let tick = 0;
@@ -195,6 +196,7 @@ describe("slugify (skills design, decision 4)", () => {
 describe("skill store", () => {
   it("creates and saves versions; the name follows the display name", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
     const s = skills.create(GLOBAL, content({ displayName: "  My Skill " }));
@@ -227,6 +229,7 @@ describe("skill store", () => {
 
   it("checks the name, the description and the slug", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
     expect(() => skills.create(GLOBAL, content({ displayName: "  " }))).toThrow(
@@ -258,6 +261,7 @@ describe("skill store", () => {
 
   it("keeps names unique per scope, including deleted skills", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const store = new Store(t.db);
     const agents = new AgentStore(t.db);
@@ -285,6 +289,7 @@ describe("skill store", () => {
 
   it("deletes as a version and restores", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
     const s = skills.create(GLOBAL, content());
@@ -314,6 +319,7 @@ describe("skill store", () => {
 
   it("refuses to restore a version whose name another skill now has", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
     const a = skills.create(GLOBAL, content({ displayName: "A" }));
@@ -326,6 +332,7 @@ describe("skill store", () => {
 describe("skills in scope (decision 1)", () => {
   it("gives each session and agent the skills the design lists", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const store = new Store(t.db);
     const agents = new AgentStore(t.db);
@@ -367,6 +374,7 @@ describe("skills in scope (decision 1)", () => {
 
   it("leaves out deleted skills and carries the content", () => {
     const t = tempDatabase();
+    clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
     const a = skills.create(GLOBAL, content({ displayName: "A" }));

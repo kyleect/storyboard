@@ -182,8 +182,15 @@ describe("global data routes", () => {
         { id: "ps", name: "Beat", description: "d", copiedFrom: null },
         TASK,
       );
+    // Built-in schemas are offered everywhere; they're checked on their own.
     const names = async (url: string) =>
-      ((await api(app, "GET", url)).body as unknown as { name: string }[])
+      (
+        (await api(app, "GET", url)).body as unknown as {
+          name: string;
+          scope: string;
+        }[]
+      )
+        .filter((s) => s.scope !== "builtin")
         .map((s) => s.name)
         .sort();
     expect(await names("/api/global/data/schemas")).toEqual(["Task"]);
@@ -276,7 +283,10 @@ describe("schema routes (patch 4)", () => {
     ).toEqual({ data: 1 });
     expect((await api(app, "GET", "/api/global/data")).body.data).toEqual([]);
     expect(
-      (await api(app, "GET", "/api/global/schemas?deleted=true")).body.schemas,
+      (
+        (await api(app, "GET", "/api/global/schemas?deleted=true")).body
+          .schemas as { scope: string }[]
+      ).filter((s) => s.scope !== "builtin"),
     ).toMatchObject([
       { id, name: "Note", deleted: true },
       { name: "Task", deleted: false },

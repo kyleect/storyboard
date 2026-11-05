@@ -8,6 +8,7 @@ import {
   MAX_DATA_NAME,
   type DataPlan,
   type DataScope,
+  type SchemaScope,
   type DataSnapshot,
   type DataView,
   type Review,
@@ -39,6 +40,8 @@ const SCOPE_HELP =
   "global: every conversation. project: every conversation in this project. agent: every conversation with this agent. session: this conversation only.";
 
 const Scope = z.enum(SCOPES);
+/** Where schemas live: the data scopes and the built-in ones (plan P6). */
+const SchemaScopeArg = z.enum([...SCOPES, "builtin"]);
 const Id = z.string().min(1).max(100);
 const Name = z.string().min(1).max(MAX_DATA_NAME);
 const Description = z.string().min(1).max(MAX_DATA_DESCRIPTION);
@@ -264,10 +267,10 @@ function single(
 export const schemasList = defineTool({
   name: "schemas_list",
   description:
-    "Lists the schemas available in this conversation: each has an id, name, scope, description and latest version. Data is made from a schema with data_create.",
+    "Lists the schemas available in this conversation: each has an id, name, scope, description and latest version. Built-in schemas (scope builtin) come with the app and can't be changed; copy one with schema_copy to change it. Data is made from a schema with data_create.",
   input: z.object({
-    scope: Scope.optional().describe(
-      `Leave out for every scope. ${SCOPE_HELP}`,
+    scope: SchemaScopeArg.optional().describe(
+      `Leave out for every scope. ${SCOPE_HELP} builtin: the schemas that come with the app.`,
     ),
   }),
   approval: "never",
@@ -774,7 +777,7 @@ export const schemaDataTools = [
 export interface ListedSchema {
   id: string;
   name: string;
-  scope: DataScope;
+  scope: SchemaScope;
   description: string;
 }
 

@@ -165,6 +165,10 @@ export function SchemasPanel({
                   <Badge size="xs" variant="light" color="red">
                     deleted
                   </Badge>
+                ) : s.scope === "builtin" ? (
+                  <Badge size="xs" variant="light" color="blue">
+                    built-in
+                  </Badge>
                 ) : undefined
               }
             />
@@ -246,7 +250,10 @@ function SchemaView({
     );
   }
   const s = schema.data;
-  if (editing && !readOnly && !s.deleted) {
+  // Built-in schemas are read-only; copy one to change it (decision 45).
+  const builtin = s.scope === "builtin";
+  const fixed = readOnly || builtin;
+  if (editing && !fixed && !s.deleted) {
     return (
       <SchemaEditor
         owner={owner}
@@ -272,6 +279,11 @@ function SchemaView({
               deleted
             </Badge>
           )}
+          {builtin && (
+            <Badge size="xs" variant="light" color="blue">
+              built-in
+            </Badge>
+          )}
         </Group>
         <Group gap="xs" wrap="nowrap">
           <Button size="xs" variant="default" onClick={() => setVersions(true)}>
@@ -286,7 +298,7 @@ function SchemaView({
               Copy…
             </Button>
           )}
-          {!readOnly && !s.deleted && (
+          {!fixed && !s.deleted && (
             <>
               <Button size="xs" variant="light" onClick={onEdit}>
                 Edit
@@ -318,7 +330,7 @@ function SchemaView({
               </Button>
             </>
           )}
-          {!readOnly && s.deleted && (
+          {!fixed && s.deleted && (
             <Button
               size="xs"
               loading={restore.isPending}
@@ -330,7 +342,7 @@ function SchemaView({
         </Group>
       </Group>
       <Text size="xs" c="dimmed">
-        {s.scope}
+        {builtin ? "comes with the app; copy it to change it" : s.scope}
         {s.deleted
           ? " · deleted, with its data"
           : ` · ${s.dataCount} ${s.dataCount === 1 ? "piece" : "pieces"} of data`}

@@ -29,8 +29,8 @@ import {
   dataEditNotice,
   replaySessionData,
   type DataOp,
-  type DataScope,
   type SchemaChecker,
+  type SchemaScope,
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
 import type { DataStore } from "./data-store.js";
@@ -184,7 +184,7 @@ export interface RunManagerOptions {
     schemas: readonly {
       id: string;
       name: string;
-      scope: DataScope;
+      scope: SchemaScope;
       description: string;
     }[],
   ) => string | undefined;

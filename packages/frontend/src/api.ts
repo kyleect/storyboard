@@ -403,7 +403,7 @@ export interface SkillContent {
   body: string;
 }
 
-export type SkillScopeName = "global" | "project" | "agent";
+export type SkillScopeName = "builtin" | "global" | "project" | "agent";
 
 export interface Skill extends SkillContent {
   id: string;

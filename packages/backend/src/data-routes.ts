@@ -439,7 +439,8 @@ export function registerDataRoutes(
       id: string,
     ) => {
       const s = access.getSchema(id, true);
-      if (s.scope !== owner.scope) {
+      const builtinHere = s.scope === "builtin" && owner.scope === "global";
+      if (s.scope !== owner.scope && !builtinHere) {
         throw new DataError(`No schema with the id "${id}" here.`);
       }
       return s;
@@ -450,7 +451,11 @@ export function registerDataRoutes(
       const q = ListQuery.parse(req.query);
       return read(owner, ({ access }) => ({
         readOnly: owner.readOnly,
-        schemas: access.listSchemas(owner.scope, q.deleted === "true"),
+        // The global page shows the built-in schemas too (decision 45).
+        schemas: [
+          ...(owner.scope === "global" ? access.listSchemas("builtin") : []),
+          ...access.listSchemas(owner.scope, q.deleted === "true"),
+        ],
       }));
     });
 

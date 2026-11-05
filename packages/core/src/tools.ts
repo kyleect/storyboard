@@ -109,8 +109,11 @@ export interface AgentAccess {
   choose(agentId: string | null): void;
 }
 
-/** Where a skill is defined (skills design, decision 1). */
-export type SkillScope = "global" | "project" | "agent";
+/**
+ * Where a skill is defined (skills design, decision 1), or "builtin" for the
+ * skills that come with the app (schemas and data design, decision 51).
+ */
+export type SkillScope = "builtin" | "global" | "project" | "agent";
 
 /**
  * A skill as a run sees it: its content when the run started (skills design,

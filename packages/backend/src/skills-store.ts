@@ -83,6 +83,8 @@ export class SkillError extends Error {
 
 interface SkillRow {
   id: string;
+  /** 1: a built-in skill (decision 51 of the schemas and data design). */
+  builtin: number;
   project_id: string | null;
   agent_id: string | null;
   display_name: string;
@@ -106,7 +108,7 @@ interface VersionRow {
 }
 
 const COLUMNS =
-  "id, project_id, agent_id, display_name, name, description, body, version, created_at, updated_at, deleted_at";
+  "id, project_id, agent_id, display_name, name, description, body, version, created_at, updated_at, deleted_at, builtin";
 const VERSION_COLUMNS =
   "seq, display_name, name, description, body, deleted, created_at";
 
@@ -117,11 +119,13 @@ const toSkill = (r: SkillRow): Skill => ({
   description: r.description,
   body: r.body,
   scope:
-    r.agent_id !== null
-      ? "agent"
-      : r.project_id !== null
-        ? "project"
-        : "global",
+    r.builtin === 1
+      ? "builtin"
+      : r.agent_id !== null
+        ? "agent"
+        : r.project_id !== null
+          ? "project"
+          : "global",
   projectId: r.project_id,
   agentId: r.agent_id,
   version: r.version,
@@ -189,10 +193,22 @@ export class SkillStore {
       this.db
         .prepare(
           `SELECT ${COLUMNS} FROM skills
-           WHERE project_id IS ? AND agent_id IS ? AND (? OR deleted_at IS NULL)
+           WHERE project_id IS ? AND agent_id IS ? AND builtin = 0
+             AND (? OR deleted_at IS NULL)
            ORDER BY name`,
         )
         .all(projectId, agentId, includeDeleted ? 1 : 0) as SkillRow[]
+    ).map(toSkill);
+  }
+
+  /** The skills that come with the app (decision 51), by name. */
+  builtins(): Skill[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT ${COLUMNS} FROM skills WHERE builtin = 1 AND deleted_at IS NULL ORDER BY name`,
+        )
+        .all() as SkillRow[]
     ).map(toSkill);
   }
 
@@ -210,7 +226,7 @@ export class SkillStore {
     const row = this.db
       .prepare(
         `SELECT ${COLUMNS} FROM skills
-         WHERE project_id IS ? AND agent_id IS ? AND name = ?`,
+         WHERE project_id IS ? AND agent_id IS ? AND builtin = 0 AND name = ?`,
       )
       .get(projectId, agentId, name) as SkillRow | undefined;
     return row ? toSkill(row) : undefined;
@@ -227,14 +243,15 @@ export class SkillStore {
       ...(projectId ? [{ scope: "project" as const, id: projectId }] : []),
       ...(agentId ? [{ scope: "agent" as const, id: agentId }] : []),
     ];
-    return owners.flatMap((o) =>
-      this.list(o).map((s): RunSkill => ({
+    // Built-in skills are in scope everywhere, first (decision 51).
+    return [...this.builtins(), ...owners.flatMap((o) => this.list(o))].map(
+      (s): RunSkill => ({
         name: s.name,
         displayName: s.displayName,
         description: s.description,
         body: s.body,
         scope: s.scope,
-      })),
+      }),
     );
   }
 
@@ -273,7 +290,7 @@ export class SkillStore {
   update(id: string, content: SkillContent): Skill {
     const c = normalize(content);
     return this.db.transaction(() => {
-      const skill = this.require(id);
+      const skill = this.requireChangeable(id);
       if (skill.deleted) {
         throw new SkillError(
           "The skill is deleted. Restore a version first.",
@@ -288,7 +305,7 @@ export class SkillStore {
   /** Marks the skill deleted and records the deletion as a version. */
   delete(id: string): Skill {
     return this.db.transaction(() => {
-      const skill = this.require(id);
+      const skill = this.requireChangeable(id);
       if (skill.deleted) {
         throw new SkillError("The skill is already deleted.", 409);
       }
@@ -302,7 +319,7 @@ export class SkillStore {
    */
   restore(id: string, seq: number): Skill {
     return this.db.transaction(() => {
-      const skill = this.require(id);
+      const skill = this.requireChangeable(id);
       const version = this.version(id, seq);
       if (!version) throw new SkillError(`No version ${seq}.`, 404);
       if (version.deleted) {
@@ -343,6 +360,15 @@ export class SkillStore {
       : skill.projectId !== null
         ? { scope: "project", id: skill.projectId }
         : { scope: "global" };
+  }
+
+  /** A skill the user can change: not a built-in one (decision 51). */
+  private requireChangeable(id: string): Skill {
+    const skill = this.require(id);
+    if (skill.scope === "builtin") {
+      throw new SkillError("Built-in skills can't be changed.", 409);
+    }
+    return skill;
   }
 
   private require(id: string): Skill {

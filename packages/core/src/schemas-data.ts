@@ -15,6 +15,11 @@ import type { SchemaNode } from "./schema-features.js";
 
 export type DataScope = "global" | "project" | "agent" | "session";
 export type SharedDataScope = Exclude<DataScope, "session">;
+/**
+ * Where a schema lives: a data scope, or "builtin" for the schemas that come
+ * with the app (decision 45; plan P6). Data never lives in "builtin".
+ */
+export type SchemaScope = DataScope | "builtin";
 
 /** The longest name (decision 8a). */
 export const MAX_DATA_NAME = 64;
@@ -37,7 +42,7 @@ export interface SchemaChecker {
 /** A schema's current state, without its JSON Schema. */
 export interface SchemaRecord {
   id: string;
-  scope: DataScope;
+  scope: SchemaScope;
   name: string;
   description: string;
   /** The latest version. */
@@ -79,7 +84,10 @@ export interface VersionSaved {
  */
 export interface SharedData {
   /** Live schemas in a scope; deleted ones too with `includeDeleted`. */
-  listSchemas(scope: SharedDataScope, includeDeleted?: boolean): SchemaRecord[];
+  listSchemas(
+    scope: SharedDataScope | "builtin",
+    includeDeleted?: boolean,
+  ): SchemaRecord[];
   /** A schema by id, deleted or not; undefined when not in these scopes. */
   getSchema(id: string): SchemaRecord | undefined;
   /** One version's JSON Schema. */
@@ -246,7 +254,7 @@ export interface SchemaInfo {
   id: string;
   name: string;
   description: string;
-  scope: DataScope;
+  scope: SchemaScope;
   version: number;
   copiedFrom: string | null;
   /** Deleted; listed only when asked for (it can be restored). */
@@ -316,7 +324,7 @@ export interface SchemaSnapshot {
 /** A proposed change to a schema, worked out but not saved. */
 export interface SchemaPlan {
   schemaId: string;
-  scope: DataScope;
+  scope: SchemaScope;
   before: SchemaSnapshot;
   after: SchemaSnapshot;
 }
@@ -326,7 +334,7 @@ export interface DataAccess {
   /** The scopes this run has (decisions 2, 3). */
   readonly scopes: readonly DataScope[];
   /** Deleted ones too with `includeDeleted` (to show and restore them). */
-  listSchemas(scope?: DataScope, includeDeleted?: boolean): SchemaInfo[];
+  listSchemas(scope?: SchemaScope, includeDeleted?: boolean): SchemaInfo[];
   /**
    * A live schema in scope, or a deleted one with `includeDeleted`; throws a
    * `DataError` otherwise.
@@ -470,7 +478,11 @@ const randomId = (): string => {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 };
 
-const describeScope = (scope: DataScope) =>
+/** Why a built-in schema can't be changed (decision 45). */
+export const BUILTIN_READ_ONLY =
+  "Built-in schemas can't be changed. Copy one with schema_copy to make a version you can change.";
+
+const describeScope = (scope: SchemaScope) =>
   scope === "agent" ? "this agent's scope" : `the ${scope} scope`;
 
 /** The `DataAccess` a tool gets for one call. */
@@ -622,9 +634,9 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
   // -- Data --
 
   /** Where data made from a schema in `schemaScope` may live (6, 6a, 6b). */
-  const scopesForSchema = (schemaScope: DataScope): DataScope[] => {
+  const scopesForSchema = (schemaScope: SchemaScope): DataScope[] => {
     const allowed: DataScope[] =
-      schemaScope === "global"
+      schemaScope === "global" || schemaScope === "builtin"
         ? ["global", "project", "agent", "session"]
         : schemaScope === "project"
           ? [
@@ -939,6 +951,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     changes: { name?: string; description?: string; body?: unknown },
   ): SchemaPlan => {
     const s = liveSchema(id);
+    if (s.scope === "builtin") throw new DataError(BUILTIN_READ_ONLY);
     const before = schemaSnapshot(s);
     const plan: SchemaPlan = {
       schemaId: s.id,
@@ -971,6 +984,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     plan: SchemaPlan,
     snap: SchemaSnapshot,
   ): string[] => {
+    if (plan.scope === "builtin") return [BUILTIN_READ_ONLY];
     const errors = textErrors(snap);
     if (
       typeof snap.name === "string" &&
@@ -1058,8 +1072,15 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     scopes,
 
     listSchemas(scope, includeDeleted = false) {
-      if (scope !== undefined) requireScope(scope);
-      const wanted = scope === undefined ? scopes : [scope];
+      if (scope === "builtin") sharedOf();
+      else if (scope !== undefined) requireScope(scope);
+      // Built-in schemas are always in scope, listed first (plan P7).
+      const wanted: SchemaScope[] =
+        scope !== undefined
+          ? [scope]
+          : shared
+            ? ["builtin", ...scopes]
+            : scopes;
       const out: SchemaInfo[] = [];
       for (const s of wanted) {
         if (s === "session") {
@@ -1101,6 +1122,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
       if (!s) {
         throw new DataError(`No schema with the id "${id}" is available.`);
       }
+      if (s.scope === "builtin") throw new DataError(BUILTIN_READ_ONLY);
       if (!s.deleted) return info(s);
       if (s.scope === "session") {
         sessionOp({
@@ -1167,6 +1189,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
 
     deleteSchema(id) {
       const s = liveSchema(id);
+      if (s.scope === "builtin") throw new DataError(BUILTIN_READ_ONLY);
       const count = listData({ schemaId: id }).length;
       if (s.scope === "session") sessionOp({ op: "schema_delete", id });
       else sharedOf().deleteSchema(id);

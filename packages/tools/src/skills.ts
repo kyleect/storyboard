@@ -10,7 +10,12 @@ import { defineTool, type RunSkill, type SkillScope } from "@harness/core";
 
 export const SKILL_LOAD = "skill_load";
 
-const SCOPES = ["global", "project", "agent"] as const satisfies SkillScope[];
+const SCOPES = [
+  "builtin",
+  "global",
+  "project",
+  "agent",
+] as const satisfies SkillScope[];
 
 /** Names the model can use for a skill, with the scopes it is defined in. */
 function byName(skills: readonly RunSkill[]): Map<string, RunSkill[]> {
