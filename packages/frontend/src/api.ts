@@ -9,6 +9,7 @@ import type {
   InputRequest,
   Message,
   RunAgent,
+  Selection,
   Usage,
 } from "@harness/core";
 
@@ -626,6 +627,19 @@ export const api = {
       `/api/runs/${runId}/approvals/${encodeURIComponent(requestId)}`,
       answer,
     ),
+  /** Checks a selection of an open request's changes (decision 33). */
+  checkApproval: (runId: string, requestId: string, selection: Selection) =>
+    request<{ errors: string[]; stale: boolean }>(
+      "POST",
+      `/api/runs/${runId}/approvals/${encodeURIComponent(requestId)}/check`,
+      { selection },
+    ),
+  /** Works an open request's changes out again (decision 30). */
+  refreshApproval: (runId: string, requestId: string) =>
+    request<{ request: ApprovalRequest }>(
+      "POST",
+      `/api/runs/${runId}/approvals/${encodeURIComponent(requestId)}/refresh`,
+    ).then((r) => r.request),
   /** Answers a form: its answers, or skipped. */
   answerInput: (runId: string, requestId: string, answer: InputAnswer) =>
     request<{ ok: true }>(

@@ -1,12 +1,22 @@
 import { z } from "zod";
 import {
+  applySelection,
+  changesBetween,
   DataError,
   defineTool,
   MAX_DATA_DESCRIPTION,
   MAX_DATA_NAME,
+  type DataPlan,
   type DataScope,
+  type DataSnapshot,
   type DataView,
+  type Review,
+  type ReviewItem,
+  type ReviewPlan,
   type SchemaInfo,
+  type SchemaPlan,
+  type SchemaSnapshot,
+  type Selection,
   type ToolContext,
   type ToolOutput,
 } from "@harness/core";
@@ -35,6 +45,17 @@ const Description = z.string().min(1).max(MAX_DATA_DESCRIPTION);
 /** Schema versions; bounded (tools design 6.2). */
 const Version = z.int().min(1).max(100000);
 
+/** A `DataError` (a refused change) as an error result. */
+const refusal = (
+  err: DataError,
+  target: Record<string, string | undefined>,
+): ToolOutput =>
+  fail(
+    err.message,
+    /No (schema|data) with the id/.test(err.message) ? "not_found" : "rejected",
+    target,
+  );
+
 /** A `DataError` (a refused change) becomes an error result. */
 function guarded(
   target: Record<string, string | undefined>,
@@ -43,15 +64,7 @@ function guarded(
   try {
     return run();
   } catch (err) {
-    if (err instanceof DataError) {
-      return fail(
-        err.message,
-        /No (schema|data) with the id/.test(err.message)
-          ? "not_found"
-          : "rejected",
-        target,
-      );
-    }
+    if (err instanceof DataError) return refusal(err, target);
     throw err;
   }
 }
@@ -102,6 +115,149 @@ const shownData = (d: DataView) => ({ ...shownInfo(d), value: d.value });
 
 const scopeArg = (description: string) =>
   Scope.describe(`${description} ${SCOPE_HELP}`);
+
+// ---- Reviews (plan P5; decisions 31 to 35) ---------------------------------
+
+/** Turns a `DataError` while working out a review into the call's result. */
+function reviewGuarded(
+  target: Record<string, string | undefined>,
+  run: () => ReviewPlan,
+): ReviewPlan | ToolOutput {
+  try {
+    return run();
+  } catch (err) {
+    if (err instanceof DataError) return refusal(err, target);
+    throw err;
+  }
+}
+
+const dataLabel = (plan: DataPlan) =>
+  `${plan.schemaName} "${(plan.before ?? plan.after).name}"`;
+
+function dataItem(ctx: ToolContext, key: string, plan: DataPlan): ReviewItem {
+  return {
+    key,
+    label: dataLabel(plan),
+    ...(plan.before ? { before: plan.before } : {}),
+    after: plan.after,
+    changes: changesBetween(plan.before, plan.after),
+    ...(plan.kind === "create" ? { showValue: true } : {}),
+    ...(plan.kind === "migrate" && plan.fromVersion !== undefined
+      ? {
+          schema: {
+            fromVersion: plan.fromVersion,
+            toVersion: plan.version,
+            changes: changesBetween(
+              ctx.data.schemaBody(plan.schemaId, plan.fromVersion),
+              ctx.data.schemaBody(plan.schemaId, plan.version),
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
+/** What a selection keeps of one item: undefined when nothing of it is. */
+function selected<T>(
+  item: ReviewItem,
+  selection: Selection | undefined,
+): T | undefined {
+  if (selection === undefined) return item.after as T;
+  const paths = selection[item.key];
+  if (paths === undefined) return undefined;
+  return applySelection(item.before, item.after, new Set(paths)) as
+    T | undefined;
+}
+
+/** The review of data plans, keyed by item. */
+function dataReview(
+  ctx: ToolContext,
+  plans: readonly { key: string; plan: DataPlan }[],
+): ReviewPlan {
+  const review: Review = {
+    items: plans.map(({ key, plan }) => dataItem(ctx, key, plan)),
+  };
+  return {
+    review,
+    check: (selection) =>
+      plans.flatMap(({ plan }, i) => {
+        const item = review.items[i] as ReviewItem;
+        const snap = selected<DataSnapshot>(item, selection);
+        if (snap === undefined) return [];
+        return ctx.data.checkPlan(plan, snap).map((e) => `${item.label}: ${e}`);
+      }),
+    stale: () => plans.some(({ plan }) => ctx.data.planIsStale(plan)),
+  };
+}
+
+/** What the model is told about an approval with picked changes (35). */
+function picked(item: ReviewItem, selection: Selection | undefined) {
+  if (selection === undefined) return {};
+  const approved = new Set(selection[item.key] ?? []);
+  const all = item.changes.map((c) => c.path);
+  return {
+    applied: all.filter((p) => approved.has(p)),
+    rejected: all.filter((p) => !approved.has(p)),
+  };
+}
+
+const CHANGED_SINCE =
+  "Not applied: the data changed after the user approved this call. Look at it again and propose the change anew.";
+
+/**
+ * Saves data plans as the user approved them. Without an approval (the tool
+ * didn't ask) every plan is saved whole.
+ */
+function commitData(
+  ctx: ToolContext,
+  plans: readonly { key: string; plan: DataPlan }[],
+): { key: string; result: Record<string, unknown> }[] {
+  const approval = ctx.approval;
+  return plans.map(({ key, plan }) => {
+    if (!approval)
+      return {
+        key,
+        result: { saved: shownData(ctx.data.commitPlan(plan, plan.after)) },
+      };
+    const item = approval.review.items.find((i) => i.key === key);
+    if (!item || JSON.stringify(item.before) !== JSON.stringify(plan.before)) {
+      return { key, result: { error: CHANGED_SINCE } };
+    }
+    const snap = selected<DataSnapshot>(item, approval.selection);
+    if (snap === undefined) {
+      return {
+        key,
+        result: {
+          notApplied: "The user approved none of these changes.",
+          ...picked(item, approval.selection),
+        },
+      };
+    }
+    return {
+      key,
+      result: {
+        saved: shownData(ctx.data.commitPlan(plan, snap)),
+        ...picked(item, approval.selection),
+      },
+    };
+  });
+}
+
+/** One plan's result as a tool output. */
+function single(
+  label: string,
+  out: { key: string; result: Record<string, unknown> } | undefined,
+): ToolOutput {
+  const result = out?.result ?? {};
+  if ("error" in result) {
+    return fail(String(result.error), "rejected", {});
+  }
+  if ("saved" in result) {
+    const { saved, ...rest } = result;
+    return { data: { [label]: saved, ...rest } };
+  }
+  return { data: result };
+}
 
 // ---- Schemas ----------------------------------------------------------------
 
@@ -176,6 +332,26 @@ export const schemaCreate = defineTool({
     })),
 });
 
+const schemaChanges = (input: {
+  name?: string | undefined;
+  description?: string | undefined;
+  schema?: Record<string, unknown> | undefined;
+}) => ({
+  ...(input.name !== undefined ? { name: input.name } : {}),
+  ...(input.description !== undefined
+    ? { description: input.description }
+    : {}),
+  ...(input.schema !== undefined ? { body: input.schema } : {}),
+});
+
+const schemaItem = (plan: SchemaPlan): ReviewItem => ({
+  key: "schema",
+  label: `Schema "${plan.before.name}"`,
+  before: plan.before,
+  after: plan.after,
+  changes: changesBetween(plan.before, plan.after),
+});
+
 export const schemaUpdate = defineTool({
   name: "schema_update",
   description:
@@ -189,6 +365,19 @@ export const schemaUpdate = defineTool({
     ),
   }),
   approval: "ask",
+  review: (input, ctx) =>
+    reviewGuarded({ id: input.id }, () => {
+      const plan = ctx.data.planSchemaUpdate(input.id, schemaChanges(input));
+      const item = schemaItem(plan);
+      return {
+        review: { items: [item] },
+        check: (selection) => {
+          const snap = selected<SchemaSnapshot>(item, selection);
+          return snap === undefined ? [] : ctx.data.checkSchemaPlan(plan, snap);
+        },
+        stale: () => ctx.data.schemaPlanIsStale(plan),
+      };
+    }),
   execute: (input, ctx) =>
     guarded({ id: input.id }, () => {
       if (
@@ -202,22 +391,41 @@ export const schemaUpdate = defineTool({
           { id: input.id },
         );
       }
-      const updated = ctx.data.updateSchema(input.id, {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.description !== undefined
-          ? { description: input.description }
-          : {}),
-        ...(input.schema !== undefined ? { body: input.schema } : {}),
-      });
-      const outOfDate =
-        input.schema !== undefined
-          ? ctx.data.listData({ schemaId: input.id }).filter((d) => d.outOfDate)
-              .length
-          : 0;
+      const plan = ctx.data.planSchemaUpdate(input.id, schemaChanges(input));
+      const approval = ctx.approval;
+      let snap: SchemaSnapshot | undefined = plan.after;
+      let pickedPaths = {};
+      if (approval) {
+        const item = approval.review.items[0];
+        if (
+          !item ||
+          JSON.stringify(item.before) !== JSON.stringify(plan.before)
+        ) {
+          return fail(CHANGED_SINCE.replace("data", "schema"), "rejected", {
+            id: input.id,
+          });
+        }
+        snap = selected<SchemaSnapshot>(item, approval.selection);
+        pickedPaths = picked(item, approval.selection);
+      }
+      if (snap === undefined) {
+        return {
+          data: {
+            notApplied: "The user approved none of these changes.",
+            ...pickedPaths,
+          },
+        };
+      }
+      const updated = ctx.data.commitSchemaPlan(plan, snap);
+      const outOfDate = updated.saved
+        ? ctx.data.listData({ schemaId: input.id }).filter((d) => d.outOfDate)
+            .length
+        : 0;
       return {
         data: {
           updated: shownSchema(updated),
           ...(updated.saved ? { newVersion: updated.saved.version } : {}),
+          ...pickedPaths,
           ...(outOfDate > 0
             ? {
                 outOfDate,
@@ -306,14 +514,31 @@ export const dataView = defineTool({
     })),
 });
 
-const requireValue = (
-  value: unknown,
-  what: string,
-  target: Record<string, string | undefined>,
-): ToolOutput | undefined =>
-  value === undefined
-    ? fail(`Give the ${what}.`, "rejected", target)
-    : undefined;
+const createInput = (input: {
+  schemaId: string;
+  scope: DataScope;
+  name: string;
+  description: string;
+  value: unknown;
+}) => ({
+  scope: input.scope,
+  schemaId: input.schemaId,
+  name: input.name,
+  description: input.description,
+  value: input.value,
+});
+
+const updateChanges = (input: {
+  patch?: unknown;
+  name?: string | undefined;
+  description?: string | undefined;
+}) => ({
+  ...(input.patch !== undefined ? { patch: input.patch } : {}),
+  ...(input.name !== undefined ? { name: input.name } : {}),
+  ...(input.description !== undefined
+    ? { description: input.description }
+    : {}),
+});
 
 export const dataCreate = defineTool({
   name: "data_create",
@@ -329,23 +554,24 @@ export const dataCreate = defineTool({
     value: Json("The value, matching the schema."),
   }),
   approval: "ask",
+  review: (input, ctx) =>
+    reviewGuarded({ schemaId: input.schemaId }, () =>
+      dataReview(ctx, [
+        { key: "data", plan: ctx.data.planCreate(createInput(input)) },
+      ]),
+    ),
   execute: (input, ctx) => {
     const target = { schemaId: input.schemaId, scope: input.scope };
-    return (
-      requireValue(input.value, "value", target) ??
-      guarded(target, () => ({
-        data: {
-          created: shownData(
-            ctx.data.createData({
-              scope: input.scope,
-              schemaId: input.schemaId,
-              name: input.name,
-              description: input.description,
-              value: input.value,
-            }),
-          ),
-        },
-      }))
+    if (input.value === undefined) {
+      return fail("Give the value.", "rejected", target);
+    }
+    return guarded(target, () =>
+      single(
+        "created",
+        commitData(ctx, [
+          { key: "data", plan: ctx.data.planCreate(createInput(input)) },
+        ])[0],
+      ),
     );
   },
 });
@@ -361,6 +587,15 @@ export const dataUpdate = defineTool({
     description: Description.optional(),
   }),
   approval: "ask",
+  review: (input, ctx) =>
+    reviewGuarded({ id: input.id }, () =>
+      dataReview(ctx, [
+        {
+          key: "data",
+          plan: ctx.data.planUpdate(input.id, updateChanges(input)),
+        },
+      ]),
+    ),
   execute: (input, ctx) =>
     guarded({ id: input.id }, () => {
       if (
@@ -374,28 +609,17 @@ export const dataUpdate = defineTool({
           { id: input.id },
         );
       }
-      return {
-        data: {
-          updated: shownData(
-            ctx.data.updateData(input.id, {
-              ...(input.patch !== undefined ? { patch: input.patch } : {}),
-              ...(input.name !== undefined ? { name: input.name } : {}),
-              ...(input.description !== undefined
-                ? { description: input.description }
-                : {}),
-            }),
-          ),
-        },
-      };
+      return single(
+        "updated",
+        commitData(ctx, [
+          {
+            key: "data",
+            plan: ctx.data.planUpdate(input.id, updateChanges(input)),
+          },
+        ])[0],
+      );
     }),
 });
-
-const migrateOne = (
-  ctx: ToolContext,
-  id: string,
-  toVersion: number | undefined,
-  patch: unknown,
-) => shownData(ctx.data.migrateData(id, toVersion, patch));
 
 export const dataMigrate = defineTool({
   name: "data_migrate",
@@ -409,13 +633,49 @@ export const dataMigrate = defineTool({
     ).optional(),
   }),
   approval: "ask",
+  review: (input, ctx) =>
+    reviewGuarded({ id: input.id }, () =>
+      dataReview(ctx, [
+        {
+          key: "data",
+          plan: ctx.data.planMigrate(input.id, input.toVersion, input.patch),
+        },
+      ]),
+    ),
   execute: (input, ctx) =>
-    guarded({ id: input.id }, () => ({
-      data: {
-        migrated: migrateOne(ctx, input.id, input.toVersion, input.patch),
-      },
-    })),
+    guarded({ id: input.id }, () =>
+      single(
+        "migrated",
+        commitData(ctx, [
+          {
+            key: "data",
+            plan: ctx.data.planMigrate(input.id, input.toVersion, input.patch),
+          },
+        ])[0],
+      ),
+    ),
 });
+
+type ManyItem = { id: string; toVersion?: number | undefined; patch?: unknown };
+
+/** Plans for the items that can be worked out, and errors for the rest. */
+function migrationPlans(ctx: ToolContext, items: readonly ManyItem[]) {
+  const plans: { key: string; plan: DataPlan }[] = [];
+  const errors: { id: string; error: string }[] = [];
+  for (const item of items) {
+    try {
+      plans.push({
+        key: item.id,
+        plan: ctx.data.planMigrate(item.id, item.toVersion, item.patch),
+      });
+    } catch (err) {
+      if (err instanceof DataError)
+        errors.push({ id: item.id, error: err.message });
+      else throw err;
+    }
+  }
+  return { plans, errors };
+}
 
 export const dataMigrateMany = defineTool({
   name: "data_migrate_many",
@@ -436,18 +696,39 @@ export const dataMigrateMany = defineTool({
       .max(100),
   }),
   approval: "ask",
+  review: (input, ctx) => {
+    const { plans, errors } = migrationPlans(ctx, input.items);
+    // Nothing to ask about: every item is refused as it stands.
+    if (plans.length === 0) {
+      return {
+        data: { results: errors },
+        isError: true,
+        details: { reason: "rejected", failed: errors.length },
+      };
+    }
+    return dataReview(ctx, plans);
+  },
   execute: (input, ctx) => {
+    const { plans, errors } = migrationPlans(ctx, input.items);
+    const saved = new Map(
+      commitData(ctx, plans).map(({ key, result }) => [key, result]),
+    );
     const results = input.items.map((item) => {
-      try {
+      const r = saved.get(item.id);
+      if (r) {
+        const { saved: value, ...rest } = r;
         return {
           id: item.id,
-          migrated: migrateOne(ctx, item.id, item.toVersion, item.patch),
+          ...(value !== undefined ? { migrated: value } : {}),
+          ...rest,
         };
-      } catch (err) {
-        if (err instanceof DataError)
-          return { id: item.id, error: err.message };
-        throw err;
       }
+      return (
+        errors.find((e) => e.id === item.id) ?? {
+          id: item.id,
+          error: "Not found.",
+        }
+      );
     });
     const failed = results.filter((r) => "error" in r).length;
     return {

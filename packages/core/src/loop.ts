@@ -5,6 +5,7 @@ import {
   type SharedEntries,
 } from "./entries.js";
 import type { ApprovalAnswer, InputRequest } from "./events.js";
+import type { Review, Selection } from "./review.js";
 import {
   createDataAccess,
   NO_DATA,
@@ -40,8 +41,11 @@ import {
   truncate,
   type AgentAccess,
   type ProjectAccess,
+  type ReviewPlan,
   type RunSkill,
   type Tool,
+  type ToolContext,
+  type ToolOutput,
 } from "./tools.js";
 
 /*
@@ -63,6 +67,19 @@ export interface ApprovalRequest {
    * Q9).
    */
   agentSetting?: boolean | undefined;
+  /** The call's changes, when the tool describes them (plan P5). */
+  review?: Review | undefined;
+}
+
+/**
+ * What the run that asks offers while a request with a review is open: the
+ * problems with a selection, whether the changes are out of date, and a
+ * fresh review (undefined when the call can no longer be worked out).
+ */
+export interface ApprovalHooks {
+  check: (selection: Selection) => string[];
+  stale: () => boolean;
+  refresh: () => Review | undefined;
 }
 
 /** What went wrong in a reported tool call (error reporting plan, P2). */
@@ -112,6 +129,7 @@ export interface LoopContext extends RunContext {
   approve: (
     request: ApprovalRequest,
     signal: AbortSignal,
+    hooks?: ApprovalHooks,
   ) => Promise<ApprovalAnswer>;
   /**
    * Waits for the user's answer to a form a tool shows (input forms design),
@@ -525,8 +543,112 @@ export async function runLoop(
       return;
     }
 
+    /** The context a tool gets: for its review, then for its run. */
+    const toolContext = (
+      sessionOps: EntryOp[],
+      dataOps: DataOp[],
+      requestInput: (form: Form) => Promise<InputAnswer>,
+      approval?: ToolContext["approval"],
+    ): ToolContext => ({
+      signal: ctx.signal,
+      sessionId: ctx.sessionId,
+      runId: ctx.runId,
+      callId: call.callId,
+      update: (partial) =>
+        emit({ type: "tool.update", data: { callId: call.callId, partial } }),
+      state: latestToolState(transcript, tool.name),
+      projectId: ctx.projectId ?? null,
+      projectName: ctx.projectName ?? null,
+      entries: createEntryAccess({
+        session: replaySessionEntries(transcript),
+        sessionOps,
+        ...(ctx.sharedEntries ? { shared: ctx.sharedEntries } : {}),
+        inProject: (ctx.projectId ?? null) !== null,
+        author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
+        ...(ctx.newNoteId ? { newNoteId: ctx.newNoteId } : {}),
+        ...(ctx.searchEntries
+          ? {
+              search: (q) =>
+                (ctx.searchEntries as EntrySearch)({
+                  ...q,
+                  signal: ctx.signal,
+                }),
+            }
+          : {}),
+      }),
+      data: ctx.schemaChecker
+        ? createDataAccess({
+            session: replaySessionData(transcript),
+            sessionOps: dataOps,
+            ...(ctx.sharedData ? { shared: ctx.sharedData } : {}),
+            checker: ctx.schemaChecker,
+            projectId: ctx.projectId ?? null,
+            agent: ctx.agent
+              ? { id: ctx.agent.id, projectId: ctx.agent.projectId }
+              : null,
+            author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
+          })
+        : NO_DATA,
+      projects: ctx.projects ?? NO_PROJECTS,
+      agents: ctx.agents ?? NO_AGENTS,
+      copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
+      skills: ctx.skills ?? [],
+      requestInput,
+      ...(approval ? { approval } : {}),
+    });
+    /** A review runs before anything is saved: its changes are dropped. */
+    const reviewContext = () =>
+      toolContext([], [], () =>
+        Promise.reject(new Error("A tool cannot ask while it is reviewed.")),
+      );
+    let approval: ToolContext["approval"];
+
     if (needsApproval(tool)) {
       const requestId = newId();
+      // The call's changes, for the prompt (plan P5).
+      let plan: ReviewPlan | undefined;
+      if (tool.review) {
+        let reviewed: ReviewPlan | ToolOutput;
+        try {
+          reviewed = tool.review(parsed.input, reviewContext());
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          addReported("tool_threw", `${tool.name} failed: ${message}`, {
+            details: err instanceof ToolError ? err.details : undefined,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+          return;
+        }
+        if (!("review" in reviewed)) {
+          const text = serializeResult(reviewed.data);
+          const content = reviewed.isError ? truncate(text, errorLimit) : text;
+          const messageId = addResult(call, {
+            content,
+            isError: reviewed.isError ?? false,
+            data: reviewed.data,
+            ...(content !== text ? { error: text } : {}),
+          });
+          if (reviewed.isError) {
+            report("tool_returned_error", messageId, text, {
+              details: reviewed.details,
+            });
+          }
+          return;
+        }
+        plan = reviewed;
+      }
+      const hooks: ApprovalHooks | undefined = plan
+        ? {
+            check: (selection) => (plan as ReviewPlan).check(selection),
+            stale: () => (plan as ReviewPlan).stale(),
+            refresh: () => {
+              const next = tool.review?.(parsed.input, reviewContext());
+              if (!next || !("review" in next)) return undefined;
+              plan = next;
+              return next.review;
+            },
+          }
+        : undefined;
       const alwaysAsks = tool.approval === "always";
       const agentSetting = !alwaysAsks && ctx.agentDecides?.(tool) === true;
       emit({
@@ -538,6 +660,7 @@ export async function runLoop(
           arguments: call.arguments,
           ...(alwaysAsks ? { alwaysAsks } : {}),
           ...(agentSetting ? { agentSetting } : {}),
+          ...(plan ? { review: plan.review } : {}),
         },
       });
       let answer: ApprovalAnswer | undefined;
@@ -551,8 +674,10 @@ export async function runLoop(
               arguments: call.arguments,
               ...(alwaysAsks ? { alwaysAsks } : {}),
               ...(agentSetting ? { agentSetting } : {}),
+              ...(plan ? { review: plan.review } : {}),
             },
             ctx.signal,
+            hooks,
           ),
           ctx.signal,
         );
@@ -585,6 +710,12 @@ export async function runLoop(
         addError(call, "The user denied this tool call.", undefined, note);
         return;
       }
+      if (plan) {
+        approval = {
+          review: plan.review,
+          selection: choice === "once" ? answer.selection : undefined,
+        };
+      }
     }
 
     const started = performance.now();
@@ -605,54 +736,10 @@ export async function runLoop(
       return answer;
     };
     try {
-      const entries = createEntryAccess({
-        session: replaySessionEntries(transcript),
-        sessionOps,
-        ...(ctx.sharedEntries ? { shared: ctx.sharedEntries } : {}),
-        inProject: (ctx.projectId ?? null) !== null,
-        author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
-        ...(ctx.newNoteId ? { newNoteId: ctx.newNoteId } : {}),
-        ...(ctx.searchEntries
-          ? {
-              search: (q) =>
-                (ctx.searchEntries as EntrySearch)({
-                  ...q,
-                  signal: ctx.signal,
-                }),
-            }
-          : {}),
-      });
-      const data = ctx.schemaChecker
-        ? createDataAccess({
-            session: replaySessionData(transcript),
-            sessionOps: dataOps,
-            ...(ctx.sharedData ? { shared: ctx.sharedData } : {}),
-            checker: ctx.schemaChecker,
-            projectId: ctx.projectId ?? null,
-            agent: ctx.agent
-              ? { id: ctx.agent.id, projectId: ctx.agent.projectId }
-              : null,
-            author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
-          })
-        : NO_DATA;
-      const output = await tool.execute(parsed.input, {
-        signal: ctx.signal,
-        sessionId: ctx.sessionId,
-        runId: ctx.runId,
-        callId: call.callId,
-        update: (partial) =>
-          emit({ type: "tool.update", data: { callId: call.callId, partial } }),
-        state: latestToolState(transcript, tool.name),
-        projectId: ctx.projectId ?? null,
-        projectName: ctx.projectName ?? null,
-        entries,
-        data,
-        projects: ctx.projects ?? NO_PROJECTS,
-        agents: ctx.agents ?? NO_AGENTS,
-        copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
-        skills: ctx.skills ?? [],
-        requestInput: ask,
-      });
+      const output = await tool.execute(
+        parsed.input,
+        toolContext(sessionOps, dataOps, ask, approval),
+      );
       const text = serializeResult(output.data);
       const content = output.isError ? truncate(text, errorLimit) : text;
       const messageId = addResult(call, {

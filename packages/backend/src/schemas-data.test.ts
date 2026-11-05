@@ -586,3 +586,189 @@ describe("schemas and data in runs", () => {
     expect(g.getData("b")?.schemaVersion).toBe(2);
   });
 });
+
+describe("approval prompts with changes (plan P5; decisions 30 to 35)", () => {
+  async function asking(steps: ScriptStep[][]) {
+    const s = await setup([...steps, answer], true);
+    const g = s.data.shared({ projectId: null, agentId: null });
+    g.createSchema(
+      "global",
+      { id: "s", name: "Task", description: "d", copiedFrom: null },
+      TASK_V2,
+    );
+    g.putData(
+      "global",
+      {
+        id: "d1",
+        schemaId: "s",
+        schemaVersion: 1,
+        name: "Scene",
+        description: "d",
+        value: { task: "draft", priority: "low" },
+      },
+      { by: "user" },
+    );
+    const session = (await api(s.app, "POST", "/api/sessions", {})).body
+      .id as string;
+    const res = await api(s.app, "POST", `/api/sessions/${session}/messages`, {
+      content: "Hi",
+    });
+    const runId = res.body.runId as string;
+    await expect
+      .poll(() => s.runs.snapshot(session).activeRun?.approvals.length)
+      .toBe(1);
+    const request = s.runs.snapshot(session).activeRun?.approvals[0];
+    if (!request) throw new Error("No approval.");
+    const done = () => expect.poll(() => s.runs.isActive(runId)).toBe(false);
+    return { s, g, session, runId, request, done };
+  }
+  const update = call("data_update", {
+    id: "d1",
+    patch: { task: "final", isDone: true },
+  });
+
+  it("shows the changed fields and applies only the approved ones", async () => {
+    const { s, g, session, runId, request, done } = await asking([[update]]);
+    expect(request.review?.items[0]?.changes.map((c) => c.path)).toEqual([
+      "/value/task",
+      "/value/isDone",
+    ]);
+    s.runs.answerApproval(runId, request.requestId, {
+      choice: "once",
+      selection: { data: ["/value/isDone"] },
+    });
+    await done();
+    expect(g.getData("d1")?.value).toEqual({
+      task: "draft",
+      priority: "low",
+      isDone: true,
+    });
+    const result = JSON.parse(results(s.store, session)[0]?.content ?? "");
+    expect(result).toMatchObject({
+      applied: ["/value/isDone"],
+      rejected: ["/value/task"],
+      updated: { value: { task: "draft", isDone: true } },
+    });
+  });
+
+  it("applies everything with Approve all (once, no selection)", async () => {
+    const { s, g, runId, request, done } = await asking([[update]]);
+    s.runs.answerApproval(runId, request.requestId, { choice: "once" });
+    await done();
+    expect(g.getData("d1")?.value).toMatchObject({
+      task: "final",
+      isDone: true,
+    });
+  });
+
+  it("refuses a selection that fails the schema (decision 33)", async () => {
+    const create = call("data_create", {
+      schemaId: "s",
+      scope: "global",
+      name: "New",
+      description: "d",
+      value: { task: "t", priority: "high" },
+    });
+    const { s, runId, request, done } = await asking([[create]]);
+    expect(request.review?.items[0]).toMatchObject({ showValue: true });
+    const without = {
+      data: ["/name", "/description", "/value/task"],
+    };
+    expect(
+      s.runs.checkApproval(runId, request.requestId, without).errors.join(),
+    ).toMatch(/priority/);
+    expect(() =>
+      s.runs.answerApproval(runId, request.requestId, {
+        choice: "once",
+        selection: without,
+      }),
+    ).toThrow(/cannot be applied/);
+    expect(() =>
+      s.runs.answerApproval(runId, request.requestId, {
+        choice: "session",
+        selection: without,
+      }),
+    ).toThrow(/only be picked one by one with once/);
+    s.runs.answerApproval(runId, request.requestId, { choice: "deny" });
+    await done();
+  });
+
+  it("flags a change that went stale and refreshes it (decision 30)", async () => {
+    const { s, g, runId, request, done } = await asking([[update]]);
+    g.putData(
+      "global",
+      {
+        id: "d1",
+        schemaId: "s",
+        schemaVersion: 1,
+        name: "Scene",
+        description: "d",
+        value: { task: "edited elsewhere", priority: "high" },
+      },
+      { by: "user" },
+    );
+    expect(s.runs.checkApproval(runId, request.requestId)).toEqual({
+      errors: [],
+      stale: true,
+    });
+    expect(() =>
+      s.runs.answerApproval(runId, request.requestId, { choice: "once" }),
+    ).toThrow(/changed since this was asked/);
+    const fresh = s.runs.refreshApproval(runId, request.requestId);
+    expect(fresh.review?.items[0]?.changes[0]).toMatchObject({
+      path: "/value/task",
+      before: "edited elsewhere",
+      after: "final",
+    });
+    s.runs.answerApproval(runId, request.requestId, { choice: "once" });
+    await done();
+    expect(g.getData("d1")?.value).toEqual({
+      task: "final",
+      priority: "high",
+      isDone: true,
+    });
+  });
+
+  it("reviews a schema update field by field", async () => {
+    const { s, g, runId, request, done } = await asking([
+      [
+        call("schema_update", {
+          id: "s",
+          name: "Chore",
+          schema: { ...TASK_V2, required: ["task"] },
+        }),
+      ],
+    ]);
+    expect(request.review?.items[0]?.changes.map((c) => c.path)).toEqual([
+      "/name",
+      "/schema/required/1",
+    ]);
+    s.runs.answerApproval(runId, request.requestId, {
+      choice: "once",
+      selection: { schema: ["/name"] },
+    });
+    await done();
+    expect(g.getSchema("s")).toMatchObject({ name: "Chore", version: 1 });
+  });
+
+  it("goes through the routes", async () => {
+    const { s, runId, request, done } = await asking([[update]]);
+    const base = `/api/runs/${runId}/approvals/${request.requestId}`;
+    expect(
+      (await api(s.app, "POST", `${base}/check`, { selection: { data: [] } }))
+        .body,
+    ).toEqual({ errors: [], stale: false });
+    expect(
+      (await api(s.app, "POST", `${base}/refresh`)).body.request,
+    ).toMatchObject({ requestId: request.requestId });
+    expect(
+      (
+        await api(s.app, "POST", base, {
+          choice: "once",
+          selection: { data: ["/value/task"] },
+        })
+      ).status,
+    ).toBe(200);
+    await done();
+  });
+});

@@ -29,6 +29,7 @@ import {
   type InputRequest,
   type Message,
   type PromptRecord,
+  type Selection,
   type ToolResultMessage,
   type Usage,
 } from "@harness/core";
@@ -532,6 +533,14 @@ export function Chat() {
               answer: a,
             })
           }
+          {...(pending.review
+            ? {
+                onCheck: (selection: Selection) =>
+                  api.checkApproval(live.runId, pending.requestId, selection),
+                onRefresh: () =>
+                  api.refreshApproval(live.runId, pending.requestId),
+              }
+            : {})}
         />
       )}
 

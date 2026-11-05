@@ -120,3 +120,115 @@ describe("ApprovalDialog", () => {
     ).toBeDefined();
   });
 });
+
+describe("ApprovalDialog with changes (schemas and data design)", () => {
+  const review = {
+    items: [
+      {
+        key: "data",
+        label: 'Task "Scene"',
+        before: { name: "Scene", value: { task: "draft", done: false } },
+        after: { name: "Scene", value: { task: "final", done: true } },
+        changes: [
+          {
+            path: "/value/task",
+            kind: "changed" as const,
+            before: "draft",
+            after: "final",
+          },
+          {
+            path: "/value/done",
+            kind: "changed" as const,
+            before: false,
+            after: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  function changes(
+    check: (s: unknown) => { errors: string[]; stale: boolean } = () => ({
+      errors: [],
+      stale: false,
+    }),
+  ) {
+    const answers: ApprovalAnswer[] = [];
+    const checked: unknown[] = [];
+    render(
+      <MantineProvider>
+        <ApprovalDialog
+          request={{
+            requestId: "r1",
+            callId: "c1",
+            name: "data_update",
+            arguments: {},
+            review,
+          }}
+          opened
+          busy={false}
+          onClose={() => {}}
+          onAnswer={(a) => answers.push(a)}
+          onCheck={(s) => {
+            checked.push(s);
+            return Promise.resolve(check(s));
+          }}
+          onRefresh={() =>
+            Promise.resolve({
+              requestId: "r1",
+              callId: "c1",
+              name: "data_update",
+              arguments: {},
+              review,
+            })
+          }
+        />
+      </MantineProvider>,
+    );
+    const button = (name: string) =>
+      screen.getByRole("button", { name }) as HTMLButtonElement;
+    return { answers, checked, button };
+  }
+
+  it("approves only the ticked changes", () => {
+    const { answers, button } = changes();
+    fireEvent.click(screen.getByLabelText('Task "Scene": value › task'));
+    fireEvent.click(button("Approve selected"));
+    expect(answers).toEqual([
+      { choice: "once", selection: { data: ["/value/done"] } },
+    ]);
+  });
+
+  it("sends no selection when everything is ticked, and Approve all and Deny all answer the call", () => {
+    const { answers, button } = changes();
+    fireEvent.click(button("Approve selected"));
+    fireEvent.click(button("Approve all"));
+    fireEvent.click(button("Deny all"));
+    expect(answers).toEqual([
+      { choice: "once" },
+      { choice: "once" },
+      { choice: "deny" },
+    ]);
+  });
+
+  it("blocks a selection the schema refuses, with the reason", async () => {
+    const { button } = changes(() => ({
+      errors: ["(value): missing required property 'task'."],
+      stale: false,
+    }));
+    expect(
+      await screen.findByText("(value): missing required property 'task'."),
+    ).toBeTruthy();
+    expect(button("Approve selected").disabled).toBe(true);
+  });
+
+  it("offers Refresh and Reject when the data changed meanwhile", async () => {
+    const { answers, button } = changes(() => ({ errors: [], stale: true }));
+    expect(
+      await screen.findByText("The data changed since this was asked"),
+    ).toBeTruthy();
+    expect(button("Approve all").disabled).toBe(true);
+    fireEvent.click(button("Reject"));
+    expect(answers).toEqual([{ choice: "deny" }]);
+  });
+});

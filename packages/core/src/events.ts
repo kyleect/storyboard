@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Review, type Selection } from "./review.js";
 import { Form } from "./forms.js";
 import { AssistantMessage, TokenInfo, Usage } from "./messages.js";
 
@@ -165,6 +166,12 @@ export const ToolApprovalRequested = event(
      * (agent tool approval design, Q9).
      */
     agentSetting: z.boolean().optional(),
+    /**
+     * The changes the call would make, when the tool describes them: the
+     * prompt shows them and the user can approve them one by one (schemas
+     * and data design, decisions 31 to 35).
+     */
+    review: Review.optional(),
   }),
 );
 
@@ -182,6 +189,11 @@ export const NOTE_CHOICES: readonly ApprovalChoice[] = ["once", "deny"];
 export interface ApprovalAnswer {
   choice: ApprovalChoice;
   note?: string;
+  /**
+   * With "once" on a call that has a review: the changes approved. Left
+   * out: all of them (decision 34).
+   */
+  selection?: Selection;
 }
 
 export const ToolApprovalResolved = event(

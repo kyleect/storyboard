@@ -10,6 +10,7 @@ import {
   listLlamaServerModels,
   loadLlamaServerModel,
   NOTE_CHOICES,
+  Selection,
   type ContextSize,
   type LoadResult,
   type ModelInfo,
@@ -577,8 +578,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const { id, requestId } = IdParams.extend({
       requestId: z.string(),
     }).parse(req.params);
-    const { choice, note } = z
-      .object({ choice: ApprovalChoice, note: z.string().optional() })
+    const { choice, note, selection } = z
+      .object({
+        choice: ApprovalChoice,
+        note: z.string().optional(),
+        selection: Selection.optional(),
+      })
       .refine((b) => b.note === undefined || NOTE_CHOICES.includes(b.choice), {
         message: "A note can only be sent with once or deny.",
         path: ["note"],
@@ -589,8 +594,35 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     runs.answerApproval(id, requestId, {
       choice,
       ...(note !== undefined ? { note } : {}),
+      ...(selection !== undefined ? { selection } : {}),
     });
     return { ok: true };
+  });
+
+  /**
+   * Checks a selection of an open request's changes without answering it
+   * (schemas and data design, decisions 30, 33): `{ errors, stale }`.
+   */
+  app.post("/api/runs/:id/approvals/:requestId/check", async (req, reply) => {
+    const { id, requestId } = IdParams.extend({
+      requestId: z.string(),
+    }).parse(req.params);
+    const { selection } = z
+      .object({ selection: Selection.optional() })
+      .parse(req.body ?? {});
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    return runs.checkApproval(id, requestId, selection);
+  });
+
+  /** Works an open request's changes out again (decision 30, Refresh). */
+  app.post("/api/runs/:id/approvals/:requestId/refresh", async (req, reply) => {
+    const { id, requestId } = IdParams.extend({
+      requestId: z.string(),
+    }).parse(req.params);
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    return { request: runs.refreshApproval(id, requestId) };
   });
 
   /**

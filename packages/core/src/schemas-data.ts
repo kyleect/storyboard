@@ -270,6 +270,48 @@ export interface DataView extends DataInfo {
   latestErrors: string[];
 }
 
+/** A piece of data's editable parts, as an approval prompt compares them. */
+export interface DataSnapshot {
+  name: string;
+  description: string;
+  value: unknown;
+}
+
+/**
+ * A proposed change to one piece of data, worked out but not saved, so the
+ * user can approve all or part of it (decisions 31 to 35). Plain data.
+ */
+export interface DataPlan {
+  kind: "create" | "update" | "migrate";
+  /** Undefined for a create: the id is made when it is saved. */
+  dataId?: string;
+  schemaId: string;
+  schemaName: string;
+  scope: DataScope;
+  /** The schema version the result is checked against and pinned to. */
+  version: number;
+  /** For a migration: the version the data is on now. */
+  fromVersion?: number;
+  /** Undefined for a create. */
+  before?: DataSnapshot;
+  after: DataSnapshot;
+}
+
+/** A schema's editable parts, as an approval prompt compares them. */
+export interface SchemaSnapshot {
+  name: string;
+  description: string;
+  schema: unknown;
+}
+
+/** A proposed change to a schema, worked out but not saved. */
+export interface SchemaPlan {
+  schemaId: string;
+  scope: DataScope;
+  before: SchemaSnapshot;
+  after: SchemaSnapshot;
+}
+
 /** What tools use to reach schemas and data (`ToolContext.data`). */
 export interface DataAccess {
   /** The scopes this run has (decisions 2, 3). */
@@ -313,6 +355,43 @@ export interface DataAccess {
     patch: unknown,
   ): DataView;
   deleteData(id: string): void;
+
+  // Plans: work out a change, check a selection of it, then save one.
+
+  /** Throws a `DataError` when the proposal itself is not valid. */
+  planCreate(input: {
+    scope: DataScope;
+    schemaId: string;
+    name: string;
+    description: string;
+    value: unknown;
+  }): DataPlan;
+  planUpdate(
+    id: string,
+    changes: { patch?: unknown; name?: string; description?: string },
+  ): DataPlan;
+  planMigrate(
+    id: string,
+    toVersion: number | undefined,
+    patch: unknown,
+  ): DataPlan;
+  /** Problems with saving `snapshot` for the plan; empty when it can be. */
+  checkPlan(plan: DataPlan, snapshot: DataSnapshot): string[];
+  /** Whether the data changed since the plan was made. */
+  planIsStale(plan: DataPlan): boolean;
+  /** Saves `snapshot` for the plan; throws a `DataError` if it can't be. */
+  commitPlan(plan: DataPlan, snapshot: DataSnapshot): DataView;
+
+  planSchemaUpdate(
+    id: string,
+    changes: { name?: string; description?: string; body?: unknown },
+  ): SchemaPlan;
+  checkSchemaPlan(plan: SchemaPlan, snapshot: SchemaSnapshot): string[];
+  schemaPlanIsStale(plan: SchemaPlan): boolean;
+  commitSchemaPlan(
+    plan: SchemaPlan,
+    snapshot: SchemaSnapshot,
+  ): SchemaInfo & { saved?: VersionSaved };
 }
 
 /** The run's agent, for agent scope and project schemas (decision 6b). */
@@ -622,6 +701,266 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     return schema;
   };
 
+  // -- Plans --
+
+  const snapshotOf = (d: DataRecord): DataSnapshot => ({
+    name: d.name,
+    description: d.description,
+    value: d.value,
+  });
+
+  /** Problems with the name and description, as text. */
+  const textErrors = (snap: { name: string; description: string }) => {
+    const out: string[] = [];
+    for (const [what, value, max] of [
+      ["name", snap.name, MAX_DATA_NAME],
+      ["description", snap.description, MAX_DATA_DESCRIPTION],
+    ] as const) {
+      if (typeof value !== "string" || value.trim() === "") {
+        out.push(`The ${what} is required.`);
+      } else if (value.trim().length > max) {
+        out.push(`The ${what} is at most ${max} characters.`);
+      }
+    }
+    return out;
+  };
+
+  const planCreate = (input: {
+    scope: DataScope;
+    schemaId: string;
+    name: string;
+    description: string;
+    value: unknown;
+  }): DataPlan => {
+    requireScope(input.scope);
+    const schema = liveSchema(input.schemaId);
+    const allowed = dataScopesFor(schema.scope);
+    if (!allowed.includes(input.scope)) {
+      throw new DataError(
+        `Data made from the ${schema.scope} schema "${schema.name}" can be saved in: ${allowed.join(", ")}.`,
+      );
+    }
+    const plan: DataPlan = {
+      kind: "create",
+      schemaId: schema.id,
+      schemaName: schema.name,
+      scope: input.scope,
+      version: schema.version,
+      after: {
+        name: checkText("name", input.name, MAX_DATA_NAME),
+        description: checkText(
+          "description",
+          input.description,
+          MAX_DATA_DESCRIPTION,
+        ),
+        value: input.value,
+      },
+    };
+    checkValue(schema, plan.version, input.value);
+    return plan;
+  };
+
+  const planUpdate = (
+    id: string,
+    changes: { patch?: unknown; name?: string; description?: string },
+  ): DataPlan => {
+    const d = liveData(id);
+    const schema = requireUsableSchema(d);
+    const value =
+      changes.patch !== undefined
+        ? applyMergePatch(d.value, changes.patch)
+        : d.value;
+    // The pinned version, after any bump on read; never changed (26).
+    const pinned = viewOf(d).schemaVersion;
+    const plan: DataPlan = {
+      kind: "update",
+      dataId: d.id,
+      schemaId: schema.id,
+      schemaName: schema.name,
+      scope: d.scope,
+      version: pinned,
+      before: snapshotOf(d),
+      after: {
+        name:
+          changes.name !== undefined
+            ? checkText("name", changes.name, MAX_DATA_NAME)
+            : d.name,
+        description:
+          changes.description !== undefined
+            ? checkText(
+                "description",
+                changes.description,
+                MAX_DATA_DESCRIPTION,
+              )
+            : d.description,
+        value,
+      },
+    };
+    checkValue(schema, pinned, value);
+    return plan;
+  };
+
+  const planMigrate = (
+    id: string,
+    toVersion: number | undefined,
+    patch: unknown,
+  ): DataPlan => {
+    const d = liveData(id);
+    const schema = requireUsableSchema(d);
+    const target = toVersion ?? schema.version;
+    const pinned = viewOf(d).schemaVersion;
+    if (target <= pinned) {
+      throw new DataError(
+        `The data "${d.name}" is on version ${pinned}; migrate it to a newer one (the latest is ${schema.version}).`,
+      );
+    }
+    const body = bodyOf(schema, target) as SchemaNode;
+    const filled = applyDefaults(body, d.value);
+    const value = patch !== undefined ? applyMergePatch(filled, patch) : filled;
+    checkValue(schema, target, value);
+    return {
+      kind: "migrate",
+      dataId: d.id,
+      schemaId: schema.id,
+      schemaName: schema.name,
+      scope: d.scope,
+      version: target,
+      fromVersion: pinned,
+      before: snapshotOf(d),
+      after: { name: d.name, description: d.description, value },
+    };
+  };
+
+  const checkPlan = (plan: DataPlan, snap: DataSnapshot): string[] => {
+    const schema = findSchema(plan.schemaId);
+    if (!schema || schema.deleted) {
+      return [`The schema "${plan.schemaName}" is no longer available.`];
+    }
+    if (snap.value === undefined) return ["The value is required."];
+    return [
+      ...textErrors(snap),
+      ...checker.checkData(bodyOf(schema, plan.version), snap.value),
+    ];
+  };
+
+  const commitPlan = (plan: DataPlan, snap: DataSnapshot): DataView => {
+    const errors = checkPlan(plan, snap);
+    if (errors.length > 0) {
+      throw new DataError(
+        `It cannot be saved:\n${errors.map((e) => `- ${e}`).join("\n")}`,
+      );
+    }
+    const id = plan.dataId ?? newId();
+    saveData({
+      id,
+      scope: plan.scope,
+      schemaId: plan.schemaId,
+      schemaVersion: plan.version,
+      name: snap.name.trim(),
+      description: snap.description.trim(),
+      value: snap.value,
+    });
+    return viewOf(liveData(id));
+  };
+
+  const schemaSnapshot = (s: SchemaRecord): SchemaSnapshot => ({
+    name: s.name,
+    description: s.description,
+    schema: bodyOf(s, s.version),
+  });
+
+  const planSchemaUpdate = (
+    id: string,
+    changes: { name?: string; description?: string; body?: unknown },
+  ): SchemaPlan => {
+    const s = liveSchema(id);
+    const before = schemaSnapshot(s);
+    const plan: SchemaPlan = {
+      schemaId: s.id,
+      scope: s.scope,
+      before,
+      after: {
+        name:
+          changes.name !== undefined
+            ? checkText("name", changes.name, MAX_DATA_NAME)
+            : s.name,
+        description:
+          changes.description !== undefined
+            ? checkText(
+                "description",
+                changes.description,
+                MAX_DATA_DESCRIPTION,
+              )
+            : s.description,
+        schema: changes.body ?? before.schema,
+      },
+    };
+    const errors = checkSchemaPlan(plan, plan.after);
+    if (errors.length > 0) {
+      throw new DataError(errors.join("\n"));
+    }
+    return plan;
+  };
+
+  const checkSchemaPlan = (
+    plan: SchemaPlan,
+    snap: SchemaSnapshot,
+  ): string[] => {
+    const errors = textErrors(snap);
+    if (
+      typeof snap.name === "string" &&
+      snap.name.trim() !== plan.before.name &&
+      nameTaken(plan.scope, snap.name.trim(), plan.schemaId)
+    ) {
+      errors.push(
+        `A schema named "${snap.name.trim()}" already exists in ${describeScope(plan.scope)}.`,
+      );
+    }
+    const schemaErrors = checker.checkSchema(snap.schema);
+    if (schemaErrors.length > 0) {
+      errors.push(
+        `The schema is not valid:\n${schemaErrors.map((e) => `- ${e}`).join("\n")}`,
+      );
+    }
+    return errors;
+  };
+
+  const commitSchemaPlan = (
+    plan: SchemaPlan,
+    snap: SchemaSnapshot,
+  ): SchemaInfo & { saved?: VersionSaved } => {
+    const errors = checkSchemaPlan(plan, snap);
+    if (errors.length > 0) throw new DataError(errors.join("\n"));
+    const s = liveSchema(plan.schemaId);
+    const name = snap.name.trim();
+    const description = snap.description.trim();
+    // Only a change to the JSON Schema makes a new version (decision 10).
+    const latest = bodyOf(s, s.version);
+    const newBody =
+      JSON.stringify(snap.schema) !== JSON.stringify(latest)
+        ? snap.schema
+        : undefined;
+    if (s.scope === "session") {
+      sessionOp({
+        op: "schema_put",
+        id: s.id,
+        name,
+        description,
+        version: newBody !== undefined ? s.version + 1 : s.version,
+        body: newBody ?? latest,
+        ...(s.copiedFrom ? { copiedFrom: s.copiedFrom } : {}),
+      });
+      return info(liveSchema(s.id));
+    }
+    const store = sharedOf();
+    if (name !== s.name || description !== s.description) {
+      store.renameSchema(s.id, name, description);
+    }
+    const saved =
+      newBody !== undefined ? store.addSchemaVersion(s.id, newBody) : undefined;
+    return { ...info(liveSchema(s.id)), ...(saved ? { saved } : {}) };
+  };
+
   const listData = (
     filter: { scope?: DataScope; schemaId?: string } = {},
   ): DataInfo[] => {
@@ -681,46 +1020,16 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     },
 
     updateSchema(id, changes) {
-      const s = liveSchema(id);
-      const name =
-        changes.name !== undefined
-          ? checkText("name", changes.name, MAX_DATA_NAME)
-          : s.name;
-      const description =
-        changes.description !== undefined
-          ? checkText("description", changes.description, MAX_DATA_DESCRIPTION)
-          : s.description;
-      if (name !== s.name) requireFreeName(s.scope, name, s.id);
-      // Only a change to the JSON Schema makes a new version (decision 10).
-      const latest = bodyOf(s, s.version);
-      const newBody =
-        changes.body !== undefined &&
-        JSON.stringify(changes.body) !== JSON.stringify(latest)
-          ? changes.body
-          : undefined;
-      if (newBody !== undefined) checkBody(newBody);
-
-      if (s.scope === "session") {
-        const version = newBody !== undefined ? s.version + 1 : s.version;
-        sessionOp({
-          op: "schema_put",
-          id,
-          name,
-          description,
-          version,
-          body: newBody ?? latest,
-          ...(s.copiedFrom ? { copiedFrom: s.copiedFrom } : {}),
-        });
-        return info(liveSchema(id));
-      }
-      const store = sharedOf();
-      if (name !== s.name || description !== s.description) {
-        store.renameSchema(id, name, description);
-      }
-      const saved =
-        newBody !== undefined ? store.addSchemaVersion(id, newBody) : undefined;
-      return { ...info(liveSchema(id)), ...(saved ? { saved } : {}) };
+      const plan = planSchemaUpdate(id, changes);
+      return commitSchemaPlan(plan, plan.after);
     },
+
+    planSchemaUpdate,
+    checkSchemaPlan,
+    schemaPlanIsStale: (plan) =>
+      JSON.stringify(schemaSnapshot(liveSchema(plan.schemaId))) !==
+      JSON.stringify(plan.before),
+    commitSchemaPlan,
 
     copySchema(id, scope, name) {
       const s = liveSchema(id);
@@ -748,74 +1057,34 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     getData: (id) => viewOf(liveData(id)),
 
     createData(input) {
-      requireScope(input.scope);
-      const schema = liveSchema(input.schemaId);
-      const allowed = dataScopesFor(schema.scope);
-      if (!allowed.includes(input.scope)) {
-        throw new DataError(
-          `Data made from the ${schema.scope} schema "${schema.name}" can be saved in: ${allowed.join(", ")}.`,
-        );
-      }
-      const name = checkText("name", input.name, MAX_DATA_NAME);
-      const description = checkText(
-        "description",
-        input.description,
-        MAX_DATA_DESCRIPTION,
-      );
-      checkValue(schema, schema.version, input.value);
-      const id = newId();
-      saveData({
-        id,
-        scope: input.scope,
-        schemaId: schema.id,
-        schemaVersion: schema.version,
-        name,
-        description,
-        value: input.value,
-      });
-      return viewOf(liveData(id));
+      const plan = planCreate(input);
+      return commitPlan(plan, plan.after);
     },
 
     updateData(id, changes) {
-      const d = liveData(id);
-      const schema = requireUsableSchema(d);
-      const name =
-        changes.name !== undefined
-          ? checkText("name", changes.name, MAX_DATA_NAME)
-          : d.name;
-      const description =
-        changes.description !== undefined
-          ? checkText("description", changes.description, MAX_DATA_DESCRIPTION)
-          : d.description;
-      const value =
-        changes.patch !== undefined
-          ? applyMergePatch(d.value, changes.patch)
-          : d.value;
-      // The pinned version, after any bump on read; never changed (26).
-      const pinned = viewOf(d).schemaVersion;
-      checkValue(schema, pinned, value);
-      saveData({ ...d, name, description, value, schemaVersion: pinned });
-      return viewOf(liveData(id));
+      const plan = planUpdate(id, changes);
+      return commitPlan(plan, plan.after);
     },
 
     migrateData(id, toVersion, patch) {
-      const d = liveData(id);
-      const schema = requireUsableSchema(d);
-      const target = toVersion ?? schema.version;
-      const pinned = viewOf(d).schemaVersion;
-      if (target <= pinned) {
-        throw new DataError(
-          `The data "${d.name}" is on version ${pinned}; migrate it to a newer one (the latest is ${schema.version}).`,
-        );
-      }
-      const body = bodyOf(schema, target) as SchemaNode;
-      const filled = applyDefaults(body, d.value);
-      const value =
-        patch !== undefined ? applyMergePatch(filled, patch) : filled;
-      checkValue(schema, target, value);
-      saveData({ ...d, value, schemaVersion: target });
-      return viewOf(liveData(id));
+      const plan = planMigrate(id, toVersion, patch);
+      return commitPlan(plan, plan.after);
     },
+
+    planCreate,
+    planUpdate,
+    planMigrate,
+    checkPlan,
+    planIsStale: (plan) => {
+      if (plan.dataId === undefined) return false;
+      const d = findData(plan.dataId);
+      return (
+        !d ||
+        !visible(d) ||
+        JSON.stringify(snapshotOf(d)) !== JSON.stringify(plan.before)
+      );
+    },
+    commitPlan,
 
     deleteData(id) {
       const d = liveData(id);
@@ -845,4 +1114,14 @@ export const NO_DATA: DataAccess = {
   updateData: noData,
   migrateData: noData,
   deleteData: noData,
+  planCreate: noData,
+  planUpdate: noData,
+  planMigrate: noData,
+  checkPlan: noData,
+  planIsStale: noData,
+  commitPlan: noData,
+  planSchemaUpdate: noData,
+  checkSchemaPlan: noData,
+  schemaPlanIsStale: noData,
+  commitSchemaPlan: noData,
 };

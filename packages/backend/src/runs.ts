@@ -6,7 +6,10 @@ import {
   type EntryOp,
   type EntrySearch,
   type ApprovalAnswer,
+  type ApprovalHooks,
   type ApprovalRequest,
+  selectAll,
+  type Selection,
   checkAnswers,
   type InputAnswer,
   type InputRequest,
@@ -74,6 +77,8 @@ type Listener = (event: StoredEvent) => void;
 interface OpenApproval {
   request: ApprovalRequest;
   resolve: (answer: ApprovalAnswer) => void;
+  /** For a request with a review (plan P5). */
+  hooks?: ApprovalHooks | undefined;
 }
 
 interface OpenInput {
@@ -545,6 +550,37 @@ export class RunManager {
         400,
       );
     }
+    if (answer.selection !== undefined) {
+      if (choice !== "once") {
+        throw new RunError(
+          "Changes can only be picked one by one with once (schemas and data design, decision 34).",
+          400,
+        );
+      }
+      if (!open.hooks) {
+        throw new RunError("This call has no changes to pick from.", 400);
+      }
+    }
+    if (open.hooks && choice !== "deny") {
+      // What the changes were worked out from changed since they were shown
+      // (decision 30): the user refreshes them or rejects the call.
+      if (open.hooks.stale()) {
+        throw new RunError(
+          "The data changed since this was asked. Refresh the changes or deny the call.",
+          409,
+        );
+      }
+      const errors = open.hooks.check(
+        answer.selection ??
+          (open.request.review ? selectAll(open.request.review) : {}),
+      );
+      if (errors.length > 0) {
+        throw new RunError(
+          `These changes cannot be applied:\n${errors.map((e) => `- ${e}`).join("\n")}`,
+          400,
+        );
+      }
+    }
     if (choice === "session") {
       this.store.allowToolForSession(
         run.sessionId,
@@ -556,6 +592,57 @@ export class RunManager {
     }
     run.approvals.delete(requestId);
     open.resolve(answer);
+  }
+
+  private openApproval(runId: string, requestId: string) {
+    const run = this.active.get(runId);
+    if (!run) throw new RunError("The run is not active.", 409);
+    const open = run.approvals.get(requestId);
+    if (!open) {
+      throw new RunError("No open approval request with that id.", 404);
+    }
+    return open;
+  }
+
+  /**
+   * Checks a selection for an open request with a review, without answering
+   * it (decisions 30, 33): the problems with applying it, and whether the
+   * changes are out of date. Left out: every change.
+   */
+  checkApproval(
+    runId: string,
+    requestId: string,
+    selection?: Selection,
+  ): { errors: string[]; stale: boolean } {
+    const open = this.openApproval(runId, requestId);
+    if (!open.hooks || !open.request.review) {
+      throw new RunError("This call has no changes to check.", 400);
+    }
+    if (open.hooks.stale()) return { errors: [], stale: true };
+    return {
+      errors: open.hooks.check(selection ?? selectAll(open.request.review)),
+      stale: false,
+    };
+  }
+
+  /**
+   * Works an open request's changes out again from the current data
+   * (decision 30, Refresh). Returns the request with its new review.
+   */
+  refreshApproval(runId: string, requestId: string): ApprovalRequest {
+    const open = this.openApproval(runId, requestId);
+    if (!open.hooks) {
+      throw new RunError("This call has no changes to refresh.", 400);
+    }
+    const review = open.hooks.refresh();
+    if (!review) {
+      throw new RunError(
+        "The changes can no longer be worked out; deny the call.",
+        409,
+      );
+    }
+    open.request = { ...open.request, review };
+    return open.request;
   }
 
   /**
@@ -1066,9 +1153,9 @@ export class RunManager {
               !this.store.isToolAllowedForSession(sessionId, tool.name)),
           agentDecides: (tool) =>
             toolApproval(this.store.db, tool, agent).byAgent,
-          approve: (req, signal) =>
+          approve: (req, signal, hooks) =>
             new Promise<ApprovalAnswer>((resolve) => {
-              approvals.set(req.requestId, { request: req, resolve });
+              approvals.set(req.requestId, { request: req, resolve, hooks });
               signal.addEventListener(
                 "abort",
                 () => approvals.delete(req.requestId),
