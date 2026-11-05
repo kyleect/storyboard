@@ -205,6 +205,11 @@ export interface SessionDetail {
   /** The session's project; null for a standalone session. */
   project: Project | null;
   messages: StoredMessage[];
+  /**
+   * Tokens used by the session's finished subagent runs, summed over all
+   * their model calls; null: none. Work done, not context occupancy.
+   */
+  subagentUsage: Usage | null;
   lastEventId: number;
   activeRun: ActiveRunSnapshot | null;
   /** Subagents' runs in progress. */

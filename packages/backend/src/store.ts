@@ -37,7 +37,8 @@ const SESSION_COLUMNS =
 export interface SessionListRow extends SessionRow {
   /**
    * The usage of the session's latest model call that reported one (its
-   * latest message with usage); null when none has.
+   * latest message with usage, leaving out subagents' messages, as the chat
+   * header does); null when none has.
    */
   usage: Usage | null;
 }
@@ -201,6 +202,9 @@ export class Store {
         `SELECT ${SESSION_COLUMNS},
            (SELECT m.usage FROM messages m
             WHERE m.session_id = sessions.id AND m.usage IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM run_messages x JOIN runs xr ON xr.id = x.run_id
+                WHERE x.message_id = m.id AND xr.parent_run_id IS NOT NULL)
             ORDER BY m.seq DESC LIMIT 1) AS usage
          FROM sessions
          WHERE trashed_at IS NULL AND project_id IS ?
@@ -645,6 +649,34 @@ export class Store {
       .prepare("SELECT message FROM messages WHERE id = ?")
       .get(id) as { message: string } | undefined;
     return row ? Message.parse(JSON.parse(row.message)) : undefined;
+  }
+
+  /**
+   * The tokens the session's subagent runs used, summed over every model
+   * call of every subagent run that has ended (a run's usage is saved when
+   * it ends). Null when no subagent run reported usage. This is work done,
+   * not context occupancy: each call's prompt counts again.
+   */
+  subagentUsage(sessionId: string): Usage | null {
+    const rows = this.db
+      .prepare(
+        `SELECT usage FROM runs
+         WHERE session_id = ? AND parent_run_id IS NOT NULL AND usage IS NOT NULL`,
+      )
+      .all(sessionId) as { usage: string }[];
+    if (rows.length === 0) return null;
+    return rows.reduce<Usage>(
+      (sum, r) => {
+        const u = parseUsage(r.usage);
+        return u
+          ? {
+              promptTokens: sum.promptTokens + u.promptTokens,
+              completionTokens: sum.completionTokens + u.completionTokens,
+            }
+          : sum;
+      },
+      { promptTokens: 0, completionTokens: 0 },
+    );
   }
 
   /**

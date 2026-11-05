@@ -54,6 +54,7 @@ const detail: SessionDetail = {
   },
   project: null,
   messages: [],
+  subagentUsage: null,
   lastEventId: 0,
   activeRun: null,
   childRuns: [],

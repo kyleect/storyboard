@@ -442,7 +442,11 @@ export function Chat() {
         />
         <Group gap="sm" wrap="nowrap">
           <CopyDebugButton sessionId={sessionId} />
-          <ContextMeter usage={contextUsage} model={levelsModel} />
+          <ContextMeter
+            usage={contextUsage}
+            model={levelsModel}
+            subagentUsage={detail.data.subagentUsage}
+          />
           <Badge color={connected ? "green" : "gray"} variant="light">
             {connected ? "live" : "offline"}
           </Badge>

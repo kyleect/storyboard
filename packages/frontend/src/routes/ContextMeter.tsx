@@ -45,10 +45,17 @@ function color(percent: number) {
 export function ContextMeter({
   usage,
   model,
+  subagentUsage,
 }: {
   usage: Usage | undefined;
   /** The model whose context size is read; undefined: the server's. */
   model: string | undefined;
+  /**
+   * Tokens used by the session's finished subagent runs, over all their
+   * calls. Shown in the tooltip only: a subagent has its own context, so it
+   * does not count toward this one.
+   */
+  subagentUsage?: Usage | null;
 }) {
   const size = useQuery({
     queryKey: ["context-size", model ?? null],
@@ -71,6 +78,12 @@ export function ContextMeter({
       Prompt: {tokens(usage.promptTokens)}
       <br />
       Output: {tokens(usage.completionTokens)}
+      {subagentUsage && (
+        <>
+          <br />
+          Subagents (total, all calls): {tokens(used(subagentUsage))}
+        </>
+      )}
       {why !== undefined && (
         <>
           <br />

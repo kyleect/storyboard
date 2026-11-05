@@ -287,6 +287,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         ? (store.getProject(session.project_id) ?? null)
         : null,
       messages: store.listMessages(id),
+      subagentUsage: store.subagentUsage(id),
       ...runs.snapshot(id),
     };
   });

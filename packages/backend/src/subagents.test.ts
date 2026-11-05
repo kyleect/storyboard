@@ -340,6 +340,67 @@ describe("a subagent's run", () => {
     expect(top.every((m) => m.parentCallId === null)).toBe(true);
   });
 
+  it("sums the subagent's usage over all its calls, apart from the session's own count", async () => {
+    const c = await setup([[], [], [], []]);
+    const editor = startable(c, "Editor");
+    const boss = c.agents.create(
+      null,
+      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+    );
+    c.scripts.splice(
+      0,
+      4,
+      // The parent starts the child.
+      [
+        call("p1", "start_subagent", { agentId: editor.id, task: "Do it" }),
+        { type: "usage", usage: { promptTokens: 10, completionTokens: 2 } },
+      ],
+      // The child stops without handing back (a reminder follows), then
+      // hands back: two calls.
+      [
+        { type: "text", text: "Thinking" },
+        { type: "usage", usage: { promptTokens: 20, completionTokens: 5 } },
+      ],
+      [
+        call("k1", "subagent_handback", { output: "Done." }),
+        { type: "usage", usage: { promptTokens: 30, completionTokens: 6 } },
+      ],
+      // The parent's last call reports no usage, so the session's latest
+      // count is its first call's: not the child's.
+      text("Fine"),
+    );
+    const id = await newSession(c, boss.id);
+    await go(c, id);
+
+    // All the child's calls, added up.
+    const { body } = await api(c.app, "GET", `/api/sessions/${id}`);
+    expect(body.subagentUsage).toEqual({
+      promptTokens: 50,
+      completionTokens: 11,
+    });
+    expect(c.store.subagentUsage(id)).toEqual({
+      promptTokens: 50,
+      completionTokens: 11,
+    });
+
+    // The session lists leave the child's messages out, as the chat header
+    // does.
+    const list = await api(c.app, "GET", "/api/sessions");
+    const rows = list.body as unknown as { id: string; usage: unknown }[];
+    expect(rows.find((r) => r.id === id)?.usage).toEqual({
+      promptTokens: 10,
+      completionTokens: 2,
+    });
+  });
+
+  it("has no subagent usage for a session that started none", async () => {
+    const c = await setup([text("Hi")]);
+    const id = await newSession(c, null);
+    await go(c, id);
+    const { body } = await api(c.app, "GET", `/api/sessions/${id}`);
+    expect(body.subagentUsage).toBeNull();
+  });
+
   it("reminds a child that stops without handing back, then takes the handback", async () => {
     const c = await setup([[], [], [], []]);
     const editor = startable(c, "Editor");
