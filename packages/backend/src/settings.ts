@@ -86,6 +86,10 @@ You are an expert AI agent operating inside an agent harness. You help users wit
 {{tools}}
 </tools>
 
+<schemas>
+{{schemas}}
+</schemas>
+
 <rules>
 - Be concise in your responses
 </rules>

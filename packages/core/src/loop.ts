@@ -6,6 +6,13 @@ import {
 } from "./entries.js";
 import type { ApprovalAnswer, InputRequest } from "./events.js";
 import {
+  createDataAccess,
+  NO_DATA,
+  replaySessionData,
+  type SchemaChecker,
+  type SharedData,
+} from "./schemas-data.js";
+import {
   ASK_USER,
   DECLINED,
   describePrompt,
@@ -16,6 +23,7 @@ import {
 import type {
   AssistantMessage,
   ContentBlock,
+  DataOp,
   EntryOp,
   Message,
   ToolResultMessage,
@@ -156,6 +164,16 @@ export interface LoopContext extends RunContext {
   newNoteId?: () => string;
   /** Searches files and notes. Left out: the search tools fail. */
   searchEntries?: EntrySearch;
+  /**
+   * Global, project and agent schemas and data. Left out: session scope
+   * only.
+   */
+  sharedData?: SharedData;
+  /**
+   * Checks schemas and data against JSON Schema (Ajv, in the backend). Left
+   * out: the schema and data tools fail.
+   */
+  schemaChecker?: SchemaChecker;
   /** Projects. Left out: the tools that use them fail. */
   projects?: ProjectAccess;
   /** The session's agents. Left out: the tools that use them fail. */
@@ -249,6 +267,7 @@ export async function runLoop(
       data?: unknown;
       state?: unknown;
       entries?: EntryOp[];
+      dataOps?: DataOp[];
       note?: ToolResultMessage["note"];
       prompt?: PromptRecord | undefined;
       error?: string;
@@ -265,6 +284,7 @@ export async function runLoop(
       ...(result.data !== undefined ? { data: result.data } : {}),
       ...(result.state !== undefined ? { state: result.state } : {}),
       ...(result.entries?.length ? { entries: result.entries } : {}),
+      ...(result.dataOps?.length ? { dataOps: result.dataOps } : {}),
       ...(result.note ? { note: result.note } : {}),
       ...(result.prompt ? { prompt: result.prompt } : {}),
     };
@@ -570,6 +590,7 @@ export async function runLoop(
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const sessionOps: EntryOp[] = [];
+    const dataOps: DataOp[] = [];
     // The form a tool showed (at most one per call, tool prompts D10) and
     // whether the user skipped it.
     let asked = false;
@@ -601,6 +622,19 @@ export async function runLoop(
             }
           : {}),
       });
+      const data = ctx.schemaChecker
+        ? createDataAccess({
+            session: replaySessionData(transcript),
+            sessionOps: dataOps,
+            ...(ctx.sharedData ? { shared: ctx.sharedData } : {}),
+            checker: ctx.schemaChecker,
+            projectId: ctx.projectId ?? null,
+            agent: ctx.agent
+              ? { id: ctx.agent.id, projectId: ctx.agent.projectId }
+              : null,
+            author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
+          })
+        : NO_DATA;
       const output = await tool.execute(parsed.input, {
         signal: ctx.signal,
         sessionId: ctx.sessionId,
@@ -612,6 +646,7 @@ export async function runLoop(
         projectId: ctx.projectId ?? null,
         projectName: ctx.projectName ?? null,
         entries,
+        data,
         projects: ctx.projects ?? NO_PROJECTS,
         agents: ctx.agents ?? NO_AGENTS,
         copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
@@ -626,7 +661,7 @@ export async function runLoop(
         data: output.data,
         ...(output.state !== undefined ? { state: output.state } : {}),
         // Session-scoped changes count only when the tool succeeded.
-        ...(output.isError ? {} : { entries: sessionOps }),
+        ...(output.isError ? {} : { entries: sessionOps, dataOps }),
         ...(content !== text ? { error: text } : {}),
         ...(note ? { note } : {}),
         prompt,

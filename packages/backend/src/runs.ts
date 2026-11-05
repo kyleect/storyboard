@@ -23,8 +23,12 @@ import {
   type Tool,
   type ToolResultMessage,
   type Usage,
+  replaySessionData,
+  type DataScope,
+  type SchemaChecker,
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
+import type { DataStore } from "./data-store.js";
 import type { SkillStore } from "./skills-store.js";
 import { AppEvents } from "./app-events.js";
 import { ErrorStore, type NewError } from "./errors-store.js";
@@ -152,6 +156,31 @@ export interface RunManagerOptions {
    * session scope only.
    */
   entries?: EntryStore;
+  /**
+   * Global, project and agent schemas and data (schemas and data design).
+   * Left out: tools see session scope only.
+   */
+  data?: DataStore;
+  /** Checks schemas and data (Ajv). Left out: the data tools fail. */
+  schemaChecker?: SchemaChecker;
+  /**
+   * Names of the schema and data tools. The schema list goes in the system
+   * message only when the run offers one of them.
+   */
+  dataTools?: readonly string[];
+  /**
+   * The schema list with its instruction (decisions 37, 38), or undefined
+   * for none. It is what `{{schemas}}` expands to (decision 39), and goes
+   * after the skill list when no prompt has it (decision 41).
+   */
+  schemasPrompt?: (
+    schemas: readonly {
+      id: string;
+      name: string;
+      scope: DataScope;
+      description: string;
+    }[],
+  ) => string | undefined;
   /**
    * A system message put before the transcript of every model call; not
    * stored. Undefined: none. The global, project and agent prompts go
@@ -861,6 +890,27 @@ export class RunManager {
         agent?.id ?? null,
       ) ?? [];
     const tools = this.toolsFor(agent, skills.length > 0);
+    // The schemas in scope, listed only when the run offers a schema or data
+    // tool (schemas and data design, decisions 37, 41): global, project,
+    // agent, then the session's own.
+    const dataTools = new Set(this.options.dataTools ?? []);
+    const dataOwner = {
+      projectId: session?.project_id ?? null,
+      agentId: agent?.id ?? null,
+    };
+    const schemas = tools.some((t) => dataTools.has(t.name))
+      ? [
+          ...(this.options.data?.inScope(dataOwner) ?? []),
+          ...[
+            ...replaySessionData(
+              this.store.listMessages(sessionId).map((m) => m.message),
+            ).schemas.values(),
+          ]
+            .filter((s) => !s.deleted)
+            .map((s) => ({ ...s, scope: "session" as const })),
+        ]
+      : [];
+    const schemasText = this.options.schemasPrompt?.(schemas);
     // The prompts the user wrote may place the lists with {{skills}} and
     // {{tools}}; they are filled in once, here, from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
@@ -873,11 +923,13 @@ export class RunManager {
     const values = {
       skills: this.options.skillsList?.(skills) ?? "",
       tools: toolsList(tools),
+      schemas: schemasText ?? "",
     };
     const expanded = written.map((p) =>
       p === undefined ? p : expandPlaceholders(p, values),
     );
     const placed = written.some((p) => usesPlaceholder(p, "skills"));
+    const schemasPlaced = written.some((p) => usesPlaceholder(p, "schemas"));
     // Global, project and agent prompts, then the skill list, then the files
     // and memory instruction (system prompts design, decisions 1 and 2;
     // skills design 11). Empty ones are left out.
@@ -885,6 +937,7 @@ export class RunManager {
       [
         ...expanded,
         placed ? undefined : this.options.skillsPrompt?.(skills),
+        schemasPlaced ? undefined : schemasText,
         base,
       ]
         .filter((p): p is string => p !== undefined && p.trim() !== "")
@@ -962,6 +1015,12 @@ export class RunManager {
             : {}),
           ...(this.options.newNoteId
             ? { newNoteId: this.options.newNoteId }
+            : {}),
+          ...(this.options.data
+            ? { sharedData: this.options.data.shared(dataOwner) }
+            : {}),
+          ...(this.options.schemaChecker
+            ? { schemaChecker: this.options.schemaChecker }
             : {}),
           ...(this.options.search && session
             ? { searchEntries: this.options.search(session) }

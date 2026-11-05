@@ -775,7 +775,7 @@ describe("system prompts (system prompts design)", () => {
     const t = tempDatabase();
     cleanups.push(t.cleanup);
     expect(readSettings(t.db, {}).effective.systemPrompt).toMatch(
-      /^You work inside a harness that gives you tools/,
+      /^You are an expert AI agent operating inside an agent harness\./,
     );
     expect(
       readSettings(t.db, { HARNESS_SYSTEM_PROMPT: "From env." }).effective

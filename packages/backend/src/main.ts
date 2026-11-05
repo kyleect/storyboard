@@ -6,11 +6,15 @@ import {
   allTools,
   entriesInstruction,
   entryTools,
+  schemaDataTools,
+  schemasInstruction,
   skillsInstruction,
   skillsList,
   skillTools,
 } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
+import { DataStore } from "./data-store.js";
+import { schemaChecker } from "./json-schema.js";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
 import { Embedder } from "./embedder.js";
@@ -46,6 +50,7 @@ async function main() {
   const entries = new EntryStore(db, undefined, undefined, index);
   const agents = new AgentStore(db);
   const skills = new SkillStore(db);
+  const data = new DataStore(db, schemaChecker);
   const settings = () => readSettings(db).effective;
   const embed = (model: string, texts: string[], signal?: AbortSignal) =>
     embedTexts(settings().llamaServerUrl, model, texts, {
@@ -66,6 +71,10 @@ async function main() {
     skillsPrompt: skillsInstruction,
     skillsList,
     entries,
+    data,
+    schemaChecker,
+    dataTools: schemaDataTools.map((t) => t.name),
+    schemasPrompt: schemasInstruction,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),
     index,
     search: (session) =>

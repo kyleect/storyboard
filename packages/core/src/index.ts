@@ -7,6 +7,8 @@ export * from "./loop.js";
 export * from "./tools.js";
 export * from "./forms.js";
 export * from "./entries.js";
+export * from "./schemas-data.js";
+export * from "./schema-features.js";
 export * from "./notes.js";
 export * from "./chunking.js";
 export * from "./llama-server/embeddings.js";

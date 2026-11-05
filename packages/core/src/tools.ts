@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { EntryAccess } from "./entries.js";
 import type { Form, InputAnswer } from "./forms.js";
+import type { DataAccess } from "./schemas-data.js";
 import type { FileType, Message, ToolDefinition } from "./messages.js";
 
 /*
@@ -145,6 +146,12 @@ export interface ToolContext {
    * only when the tool succeeds.
    */
   entries: EntryAccess;
+  /**
+   * Schemas and data (schemas and data design). Changes to session schemas
+   * and data are recorded with this call's result, and only when the tool
+   * succeeds.
+   */
+  data: DataAccess;
   /** Projects: list, view, create, and send entries to. */
   projects: ProjectAccess;
   /** The session's agents: list, view, change. */
