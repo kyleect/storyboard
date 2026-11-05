@@ -712,16 +712,16 @@ export function SchemasAndData({
   readOnly?: string | undefined;
 }) {
   return (
-    <Tabs defaultValue="data" keepMounted={false}>
+    <Tabs defaultValue="schemas" keepMounted={false}>
       <Tabs.List>
-        <Tabs.Tab value="data">Data</Tabs.Tab>
         <Tabs.Tab value="schemas">Schemas</Tabs.Tab>
+        <Tabs.Tab value="data">Data</Tabs.Tab>
       </Tabs.List>
-      <Tabs.Panel value="data" pt="md">
-        <DataPanel owner={owner} readOnly={readOnly} />
-      </Tabs.Panel>
       <Tabs.Panel value="schemas" pt="md">
         <SchemasPanel owner={owner} readOnly={readOnly} />
+      </Tabs.Panel>
+      <Tabs.Panel value="data" pt="md">
+        <DataPanel owner={owner} readOnly={readOnly} />
       </Tabs.Panel>
     </Tabs>
   );
