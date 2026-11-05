@@ -85,3 +85,17 @@ export async function runAnsweringForms(
     await new Promise((r) => setTimeout(r, 5));
   }
 }
+
+/**
+ * Removes the built-in skills and schemas the migrations add (schemas and
+ * data design, decisions 45 to 52), for tests about something else that
+ * count what is in scope.
+ */
+export function clearBuiltins(db: Database): void {
+  db.exec(`
+    DELETE FROM skill_versions WHERE skill_id IN (SELECT id FROM skills WHERE builtin = 1);
+    DELETE FROM skills WHERE builtin = 1;
+    DELETE FROM schema_versions WHERE schema_id IN (SELECT id FROM schemas WHERE builtin = 1);
+    DELETE FROM schemas WHERE builtin = 1;
+  `);
+}

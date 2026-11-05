@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { EntryAccess } from "./entries.js";
 import type { Form, InputAnswer } from "./forms.js";
+import type { Review, Selection } from "./review.js";
+import type { DataAccess } from "./schemas-data.js";
 import type { FileType, Message, ToolDefinition } from "./messages.js";
 
 /*
@@ -107,8 +109,11 @@ export interface AgentAccess {
   choose(agentId: string | null): void;
 }
 
-/** Where a skill is defined (skills design, decision 1). */
-export type SkillScope = "global" | "project" | "agent";
+/**
+ * Where a skill is defined (skills design, decision 1), or "builtin" for the
+ * skills that come with the app (schemas and data design, decision 51).
+ */
+export type SkillScope = "builtin" | "global" | "project" | "agent";
 
 /**
  * A skill as a run sees it: its content when the run started (skills design,
@@ -145,6 +150,12 @@ export interface ToolContext {
    * only when the tool succeeds.
    */
   entries: EntryAccess;
+  /**
+   * Schemas and data (schemas and data design). Changes to session schemas
+   * and data are recorded with this call's result, and only when the tool
+   * succeeds.
+   */
+  data: DataAccess;
   /** Projects: list, view, create, and send entries to. */
   projects: ProjectAccess;
   /** The session's agents: list, view, change. */
@@ -167,6 +178,23 @@ export interface ToolContext {
    * result (D9).
    */
   requestInput: (form: Form) => Promise<InputAnswer>;
+  /**
+   * For a tool with `review` that asked: the review the user answered and
+   * the changes they approved. `selection` undefined: all of them.
+   */
+  approval?: { review: Review; selection: Selection | undefined };
+}
+
+/**
+ * A tool's description of a call's changes, for the approval prompt (plan
+ * P5). `check` gives the problems with a selection (an empty list: it can
+ * be applied); `stale` says whether what the changes were worked out from
+ * has changed since.
+ */
+export interface ReviewPlan {
+  review: Review;
+  check: (selection: Selection) => string[];
+  stale: () => boolean;
 }
 
 export interface ToolOutput {
@@ -195,6 +223,12 @@ export interface Tool {
     args: unknown,
   ) => { ok: true; input: unknown } | { ok: false; error: string };
   execute: (input: unknown, ctx: ToolContext) => Promise<ToolOutput>;
+  /**
+   * Works out the call's changes before asking (plan P5). Returns a
+   * `ToolOutput` instead when the call is refused as it stands; that is the
+   * call's result, and nothing is asked.
+   */
+  review?: (input: unknown, ctx: ToolContext) => ReviewPlan | ToolOutput;
 }
 
 export interface ToolSpec<S extends z.ZodType> {
@@ -207,6 +241,7 @@ export interface ToolSpec<S extends z.ZodType> {
     input: z.output<S>,
     ctx: ToolContext,
   ) => Promise<ToolOutput> | ToolOutput;
+  review?: (input: z.output<S>, ctx: ToolContext) => ReviewPlan | ToolOutput;
 }
 
 /** Options for `ToolError` and `ToolRunError`. */
@@ -321,6 +356,15 @@ export function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): Tool {
         : { ok: false, error: z.prettifyError(result.error) };
     },
     execute: async (input, ctx) => spec.execute(input as z.output<S>, ctx),
+    ...(spec.review
+      ? {
+          review: (input: unknown, ctx: ToolContext) =>
+            (spec.review as NonNullable<ToolSpec<S>["review"]>)(
+              input as z.output<S>,
+              ctx,
+            ),
+        }
+      : {}),
   };
 }
 

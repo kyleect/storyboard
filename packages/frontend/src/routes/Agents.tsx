@@ -41,6 +41,8 @@ import {
   type ToolMode,
 } from "../api";
 import { showError } from "./SessionActions";
+import { DataPanel } from "./Data";
+import { SchemasPanel } from "./Schemas";
 import { SkillsPanel } from "./Skills";
 
 /*
@@ -634,6 +636,32 @@ function AgentView({
               : undefined
         }
       />
+      <Text size="xs" c="dimmed">
+        Schemas
+      </Text>
+      <SchemasPanel
+        owner={{ scope: "agent", id: a.id }}
+        readOnly={
+          a.deleted
+            ? "The agent is deleted, so its schemas can be read but not changed."
+            : readOnly
+              ? "The project is in the trash, so these schemas can be read but not changed."
+              : undefined
+        }
+      />
+      <Text size="xs" c="dimmed">
+        Data
+      </Text>
+      <DataPanel
+        owner={{ scope: "agent", id: a.id }}
+        readOnly={
+          a.deleted
+            ? "The agent is deleted, so its data can be read but not changed."
+            : readOnly
+              ? "The project is in the trash, so this data can be read but not changed."
+              : undefined
+        }
+      />
       {versions && (
         <VersionsModal
           scope={scope}
@@ -784,7 +812,7 @@ function AgentEditor({
       />
       <Textarea
         label="System prompt"
-        description="Write {{skills}} or {{tools}} to put the list of skills or tools the chat has at that place."
+        description="Write {{skills}}, {{tools}} or {{schemas}} to put the list of skills, tools or schemas the chat has at that place."
         autosize
         minRows={8}
         maxRows={30}

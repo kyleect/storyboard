@@ -49,6 +49,15 @@ function useRefresh() {
   };
 }
 
+/** A skill that comes with the app (schemas and data design, decision 51). */
+function BuiltinBadge() {
+  return (
+    <Badge size="xs" variant="light" color="blue">
+      built-in
+    </Badge>
+  );
+}
+
 function DeletedBadge() {
   return (
     <Badge size="xs" variant="light" color="red">
@@ -251,7 +260,13 @@ export function SkillsPanel({
                 </Text>
               }
               description={s.name}
-              rightSection={s.deleted ? <DeletedBadge /> : undefined}
+              rightSection={
+                s.deleted ? (
+                  <DeletedBadge />
+                ) : s.scope === "builtin" ? (
+                  <BuiltinBadge />
+                ) : undefined
+              }
             />
           ))}
         </Stack>
@@ -325,8 +340,10 @@ function SkillView({
     );
   }
   const s = skill.data;
+  // Built-in skills are read-only (decision 51).
+  const fixed = readOnly || s.scope === "builtin";
 
-  if (editing && !readOnly && !s.deleted) {
+  if (editing && !fixed && !s.deleted) {
     return (
       <SkillEditor
         owner={owner}
@@ -348,12 +365,13 @@ function SkillView({
             v{s.version}
           </Badge>
           {s.deleted && <DeletedBadge />}
+          {s.scope === "builtin" && <BuiltinBadge />}
         </Group>
         <Group gap="xs" wrap="nowrap">
           <Button size="xs" variant="default" onClick={() => setVersions(true)}>
             Versions ({s.versions.length})
           </Button>
-          {!readOnly && !s.deleted && (
+          {!fixed && !s.deleted && (
             <>
               <Button size="xs" variant="light" onClick={onEdit}>
                 Edit
@@ -403,7 +421,7 @@ function SkillView({
       {versions && (
         <VersionsModal
           skill={s}
-          readOnly={readOnly}
+          readOnly={fixed}
           onClose={() => setVersions(false)}
         />
       )}

@@ -265,6 +265,12 @@ export class Store {
           "UPDATE entry_versions SET session_id = NULL, run_id = NULL WHERE session_id = ?",
         )
         .run(id);
+      // So are the data versions it made (schemas and data design, 24).
+      this.db
+        .prepare(
+          "UPDATE data_versions SET session_id = NULL, run_id = NULL WHERE session_id = ?",
+        )
+        .run(id);
       this.db
         .prepare("DELETE FROM chunks WHERE scope = 'session' AND owner_id = ?")
         .run(id);
@@ -484,6 +490,31 @@ export class Store {
              OR agent_id IN (SELECT id FROM agents WHERE project_id = ?)`,
         )
         .run(id, id);
+      // The project's schemas and data, and those of its agents (schemas
+      // and data design, decision 7). Data made from the project's schemas
+      // can only live in the project, its sessions or its agents.
+      const owned = `project_id = ?
+             OR agent_id IN (SELECT id FROM agents WHERE project_id = ?)`;
+      this.db
+        .prepare(
+          `DELETE FROM data_versions WHERE data_id IN (
+             SELECT id FROM data WHERE ${owned}
+               OR schema_id IN (SELECT id FROM schemas WHERE ${owned}))`,
+        )
+        .run(id, id, id, id);
+      this.db
+        .prepare(
+          `DELETE FROM data WHERE ${owned}
+             OR schema_id IN (SELECT id FROM schemas WHERE ${owned})`,
+        )
+        .run(id, id, id, id);
+      this.db
+        .prepare(
+          `DELETE FROM schema_versions WHERE schema_id IN (
+             SELECT id FROM schemas WHERE ${owned})`,
+        )
+        .run(id, id);
+      this.db.prepare(`DELETE FROM schemas WHERE ${owned}`).run(id, id);
       // The project's default may be one of its own agents; let go of it
       // first so the foreign key doesn't block the delete.
       this.db

@@ -214,6 +214,20 @@ export function Layout() {
                       Project skills
                     </Anchor>
                   )}
+                  {picked !== null && (
+                    <Anchor
+                      size="xs"
+                      renderRoot={(props) => (
+                        <Link
+                          {...props}
+                          to="/projects/$projectId/data"
+                          params={{ projectId: picked }}
+                        />
+                      )}
+                    >
+                      Project schemas & data
+                    </Anchor>
+                  )}
                 </Stack>
               </Collapse>
 
@@ -239,6 +253,10 @@ export function Layout() {
             <NavLink
               renderRoot={(props) => <Link {...props} to="/files" />}
               label="Files & memory"
+            />
+            <NavLink
+              renderRoot={(props) => <Link {...props} to="/data" />}
+              label="Schemas & data"
             />
             <NavLink
               renderRoot={(props) => <Link {...props} to="/errors" />}

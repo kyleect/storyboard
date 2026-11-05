@@ -119,7 +119,13 @@ export function registerSkillRoutes(
   for (const [base, ownerOf] of bases) {
     app.get(base, async (req) => {
       const q = ListQuery.parse(req.query);
-      return skills.list(ownerOf(req), q.deleted === "true");
+      const owner = ownerOf(req);
+      // The global page shows the built-in skills too (schemas and data
+      // design, decision 51).
+      return [
+        ...(owner.scope === "global" ? skills.builtins() : []),
+        ...skills.list(owner, q.deleted === "true"),
+      ];
     });
 
     app.post(base, async (req, reply) => {

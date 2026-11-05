@@ -29,6 +29,7 @@ import {
   type InputRequest,
   type Message,
   type PromptRecord,
+  type Selection,
   type ToolResultMessage,
   type Usage,
 } from "@harness/core";
@@ -41,6 +42,7 @@ import {
 import { useLive, useSessionEvents } from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
+import { SchemasAndData } from "./Data";
 import { AskUserForm, type AskUserState } from "./AskUserForm";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
@@ -384,12 +386,18 @@ export function Chat() {
           <Tabs.Tab value="chat">Chat</Tabs.Tab>
           <Tabs.Tab value="files">Files</Tabs.Tab>
           <Tabs.Tab value="memory">Memory</Tabs.Tab>
+          <Tabs.Tab value="data">Data</Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
       {tab !== "chat" && (
         <ScrollArea style={{ flex: 1 }}>
-          {tab === "files" ? (
+          {tab === "data" ? (
+            <SchemasAndData
+              owner={{ scope: "session", id: sessionId }}
+              readOnly={entriesReadOnly}
+            />
+          ) : tab === "files" ? (
             <FilesPanel
               scope={{ scope: "session", id: sessionId }}
               readOnly={entriesReadOnly}
@@ -532,6 +540,14 @@ export function Chat() {
               answer: a,
             })
           }
+          {...(pending.review
+            ? {
+                onCheck: (selection: Selection) =>
+                  api.checkApproval(live.runId, pending.requestId, selection),
+                onRefresh: () =>
+                  api.refreshApproval(live.runId, pending.requestId),
+              }
+            : {})}
         />
       )}
 

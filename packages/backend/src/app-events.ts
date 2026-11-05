@@ -29,6 +29,14 @@ export type AppEvent =
     }
   | {
       /**
+       * Global, project or agent data changed: in the app, or by a tool in a
+       * run (schemas and data design). Windows refetch what they show.
+       */
+      type: "data.changed";
+      data: Record<string, never>;
+    }
+  | {
+      /**
        * A project was created by a tool (agent tools design, Q17), so every
        * window can refresh its project list.
        */

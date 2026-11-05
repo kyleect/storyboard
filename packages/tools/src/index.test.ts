@@ -31,6 +31,19 @@ describe("allTools", () => {
       "agent_view",
       "agent_change",
       "skill_load",
+      "schemas_list",
+      "schema_view",
+      "schema_create",
+      "schema_update",
+      "schema_copy",
+      "schema_delete",
+      "data_list",
+      "data_view",
+      "data_create",
+      "data_update",
+      "data_migrate",
+      "data_migrate_many",
+      "data_delete",
     ]);
   });
 });

@@ -10,6 +10,7 @@ import {
   listLlamaServerModels,
   loadLlamaServerModel,
   NOTE_CHOICES,
+  Selection,
   type ContextSize,
   type LoadResult,
   type ModelInfo,
@@ -21,7 +22,10 @@ import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
 import { defaultAgentFor } from "./default-agent.js";
 import { EntryStore } from "./entries-store.js";
+import { DataStore } from "./data-store.js";
+import { registerDataRoutes } from "./data-routes.js";
 import { registerEntryRoutes } from "./entry-routes.js";
+import { schemaChecker } from "./json-schema.js";
 import { RunError, type RunManager } from "./runs.js";
 import { registerSkillRoutes } from "./skill-routes.js";
 import { SkillStore } from "./skills-store.js";
@@ -52,6 +56,8 @@ export interface ServerOptions {
   agents?: AgentStore;
   /** Skills. Default: over `store.db`. */
   skills?: SkillStore;
+  /** Global, project and agent schemas and data. Default: over `store.db`. */
+  data?: DataStore;
   /** The app-wide event stream's source. Default: the run manager's. */
   events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
@@ -173,6 +179,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const events = options.events ?? runs.events;
   const agents = options.agents ?? new AgentStore(store.db, now, newId);
   registerAgentRoutes(app, { store, runs, agents, events, env });
+  registerDataRoutes(app, {
+    store,
+    runs,
+    agents,
+    data: options.data ?? new DataStore(store.db, schemaChecker, now),
+    checker: schemaChecker,
+    events,
+  });
   registerSkillRoutes(app, {
     store,
     agents,
@@ -577,8 +591,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const { id, requestId } = IdParams.extend({
       requestId: z.string(),
     }).parse(req.params);
-    const { choice, note } = z
-      .object({ choice: ApprovalChoice, note: z.string().optional() })
+    const { choice, note, selection } = z
+      .object({
+        choice: ApprovalChoice,
+        note: z.string().optional(),
+        selection: Selection.optional(),
+      })
       .refine((b) => b.note === undefined || NOTE_CHOICES.includes(b.choice), {
         message: "A note can only be sent with once or deny.",
         path: ["note"],
@@ -589,8 +607,35 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     runs.answerApproval(id, requestId, {
       choice,
       ...(note !== undefined ? { note } : {}),
+      ...(selection !== undefined ? { selection } : {}),
     });
     return { ok: true };
+  });
+
+  /**
+   * Checks a selection of an open request's changes without answering it
+   * (schemas and data design, decisions 30, 33): `{ errors, stale }`.
+   */
+  app.post("/api/runs/:id/approvals/:requestId/check", async (req, reply) => {
+    const { id, requestId } = IdParams.extend({
+      requestId: z.string(),
+    }).parse(req.params);
+    const { selection } = z
+      .object({ selection: Selection.optional() })
+      .parse(req.body ?? {});
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    return runs.checkApproval(id, requestId, selection);
+  });
+
+  /** Works an open request's changes out again (decision 30, Refresh). */
+  app.post("/api/runs/:id/approvals/:requestId/refresh", async (req, reply) => {
+    const { id, requestId } = IdParams.extend({
+      requestId: z.string(),
+    }).parse(req.params);
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    return { request: runs.refreshApproval(id, requestId) };
   });
 
   /**

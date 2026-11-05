@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEntryAccess,
   NO_AGENTS,
+  NO_DATA,
   NO_PROJECTS,
   replaySessionEntries,
   type RunSkill,
@@ -31,6 +32,7 @@ const ctx = (skills: RunSkill[]): ToolContext => ({
   skills,
   projects: NO_PROJECTS,
   agents: NO_AGENTS,
+  data: NO_DATA,
   copyLimit: 20,
   entries: createEntryAccess({
     session: replaySessionEntries([]),

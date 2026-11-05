@@ -28,7 +28,7 @@ import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { SkillStore, type SkillContent } from "./skills-store.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltins, tempDatabase } from "./test-helpers.js";
 
 /* Placeholders (placeholders design). */
 
@@ -41,12 +41,19 @@ afterEach(async () => {
 });
 
 describe("expandPlaceholders (decisions 2 to 6)", () => {
-  const values = { skills: "- a: A.", tools: "- t: T." };
+  const values = { skills: "- a: A.", tools: "- t: T.", schemas: "- S." };
 
   it("replaces {{skills}} and {{tools}}, with spaces allowed inside", () => {
     expect(expandPlaceholders("{{skills}} and {{ tools }}", values)).toBe(
       "- a: A. and - t: T.",
     );
+  });
+
+  it("replaces {{schemas}} (schemas and data design, decision 39)", () => {
+    expect(expandPlaceholders("<s>{{ schemas }}</s>", values)).toBe(
+      "<s>- S.</s>",
+    );
+    expect(usesPlaceholder("x {{schemas}}", "schemas")).toBe(true);
   });
 
   it("leaves anything else as typed", () => {
@@ -58,14 +65,19 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
     const out = expandPlaceholders("{{skills}}", {
       skills: "- a: see {{tools}}",
       tools: "NOPE",
+      schemas: "",
     });
     expect(out).toBe("- a: see {{tools}}");
   });
 
   it("expands to nothing when the list is empty", () => {
-    expect(expandPlaceholders("A {{tools}} B", { skills: "", tools: "" })).toBe(
-      "A  B",
-    );
+    expect(
+      expandPlaceholders("A {{tools}} B", {
+        skills: "",
+        tools: "",
+        schemas: "",
+      }),
+    ).toBe("A  B");
   });
 
   it("tells whether a placeholder is used", () => {
@@ -121,6 +133,7 @@ const agentContent = (over: Partial<AgentContent> = {}): AgentContent => ({
 
 async function setup(scripts: ScriptStep[][]) {
   const t = tempDatabase();
+  clearBuiltins(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let tick = 0;

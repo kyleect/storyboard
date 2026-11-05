@@ -91,6 +91,40 @@ export const EntryOp = z.discriminatedUnion("op", [
 ]);
 export type EntryOp = z.infer<typeof EntryOp>;
 
+/**
+ * One change to a session-scoped schema or piece of data, recorded in the
+ * transcript (schemas and data design, decision 4). A schema's "put" carries
+ * its whole current state, including every version's JSON Schema so far;
+ * a data "put" carries its whole current state.
+ */
+export const DataOp = z.discriminatedUnion("op", [
+  z.object({
+    op: z.literal("schema_put"),
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    /** The latest version. */
+    version: z.number(),
+    /** The JSON Schema of this put's version (`version`). */
+    body: z.unknown(),
+    /** The schema this one was copied from (decision 12). */
+    copiedFrom: z.string().optional(),
+  }),
+  z.object({ op: z.literal("schema_delete"), id: z.string() }),
+  z.object({
+    op: z.literal("data_put"),
+    id: z.string(),
+    schemaId: z.string(),
+    /** The pinned schema version (decision 6). */
+    schemaVersion: z.number(),
+    name: z.string(),
+    description: z.string(),
+    value: z.unknown(),
+  }),
+  z.object({ op: z.literal("data_delete"), id: z.string() }),
+]);
+export type DataOp = z.infer<typeof DataOp>;
+
 export const ToolResultMessage = z.object({
   role: z.literal("tool"),
   callId: z.string(),
@@ -112,6 +146,12 @@ export const ToolResultMessage = z.object({
    * from edit messages (files and memory design, decision 11).
    */
   entries: z.array(EntryOp).optional(),
+  /**
+   * Changes the tool made to session-scoped schemas and data. Not sent to
+   * the model. Session schemas and data are rebuilt from these (schemas and
+   * data design, decision 4).
+   */
+  dataOps: z.array(DataOp).optional(),
   /**
    * The note the user typed when allowing the call once or denying it
    * (approval notes design). Not sent as part of this message: the notes of
@@ -136,6 +176,8 @@ export const EditMessage = z.object({
   role: z.literal("edit"),
   content: z.string(),
   entries: z.array(EntryOp),
+  /** Changes to session schemas and data (schemas and data design). */
+  dataOps: z.array(DataOp).optional(),
 });
 
 /** Provider-neutral message. Model adapters translate to and from it. */

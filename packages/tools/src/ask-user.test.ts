@@ -6,6 +6,7 @@ import {
   type InputAnswer,
   type ToolContext,
   NO_AGENTS,
+  NO_DATA,
   NO_PROJECTS,
 } from "@harness/core";
 import { askUser } from "./ask-user.js";
@@ -23,6 +24,7 @@ function context(answer: InputAnswer) {
     projectName: null,
     projects: NO_PROJECTS,
     agents: NO_AGENTS,
+    data: NO_DATA,
     copyLimit: 20,
     skills: [],
     entries: createEntryAccess({

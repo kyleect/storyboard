@@ -9,6 +9,8 @@
   "dependencies": {
     "@harness/core": "workspace:*",
     "@harness/tools": "workspace:*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "fastify": "5.12.7",
     "sqlite-vec": "0.1.9",
