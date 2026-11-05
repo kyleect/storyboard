@@ -109,76 +109,73 @@ export function registerDataRoutes(
     return a && !a.deleted ? { id: a.id, projectId: a.projectId } : null;
   };
 
-  const bases: [string, (req: FastifyRequest) => Owner][] = [
+  const globalOwner = (): Owner => ({
+    scope: "global",
+    projectId: null,
+    agent: null,
+    sessionId: null,
+    readOnly: null,
+  });
+  const projectOwner = (projectId: string): Owner => {
+    const project = store.getProject(projectId);
+    if (!project) throw new DataRouteError("Project not found.", 404);
+    return {
+      scope: "project",
+      projectId,
+      agent: null,
+      sessionId: null,
+      readOnly:
+        project.trashed_at !== null ? "The project is in the trash." : null,
+    };
+  };
+  const agentOwner = (agentId: string): Owner => {
+    const a = agents.get(agentId);
+    if (!a) throw new DataRouteError("Agent not found.", 404);
+    const trashed =
+      a.projectId !== null && store.getProject(a.projectId)?.trashed_at != null;
+    return {
+      scope: "agent",
+      projectId: a.projectId,
+      agent: { id: a.id, projectId: a.projectId },
+      sessionId: null,
+      readOnly: a.deleted
+        ? "The agent is deleted."
+        : trashed
+          ? "The agent's project is in the trash."
+          : null,
+    };
+  };
+  const sessionOwner = (sessionId: string): Owner => {
+    const session = store.getSession(sessionId);
+    if (!session) throw new DataRouteError("Session not found.", 404);
+    return {
+      scope: "session",
+      projectId: session.project_id,
+      agent: agentOf(session.agent_id),
+      sessionId,
+      readOnly:
+        session.trashed_at !== null ? "The session is in the trash." : null,
+    };
+  };
+  const param = (req: FastifyRequest, name: string) =>
+    z.object({ [name]: z.string() }).parse(req.params)[name] as string;
+
+  /** Each scope's route prefix, and how a request names its owner. */
+  const prefixes: [string, (req: FastifyRequest) => Owner][] = [
+    ["/api/global", () => globalOwner()],
     [
-      "/api/global/data",
-      () => ({
-        scope: "global",
-        projectId: null,
-        agent: null,
-        sessionId: null,
-        readOnly: null,
-      }),
+      "/api/projects/:projectId",
+      (req) => projectOwner(param(req, "projectId")),
     ],
+    ["/api/agents/:agentId", (req) => agentOwner(param(req, "agentId"))],
     [
-      "/api/projects/:projectId/data",
-      (req) => {
-        const { projectId } = z
-          .object({ projectId: z.string() })
-          .parse(req.params);
-        const project = store.getProject(projectId);
-        if (!project) throw new DataRouteError("Project not found.", 404);
-        return {
-          scope: "project",
-          projectId,
-          agent: null,
-          sessionId: null,
-          readOnly:
-            project.trashed_at !== null ? "The project is in the trash." : null,
-        };
-      },
-    ],
-    [
-      "/api/agents/:agentId/data",
-      (req) => {
-        const { agentId } = z.object({ agentId: z.string() }).parse(req.params);
-        const a = agents.get(agentId);
-        if (!a) throw new DataRouteError("Agent not found.", 404);
-        const trashed =
-          a.projectId !== null &&
-          store.getProject(a.projectId)?.trashed_at != null;
-        return {
-          scope: "agent",
-          projectId: a.projectId,
-          agent: { id: a.id, projectId: a.projectId },
-          sessionId: null,
-          readOnly: a.deleted
-            ? "The agent is deleted."
-            : trashed
-              ? "The agent's project is in the trash."
-              : null,
-        };
-      },
-    ],
-    [
-      "/api/sessions/:sessionId/data",
-      (req) => {
-        const { sessionId } = z
-          .object({ sessionId: z.string() })
-          .parse(req.params);
-        const session = store.getSession(sessionId);
-        if (!session) throw new DataRouteError("Session not found.", 404);
-        return {
-          scope: "session",
-          projectId: session.project_id,
-          agent: agentOf(session.agent_id),
-          sessionId,
-          readOnly:
-            session.trashed_at !== null ? "The session is in the trash." : null,
-        };
-      },
+      "/api/sessions/:sessionId",
+      (req) => sessionOwner(param(req, "sessionId")),
     ],
   ];
+  const bases = prefixes.map(
+    ([prefix, ownerOf]) => [`${prefix}/data`, ownerOf] as const,
+  );
 
   /** The data access the user gets for an owner, as the tools do. */
   const accessFor = (owner: Owner) => {
@@ -416,6 +413,136 @@ export function registerDataRoutes(
         }
         return ctx.access.restoreData(dataId, version);
       });
+    });
+  }
+
+  // ---- Schemas (decisions 8 to 15, 44; patch 4) ----------------------------
+
+  const CopyTarget = z.discriminatedUnion("scope", [
+    z.object({ scope: z.literal("global") }),
+    z.object({ scope: z.literal("project"), id: z.string() }),
+    z.object({ scope: z.literal("agent"), id: z.string() }),
+  ]);
+  const SchemaBody = z.object({
+    name: Text,
+    description: Text,
+    body: z.unknown(),
+  });
+
+  for (const [prefix, ownerOf] of prefixes) {
+    const base = `${prefix}/schemas`;
+    const SchemaParams = z.object({ schemaId: z.string() });
+    /** The schema must be this owner's own (not one it only sees). */
+    const own = (
+      owner: Owner,
+      access: ReturnType<typeof accessFor>["access"],
+      id: string,
+    ) => {
+      const s = access.getSchema(id, true);
+      if (s.scope !== owner.scope) {
+        throw new DataError(`No schema with the id "${id}" here.`);
+      }
+      return s;
+    };
+
+    app.get(base, async (req) => {
+      const owner = ownerOf(req);
+      const q = ListQuery.parse(req.query);
+      return read(owner, ({ access }) => ({
+        readOnly: owner.readOnly,
+        schemas: access.listSchemas(owner.scope, q.deleted === "true"),
+      }));
+    });
+
+    app.post(base, async (req, reply) => {
+      const owner = ownerOf(req);
+      const body = SchemaBody.parse(req.body);
+      const created = write(owner, ({ access }) =>
+        access.createSchema({
+          scope: owner.scope,
+          name: body.name,
+          description: body.description,
+          body: body.body,
+        }),
+      );
+      return reply.code(201).send(created);
+    });
+
+    app.get(`${base}/:schemaId`, async (req) => {
+      const owner = ownerOf(req);
+      const { schemaId } = SchemaParams.parse(req.params);
+      return read(owner, ({ access }) => {
+        const s = own(owner, access, schemaId);
+        const versions = access.schemaVersions(schemaId);
+        return {
+          ...s,
+          body: versions.at(-1)?.body,
+          versions,
+          // Hidden while the schema is deleted (decision 14).
+          dataCount: s.deleted ? 0 : access.listData({ schemaId }).length,
+        };
+      });
+    });
+
+    app.put(`${base}/:schemaId`, async (req) => {
+      const owner = ownerOf(req);
+      const { schemaId } = SchemaParams.parse(req.params);
+      const body = SchemaBody.parse(req.body);
+      return write(owner, ({ access }) => {
+        own(owner, access, schemaId);
+        return access.updateSchema(schemaId, {
+          name: body.name,
+          description: body.description,
+          body: body.body,
+        });
+      });
+    });
+
+    app.delete(`${base}/:schemaId`, async (req) => {
+      const owner = ownerOf(req);
+      const { schemaId } = SchemaParams.parse(req.params);
+      return write(owner, ({ access }) => {
+        own(owner, access, schemaId);
+        return access.deleteSchema(schemaId);
+      });
+    });
+
+    app.post(`${base}/:schemaId/restore`, async (req) => {
+      const owner = ownerOf(req);
+      const { schemaId } = SchemaParams.parse(req.params);
+      return write(owner, ({ access }) => {
+        own(owner, access, schemaId);
+        return access.restoreSchema(schemaId);
+      });
+    });
+
+    /** A copy of the latest version into another owner (decision 12). */
+    app.post(`${base}/:schemaId/copy`, async (req, reply) => {
+      const owner = ownerOf(req);
+      const { schemaId } = SchemaParams.parse(req.params);
+      const { to, name } = z
+        .object({ to: CopyTarget, name: Text.optional() })
+        .parse(req.body);
+      const source = read(owner, ({ access }) => {
+        const s = own(owner, access, schemaId);
+        return { ...s, body: access.schemaBody(schemaId) };
+      });
+      const target =
+        to.scope === "global"
+          ? globalOwner()
+          : to.scope === "project"
+            ? projectOwner(to.id)
+            : agentOwner(to.id);
+      const copy = write(target, ({ access }) =>
+        access.createSchema({
+          scope: target.scope,
+          name: name ?? source.name,
+          description: source.description,
+          body: source.body,
+          copiedFrom: source.id,
+        }),
+      );
+      return reply.code(201).send(copy);
     });
   }
 }

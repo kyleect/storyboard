@@ -42,7 +42,7 @@ import {
 import { useLive, useSessionEvents } from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
-import { DataPanel } from "./Data";
+import { SchemasAndData } from "./Data";
 import { AskUserForm, type AskUserState } from "./AskUserForm";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
@@ -393,7 +393,7 @@ export function Chat() {
       {tab !== "chat" && (
         <ScrollArea style={{ flex: 1 }}>
           {tab === "data" ? (
-            <DataPanel
+            <SchemasAndData
               owner={{ scope: "session", id: sessionId }}
               readOnly={entriesReadOnly}
             />

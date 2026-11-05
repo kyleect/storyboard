@@ -190,12 +190,12 @@ export class DataStore {
     };
 
     return {
-      listSchemas(scope) {
+      listSchemas(scope, includeDeleted = false) {
         const [sql, args] = where(scope);
         return (
           db
             .prepare(
-              `SELECT ${SCHEMA_COLUMNS} FROM schemas WHERE (${sql}) AND deleted_at IS NULL ORDER BY name`,
+              `SELECT ${SCHEMA_COLUMNS} FROM schemas WHERE (${sql}) AND (${includeDeleted ? 1 : 0} OR deleted_at IS NULL) ORDER BY name`,
             )
             .all(...args) as SchemaRow[]
         ).map(toSchema);
@@ -300,6 +300,13 @@ export class DataStore {
         db.prepare(
           "UPDATE schemas SET deleted_at = ?, updated_at = ? WHERE id = ?",
         ).run(time, time, id);
+      },
+
+      restoreSchema(id) {
+        requireSchema(id);
+        db.prepare(
+          "UPDATE schemas SET deleted_at = NULL, updated_at = ? WHERE id = ?",
+        ).run(now(), id);
       },
 
       listData(scope, includeDeleted = false) {

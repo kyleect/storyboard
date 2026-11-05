@@ -42,6 +42,7 @@ import {
 } from "../api";
 import { showError } from "./SessionActions";
 import { DataPanel } from "./Data";
+import { SchemasPanel } from "./Schemas";
 import { SkillsPanel } from "./Skills";
 
 /*
@@ -632,6 +633,19 @@ function AgentView({
             ? "The agent is deleted, so its skills can be read but not changed."
             : readOnly
               ? "The project is in the trash, so these can be read but not changed."
+              : undefined
+        }
+      />
+      <Text size="xs" c="dimmed">
+        Schemas
+      </Text>
+      <SchemasPanel
+        owner={{ scope: "agent", id: a.id }}
+        readOnly={
+          a.deleted
+            ? "The agent is deleted, so its schemas can be read but not changed."
+            : readOnly
+              ? "The project is in the trash, so these schemas can be read but not changed."
               : undefined
         }
       />

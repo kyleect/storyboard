@@ -45,6 +45,7 @@ import {
 } from "../api";
 import { AskUserForm } from "./AskUserForm";
 import { DataValue } from "./DataValue";
+import { SchemasPanel } from "./Schemas";
 import { showError } from "./SessionActions";
 
 /*
@@ -702,8 +703,8 @@ function VersionsModal({
   );
 }
 
-/** "Schemas & data" for a scope: Data now; Schemas joins it (patch 4). */
-function SchemasAndData({
+/** "Schemas & data" for a scope: a Data tab and a Schemas tab (decision 44). */
+export function SchemasAndData({
   owner,
   readOnly,
 }: {
@@ -714,9 +715,13 @@ function SchemasAndData({
     <Tabs defaultValue="data" keepMounted={false}>
       <Tabs.List>
         <Tabs.Tab value="data">Data</Tabs.Tab>
+        <Tabs.Tab value="schemas">Schemas</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="data" pt="md">
         <DataPanel owner={owner} readOnly={readOnly} />
+      </Tabs.Panel>
+      <Tabs.Panel value="schemas" pt="md">
+        <SchemasPanel owner={owner} readOnly={readOnly} />
       </Tabs.Panel>
     </Tabs>
   );

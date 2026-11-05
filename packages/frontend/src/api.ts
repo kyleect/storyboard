@@ -505,6 +505,31 @@ export interface DataDetail extends DataView {
   versions: DataVersion[];
 }
 
+/** Where a schema copy goes (decision 12). */
+export type CopyTarget =
+  | { scope: "global" }
+  | { scope: "project"; id: string }
+  | { scope: "agent"; id: string };
+
+const schemasBase = (o: DataOwner) =>
+  dataBase(o).replace(/\/data$/, "/schemas");
+
+/** A schema with every version's JSON Schema. */
+export interface SchemaDetail extends SchemaInfo {
+  /** The latest version's JSON Schema. */
+  body: unknown;
+  versions: { version: number; body: unknown }[];
+  /** How much data is made from it here and in scopes this owner sees. */
+  dataCount: number;
+}
+
+/** What the schema editor saves. */
+export interface SchemaContent {
+  name: string;
+  description: string;
+  body: unknown;
+}
+
 /** What a data form saves. */
 export interface DataContent {
   name: string;
@@ -839,6 +864,39 @@ export const api = {
       "POST",
       `${dataBase(o)}/${encodeURIComponent(id)}/restore`,
       { seq },
+    ),
+  listSchemas: (o: DataOwner, deleted: boolean) =>
+    request<{ readOnly: string | null; schemas: SchemaInfo[] }>(
+      "GET",
+      `${schemasBase(o)}${deleted ? "?deleted=true" : ""}`,
+    ),
+  getSchema: (o: DataOwner, id: string) =>
+    request<SchemaDetail>("GET", `${schemasBase(o)}/${encodeURIComponent(id)}`),
+  createSchema: (o: DataOwner, c: SchemaContent) =>
+    request<SchemaInfo>("POST", schemasBase(o), c),
+  /** A new version when the JSON Schema changed (decision 10). */
+  saveSchema: (o: DataOwner, id: string, c: SchemaContent) =>
+    request<SchemaInfo>(
+      "PUT",
+      `${schemasBase(o)}/${encodeURIComponent(id)}`,
+      c,
+    ),
+  /** Deletes it with its data (decision 14); says how much data. */
+  deleteSchema: (o: DataOwner, id: string) =>
+    request<{ data: number }>(
+      "DELETE",
+      `${schemasBase(o)}/${encodeURIComponent(id)}`,
+    ),
+  restoreSchema: (o: DataOwner, id: string) =>
+    request<SchemaInfo>(
+      "POST",
+      `${schemasBase(o)}/${encodeURIComponent(id)}/restore`,
+    ),
+  copySchema: (o: DataOwner, id: string, to: CopyTarget, name: string) =>
+    request<SchemaInfo>(
+      "POST",
+      `${schemasBase(o)}/${encodeURIComponent(id)}/copy`,
+      { to, name },
     ),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>

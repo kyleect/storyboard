@@ -78,8 +78,8 @@ export interface VersionSaved {
  * agent. Lookups by id find only what is in those scopes.
  */
 export interface SharedData {
-  /** Live schemas in a scope. */
-  listSchemas(scope: SharedDataScope): SchemaRecord[];
+  /** Live schemas in a scope; deleted ones too with `includeDeleted`. */
+  listSchemas(scope: SharedDataScope, includeDeleted?: boolean): SchemaRecord[];
   /** A schema by id, deleted or not; undefined when not in these scopes. */
   getSchema(id: string): SchemaRecord | undefined;
   /** One version's JSON Schema. */
@@ -101,6 +101,8 @@ export interface SharedData {
   /** A new version; table data that passes it is bumped (decision 11). */
   addSchemaVersion(id: string, body: unknown): VersionSaved;
   deleteSchema(id: string): void;
+  /** Undoes a delete; its data comes back with it (decision 14). */
+  restoreSchema(id: string): void;
   /**
    * Data in a scope whose schema is not deleted: live data, and deleted
    * data too with `includeDeleted`.
@@ -247,6 +249,8 @@ export interface SchemaInfo {
   scope: DataScope;
   version: number;
   copiedFrom: string | null;
+  /** Deleted; listed only when asked for (it can be restored). */
+  deleted: boolean;
 }
 
 /** A piece of data as `data_list` shows it (decision 29): no value. */
@@ -321,9 +325,17 @@ export interface SchemaPlan {
 export interface DataAccess {
   /** The scopes this run has (decisions 2, 3). */
   readonly scopes: readonly DataScope[];
-  listSchemas(scope?: DataScope): SchemaInfo[];
-  /** A live schema in scope; throws a `DataError` otherwise. */
-  getSchema(id: string): SchemaInfo;
+  /** Deleted ones too with `includeDeleted` (to show and restore them). */
+  listSchemas(scope?: DataScope, includeDeleted?: boolean): SchemaInfo[];
+  /**
+   * A live schema in scope, or a deleted one with `includeDeleted`; throws a
+   * `DataError` otherwise.
+   */
+  getSchema(id: string, includeDeleted?: boolean): SchemaInfo;
+  /** Every version's JSON Schema, oldest first (decision 10). */
+  schemaVersions(id: string): { version: number; body: unknown }[];
+  /** Undoes a delete; its data comes back with it (decision 14). */
+  restoreSchema(id: string): SchemaInfo;
   /** One version's JSON Schema (the latest when left out). */
   schemaBody(id: string, version?: number): unknown;
   createSchema(input: {
@@ -331,6 +343,8 @@ export interface DataAccess {
     name: string;
     description: string;
     body: unknown;
+    /** For a copy made elsewhere (decision 12). */
+    copiedFrom?: string;
   }): SchemaInfo;
   updateSchema(
     id: string,
@@ -537,6 +551,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     scope: s.scope,
     version: s.version,
     copiedFrom: s.copiedFrom,
+    deleted: s.deleted,
   });
 
   const checkText = (what: string, value: string, max: number) => {
@@ -1042,23 +1057,66 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
   return {
     scopes,
 
-    listSchemas(scope) {
+    listSchemas(scope, includeDeleted = false) {
       if (scope !== undefined) requireScope(scope);
       const wanted = scope === undefined ? scopes : [scope];
       const out: SchemaInfo[] = [];
       for (const s of wanted) {
         if (s === "session") {
           for (const x of session.schemas.values()) {
-            if (!x.deleted) out.push(info(liveSchema(x.id)));
+            const r = findSchema(x.id);
+            if (r && (includeDeleted || !r.deleted)) out.push(info(r));
           }
         } else {
-          out.push(...sharedOf().listSchemas(s).map(info));
+          out.push(...sharedOf().listSchemas(s, includeDeleted).map(info));
         }
       }
       return out;
     },
 
-    getSchema: (id) => info(liveSchema(id)),
+    getSchema: (id, includeDeleted = false) => {
+      if (!includeDeleted) return info(liveSchema(id));
+      const s = findSchema(id);
+      if (!s) {
+        throw new DataError(
+          `No schema with the id "${id}" is available. Call schemas_list.`,
+        );
+      }
+      return info(s);
+    },
+
+    schemaVersions(id) {
+      const s = findSchema(id);
+      if (!s) {
+        throw new DataError(`No schema with the id "${id}" is available.`);
+      }
+      return Array.from({ length: s.version }, (_, i) => ({
+        version: i + 1,
+        body: bodyOf(s, i + 1),
+      }));
+    },
+
+    restoreSchema(id) {
+      const s = findSchema(id);
+      if (!s) {
+        throw new DataError(`No schema with the id "${id}" is available.`);
+      }
+      if (!s.deleted) return info(s);
+      if (s.scope === "session") {
+        sessionOp({
+          op: "schema_put",
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          version: s.version,
+          body: bodyOf(s, s.version),
+          ...(s.copiedFrom ? { copiedFrom: s.copiedFrom } : {}),
+        });
+      } else {
+        sharedOf().restoreSchema(id);
+      }
+      return info(liveSchema(id));
+    },
 
     schemaBody(id, version) {
       const s = liveSchema(id);
@@ -1073,7 +1131,13 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
         MAX_DATA_DESCRIPTION,
       );
       checkBody(input.body);
-      return newSchema(input.scope, name, description, input.body, null);
+      return newSchema(
+        input.scope,
+        name,
+        description,
+        input.body,
+        input.copiedFrom ?? null,
+      );
     },
 
     updateSchema(id, changes) {
@@ -1226,6 +1290,8 @@ export const NO_DATA: DataAccess = {
   deleteData: noData,
   dataScopesFor: noData,
   restoreData: noData,
+  schemaVersions: noData,
+  restoreSchema: noData,
   planCreate: noData,
   planUpdate: noData,
   planMigrate: noData,

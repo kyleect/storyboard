@@ -242,3 +242,108 @@ describe("session data routes", () => {
     });
   });
 });
+
+describe("schema routes (patch 4)", () => {
+  it("creates, versions, deletes with its data, and restores both", async () => {
+    const { app } = setup();
+    const created = await api(app, "POST", "/api/global/schemas", {
+      name: "Note",
+      description: "A short note.",
+      body: { type: "object", properties: { text: { type: "string" } } },
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id as string;
+    await api(app, "PUT", `/api/global/schemas/${id}`, {
+      name: "Note",
+      description: "A short note.",
+      body: {
+        type: "object",
+        properties: { text: { type: "string" }, pinned: { type: "boolean" } },
+      },
+    });
+    await api(app, "POST", "/api/global/data", {
+      schemaId: id,
+      name: "n",
+      description: "d",
+      value: { text: "hi" },
+    });
+    const detail = await api(app, "GET", `/api/global/schemas/${id}`);
+    expect(detail.body).toMatchObject({ version: 2, dataCount: 1 });
+    expect((detail.body.versions as unknown[]).length).toBe(2);
+
+    expect(
+      (await api(app, "DELETE", `/api/global/schemas/${id}`)).body,
+    ).toEqual({ data: 1 });
+    expect((await api(app, "GET", "/api/global/data")).body.data).toEqual([]);
+    expect(
+      (await api(app, "GET", "/api/global/schemas?deleted=true")).body.schemas,
+    ).toMatchObject([
+      { id, name: "Note", deleted: true },
+      { name: "Task", deleted: false },
+    ]);
+    await api(app, "POST", `/api/global/schemas/${id}/restore`);
+    expect((await api(app, "GET", "/api/global/data")).body.data).toHaveLength(
+      1,
+    );
+  });
+
+  it("refuses an invalid schema with the reason", async () => {
+    const { app } = setup();
+    const res = await api(app, "POST", "/api/global/schemas", {
+      name: "Bad",
+      description: "d",
+      body: { type: "object", propertys: {} },
+    });
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toMatch(/unsupported keyword "propertys"/);
+  });
+
+  it("copies a schema into a project or an agent", async () => {
+    const { app, store, agents } = setup();
+    store.createProject({ id: "p1", name: "P", description: "", now: "T" });
+    const agent = agents.create(null, {
+      name: "Editor",
+      description: "",
+      prompt: "",
+      toolMode: "allow",
+      tools: [],
+      toolApproval: {},
+    });
+    const toProject = await api(app, "POST", "/api/global/schemas/task/copy", {
+      to: { scope: "project", id: "p1" },
+    });
+    expect(toProject.status).toBe(201);
+    expect(toProject.body).toMatchObject({
+      scope: "project",
+      name: "Task",
+      version: 1,
+      copiedFrom: "task",
+    });
+    const toAgent = await api(app, "POST", "/api/global/schemas/task/copy", {
+      to: { scope: "agent", id: agent.id },
+      name: "Chore",
+    });
+    expect(toAgent.body).toMatchObject({ scope: "agent", name: "Chore" });
+    expect(
+      (await api(app, "GET", `/api/agents/${agent.id}/schemas`)).body.schemas,
+    ).toMatchObject([{ name: "Chore" }]);
+  });
+
+  it("keeps session schemas in the transcript", async () => {
+    const { app, store } = setup();
+    const session = (await api(app, "POST", "/api/sessions", {})).body
+      .id as string;
+    const created = await api(app, "POST", `/api/sessions/${session}/schemas`, {
+      name: "Beat",
+      description: "A story beat.",
+      body: { type: "string" },
+    });
+    expect(created.status).toBe(201);
+    expect(store.listMessages(session).map((m) => m.message)).toMatchObject([
+      { role: "edit", dataOps: [{ op: "schema_put", name: "Beat" }] },
+    ]);
+    expect(
+      (await api(app, "GET", `/api/sessions/${session}/schemas`)).body.schemas,
+    ).toMatchObject([{ name: "Beat", scope: "session" }]);
+  });
+});
