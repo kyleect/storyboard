@@ -26,7 +26,9 @@ import {
   type Tool,
   type ToolResultMessage,
   type Usage,
+  dataEditNotice,
   replaySessionData,
+  type DataOp,
   type DataScope,
   type SchemaChecker,
 } from "@harness/core";
@@ -846,6 +848,29 @@ export class RunManager {
     return { messageId };
   }
 
+  /**
+   * Records the user's changes to session schemas or data as an edit message
+   * (schemas and data design, decision 4). Refused during a run (plan P4).
+   */
+  editSessionData(sessionId: string, ops: DataOp[]): { messageId: string } {
+    this.requireIdle(sessionId);
+    const messageId = this.newId();
+    this.store.addMessage(
+      sessionId,
+      messageId,
+      { role: "edit", content: dataEditNotice(ops), entries: [], dataOps: ops },
+      this.now(),
+    );
+    this.publish({
+      runId: null,
+      sessionId,
+      time: this.now(),
+      type: "session.data_changed",
+      data: { messageId },
+    });
+    return { messageId };
+  }
+
   /** Keeps the search index in step with session-scoped changes. */
   private indexSessionOps(sessionId: string, ops: readonly EntryOp[]) {
     for (const op of ops) {
@@ -1073,6 +1098,15 @@ export class RunManager {
       this.store.linkRunMessage(runId, id);
       if (message.role === "tool" && message.entries) {
         this.indexSessionOps(sessionId, message.entries);
+      }
+      // Pages showing global, project or agent data refetch (schemas and
+      // data design). Session data refreshes from the session's own events.
+      if (
+        message.role === "tool" &&
+        !message.isError &&
+        dataTools.has(message.name)
+      ) {
+        this.events.publish({ type: "data.changed", data: {} });
       }
     };
 

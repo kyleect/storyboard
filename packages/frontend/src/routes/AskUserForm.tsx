@@ -1,7 +1,9 @@
 import {
+  ActionIcon,
   Badge,
   Button,
   Checkbox,
+  Fieldset,
   Group,
   MultiSelect,
   NumberInput,
@@ -63,6 +65,10 @@ interface FieldState {
   num: number | string;
   /** Multi-choice and number: "Other" is ticked. */
   other: boolean;
+  /** A group: its fields' inputs, by name. */
+  fields?: Record<string, FieldState>;
+  /** A list: each item's inputs. */
+  items?: FieldState[];
 }
 
 const EMPTY: FieldState = {
@@ -73,20 +79,80 @@ const EMPTY: FieldState = {
   other: false,
 };
 
+type TextFormat = Extract<FormField, { kind: "text" }>["format"];
+
+/** The browser's offset from UTC now, as "+hh:mm" (for a `time`). */
+export function localOffset(date = new Date()): string {
+  const minutes = -date.getTimezoneOffset();
+  const sign = minutes >= 0 ? "+" : "-";
+  const abs = Math.abs(minutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
+/**
+ * A stored value as the browser's input shows it. JSON Schema times and
+ * date-times carry a timezone (decision 17); the inputs show local time.
+ */
+export function toInput(format: TextFormat, value: string): string {
+  if (value === "") return value;
+  if (format === "date-time") {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 16);
+  }
+  if (format === "time") return value.slice(0, 5);
+  return value;
+}
+
+/**
+ * What an input holds as a stored value: a date-time in UTC ("…Z"), a time
+ * with the browser's current offset.
+ */
+export function fromInput(format: TextFormat, value: string): string {
+  if (format === "date-time") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : d.toISOString();
+  }
+  if (format === "time" && /^\d{2}:\d{2}$/.test(value)) {
+    return `${value}:00${localOffset()}`;
+  }
+  return value;
+}
+
 /** A question's inputs from its answer, or its default. */
 export function initialState(field: FormField, answer?: unknown): FieldState {
   const given = answer !== undefined;
   switch (field.kind) {
-    case "text":
+    case "object": {
+      const value =
+        answer && typeof answer === "object" && !Array.isArray(answer)
+          ? (answer as Record<string, unknown>)
+          : {};
       return {
         ...EMPTY,
-        text:
-          typeof answer === "string"
-            ? answer
-            : given
-              ? ""
-              : (field.default ?? ""),
+        fields: Object.fromEntries(
+          field.fields.map((f) => [f.name, initialState(f, value[f.name])]),
+        ),
       };
+    }
+    case "list": {
+      const values = Array.isArray(answer) ? answer : [];
+      return {
+        ...EMPTY,
+        items: values.map((v) => initialState(field.item, v)),
+      };
+    }
+    case "text": {
+      const text =
+        typeof answer === "string"
+          ? answer
+          : given
+            ? ""
+            : (field.default ?? "");
+      return { ...EMPTY, text: toInput(field.format, text) };
+    }
     case "choice": {
       if (!given) return { ...EMPTY, pick: field.default ?? null };
       if (typeof answer === "string" && field.options.includes(answer))
@@ -128,8 +194,22 @@ export function initialState(field: FormField, answer?: unknown): FieldState {
 /** A question's answer from its inputs; undefined when unanswered. */
 export function answerOf(field: FormField, s: FieldState): unknown {
   switch (field.kind) {
+    case "object": {
+      const out: Record<string, unknown> = {};
+      for (const f of field.fields) {
+        const a = answerOf(f, s.fields?.[f.name] ?? EMPTY);
+        if (a !== undefined) out[f.name] = a;
+      }
+      // An optional group with nothing in it is left out.
+      return Object.keys(out).length === 0 && !field.required ? undefined : out;
+    }
+    case "list": {
+      const items = s.items ?? [];
+      if (items.length === 0 && !field.required) return undefined;
+      return items.map((i) => answerOf(field.item, i));
+    }
     case "text":
-      return s.text.trim() === "" ? undefined : s.text;
+      return s.text.trim() === "" ? undefined : fromInput(field.format, s.text);
     case "choice":
       return s.pick === null ? undefined : s.pick === OTHER ? s.text : s.pick;
     case "multi": {
@@ -157,18 +237,43 @@ export function answerOf(field: FormField, s: FieldState): unknown {
 export function AskUserForm({
   form,
   state,
+  extraErrors,
+  initial,
+  heading = true,
 }: {
   form: Form;
   state: AskUserState;
+  /**
+   * Problems found elsewhere, such as the backend's checks on save, by the
+   * path of the question ("inventory.0.item").
+   */
+  extraErrors?: Record<string, string>;
+  /** What an open form starts from, such as the data being edited. */
+  initial?: Answers;
+  /**
+   * False: no heading row (no title, no badge), for forms whose page already
+   * says what they are, such as a data form.
+   */
+  heading?: boolean;
 }) {
   const open = state.mode === "open";
-  const answers = state.mode === "answered" ? state.answers : {};
+  const answers =
+    state.mode === "answered" ? state.answers : open ? (initial ?? {}) : {};
   const [values, setValues] = useState<Record<string, FieldState>>(() =>
     Object.fromEntries(
       form.fields.map((f) => [f.name, initialState(f, answers[f.name])]),
     ),
   );
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>(
+    extraErrors ?? {},
+  );
+  // New problems from elsewhere replace those shown (React's pattern for
+  // state that follows a prop).
+  const [shownExtra, setShownExtra] = useState(extraErrors);
+  if (extraErrors !== shownExtra) {
+    setShownExtra(extraErrors);
+    if (extraErrors) setErrors(extraErrors);
+  }
   const ref = useRef<HTMLDivElement>(null);
   const requestId = open ? state.requestId : null;
 
@@ -179,8 +284,13 @@ export function AskUserForm({
 
   const set = (name: string, change: Partial<FieldState>) => {
     setValues((v) => ({ ...v, [name]: { ...(v[name] ?? EMPTY), ...change } }));
+    // A change clears the question's problems, and those inside it.
     setErrors((e) =>
-      Object.fromEntries(Object.entries(e).filter(([k]) => k !== name)),
+      Object.fromEntries(
+        Object.entries(e).filter(
+          ([k]) => k !== name && !k.startsWith(`${name}.`),
+        ),
+      ),
     );
   };
 
@@ -214,19 +324,21 @@ export function AskUserForm({
         }}
       >
         <Stack gap="sm">
-          <Group gap="xs" justify="space-between">
-            <Text fw={600}>{form.title ?? "Questions"}</Text>
-            {state.mode === "answered" && (
-              <Badge size="sm" variant="light" color="green">
-                Answered
-              </Badge>
-            )}
-            {state.mode === "skipped" && (
-              <Badge size="sm" variant="light" color="gray">
-                Skipped
-              </Badge>
-            )}
-          </Group>
+          {heading && (
+            <Group gap="xs" justify="space-between">
+              <Text fw={600}>{form.title ?? "Questions"}</Text>
+              {state.mode === "answered" && (
+                <Badge size="sm" variant="light" color="green">
+                  Answered
+                </Badge>
+              )}
+              {state.mode === "skipped" && (
+                <Badge size="sm" variant="light" color="gray">
+                  Skipped
+                </Badge>
+              )}
+            </Group>
+          )}
           {form.description && (
             <Text size="sm" c="dimmed">
               {form.description}
@@ -236,8 +348,9 @@ export function AskUserForm({
             <FieldInput
               key={f.name}
               field={f}
+              path={f.name}
               value={values[f.name] ?? EMPTY}
-              error={errors[f.name]}
+              errors={errors}
               disabled={!open}
               onChange={(change) => set(f.name, change)}
             />
@@ -267,19 +380,32 @@ export function AskUserForm({
   );
 }
 
+/** The browser input for a text `format` (decision 17). */
+const INPUT_TYPE = {
+  date: "date",
+  "date-time": "datetime-local",
+  time: "time",
+  email: "email",
+  uri: "url",
+} as const;
+
 function FieldInput({
   field,
+  path,
   value,
-  error,
+  errors,
   disabled,
   onChange,
 }: {
   field: FormField;
+  /** The question's path, for its problems ("inventory.0.item"). */
+  path: string;
   value: FieldState;
-  error: string | undefined;
+  errors: Record<string, string>;
   disabled: boolean;
   onChange: (change: Partial<FieldState>) => void;
 }) {
+  const error = errors[path];
   const common = {
     label: field.label,
     description: field.help,
@@ -299,7 +425,131 @@ function FieldInput({
     ) : null;
 
   switch (field.kind) {
+    case "object": {
+      const fields = value.fields ?? {};
+      return (
+        <Fieldset
+          legend={
+            <Text size="sm" fw={500}>
+              {field.label}
+              {field.required ? " *" : ""}
+            </Text>
+          }
+          disabled={disabled}
+        >
+          <Stack gap="sm">
+            {field.help && (
+              <Text size="xs" c="dimmed">
+                {field.help}
+              </Text>
+            )}
+            {field.fields.map((f) => (
+              <FieldInput
+                key={f.name}
+                field={f}
+                path={`${path}.${f.name}`}
+                value={fields[f.name] ?? EMPTY}
+                errors={errors}
+                disabled={disabled}
+                onChange={(change) =>
+                  onChange({
+                    fields: {
+                      ...fields,
+                      [f.name]: { ...(fields[f.name] ?? EMPTY), ...change },
+                    },
+                  })
+                }
+              />
+            ))}
+            {error && (
+              <Text size="xs" c="red">
+                {error}
+              </Text>
+            )}
+          </Stack>
+        </Fieldset>
+      );
+    }
+
+    case "list": {
+      const items = value.items ?? [];
+      const full =
+        field.maxItems !== undefined && items.length >= field.maxItems;
+      const setItems = (next: FieldState[]) => onChange({ items: next });
+      return (
+        <Stack gap={6}>
+          <Text size="sm" fw={500}>
+            {field.label}
+            {field.required ? " *" : ""}
+          </Text>
+          {field.help && (
+            <Text size="xs" c="dimmed">
+              {field.help}
+            </Text>
+          )}
+          {items.map((item, i) => (
+            <Group key={i} align="flex-start" wrap="nowrap" gap="xs">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <FieldInput
+                  field={{ ...field.item, label: `${field.label} ${i + 1}` }}
+                  path={`${path}.${i}`}
+                  value={item}
+                  errors={errors}
+                  disabled={disabled}
+                  onChange={(change) =>
+                    setItems(
+                      items.map((it, j) =>
+                        j === i ? { ...it, ...change } : it,
+                      ),
+                    )
+                  }
+                />
+              </div>
+              {!disabled && (
+                <ActionIcon
+                  variant="subtle"
+                  color="red"
+                  mt={4}
+                  aria-label={`Remove ${field.label} ${i + 1}`}
+                  onClick={() => setItems(items.filter((_, j) => j !== i))}
+                >
+                  ×
+                </ActionIcon>
+              )}
+            </Group>
+          ))}
+          {!disabled && (
+            <Group>
+              <Button
+                size="xs"
+                variant="light"
+                disabled={full}
+                onClick={() => setItems([...items, initialState(field.item)])}
+              >
+                Add {field.label}
+              </Button>
+            </Group>
+          )}
+          {error && (
+            <Text size="xs" c="red">
+              {error}
+            </Text>
+          )}
+        </Stack>
+      );
+    }
+
     case "text":
+      if (field.format) {
+        return (
+          <TextInput
+            {...common}
+            type={INPUT_TYPE[field.format]}
+            value={value.text}
+            onChange={(e) => onChange({ text: e.currentTarget.value })}
+          />
+        );
+      }
       return field.multiline ? (
         <Textarea
           {...common}

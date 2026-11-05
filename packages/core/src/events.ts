@@ -338,9 +338,20 @@ export const SessionAgentChanged = event(
   z.object({ agentId: z.string().nullable() }),
 );
 
+/**
+ * The user changed session schemas or data in the app; the change is
+ * recorded in the edit message `messageId` (schemas and data design,
+ * decision 4).
+ */
+export const SessionDataChanged = event(
+  "session.data_changed",
+  z.object({ messageId: z.string() }),
+);
+
 export const SessionEventBody = z.discriminatedUnion("type", [
   SessionTrashed,
   SessionEntriesChanged,
+  SessionDataChanged,
   SessionRenamed,
   SessionAgentChanged,
 ]);

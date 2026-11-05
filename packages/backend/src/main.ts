@@ -106,6 +106,7 @@ async function main() {
     entries,
     agents,
     skills,
+    data,
     token,
     logger: true,
     onSettingsSaved: () => embedder.settingsChanged(),

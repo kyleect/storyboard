@@ -22,7 +22,10 @@ import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
 import { defaultAgentFor } from "./default-agent.js";
 import { EntryStore } from "./entries-store.js";
+import { DataStore } from "./data-store.js";
+import { registerDataRoutes } from "./data-routes.js";
 import { registerEntryRoutes } from "./entry-routes.js";
+import { schemaChecker } from "./json-schema.js";
 import { RunError, type RunManager } from "./runs.js";
 import { registerSkillRoutes } from "./skill-routes.js";
 import { SkillStore } from "./skills-store.js";
@@ -53,6 +56,8 @@ export interface ServerOptions {
   agents?: AgentStore;
   /** Skills. Default: over `store.db`. */
   skills?: SkillStore;
+  /** Global, project and agent schemas and data. Default: over `store.db`. */
+  data?: DataStore;
   /** The app-wide event stream's source. Default: the run manager's. */
   events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
@@ -174,6 +179,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const events = options.events ?? runs.events;
   const agents = options.agents ?? new AgentStore(store.db, now, newId);
   registerAgentRoutes(app, { store, runs, agents, events, env });
+  registerDataRoutes(app, {
+    store,
+    runs,
+    agents,
+    data: options.data ?? new DataStore(store.db, schemaChecker, now),
+    checker: schemaChecker,
+    events,
+  });
   registerSkillRoutes(app, {
     store,
     agents,

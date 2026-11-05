@@ -3,12 +3,15 @@ import type {
   ApprovalRequest,
   ContentBlock,
   ControlResult,
+  DataInfo,
+  DataView,
   EntryKind,
   FileType,
   InputAnswer,
   InputRequest,
   Message,
   RunAgent,
+  SchemaInfo,
   Selection,
   Usage,
 } from "@harness/core";
@@ -448,6 +451,67 @@ const skillsBase = (o: SkillOwner) =>
       ? `/api/projects/${o.id}/skills`
       : `/api/agents/${o.id}/skills`;
 
+// ---- Schemas and data (schemas and data design) ---------------------------
+
+/** Where data lives (decision 3). */
+export type DataOwner =
+  | { scope: "global" }
+  | { scope: "project"; id: string }
+  | { scope: "agent"; id: string }
+  | { scope: "session"; id: string };
+
+/** The query key prefix for an owner's data; ["data"] is every owner's. */
+export const dataKey = (o: DataOwner) => [
+  "data",
+  o.scope,
+  o.scope === "global" ? null : o.id,
+];
+
+const dataBase = (o: DataOwner) =>
+  o.scope === "global"
+    ? "/api/global/data"
+    : o.scope === "project"
+      ? `/api/projects/${o.id}/data`
+      : o.scope === "agent"
+        ? `/api/agents/${o.id}/data`
+        : `/api/sessions/${o.id}/data`;
+
+/** A piece of data as a list shows it. */
+export type DataItem = DataInfo;
+
+/** One saved state of a piece of data (decision 24). */
+export interface DataVersion {
+  seq: number;
+  schemaVersion: number;
+  name: string;
+  description: string;
+  value: unknown;
+  deleted: boolean;
+  author: "user" | "model";
+  createdAt: string | null;
+}
+
+/** A piece of data with its value, schema and history. */
+export interface DataDetail extends DataView {
+  /** Null when its schema is not in scope here (plan P9). */
+  schema:
+    | (SchemaInfo & {
+        /** The JSON Schema of the version the data is on. */
+        pinned: unknown;
+        /** The JSON Schema of the latest version. */
+        latest: unknown;
+      })
+    | null;
+  versions: DataVersion[];
+}
+
+/** What a data form saves. */
+export interface DataContent {
+  name: string;
+  description: string;
+  value: unknown;
+}
+
 /** A 409 from an import whose name is taken. */
 export interface ImportConflict {
   agentId: string;
@@ -740,6 +804,42 @@ export const api = {
   /** Makes an earlier version current; also restores a deleted skill. */
   restoreSkill: (id: string, seq: number) =>
     request<SkillDetail>("POST", `/api/skills/${id}/restore`, { seq }),
+  listData: (o: DataOwner, deleted: boolean) =>
+    request<{ readOnly: string | null; data: DataItem[] }>(
+      "GET",
+      `${dataBase(o)}${deleted ? "?deleted=true" : ""}`,
+    ),
+  /** The schemas whose data can be made for this owner. */
+  dataSchemas: (o: DataOwner) =>
+    request<SchemaInfo[]>("GET", `${dataBase(o)}/schemas`),
+  /** A schema in scope for this owner, with its latest JSON Schema. */
+  schemaBody: (o: DataOwner, schemaId: string) =>
+    request<SchemaInfo & { body: unknown }>(
+      "GET",
+      `${dataBase(o)}/schemas/${encodeURIComponent(schemaId)}`,
+    ).then((r) => r.body),
+  /** A piece of data with its schema versions and history. */
+  getData: (o: DataOwner, id: string) =>
+    request<DataDetail>("GET", `${dataBase(o)}/${encodeURIComponent(id)}`),
+  createData: (o: DataOwner, schemaId: string, c: DataContent) =>
+    request<DataView>("POST", dataBase(o), { schemaId, ...c }),
+  saveData: (o: DataOwner, id: string, c: DataContent) =>
+    request<DataView>("PUT", `${dataBase(o)}/${encodeURIComponent(id)}`, c),
+  /** Moves the data to its schema's latest version with this value. */
+  migrateData: (o: DataOwner, id: string, value: unknown) =>
+    request<DataView>(
+      "POST",
+      `${dataBase(o)}/${encodeURIComponent(id)}/migrate`,
+      { value },
+    ),
+  deleteData: (o: DataOwner, id: string) =>
+    request<unknown>("DELETE", `${dataBase(o)}/${encodeURIComponent(id)}`),
+  restoreData: (o: DataOwner, id: string, seq: number) =>
+    request<DataView>(
+      "POST",
+      `${dataBase(o)}/${encodeURIComponent(id)}/restore`,
+      { seq },
+    ),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<SettingsView>("PUT", "/api/settings", patch),

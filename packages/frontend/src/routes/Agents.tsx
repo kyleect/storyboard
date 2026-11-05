@@ -41,6 +41,7 @@ import {
   type ToolMode,
 } from "../api";
 import { showError } from "./SessionActions";
+import { DataPanel } from "./Data";
 import { SkillsPanel } from "./Skills";
 
 /*
@@ -631,6 +632,19 @@ function AgentView({
             ? "The agent is deleted, so its skills can be read but not changed."
             : readOnly
               ? "The project is in the trash, so these can be read but not changed."
+              : undefined
+        }
+      />
+      <Text size="xs" c="dimmed">
+        Data
+      </Text>
+      <DataPanel
+        owner={{ scope: "agent", id: a.id }}
+        readOnly={
+          a.deleted
+            ? "The agent is deleted, so its data can be read but not changed."
+            : readOnly
+              ? "The project is in the trash, so this data can be read but not changed."
               : undefined
         }
       />

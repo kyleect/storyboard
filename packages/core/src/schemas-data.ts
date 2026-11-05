@@ -101,8 +101,11 @@ export interface SharedData {
   /** A new version; table data that passes it is bumped (decision 11). */
   addSchemaVersion(id: string, body: unknown): VersionSaved;
   deleteSchema(id: string): void;
-  /** Live data in a scope whose schema is not deleted. */
-  listData(scope: SharedDataScope): DataRecord[];
+  /**
+   * Data in a scope whose schema is not deleted: live data, and deleted
+   * data too with `includeDeleted`.
+   */
+  listData(scope: SharedDataScope, includeDeleted?: boolean): DataRecord[];
   /** A piece of data by id, deleted or not; undefined when not in scope. */
   getData(id: string): DataRecord | undefined;
   putData(
@@ -261,6 +264,8 @@ export interface DataInfo {
   outOfDate: boolean;
   /** False when its schema is not in scope (plan P9): view and delete only. */
   schemaInScope: boolean;
+  /** Deleted; listed only when asked for (it can be restored). */
+  deleted: boolean;
 }
 
 /** A piece of data with its value, and why it is out of date. */
@@ -334,8 +339,23 @@ export interface DataAccess {
   copySchema(id: string, scope: DataScope, name?: string): SchemaInfo;
   /** Its data is hidden with it (decision 14). Returns how much. */
   deleteSchema(id: string): { data: number };
-  listData(filter?: { scope?: DataScope; schemaId?: string }): DataInfo[];
-  getData(id: string): DataView;
+  listData(filter?: {
+    scope?: DataScope;
+    schemaId?: string;
+    includeDeleted?: boolean;
+  }): DataInfo[];
+  /** Where data made from the schema may live (decisions 6, 6a, 6b). */
+  dataScopesFor(schemaId: string): DataScope[];
+  /**
+   * Makes a saved state current again, deleted data included: its name,
+   * description and value, on the version it was pinned to (decision 24).
+   */
+  restoreData(
+    id: string,
+    state: DataSnapshot & { schemaVersion: number },
+  ): DataView;
+  /** Deleted data too with `includeDeleted` (to show it and restore it). */
+  getData(id: string, includeDeleted?: boolean): DataView;
   createData(input: {
     scope: DataScope;
     schemaId: string;
@@ -346,7 +366,13 @@ export interface DataAccess {
   /** Merge patch, checked against the pinned version (decision 26). */
   updateData(
     id: string,
-    changes: { patch?: unknown; name?: string; description?: string },
+    changes: {
+      patch?: unknown;
+      /** The whole new value, in place of a patch (the app's forms). */
+      value?: unknown;
+      name?: string;
+      description?: string;
+    },
   ): DataView;
   /** Defaults, then the merge patch, checked against the target (27). */
   migrateData(
@@ -368,12 +394,20 @@ export interface DataAccess {
   }): DataPlan;
   planUpdate(
     id: string,
-    changes: { patch?: unknown; name?: string; description?: string },
+    changes: {
+      patch?: unknown;
+      /** The whole new value, in place of a patch (the app's forms). */
+      value?: unknown;
+      name?: string;
+      description?: string;
+    },
   ): DataPlan;
   planMigrate(
     id: string,
     toVersion: number | undefined,
     patch: unknown,
+    /** The whole new value, in place of defaults and a patch. */
+    value?: unknown,
   ): DataPlan;
   /** Problems with saving `snapshot` for the plan; empty when it can be. */
   checkPlan(plan: DataPlan, snapshot: DataSnapshot): string[];
@@ -573,7 +607,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
   // -- Data --
 
   /** Where data made from a schema in `schemaScope` may live (6, 6a, 6b). */
-  const dataScopesFor = (schemaScope: DataScope): DataScope[] => {
+  const scopesForSchema = (schemaScope: DataScope): DataScope[] => {
     const allowed: DataScope[] =
       schemaScope === "global"
         ? ["global", "project", "agent", "session"]
@@ -608,6 +642,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
       scope: d.scope,
       schemaId: d.schemaId,
       value: d.value,
+      deleted: d.deleted,
     };
     if (!schema || schema.deleted) {
       return {
@@ -644,6 +679,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     latestVersion: v.latestVersion,
     outOfDate: v.outOfDate,
     schemaInScope: v.schemaInScope,
+    deleted: v.deleted,
   });
 
   /** Data that is shown: live, and its schema not deleted (decision 14). */
@@ -734,7 +770,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
   }): DataPlan => {
     requireScope(input.scope);
     const schema = liveSchema(input.schemaId);
-    const allowed = dataScopesFor(schema.scope);
+    const allowed = scopesForSchema(schema.scope);
     if (!allowed.includes(input.scope)) {
       throw new DataError(
         `Data made from the ${schema.scope} schema "${schema.name}" can be saved in: ${allowed.join(", ")}.`,
@@ -762,14 +798,22 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
 
   const planUpdate = (
     id: string,
-    changes: { patch?: unknown; name?: string; description?: string },
+    changes: {
+      patch?: unknown;
+      /** The whole new value, in place of a patch (the app's forms). */
+      value?: unknown;
+      name?: string;
+      description?: string;
+    },
   ): DataPlan => {
     const d = liveData(id);
     const schema = requireUsableSchema(d);
     const value =
-      changes.patch !== undefined
-        ? applyMergePatch(d.value, changes.patch)
-        : d.value;
+      changes.value !== undefined
+        ? changes.value
+        : changes.patch !== undefined
+          ? applyMergePatch(d.value, changes.patch)
+          : d.value;
     // The pinned version, after any bump on read; never changed (26).
     const pinned = viewOf(d).schemaVersion;
     const plan: DataPlan = {
@@ -804,6 +848,7 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     id: string,
     toVersion: number | undefined,
     patch: unknown,
+    exact?: unknown,
   ): DataPlan => {
     const d = liveData(id);
     const schema = requireUsableSchema(d);
@@ -816,7 +861,12 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
     }
     const body = bodyOf(schema, target) as SchemaNode;
     const filled = applyDefaults(body, d.value);
-    const value = patch !== undefined ? applyMergePatch(filled, patch) : filled;
+    const value =
+      exact !== undefined
+        ? exact
+        : patch !== undefined
+          ? applyMergePatch(filled, patch)
+          : filled;
     checkValue(schema, target, value);
     return {
       kind: "migrate",
@@ -962,18 +1012,25 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
   };
 
   const listData = (
-    filter: { scope?: DataScope; schemaId?: string } = {},
+    filter: {
+      scope?: DataScope;
+      schemaId?: string;
+      includeDeleted?: boolean;
+    } = {},
   ): DataInfo[] => {
     if (filter.scope !== undefined) requireScope(filter.scope);
     const wanted = filter.scope === undefined ? scopes : [filter.scope];
+    const withDeleted = filter.includeDeleted === true;
     const out: DataInfo[] = [];
     for (const s of wanted) {
       const records: DataRecord[] =
         s === "session"
           ? [...session.data.values()].map((d) => ({ ...d, scope: s }))
-          : sharedOf().listData(s);
+          : sharedOf().listData(s, withDeleted);
       for (const d of records) {
-        if (!visible(d)) continue;
+        // Data is hidden while its schema is deleted (decision 14).
+        if (findSchema(d.schemaId)?.deleted) continue;
+        if (d.deleted && !withDeleted) continue;
         if (filter.schemaId !== undefined && d.schemaId !== filter.schemaId)
           continue;
         out.push(toInfo(viewOf(d)));
@@ -1054,7 +1111,43 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
 
     listData,
 
-    getData: (id) => viewOf(liveData(id)),
+    dataScopesFor: (schemaId) => scopesForSchema(liveSchema(schemaId).scope),
+
+    restoreData(id, state) {
+      const d = findData(id);
+      if (!d || findSchema(d.schemaId)?.deleted) {
+        throw new DataError(`No data with the id "${id}" is available.`);
+      }
+      const schema = requireUsableSchema(d);
+      const name = checkText("name", state.name, MAX_DATA_NAME);
+      const description = checkText(
+        "description",
+        state.description,
+        MAX_DATA_DESCRIPTION,
+      );
+      checkValue(schema, state.schemaVersion, state.value);
+      saveData({
+        id: d.id,
+        scope: d.scope,
+        schemaId: d.schemaId,
+        schemaVersion: state.schemaVersion,
+        name,
+        description,
+        value: state.value,
+      });
+      return viewOf(liveData(id));
+    },
+
+    getData: (id, includeDeleted = false) => {
+      if (!includeDeleted) return viewOf(liveData(id));
+      const d = findData(id);
+      if (!d || findSchema(d.schemaId)?.deleted) {
+        throw new DataError(
+          `No data with the id "${id}" is available. Call data_list.`,
+        );
+      }
+      return viewOf(d);
+    },
 
     createData(input) {
       const plan = planCreate(input);
@@ -1094,6 +1187,23 @@ export function createDataAccess(options: DataAccessOptions): DataAccess {
   };
 }
 
+/** The notice the model reads for an edit message with these changes. */
+export function dataEditNotice(ops: readonly DataOp[]): string {
+  const parts = ops.map((op) => {
+    switch (op.op) {
+      case "schema_put":
+        return `changed session schema "${op.name}" (id ${op.id})`;
+      case "schema_delete":
+        return `deleted session schema ${op.id}`;
+      case "data_put":
+        return `changed session data "${op.name}" (id ${op.id})`;
+      case "data_delete":
+        return `deleted session data ${op.id}`;
+    }
+  });
+  return `[The user ${parts.join("; ")} in the app.]`;
+}
+
 const noData = (): never => {
   throw new DataError("Schemas and data are not available in this run.");
 };
@@ -1114,6 +1224,8 @@ export const NO_DATA: DataAccess = {
   updateData: noData,
   migrateData: noData,
   deleteData: noData,
+  dataScopesFor: noData,
+  restoreData: noData,
   planCreate: noData,
   planUpdate: noData,
   planMigrate: noData,

@@ -20,6 +20,21 @@ import type {
  * its agents (`Store.purgeProject`).
  */
 
+/** One saved state of a piece of data (decision 24). */
+export interface DataVersion {
+  seq: number;
+  schemaVersion: number;
+  name: string;
+  description: string;
+  value: unknown;
+  /** A deletion; the content is what the data had then. */
+  deleted: boolean;
+  author: "user" | "model";
+  /** For the model: the session that made the change, if not purged. */
+  sessionId: string | null;
+  createdAt: string;
+}
+
 /** The scopes one run reaches: the session's project and the run's agent. */
 export interface DataOwner {
   projectId: string | null;
@@ -287,7 +302,7 @@ export class DataStore {
         ).run(time, time, id);
       },
 
-      listData(scope) {
+      listData(scope, includeDeleted = false) {
         const [sql, args] = where(scope);
         const qualified = sql
           .replaceAll("project_id", "d.project_id")
@@ -299,7 +314,8 @@ export class DataStore {
                 .map((c) => `d.${c}`)
                 .join(", ")}
                FROM data d JOIN schemas s ON s.id = d.schema_id
-               WHERE (${qualified}) AND d.deleted_at IS NULL AND s.deleted_at IS NULL
+               WHERE (${qualified}) AND s.deleted_at IS NULL
+                 AND (${includeDeleted ? 1 : 0} OR d.deleted_at IS NULL)
                ORDER BY d.name`,
             )
             .all(...args) as DataRow[]
@@ -372,6 +388,38 @@ export class DataStore {
         })();
       },
     };
+  }
+
+  /** A piece of data's saved states, oldest first (decision 24). */
+  versions(dataId: string): DataVersion[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT seq, schema_version, name, description, value, deleted, author, session_id, created_at
+           FROM data_versions WHERE data_id = ? ORDER BY seq`,
+        )
+        .all(dataId) as {
+        seq: number;
+        schema_version: number;
+        name: string;
+        description: string;
+        value: string;
+        deleted: number;
+        author: "user" | "model";
+        session_id: string | null;
+        created_at: string;
+      }[]
+    ).map((r) => ({
+      seq: r.seq,
+      schemaVersion: r.schema_version,
+      name: r.name,
+      description: r.description,
+      value: JSON.parse(r.value) as unknown,
+      deleted: r.deleted === 1,
+      author: r.author,
+      sessionId: r.session_id,
+      createdAt: r.created_at,
+    }));
   }
 
   /**

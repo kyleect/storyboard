@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SCHEMA_FORMATS, type SchemaNode } from "./schema-features.js";
 
 /*
  * Input forms (input forms design). The model asks the user questions by
@@ -102,51 +103,101 @@ const base = {
  */
 const labels = z.record(z.string(), z.string()).optional();
 
-/** A question, read from the model's schema. */
-export const FormField = z.discriminatedUnion("kind", [
-  z.object({
-    ...base,
-    kind: z.literal("text"),
-    multiline: z.boolean(),
-    minLength: z.number().optional(),
-    maxLength: z.number().optional(),
-    /**
-     * A regular expression the whole answer must match, and the error shown
-     * when it doesn't (tool prompts Q20). Only forms built by tools set it.
-     */
-    pattern: z.string().optional(),
-    patternMessage: z.string().optional(),
-    default: z.string().optional(),
-  }),
-  z.object({
-    ...base,
-    kind: z.literal("choice"),
-    options: z.array(z.string()),
-    labels,
-    default: z.string().optional(),
-  }),
-  z.object({
-    ...base,
-    kind: z.literal("multi"),
-    options: z.array(z.string()),
-    labels,
-    default: z.array(z.string()).optional(),
-  }),
-  z.object({
-    ...base,
-    kind: z.literal("number"),
-    integer: z.boolean(),
-    minimum: z.number().optional(),
-    maximum: z.number().optional(),
-    default: z.number().optional(),
-  }),
-  z.object({
-    ...base,
-    kind: z.literal("boolean"),
-    default: z.boolean().optional(),
-  }),
-]);
-export type FormField = z.infer<typeof FormField>;
+const TextField = z.object({
+  ...base,
+  kind: z.literal("text"),
+  multiline: z.boolean(),
+  minLength: z.number().optional(),
+  maxLength: z.number().optional(),
+  /**
+   * A regular expression the whole answer must match, and the error shown
+   * when it doesn't (tool prompts Q20). Only forms built by tools set it.
+   */
+  pattern: z.string().optional(),
+  patternMessage: z.string().optional(),
+  /** How the text is entered, from a schema's `format` (decision 17). */
+  format: z.enum(SCHEMA_FORMATS).optional(),
+  default: z.string().optional(),
+});
+const ChoiceField = z.object({
+  ...base,
+  kind: z.literal("choice"),
+  options: z.array(z.string()),
+  labels,
+  /** The options stand for numbers (a schema's number `enum`). */
+  numeric: z.boolean().optional(),
+  default: z.string().optional(),
+});
+const MultiField = z.object({
+  ...base,
+  kind: z.literal("multi"),
+  options: z.array(z.string()),
+  labels,
+  default: z.array(z.string()).optional(),
+});
+const NumberField = z.object({
+  ...base,
+  kind: z.literal("number"),
+  integer: z.boolean(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+  default: z.number().optional(),
+});
+const BooleanField = z.object({
+  ...base,
+  kind: z.literal("boolean"),
+  default: z.boolean().optional(),
+});
+
+type Base = z.infer<z.ZodObject<typeof base>>;
+/** Fields inside a field: a schema's nested object (schemas and data). */
+export interface ObjectField extends Base {
+  kind: "object";
+  fields: FormField[];
+}
+/** A list of items, each drawn by `item` (schemas and data). */
+export interface ListField extends Base {
+  kind: "list";
+  /** Each item's field; its `name` is not used. */
+  item: FormField;
+  minItems?: number | undefined;
+  maxItems?: number | undefined;
+}
+
+/**
+ * A question. `ask_user` and tool prompts use the flat kinds; forms made
+ * from a data schema also use object and list fields.
+ */
+export type FormField =
+  | z.infer<typeof TextField>
+  | z.infer<typeof ChoiceField>
+  | z.infer<typeof MultiField>
+  | z.infer<typeof NumberField>
+  | z.infer<typeof BooleanField>
+  | ObjectField
+  | ListField;
+
+export const FormField: z.ZodType<FormField> = z.lazy(() =>
+  z.discriminatedUnion("kind", [
+    TextField,
+    ChoiceField,
+    MultiField,
+    NumberField,
+    BooleanField,
+    z.object({
+      ...base,
+      kind: z.literal("object"),
+      fields: z.array(FormField),
+    }),
+    z.object({
+      ...base,
+      kind: z.literal("list"),
+      item: FormField,
+      minItems: z.number().optional(),
+      maxItems: z.number().optional(),
+    }),
+  ]),
+) as z.ZodType<FormField>;
 
 /** A form to show the user. */
 export const Form = z.object({
@@ -157,6 +208,11 @@ export const Form = z.object({
   submitLabel: z.string().optional(),
   /** The skip button's text, for example "Don't save" (D5). Default "Skip". */
   skipLabel: z.string().optional(),
+  /**
+   * The form stands for one value, not an object of answers: its only field
+   * is named "value" (a data schema whose top level is not an object).
+   */
+  scalar: z.boolean().optional(),
 });
 export type Form = z.infer<typeof Form>;
 
@@ -419,6 +475,10 @@ function checkField(
   value: unknown,
 ): { error: string } | { value: unknown } {
   switch (field.kind) {
+    case "object":
+    case "list":
+      // Groups and lists are checked by `checkValue`.
+      return { error: "Expected a single answer." };
     case "text": {
       if (typeof value !== "string") return { error: "Expected text." };
       // A required text answer cannot be empty (D17).
@@ -435,6 +495,12 @@ function checkField(
     }
     case "choice": {
       if (typeof value === "string" && field.options.includes(value))
+        return { value: field.numeric ? Number(value) : value };
+      if (
+        field.numeric &&
+        typeof value === "number" &&
+        field.options.includes(String(value))
+      )
         return { value };
       if (field.noOther) return { error: PICK_ONE };
       const other = otherText(value);
@@ -493,24 +559,225 @@ export function checkAnswers(form: Form, answers: unknown): CheckAnswersResult {
   if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
     return { ok: false, errors: { "": "Expected an object of answers." } };
   }
-  const given = answers as Record<string, unknown>;
   const errors: Record<string, string> = {};
-  const kept: Answers = {};
-  const names = new Set(form.fields.map((f) => f.name));
-  for (const key of Object.keys(given)) {
-    if (!names.has(key)) errors[""] = `There is no question "${key}".`;
-  }
-  for (const field of form.fields) {
-    const value = given[field.name];
-    if (value === undefined) {
-      if (field.required) errors[field.name] = ANSWER_THIS;
-      continue;
-    }
-    const result = checkField(field, value);
-    if ("error" in result) errors[field.name] = result.error;
-    else kept[field.name] = result.value;
-  }
+  const kept = checkFields(
+    form.fields,
+    answers as Record<string, unknown>,
+    "",
+    errors,
+  );
   return Object.keys(errors).length > 0
     ? { ok: false, errors }
     : { ok: true, answers: kept };
+}
+
+/** The path of a field inside a group or list, for errors. */
+const at = (prefix: string, name: string | number) =>
+  prefix === "" ? String(name) : `${prefix}.${name}`;
+
+/** Checks a group of fields; problems go into `errors` by path. */
+function checkFields(
+  fields: readonly FormField[],
+  given: Record<string, unknown>,
+  prefix: string,
+  errors: Record<string, string>,
+): Answers {
+  const kept: Answers = {};
+  const names = new Set(fields.map((f) => f.name));
+  for (const key of Object.keys(given)) {
+    if (!names.has(key)) errors[prefix] = `There is no question "${key}".`;
+  }
+  for (const field of fields) {
+    const path = at(prefix, field.name);
+    const value = given[field.name];
+    if (value === undefined) {
+      if (field.required) errors[path] = ANSWER_THIS;
+      continue;
+    }
+    const checked = checkValue(field, value, path, errors);
+    if (checked !== undefined) kept[field.name] = checked;
+  }
+  return kept;
+}
+
+/** Checks one answer, inside groups and lists too; undefined on a problem. */
+function checkValue(
+  field: FormField,
+  value: unknown,
+  path: string,
+  errors: Record<string, string>,
+): unknown {
+  if (field.kind === "object") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      errors[path] = "Expected a group of answers.";
+      return undefined;
+    }
+    return checkFields(
+      field.fields,
+      value as Record<string, unknown>,
+      path,
+      errors,
+    );
+  }
+  if (field.kind === "list") {
+    if (!Array.isArray(value)) {
+      errors[path] = "Expected a list.";
+      return undefined;
+    }
+    if (field.minItems !== undefined && value.length < field.minItems) {
+      errors[path] = `Add at least ${field.minItems}.`;
+    } else if (field.maxItems !== undefined && value.length > field.maxItems) {
+      errors[path] = `Keep at most ${field.maxItems}.`;
+    } else if (field.required && value.length === 0) {
+      errors[path] = "Add at least one.";
+    }
+    return value.map((item, i) => {
+      if (item === undefined) {
+        errors[at(path, i)] = "Fill this in or remove it.";
+        return undefined;
+      }
+      return checkValue(field.item, item, at(path, i), errors);
+    });
+  }
+  const result = checkField(field, value);
+  if ("error" in result) {
+    errors[path] = result.error;
+    return undefined;
+  }
+  return result.value;
+}
+
+// ---- Forms made from data schemas (schemas and data design) ----------------
+
+/**
+ * One schema node as a field (decisions 19, 20). Every field is `noOther`:
+ * data must match its schema. A string `enum` is a choice, a number `enum`
+ * a numeric choice, a list of string `enum` items a multi-choice; other
+ * lists are list fields, and objects are groups.
+ */
+function schemaField(
+  name: string,
+  node: SchemaNode,
+  required: boolean,
+): FormField {
+  const common = {
+    name,
+    label: node.title ?? name,
+    ...(node.description ? { help: node.description } : {}),
+    required,
+    noOther: true,
+  };
+  switch (node.type) {
+    case "string":
+      if (node.enum) {
+        return {
+          ...common,
+          kind: "choice",
+          options: node.enum,
+          ...(node.default !== undefined ? { default: node.default } : {}),
+        };
+      }
+      return {
+        ...common,
+        kind: "text",
+        multiline: false,
+        ...(node.minLength !== undefined ? { minLength: node.minLength } : {}),
+        ...(node.maxLength !== undefined ? { maxLength: node.maxLength } : {}),
+        ...(node.pattern !== undefined ? { pattern: node.pattern } : {}),
+        ...(node.format !== undefined ? { format: node.format } : {}),
+        ...(node.default !== undefined ? { default: node.default } : {}),
+      };
+    case "number":
+    case "integer":
+      if (node.enum) {
+        return {
+          ...common,
+          kind: "choice",
+          numeric: true,
+          options: node.enum.map(String),
+          ...(node.default !== undefined
+            ? { default: String(node.default) }
+            : {}),
+        };
+      }
+      return {
+        ...common,
+        kind: "number",
+        integer: node.type === "integer",
+        ...(node.minimum !== undefined ? { minimum: node.minimum } : {}),
+        ...(node.maximum !== undefined ? { maximum: node.maximum } : {}),
+        ...(node.default !== undefined ? { default: node.default } : {}),
+      };
+    case "boolean":
+      return {
+        ...common,
+        kind: "boolean",
+        ...(node.default !== undefined ? { default: node.default } : {}),
+      };
+    case "array":
+      if (node.items.type === "string" && node.items.enum) {
+        return {
+          ...common,
+          kind: "multi",
+          options: node.items.enum,
+          ...(Array.isArray(node.default)
+            ? { default: node.default.map(String) }
+            : {}),
+        };
+      }
+      return {
+        ...common,
+        kind: "list",
+        item: schemaField("item", node.items, true),
+        ...(node.minItems !== undefined ? { minItems: node.minItems } : {}),
+        ...(node.maxItems !== undefined ? { maxItems: node.maxItems } : {}),
+      };
+    case "object":
+      return {
+        ...common,
+        kind: "object",
+        fields: Object.entries(node.properties).map(([k, child]) =>
+          schemaField(k, child, (node.required ?? []).includes(k)),
+        ),
+      };
+  }
+}
+
+/**
+ * The form for data made from a schema (decision 19). A schema whose top
+ * level is not an object is one field, named "value" (`scalar`). The schema
+ * must use only the supported features (decision 17).
+ */
+export function readSchemaForm(body: SchemaNode, title?: string): Form {
+  const head = {
+    ...(title !== undefined ? { title } : {}),
+    ...(body.description ? { description: body.description } : {}),
+  };
+  if (body.type === "object") {
+    return {
+      ...head,
+      fields: Object.entries(body.properties).map(([k, child]) =>
+        schemaField(k, child, (body.required ?? []).includes(k)),
+      ),
+    };
+  }
+  return {
+    ...head,
+    scalar: true,
+    fields: [
+      schemaField("value", { ...body, title: body.title ?? "Value" }, true),
+    ],
+  };
+}
+
+/** The data value a schema form's answers stand for. */
+export const schemaFormValue = (form: Form, answers: Answers): unknown =>
+  form.scalar ? answers["value"] : answers;
+
+/** A schema form's answers for a data value. */
+export function schemaFormAnswers(form: Form, value: unknown): Answers {
+  if (form.scalar) return value === undefined ? {} : { value };
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Answers)
+    : {};
 }

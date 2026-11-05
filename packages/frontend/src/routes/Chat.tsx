@@ -42,6 +42,7 @@ import {
 import { useLive, useSessionEvents } from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
+import { DataPanel } from "./Data";
 import { AskUserForm, type AskUserState } from "./AskUserForm";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
@@ -385,12 +386,18 @@ export function Chat() {
           <Tabs.Tab value="chat">Chat</Tabs.Tab>
           <Tabs.Tab value="files">Files</Tabs.Tab>
           <Tabs.Tab value="memory">Memory</Tabs.Tab>
+          <Tabs.Tab value="data">Data</Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
       {tab !== "chat" && (
         <ScrollArea style={{ flex: 1 }}>
-          {tab === "files" ? (
+          {tab === "data" ? (
+            <DataPanel
+              owner={{ scope: "session", id: sessionId }}
+              readOnly={entriesReadOnly}
+            />
+          ) : tab === "files" ? (
             <FilesPanel
               scope={{ scope: "session", id: sessionId }}
               readOnly={entriesReadOnly}

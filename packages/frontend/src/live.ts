@@ -128,6 +128,13 @@ export function useSessionEvents(
             queryKey: entriesKey({ scope: "session", id: sessionId }),
           });
           break;
+        case "session.data_changed":
+          // An edit to session schemas or data added a message.
+          void queryClient.invalidateQueries({
+            queryKey: ["session", sessionId],
+          });
+          void queryClient.invalidateQueries({ queryKey: ["data"] });
+          break;
         case "session.agent_changed":
           // A tool changed the session's agent; the picker reads it from
           // the session (agent tools design, Q18).
@@ -214,6 +221,11 @@ export function useSessionEvents(
           void queryClient.invalidateQueries({
             queryKey: ["session", sessionId],
           });
+          // The Data tab and the data pages update live (schemas and data
+          // design).
+          if (/^(schemas?|data)_/.test(event.data.name)) {
+            void queryClient.invalidateQueries({ queryKey: ["data"] });
+          }
           // The session's Files and Memory tabs update live (decision 35).
           if (/^(files|memory)_/.test(event.data.name)) {
             void queryClient.invalidateQueries({
@@ -368,6 +380,11 @@ type AppEvent =
       /** Errors recorded or cleared (error reporting plan, P6). */
       type: "errors.changed";
       data: { sessionId: string | null };
+    }
+  | {
+      /** Global, project or agent data changed (schemas and data design). */
+      type: "data.changed";
+      data: Record<string, never>;
     };
 
 /**
@@ -390,6 +407,8 @@ export function useAppEvents() {
       void queryClient.invalidateQueries({ queryKey: ["errors"] });
     const refreshProjects = () =>
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    const refreshData = () =>
+      void queryClient.invalidateQueries({ queryKey: ["data"] });
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 500;
@@ -402,6 +421,7 @@ export function useAppEvents() {
         refreshSkills();
         refreshErrors();
         refreshProjects();
+        refreshData();
       };
       source.onmessage = (msg: MessageEvent<string>) => {
         const event = JSON.parse(msg.data) as AppEvent;
@@ -416,6 +436,10 @@ export function useAppEvents() {
         }
         if (event.type === "skills.changed") {
           refreshSkills();
+          return;
+        }
+        if (event.type === "data.changed") {
+          refreshData();
           return;
         }
         if (event.type !== "agents.changed") return;

@@ -16,6 +16,7 @@ import { createRoot } from "react-dom/client";
 import { token } from "./api";
 import { GlobalAgentsPage, ProjectAgentsPage } from "./routes/Agents";
 import { Chat } from "./routes/Chat";
+import { GlobalDataPage, ProjectDataPage } from "./routes/Data";
 import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/Entries";
 import { ErrorsPage } from "./routes/Errors";
 import { Home, Layout } from "./routes/Layout";
@@ -53,8 +54,18 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/data",
+    component: ProjectDataPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: "/files",
     component: GlobalEntriesPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/data",
+    component: GlobalDataPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
