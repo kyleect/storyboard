@@ -58,6 +58,23 @@ export const Settings = z.object({
    * none.
    */
   defaultAgentId: z.string(),
+  /**
+   * How many reminders a subagent gets when it stops without handing back,
+   * before its last text is taken as its output (agent delegation design,
+   * decisions 12, 13). An agent can set its own.
+   */
+  childReminders: z.number().int().min(0),
+  /**
+   * The line added at the very end of a subagent's system message. Empty:
+   * none (subagents might then not work correctly). An agent can set its
+   * own.
+   */
+  childPrompt: z.string(),
+  /**
+   * How deep subagents can nest; a top-level run is depth 0. 0: subagents
+   * are off.
+   */
+  subagentDepth: z.number().int().min(0),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -95,6 +112,10 @@ You are an expert AI agent operating inside an agent harness. You help users wit
 </rules>
   `.trim(),
   defaultAgentId: "",
+  childReminders: 2,
+  childPrompt:
+    "You are working on a task for another agent. When you are done, call subagent_handback with your result. If you need something from the user, ask with ask_user, not in plain text.",
+  subagentDepth: 2,
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -112,6 +133,9 @@ const ENV: Record<keyof Settings, string> = {
   titlePrompt: "HARNESS_TITLE_PROMPT",
   systemPrompt: "HARNESS_SYSTEM_PROMPT",
   defaultAgentId: "HARNESS_DEFAULT_AGENT_ID",
+  childReminders: "HARNESS_CHILD_REMINDERS",
+  childPrompt: "HARNESS_CHILD_PROMPT",
+  subagentDepth: "HARNESS_SUBAGENT_DEPTH",
 };
 
 const NUMERIC = new Set<keyof Settings>([
@@ -119,6 +143,8 @@ const NUMERIC = new Set<keyof Settings>([
   "loopLimit",
   "copyLimit",
   "trashRetentionDays",
+  "childReminders",
+  "subagentDepth",
 ]);
 
 const BOOLEAN = new Set<keyof Settings>(["autoRename"]);

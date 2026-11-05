@@ -104,6 +104,13 @@ export interface StoredMessage extends Generation {
    * message. Null when none was reported, and for other messages.
    */
   usage: Usage | null;
+  /** The run that first wrote the message; null: none (a user message). */
+  runId: string | null;
+  /**
+   * For a message of a subagent's run: the `start_subagent` call that
+   * started that run (agent delegation design, decision 40). Null otherwise.
+   */
+  parentCallId: string | null;
 }
 
 const parseUsage = (json: string | null): Usage | null =>
@@ -125,6 +132,9 @@ export interface RunRow {
   reasoning_effort: string | null;
   agent_id: string | null;
   agent_version: number | null;
+  /** The run whose `start_subagent` call started this one; null: top-level. */
+  parent_run_id: string | null;
+  parent_call_id: string | null;
 }
 
 interface EventRow {
@@ -629,17 +639,43 @@ export class Store {
     return row ? Message.parse(JSON.parse(row.message)) : undefined;
   }
 
-  listMessages(sessionId: string): StoredMessage[] {
+  /**
+   * The session's messages in order. By default all of them, including those
+   * of subagents' runs. `"top"`: only those a top-level run sees, leaving
+   * out every subagent run's messages. `{ run }`: only those the run wrote
+   * (a subagent's request, decision 29).
+   */
+  listMessages(
+    sessionId: string,
+    only?: "top" | { run: string },
+  ): StoredMessage[] {
+    const filter =
+      only === undefined
+        ? ""
+        : only === "top"
+          ? `AND NOT EXISTS (
+               SELECT 1 FROM run_messages x JOIN runs xr ON xr.id = x.run_id
+               WHERE x.message_id = m.id AND xr.parent_run_id IS NOT NULL)`
+          : `AND EXISTS (
+               SELECT 1 FROM run_messages x
+               WHERE x.message_id = m.id AND x.run_id = @run)`;
     const rows = this.db
       .prepare(
         `SELECT m.id, m.message, m.model, m.reasoning_effort, m.usage,
-           m.agent_id, m.agent_version, v.name AS agent_name, a.project_id AS agent_project_id
+           m.agent_id, m.agent_version, v.name AS agent_name, a.project_id AS agent_project_id,
+           (SELECT rm.run_id FROM run_messages rm JOIN runs r ON r.id = rm.run_id
+              WHERE rm.message_id = m.id ORDER BY r.started_at, r.rowid LIMIT 1) AS run_id,
+           (SELECT r.parent_call_id FROM run_messages rm JOIN runs r ON r.id = rm.run_id
+              WHERE rm.message_id = m.id ORDER BY r.started_at, r.rowid LIMIT 1) AS parent_call_id
          FROM messages m
          LEFT JOIN agent_versions v ON v.agent_id = m.agent_id AND v.seq = m.agent_version
          LEFT JOIN agents a ON a.id = m.agent_id
-         WHERE m.session_id = ? ORDER BY m.seq`,
+         WHERE m.session_id = @session ${filter} ORDER BY m.seq`,
       )
-      .all(sessionId) as {
+      .all({
+        session: sessionId,
+        ...(typeof only === "object" ? { run: only.run } : {}),
+      }) as {
       id: string;
       message: string;
       model: string | null;
@@ -649,6 +685,8 @@ export class Store {
       agent_version: number | null;
       agent_name: string | null;
       agent_project_id: string | null;
+      run_id: string | null;
+      parent_call_id: string | null;
     }[];
     return rows.map((r) => ({
       id: r.id,
@@ -665,6 +703,8 @@ export class Store {
             }
           : null,
       usage: parseUsage(r.usage),
+      runId: r.run_id,
+      parentCallId: r.parent_call_id,
     }));
   }
 
@@ -674,12 +714,14 @@ export class Store {
     kind: string;
     now: string;
     generation?: Generation;
+    /** For a subagent's run: the run and call that started it. */
+    parent?: { runId: string; callId: string };
   }) {
     const generation = run.generation ?? NO_GENERATION;
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version)
-         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version, parent_run_id, parent_call_id)
+         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -690,6 +732,8 @@ export class Store {
         generation.reasoningEffort,
         generation.agent?.id ?? null,
         generation.agent?.version ?? null,
+        run.parent?.runId ?? null,
+        run.parent?.callId ?? null,
       );
   }
 

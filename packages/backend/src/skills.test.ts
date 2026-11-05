@@ -14,7 +14,7 @@ import {
   skillTools,
   SKILL_LOAD,
 } from "@harness/tools";
-import { AgentStore, type AgentContent } from "./agents-store.js";
+import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents, type AppEvent } from "./app-events.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
@@ -57,7 +57,7 @@ const content = (over: Partial<SkillContent> = {}): SkillContent => ({
   ...over,
 });
 
-const agentContent = (over: Partial<AgentContent> = {}): AgentContent => ({
+const agentContent = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "Be terse.",
@@ -147,7 +147,7 @@ async function newProject(app: FastifyInstance, name = "P") {
 
 async function newAgent(
   app: FastifyInstance,
-  over: Partial<AgentContent> = {},
+  over: Partial<AgentInput> = {},
   projectId?: string,
 ) {
   const base = projectId
@@ -588,7 +588,7 @@ describe("skills in runs", () => {
     const send = async (session: string, agentId?: string) => {
       const res = await api(app, "POST", `/api/sessions/${session}/messages`, {
         content: "Hi",
-        ...(agentId ? { agentId } : {}),
+        agentId: agentId ?? null,
       });
       await waitIdle(runs, res.body.runId as string);
     };
@@ -621,6 +621,7 @@ describe("skills in runs", () => {
     // No skills: no list, no tool.
     let res = await api(app, "POST", `/api/sessions/${s}/messages`, {
       content: "Hi",
+      agentId: null,
     });
     await waitIdle(runs, res.body.runId as string);
     expect(systemOf(model.requests[0])).toBe("BASE");
@@ -629,6 +630,7 @@ describe("skills in runs", () => {
     skills.create(GLOBAL, content());
     res = await api(app, "POST", `/api/sessions/${s}/messages`, {
       content: "Again",
+      agentId: null,
     });
     await waitIdle(runs, res.body.runId as string);
     expect(toolNames(model.requests[1])).toEqual([

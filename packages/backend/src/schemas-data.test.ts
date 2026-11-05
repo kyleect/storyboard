@@ -21,7 +21,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 import { setToolAsks } from "./tool-settings.js";
 
 /* Schemas and data (schemas and data design), patch 1. */
@@ -305,6 +305,7 @@ describe("where data may live (decisions 6, 6a, 6b)", () => {
 
 async function setup(scripts: ScriptStep[][], ask = false) {
   const t = tempDatabase();
+  clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let tick = 0;

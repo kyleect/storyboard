@@ -16,7 +16,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 const TOKEN = "t".repeat(64);
 
@@ -48,6 +48,7 @@ async function setup(
   env: NodeJS.ProcessEnv = {},
 ) {
   const t = tempDatabase();
+  clearBuiltinAgents(t.db);
   // No global system prompt, so the system message is only what each test sets.
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
@@ -856,6 +857,7 @@ describe("with llama-server's wire format", () => {
       },
     );
     const t = tempDatabase();
+    clearBuiltinAgents(t.db);
     const store = new Store(t.db);
     const runs = new RunManager({
       store,
@@ -881,8 +883,9 @@ describe("with llama-server's wire format", () => {
     const first = llama.requests[0]?.body as {
       tools: { function: { name: string; parameters: unknown } }[];
     };
+    // The handback tool is offered only to a subagent's run.
     expect(first.tools.map((x) => x.function.name)).toEqual(
-      allTools.map((t) => t.name),
+      allTools.map((t) => t.name).filter((n) => n !== "subagent_handback"),
     );
     expect(first.tools[0]?.function.parameters).toEqual({
       type: "object",

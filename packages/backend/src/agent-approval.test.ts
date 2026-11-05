@@ -8,7 +8,7 @@ import {
   type Tool,
 } from "@harness/core";
 import { agentFromMarkdown, agentToMarkdown } from "./agent-files.js";
-import { AgentStore, type AgentContent } from "./agents-store.js";
+import { AgentStore, type AgentInput } from "./agents-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -59,7 +59,7 @@ function tools() {
   };
 }
 
-const content = (over: Partial<AgentContent> = {}): AgentContent => ({
+const content = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "",
@@ -133,7 +133,7 @@ async function newSession(app: FastifyInstance) {
 async function send(app: FastifyInstance, id: string, agentId?: string) {
   const res = await api(app, "POST", `/api/sessions/${id}/messages`, {
     content: "Hi",
-    ...(agentId ? { agentId } : {}),
+    agentId: agentId ?? null,
   });
   return res.body.runId as string;
 }
@@ -163,7 +163,7 @@ const respond = (
 ) => api(app, "POST", `/api/runs/${runId}/approvals/${requestId}`, { choice });
 
 /** Runs one tool call by an agent; true when it asked first. */
-async function asks(over: Partial<AgentContent>, tool: string) {
+async function asks(over: Partial<AgentInput>, tool: string) {
   const c = await setup([[call(tool, "a")], answer]);
   const agent = c.agents.create(null, content(over));
   const id = await newSession(c.app);
@@ -497,7 +497,37 @@ describe("agent files", () => {
     const c = content({
       toolApproval: { safe: true, risky: false, notes: true },
     });
-    expect(read(agentToMarkdown(c))).toEqual({ content: c, warnings: [] });
+    expect(read(agentToMarkdown(c))).toEqual({
+      content: {
+        ...c,
+        childReminders: null,
+        childPrompt: null,
+        subagent: false,
+      },
+      warnings: [],
+    });
+  });
+
+  it("round-trips the subagent settings, writing them only when set", () => {
+    const c = content({ subagent: true, childReminders: 0, childPrompt: "" });
+    const md = agentToMarkdown(c);
+    expect(md).toContain("subagent: true");
+    expect(md).toContain("childReminders: 0");
+    expect(read(md).content).toMatchObject({
+      subagent: true,
+      childReminders: 0,
+      childPrompt: "",
+    });
+    const plain = agentToMarkdown(content());
+    expect(plain).not.toContain("subagent");
+    expect(plain).not.toContain("child");
+  });
+
+  it("refuses bad subagent fields", () => {
+    const file = (line: string) => `---\nname: A\n${line}\n---\n\nBody\n`;
+    expect(() => read(file("subagent: yes please"))).toThrow(/subagent/);
+    expect(() => read(file("childReminders: -1"))).toThrow(/childReminders/);
+    expect(() => read(file("childPrompt: 3"))).toThrow(/childPrompt/);
   });
 
   it("drops unknown tools and tools that always ask, with a warning", () => {

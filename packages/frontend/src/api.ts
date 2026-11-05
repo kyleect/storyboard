@@ -165,6 +165,37 @@ export interface StoredMessage {
    * Null when none was reported, and for other messages.
    */
   usage: Usage | null;
+  /** The run that first wrote the message; null: none (a user message). */
+  runId: string | null;
+  /**
+   * For a message of a subagent's run: the `start_subagent` call that
+   * started that run. Null for the session's own messages.
+   */
+  parentCallId: string | null;
+}
+
+/** An active run as a reconnecting client sees it. */
+export interface ActiveRunSnapshot {
+  runId: string;
+  model: string | null;
+  reasoningEffort: string | null;
+  agent: RunAgent | null;
+  /** The message being written now; null while a tool runs. */
+  message: {
+    messageId: string;
+    continuing: boolean;
+    content: ContentBlock[];
+  } | null;
+  /** Approval requests waiting for an answer. */
+  approvals: ApprovalRequest[];
+  /** Forms waiting for an answer (input forms design). */
+  inputs: InputRequest[];
+}
+
+/** A subagent's run in progress, with the run and call that started it. */
+export interface ChildRunSnapshot extends ActiveRunSnapshot {
+  parentRunId: string;
+  parentCallId: string;
 }
 
 export interface SessionDetail {
@@ -173,22 +204,9 @@ export interface SessionDetail {
   project: Project | null;
   messages: StoredMessage[];
   lastEventId: number;
-  activeRun: {
-    runId: string;
-    model: string | null;
-    reasoningEffort: string | null;
-    agent: RunAgent | null;
-    /** The message being written now; null while a tool runs. */
-    message: {
-      messageId: string;
-      continuing: boolean;
-      content: ContentBlock[];
-    } | null;
-    /** Approval requests waiting for an answer. */
-    approvals: ApprovalRequest[];
-    /** Forms waiting for an answer (input forms design). */
-    inputs: InputRequest[];
-  } | null;
+  activeRun: ActiveRunSnapshot | null;
+  /** Subagents' runs in progress. */
+  childRuns: ChildRunSnapshot[];
 }
 
 /** A tool and whether it asks before running. */
@@ -232,6 +250,12 @@ export interface Settings {
    * default of its own. Empty: none.
    */
   defaultAgentId: string;
+  /** Reminders a subagent gets before its last text is taken as its output. */
+  childReminders: number;
+  /** The line added to the end of a subagent's system message. */
+  childPrompt: string;
+  /** How deep subagents can nest; 0: subagents are off. */
+  subagentDepth: number;
 }
 
 export interface SettingsView {
@@ -333,6 +357,18 @@ export interface AgentContent {
    * not named follows its own setting.
    */
   toolApproval: Record<string, boolean>;
+  /**
+   * Reminders this agent gets as a subagent. Null: the global setting
+   * applies.
+   */
+  childReminders: number | null;
+  /**
+   * The line added to its system message as a subagent. Null: the global
+   * setting applies; empty: no line.
+   */
+  childPrompt: string | null;
+  /** Whether `start_subagent` can start this agent. */
+  subagent: boolean;
 }
 
 /** A tool as the agent editor's approval choices list it. */
@@ -355,6 +391,8 @@ export interface Agent extends AgentContent {
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
+  /** A built-in agent: read-only, never deleted. */
+  builtin: boolean;
 }
 
 export interface AgentVersion extends AgentContent {
@@ -394,6 +432,8 @@ export interface PickableAgent {
   scope: "project" | "global";
   /** The project's default agent. */
   isDefault: boolean;
+  /** A built-in agent. */
+  builtin: boolean;
 }
 
 /** What each version of a skill holds (skills design). */

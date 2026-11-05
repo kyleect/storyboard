@@ -6,6 +6,7 @@ import {
   type InputAnswer,
   type ToolContext,
   NO_AGENTS,
+  NO_SUBAGENTS,
   NO_DATA,
   NO_PROJECTS,
 } from "@harness/core";
@@ -24,6 +25,7 @@ function context(answer: InputAnswer) {
     projectName: null,
     projects: NO_PROJECTS,
     agents: NO_AGENTS,
+    subagents: NO_SUBAGENTS,
     data: NO_DATA,
     copyLimit: 20,
     skills: [],

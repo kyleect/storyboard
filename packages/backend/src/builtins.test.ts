@@ -17,7 +17,7 @@ import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { SkillStore } from "./skills-store.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 /* Built-in schemas and skills (schemas and data design, 45 to 52; P6, P7). */
 
@@ -30,6 +30,7 @@ afterEach(async () => {
 
 function setup() {
   const t = tempDatabase();
+  clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   const data = new DataStore(t.db, schemaChecker);

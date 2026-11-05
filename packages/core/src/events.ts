@@ -31,6 +31,8 @@ export const RunStarted = event(
   z.object({
     kind: RunKind,
     parentRunId: z.string().optional(),
+    /** For a subagent's run: the `start_subagent` call that started it. */
+    parentCallId: z.string().optional(),
     /** The model name sent to the server, when one is set. */
     model: z.string().optional(),
     /** The reasoning effort sent to the server, when one is set. */
@@ -259,7 +261,7 @@ export const ToolResult = event(
 export const RunFinished = event(
   "run.finished",
   z.object({
-    reason: z.enum(["stop", "iteration_limit", "cancelled"]),
+    reason: z.enum(["stop", "iteration_limit", "cancelled", "handed_back"]),
     usage: Usage.optional(),
   }),
 );

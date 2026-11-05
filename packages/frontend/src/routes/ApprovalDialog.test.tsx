@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ApprovalAnswer } from "@harness/core";
 import { ApprovalDialog } from "./ApprovalDialog";
 
-function setup(alwaysAsks = false, agentSetting = false) {
+function setup(alwaysAsks = false, agentSetting = false, from?: string) {
   const answers: ApprovalAnswer[] = [];
   render(
     <MantineProvider>
@@ -21,6 +21,7 @@ function setup(alwaysAsks = false, agentSetting = false) {
         busy={false}
         onClose={() => {}}
         onAnswer={(a) => answers.push(a)}
+        {...(from ? { from } : {})}
       />
     </MantineProvider>,
   );
@@ -230,5 +231,18 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
     expect(button("Approve all").disabled).toBe(true);
     fireEvent.click(button("Reject"));
     expect(answers).toEqual([{ choice: "deny" }]);
+  });
+});
+
+describe("ApprovalDialog from a subagent", () => {
+  it("says which subagent is asking", () => {
+    setup(false, false, "Editor");
+    expect(screen.getByText("Editor is asking")).toBeTruthy();
+    expect(screen.getByText("subagent")).toBeTruthy();
+  });
+
+  it("says nothing extra for the top-level agent", () => {
+    setup();
+    expect(screen.queryByText(/is asking/)).toBeNull();
   });
 });

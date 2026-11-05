@@ -28,6 +28,7 @@ import type {
   EntryOp,
   Message,
   ToolResultMessage,
+  UserMessage,
   Usage,
 } from "./messages.js";
 import type { ChatRequest, ModelAdapter } from "./model.js";
@@ -41,6 +42,7 @@ import {
   truncate,
   type AgentAccess,
   type ProjectAccess,
+  type SubagentAccess,
   type ReviewPlan,
   type RunSkill,
   type Tool,
@@ -144,13 +146,14 @@ export interface LoopContext extends RunContext {
   /**
    * Called with each complete message before its event is sent: an
    * assistant message before `message.finished` (only when it has
-   * content), a tool result before `tool.result`. For an assistant message,
+   * content), a tool result before `tool.result`, or the reminder the loop
+   * adds to a subagent (agent delegation design, decision 36). For an assistant message,
    * `usage` is the model call's, as `message.finished` carries it; a tool
    * result has none.
    */
   onMessage?: (
     messageId: string,
-    message: AssistantMessage | ToolResultMessage,
+    message: AssistantMessage | ToolResultMessage | UserMessage,
     usage?: Usage,
   ) => void;
   /**
@@ -200,6 +203,22 @@ export interface LoopContext extends RunContext {
   copyLimit?: number;
   /** The skills in scope for the run (skills design). Left out: none. */
   skills?: readonly RunSkill[];
+  /** Starting subagents. Left out: the tool that starts them fails. */
+  subagents?: SubagentAccess;
+  /**
+   * Set for a subagent's run (agent delegation design). A response with no
+   * tool calls does not end it: it gets `reminderText` as a user message, up
+   * to `reminders` times (each counts as an iteration, decision 19), then
+   * the last text is its output (decision 7). It ends when a tool hands back.
+   */
+  child?: { reminders: number; reminderText: string };
+  /**
+   * All the session's messages, read when a tool runs, to rebuild the
+   * session's files, notes, schemas and data (decision 30). A run's request
+   * can leave out other runs' messages; what they changed still counts.
+   * Left out: the run's own transcript.
+   */
+  sessionMessages?: () => readonly Message[];
 }
 
 export const DEFAULT_COPY_LIMIT = 20;
@@ -220,17 +239,28 @@ export const NO_PROJECTS: ProjectAccess = {
 export const NO_AGENTS: AgentAccess = {
   list: unavailable("Agents"),
   current: unavailable("Agents"),
-  pending: unavailable("Agents"),
-  choose: unavailable("Agents"),
 };
 
-export type LoopEnd = "stop" | "iteration_limit" | "cancelled" | "failed";
+/** What a tool gets for subagents when the run has none. */
+export const NO_SUBAGENTS: SubagentAccess = {
+  depth: 0,
+  canStart: false,
+  start: unavailable("Subagents"),
+};
+
+export type LoopEnd =
+  "stop" | "iteration_limit" | "cancelled" | "failed" | "handed_back";
 
 export interface LoopResult {
   reason: LoopEnd;
   usage?: Usage;
   /** Why the run failed, when `reason` is "failed". */
   error?: string;
+  /**
+   * For a subagent: what it handed back, or its last text when it ended
+   * without handing back. Undefined for other runs.
+   */
+  output?: string;
 }
 
 export const DEFAULT_ERROR_LIMIT = 2000;
@@ -240,6 +270,23 @@ const CANCELLED = "Not run: the run was cancelled.";
 const FAILED = "Not run: the run failed.";
 const TRUNCATED =
   "Not run: the response was cut off at the token limit, so the arguments may be incomplete.";
+const HANDED_BACK = "Not run: the subagent handed back.";
+
+/** What ends a call's run: a failure, or a subagent's handback. */
+interface CallEnd {
+  failed?: string;
+  handback?: string;
+}
+
+/** The text of an assistant message, joined. */
+const textOf = (message: AssistantMessage): string =>
+  message.content
+    .filter(
+      (b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text",
+    )
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
 
 /**
  * Runs an agent loop and emits its events. `request.messages` is the
@@ -262,9 +309,17 @@ export async function runLoop(
   const notRun = () => ctx.cancelledText?.() ?? CANCELLED;
   const transcript: Message[] = [...request.messages];
   let usage: Usage | undefined;
+  // For a subagent: the reminders sent so far and its latest text.
+  let remindersSent = 0;
+  let lastText = "";
 
   const finish = (result: LoopResult): LoopResult => {
-    const withUsage = { ...result, ...(usage ? { usage } : {}) };
+    // A subagent that ends without handing back still reports its last text.
+    const withText =
+      ctx.child && result.output === undefined && lastText !== ""
+        ? { ...result, output: lastText }
+        : result;
+    const withUsage = { ...withText, ...(usage ? { usage } : {}) };
     if (result.reason === "failed") {
       emit({ type: "run.failed", data: { error: result.error ?? "" } });
     } else {
@@ -350,6 +405,7 @@ export async function runLoop(
     data: {
       kind: "loop",
       ...(ctx.parentRunId ? { parentRunId: ctx.parentRunId } : {}),
+      ...(ctx.parentCallId ? { parentCallId: ctx.parentCallId } : {}),
       ...(ctx.agent ? { agent: ctx.agent } : {}),
       ...(request.model ? { model: request.model } : {}),
       ...(request.reasoningEffort
@@ -403,24 +459,59 @@ export async function runLoop(
     }
     if (calls.length === 0) {
       emit({ type: "step.finished", data: { index } });
-      return finish({ reason: ctx.signal.aborted ? "cancelled" : "stop" });
+      if (ctx.signal.aborted) return finish({ reason: "cancelled" });
+      if (!ctx.child) return finish({ reason: "stop" });
+      // A subagent ends by handing back. Remind it, then take its text.
+      const text = textOf(step.message);
+      if (text !== "") lastText = text;
+      if (remindersSent < ctx.child.reminders) {
+        remindersSent++;
+        const reminder: UserMessage = {
+          role: "user",
+          content: ctx.child.reminderText,
+        };
+        ctx.onMessage?.(newId(), reminder);
+        transcript.push(reminder);
+        continue;
+      }
+      return finish({ reason: "stop", output: lastText });
+    }
+    if (ctx.child) {
+      const text = textOf(step.message);
+      if (text !== "") lastText = text;
     }
 
     let failed: string | undefined;
+    let handback: string | undefined;
     for (const call of calls) {
-      if (failed !== undefined || ctx.signal.aborted) {
-        addError(call, failed !== undefined ? FAILED : notRun());
+      if (
+        failed !== undefined ||
+        handback !== undefined ||
+        ctx.signal.aborted
+      ) {
+        addError(
+          call,
+          failed !== undefined
+            ? FAILED
+            : handback !== undefined
+              ? HANDED_BACK
+              : notRun(),
+        );
         continue;
       }
       if (step.finishReason === "length") {
         addError(call, TRUNCATED);
         continue;
       }
-      failed = await runCall(call, malformed.get(call.callId));
+      const end = await runCall(call, malformed.get(call.callId));
+      failed = end?.failed;
+      handback = end?.handback;
     }
     emit({ type: "step.finished", data: { index } });
     if (failed !== undefined)
       return finish({ reason: "failed", error: failed });
+    if (handback !== undefined)
+      return finish({ reason: "handed_back", output: handback });
     if (ctx.signal.aborted) return finish({ reason: "cancelled" });
   }
 
@@ -473,11 +564,14 @@ export async function runLoop(
     return answer;
   }
 
-  /** Runs one call and adds its result. Returns an error to fail the run. */
+  /**
+   * Runs one call and adds its result. Returns an error to fail the run, or
+   * a subagent's handback to end it.
+   */
   async function runCall(
     call: ToolCall,
     malformedError: string | undefined,
-  ): Promise<string | undefined> {
+  ): Promise<CallEnd | undefined> {
     /** Adds an error result and reports it. */
     const addReported = (
       kind: ToolErrorKind,
@@ -543,6 +637,9 @@ export async function runLoop(
       return;
     }
 
+    /** The messages the session's files, notes, schemas and data come from. */
+    const sessionMessages = (): readonly Message[] =>
+      ctx.sessionMessages?.() ?? transcript;
     /** The context a tool gets: for its review, then for its run. */
     const toolContext = (
       sessionOps: EntryOp[],
@@ -560,7 +657,7 @@ export async function runLoop(
       projectId: ctx.projectId ?? null,
       projectName: ctx.projectName ?? null,
       entries: createEntryAccess({
-        session: replaySessionEntries(transcript),
+        session: replaySessionEntries(sessionMessages()),
         sessionOps,
         ...(ctx.sharedEntries ? { shared: ctx.sharedEntries } : {}),
         inProject: (ctx.projectId ?? null) !== null,
@@ -578,7 +675,7 @@ export async function runLoop(
       }),
       data: ctx.schemaChecker
         ? createDataAccess({
-            session: replaySessionData(transcript),
+            session: replaySessionData(sessionMessages()),
             sessionOps: dataOps,
             ...(ctx.sharedData ? { shared: ctx.sharedData } : {}),
             checker: ctx.schemaChecker,
@@ -591,6 +688,7 @@ export async function runLoop(
         : NO_DATA,
       projects: ctx.projects ?? NO_PROJECTS,
       agents: ctx.agents ?? NO_AGENTS,
+      subagents: ctx.subagents ?? NO_SUBAGENTS,
       copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
       skills: ctx.skills ?? [],
       requestInput,
@@ -764,6 +862,9 @@ export async function runLoop(
           details: output.details,
         });
       }
+      if (output.handback !== undefined && !output.isError) {
+        return { handback: output.handback };
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const thrown = {
@@ -775,7 +876,7 @@ export async function runLoop(
       };
       if (err instanceof ToolRunError) {
         addReported("tool_threw", message, { ...thrown, endsRun: true });
-        return message;
+        return { failed: message };
       }
       if (ctx.signal.aborted) {
         addError(call, notRun(), elapsed(), note, prompt);

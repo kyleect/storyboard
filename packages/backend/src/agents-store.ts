@@ -26,7 +26,29 @@ export interface AgentContent {
    * setting (agent tool approval design, Q1).
    */
   toolApproval: Record<string, boolean>;
+  /**
+   * How many reminders a run of this agent as a subagent gets before its
+   * last text is taken as its output. Null: the global setting applies.
+   */
+  childReminders: number | null;
+  /**
+   * The line added to the end of the system message when this agent runs as
+   * a subagent. Null: the global setting applies; empty: no line.
+   */
+  childPrompt: string | null;
+  /** Whether `start_subagent` can start this agent (opt-in). */
+  subagent: boolean;
 }
+
+/**
+ * What a save takes: the subagent settings may be left out, and then the
+ * agent does not set them (not startable, global settings).
+ */
+export type AgentInput = Omit<
+  AgentContent,
+  "childReminders" | "childPrompt" | "subagent"
+> &
+  Partial<Pick<AgentContent, "childReminders" | "childPrompt" | "subagent">>;
 
 export interface Agent extends AgentContent {
   id: string;
@@ -37,6 +59,8 @@ export interface Agent extends AgentContent {
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
+  /** A built-in agent: read-only, never deleted, global. */
+  builtin: boolean;
 }
 
 export interface AgentVersion extends AgentContent {
@@ -66,6 +90,10 @@ interface AgentRow {
   tool_mode: ToolMode;
   tools: string;
   tool_approval: string;
+  child_reminders: number | null;
+  child_prompt: string | null;
+  subagent: number;
+  builtin: number;
   version: number;
   created_at: string;
   updated_at: string;
@@ -80,12 +108,15 @@ interface VersionRow {
   tool_mode: ToolMode;
   tools: string;
   tool_approval: string;
+  child_reminders: number | null;
+  child_prompt: string | null;
+  subagent: number;
   deleted: number;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, project_id, name, description, prompt, tool_mode, tools, tool_approval, version, created_at, updated_at, deleted_at";
+  "id, project_id, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, builtin, version, created_at, updated_at, deleted_at";
 
 const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
@@ -96,6 +127,10 @@ const toAgent = (r: AgentRow): Agent => ({
   toolMode: r.tool_mode,
   tools: JSON.parse(r.tools) as string[],
   toolApproval: JSON.parse(r.tool_approval) as Record<string, boolean>,
+  childReminders: r.child_reminders,
+  childPrompt: r.child_prompt,
+  subagent: r.subagent === 1,
+  builtin: r.builtin === 1,
   version: r.version,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -110,15 +145,32 @@ const toVersion = (r: VersionRow): AgentVersion => ({
   toolMode: r.tool_mode,
   tools: JSON.parse(r.tools) as string[],
   toolApproval: JSON.parse(r.tool_approval) as Record<string, boolean>,
+  childReminders: r.child_reminders,
+  childPrompt: r.child_prompt,
+  subagent: r.subagent === 1,
   deleted: r.deleted === 1,
   createdAt: r.created_at,
 });
 
 /** Trims the name (decision 4) and removes repeated tool names. */
-function normalize(content: AgentContent): AgentContent {
+function normalize(content: AgentInput): AgentContent {
   const name = content.name.trim();
   if (name === "") throw new AgentError("The name is empty.", 400);
-  return { ...content, name, tools: [...new Set(content.tools)] };
+  const r = content.childReminders ?? null;
+  if (r !== null && (!Number.isInteger(r) || r < 0)) {
+    throw new AgentError(
+      "The reminders must be a whole number, 0 or more.",
+      400,
+    );
+  }
+  return {
+    ...content,
+    name,
+    tools: [...new Set(content.tools)],
+    childReminders: r,
+    childPrompt: content.childPrompt ?? null,
+    subagent: content.subagent ?? false,
+  };
 }
 
 export class AgentStore {
@@ -134,7 +186,7 @@ export class AgentStore {
       this.db
         .prepare(
           `SELECT ${COLUMNS} FROM agents
-           WHERE project_id IS ? AND (? OR deleted_at IS NULL)
+           WHERE project_id IS ? AND builtin = 0 AND (? OR deleted_at IS NULL)
            ORDER BY name`,
         )
         .all(projectId, includeDeleted ? 1 : 0) as AgentRow[]
@@ -153,18 +205,33 @@ export class AgentStore {
   getByName(projectId: string | null, name: string): Agent | undefined {
     const row = this.db
       .prepare(
-        `SELECT ${COLUMNS} FROM agents WHERE project_id IS ? AND name = ?`,
+        `SELECT ${COLUMNS} FROM agents WHERE project_id IS ? AND builtin = 0 AND name = ?`,
       )
       .get(projectId, name) as AgentRow | undefined;
     return row ? toAgent(row) : undefined;
   }
 
+  /** The built-in agents, by name. They cannot be changed or deleted. */
+  builtins(): Agent[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT ${COLUMNS} FROM agents WHERE builtin = 1 AND deleted_at IS NULL ORDER BY name`,
+        )
+        .all() as AgentRow[]
+    ).map(toAgent);
+  }
+
   /**
    * The agents a session can pick (decision 16): live agents of its
-   * project, then live global agents.
+   * project, then live global agents, then the built-in ones.
    */
   pickable(projectId: string | null): Agent[] {
-    return [...(projectId ? this.list(projectId) : []), ...this.list(null)];
+    return [
+      ...(projectId ? this.list(projectId) : []),
+      ...this.list(null),
+      ...this.builtins(),
+    ];
   }
 
   /** Whether a session in this project (or none) can use the agent. */
@@ -175,7 +242,7 @@ export class AgentStore {
     );
   }
 
-  create(projectId: string | null, content: AgentContent): Agent {
+  create(projectId: string | null, content: AgentInput): Agent {
     const c = normalize(content);
     return this.db.transaction(() => {
       this.requireFreeName(projectId, c.name, null);
@@ -183,8 +250,8 @@ export class AgentStore {
       const now = this.now();
       this.db
         .prepare(
-          `INSERT INTO agents (id, project_id, name, description, prompt, tool_mode, tools, tool_approval, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          `INSERT INTO agents (id, project_id, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           id,
@@ -195,6 +262,9 @@ export class AgentStore {
           c.toolMode,
           JSON.stringify(c.tools),
           JSON.stringify(c.toolApproval),
+          c.childReminders,
+          c.childPrompt,
+          c.subagent ? 1 : 0,
           now,
           now,
         );
@@ -204,10 +274,10 @@ export class AgentStore {
   }
 
   /** Saves new content as the next version. Refused for a deleted agent. */
-  update(id: string, content: AgentContent): Agent {
+  update(id: string, content: AgentInput): Agent {
     const c = normalize(content);
     return this.db.transaction(() => {
-      const agent = this.require(id);
+      const agent = this.requireEditable(id);
       if (agent.deleted) {
         throw new AgentError(
           "The agent is deleted. Restore a version first.",
@@ -223,10 +293,10 @@ export class AgentStore {
    * Saves content as the next version even when the agent is deleted, which
    * restores it (an import that replaces, decision 28).
    */
-  replace(id: string, content: AgentContent): Agent {
+  replace(id: string, content: AgentInput): Agent {
     const c = normalize(content);
     return this.db.transaction(() => {
-      const agent = this.require(id);
+      const agent = this.requireEditable(id);
       this.requireFreeName(agent.projectId, c.name, id);
       return this.write(agent, c, false);
     })();
@@ -240,7 +310,7 @@ export class AgentStore {
    */
   delete(id: string): { agent: Agent; sessions: string[] } {
     return this.db.transaction(() => {
-      const agent = this.require(id);
+      const agent = this.requireEditable(id);
       if (agent.deleted) {
         throw new AgentError("The agent is already deleted.", 409);
       }
@@ -274,7 +344,7 @@ export class AgentStore {
    */
   restore(id: string, seq: number): Agent {
     return this.db.transaction(() => {
-      const agent = this.require(id);
+      const agent = this.requireEditable(id);
       const version = this.version(id, seq);
       if (!version) throw new AgentError(`No version ${seq}.`, 404);
       if (version.deleted) {
@@ -293,7 +363,7 @@ export class AgentStore {
     return (
       this.db
         .prepare(
-          `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, deleted, created_at
+          `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at
            FROM agent_versions WHERE agent_id = ? ORDER BY seq`,
         )
         .all(id) as VersionRow[]
@@ -303,7 +373,7 @@ export class AgentStore {
   version(id: string, seq: number): AgentVersion | undefined {
     const row = this.db
       .prepare(
-        `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, deleted, created_at
+        `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at
          FROM agent_versions WHERE agent_id = ? AND seq = ?`,
       )
       .get(id, seq) as VersionRow | undefined;
@@ -313,6 +383,15 @@ export class AgentStore {
   private require(id: string): Agent {
     const agent = this.get(id);
     if (!agent) throw new AgentError("Agent not found.", 404);
+    return agent;
+  }
+
+  /** Like `require`, for a change: a built-in agent is read-only (409). */
+  private requireEditable(id: string): Agent {
+    const agent = this.require(id);
+    if (agent.builtin) {
+      throw new AgentError("A built-in agent cannot be changed.", 409);
+    }
     return agent;
   }
 
@@ -340,7 +419,8 @@ export class AgentStore {
     this.db
       .prepare(
         `UPDATE agents SET name = ?, description = ?, prompt = ?, tool_mode = ?,
-           tools = ?, tool_approval = ?, version = ?, updated_at = ?,
+           tools = ?, tool_approval = ?, child_reminders = ?, child_prompt = ?,
+           subagent = ?, version = ?, updated_at = ?,
            deleted_at = ?
          WHERE id = ?`,
       )
@@ -351,6 +431,9 @@ export class AgentStore {
         c.toolMode,
         JSON.stringify(c.tools),
         JSON.stringify(c.toolApproval),
+        c.childReminders,
+        c.childPrompt,
+        c.subagent ? 1 : 0,
         seq,
         now,
         deleted ? now : null,
@@ -369,8 +452,8 @@ export class AgentStore {
   ) {
     this.db
       .prepare(
-        `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_mode, tools, tool_approval, deleted, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         agentId,
@@ -381,6 +464,9 @@ export class AgentStore {
         c.toolMode,
         JSON.stringify(c.tools),
         JSON.stringify(c.toolApproval),
+        c.childReminders,
+        c.childPrompt,
+        c.subagent ? 1 : 0,
         deleted ? 1 : 0,
         now,
       );

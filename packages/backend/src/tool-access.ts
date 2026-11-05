@@ -3,7 +3,6 @@ import {
   checkFileKey,
   checkFileValue,
   EntryError,
-  ToolError,
   type AgentAccess,
   type AgentSummary,
   type EntryAuthor,
@@ -122,10 +121,6 @@ export interface AgentAccessDeps {
   session: SessionRow;
   /** The agent this run started with; null: none. */
   runAgent: Agent | null;
-  /** Throws a `RunError` when the session cannot use the agent. */
-  checkChoice: (agentId: string | null) => void;
-  /** Tells the session's listeners that the pick changed. */
-  agentChanged: (agentId: string | null) => void;
 }
 
 export function agentAccess(deps: AgentAccessDeps): AgentAccess {
@@ -141,6 +136,8 @@ export function agentAccess(deps: AgentAccessDeps): AgentAccess {
     description: a.description,
     toolMode: a.toolMode,
     tools: [...a.tools],
+    subagent: a.subagent,
+    builtin: a.builtin,
   });
   return {
     list: () =>
@@ -153,27 +150,5 @@ export function agentAccess(deps: AgentAccessDeps): AgentAccess {
             prompt: deps.runAgent.prompt,
           }
         : null,
-    pending: () => {
-      // The session's pick as it is now; one it can no longer use counts as
-      // none, as at the start of a run.
-      const picked = store.getSession(session.id)?.agent_id ?? null;
-      const pickedAgent = picked !== null ? agents?.get(picked) : undefined;
-      const usable =
-        pickedAgent && agents?.usableIn(pickedAgent, session.project_id)
-          ? pickedAgent
-          : null;
-      if ((usable?.id ?? null) === (deps.runAgent?.id ?? null))
-        return undefined;
-      return { agent: usable ? summary(usable) : null };
-    },
-    choose: (agentId) => {
-      try {
-        deps.checkChoice(agentId);
-      } catch (err) {
-        throw new ToolError(err instanceof Error ? err.message : String(err));
-      }
-      store.setSessionChoices(session.id, { agentId });
-      deps.agentChanged(agentId);
-    },
   };
 }

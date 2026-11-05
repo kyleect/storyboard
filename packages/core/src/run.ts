@@ -13,6 +13,8 @@ export interface RunContext {
   emit: (event: HarnessEvent) => void;
   signal: AbortSignal;
   parentRunId?: string;
+  /** The `start_subagent` call that started a subagent's run. */
+  parentCallId?: string;
   /** The agent the run runs as; reported in `run.started`. */
   agent?: RunAgent;
   /** Defaults to the current time as ISO 8601. */

@@ -14,7 +14,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 /*
  * The copy, move, project and agent tools (agent tools design), driven
@@ -34,6 +34,7 @@ async function setup() {
   // Tests add scripts after creating what they refer to (ids, for example).
   const scripts: ScriptStep[][] = [];
   const t = tempDatabase();
+  clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let clock = 0;
@@ -196,12 +197,12 @@ const agentContent = (name: string) => ({
   toolApproval: {},
 });
 
-describe("agents_list, agent_view and agent_change", () => {
+describe("agents_list and agent_view", () => {
   it("lists the agents the session can pick, with their scope", async () => {
     const c = await setup();
     const projectId = await newProject(c.app, "Ashfall");
     const other = await newProject(c.app, "Other");
-    c.agents.create(projectId, agentContent("Editor"));
+    c.agents.create(projectId, { ...agentContent("Editor"), subagent: true });
     c.agents.create(null, agentContent("Critic"));
     c.agents.create(other, agentContent("Elsewhere"));
     const id = await newSession(c.app, projectId);
@@ -218,8 +219,10 @@ describe("agents_list, agent_view and agent_change", () => {
       description: "Editor agent",
       toolMode: "deny",
       tools: ["web_search"],
+      subagent: true,
     });
-    expect(agents[1]).toMatchObject({ scope: "global" });
+    // Every agent is listed, with whether it can be started.
+    expect(agents[1]).toMatchObject({ scope: "global", subagent: false });
     expect(agents[1]).not.toHaveProperty("project");
   });
 
@@ -234,118 +237,21 @@ describe("agents_list, agent_view and agent_change", () => {
     });
   });
 
-  it("changes the agent from the next run, and agent_view says it is pending", async () => {
+  it("agent_view shows the run's agent, its version and prompt", async () => {
     const c = await setup();
-    const projectId = await newProject(c.app);
-    const editor = c.agents.create(projectId, agentContent("Editor"));
-    const id = await newSession(c.app, projectId);
-    c.scripts.push(
-      [call("a", "agent_view")],
-      [call("b", "agent_change", { agentId: editor.id })],
-      [call("c", "agent_view")],
-      done,
-    );
-
-    const { runId, shown } = await go(c, id, {
-      forms: [{ agent: editor.id }],
-    });
-
-    // The form suggested the model's pick and offered "No agent".
-    expect(shown).toHaveLength(1);
-    expect(shown[0]?.fields[0]).toMatchObject({
-      kind: "choice",
-      noOther: true,
-      options: [editor.id, "none"],
-      default: editor.id,
-    });
-    const [before, change, after] = results(c, id);
-    expect(before?.data).toMatchObject({ agent: null });
-    expect(change?.data).toMatchObject({
-      agent: { name: "Editor", scope: "project" },
-      appliesFrom: "the next run",
-    });
-    expect(change?.data).not.toHaveProperty("note");
-    // This run keeps its agent; the change is pending.
-    expect(after?.data).toMatchObject({
-      agent: null,
-      pendingChange: { appliesFrom: "the next run", agent: { name: "Editor" } },
-    });
-    expect(c.store.getRun(runId)?.agent_id).toBeNull();
-    expect(c.store.getSession(id)?.agent_id).toBe(editor.id);
-    const changed = c.store
-      .eventsAfter(id, 0)
-      .filter((e) => e.type === "session.agent_changed");
-    expect(changed).toHaveLength(1);
-    expect(changed[0]).toMatchObject({
-      runId: null,
-      data: { agentId: editor.id },
-    });
-
-    // The next run uses it, and agent_view shows its version.
-    c.scripts.push([call("d", "agent_view")], done);
-    const second = await go(c, id);
-    expect(c.store.getRun(second.runId)?.agent_id).toBe(editor.id);
-    expect(results(c, id).at(-1)?.data).toMatchObject({
+    const editor = c.agents.create(null, agentContent("Editor"));
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    c.scripts.push([call("a", "agent_view")], done);
+    await go(c, id);
+    expect(results(c, id)[0]?.data).toMatchObject({
       agent: { name: "Editor", version: 1, prompt: "You are Editor." },
     });
-    expect(results(c, id).at(-1)?.data).not.toHaveProperty("pendingChange");
+    expect(results(c, id)[0]?.data).not.toHaveProperty("pendingChange");
   });
 
-  it("lets the user pick no agent instead, and tells the model", async () => {
-    const c = await setup();
-    const editor = c.agents.create(null, agentContent("Editor"));
-    const critic = c.agents.create(null, agentContent("Critic"));
-    const id = await newSession(c.app);
-    c.store.setSessionChoices(id, { agentId: critic.id });
-    c.scripts.push([call("a", "agent_change", { agentId: editor.id })], done);
-
-    await go(c, id, { forms: [{ agent: "none" }] });
-    expect(c.store.getSession(id)?.agent_id).toBeNull();
-    expect(results(c, id)[0]?.data).toMatchObject({
-      agent: null,
-      note: "The user chose no agent instead of your suggestion (Editor).",
-    });
-  });
-
-  it("changes nothing when the form is skipped or the call is denied", async () => {
-    const c = await setup();
-    const editor = c.agents.create(null, agentContent("Editor"));
-    const id = await newSession(c.app);
-    c.scripts.push(
-      [call("a", "agent_change", { agentId: editor.id })],
-      done,
-      [call("b", "agent_change", { agentId: editor.id })],
-      done,
-    );
-
-    await go(c, id, { forms: [null] });
-    expect(results(c, id)[0]).toMatchObject({
-      isError: true,
-      data: "Not changed: the user chose not to change the agent.",
-    });
-    await go(c, id, { decisions: ["deny"] });
-    expect(results(c, id)[1]).toMatchObject({ isError: true });
-    expect(c.store.getSession(id)?.agent_id).toBeNull();
-    expect(
-      c.store
-        .eventsAfter(id, 0)
-        .filter((e) => e.type === "session.agent_changed"),
-    ).toEqual([]);
-  });
-
-  it("refuses an agent the session cannot use, without a form", async () => {
-    const c = await setup();
-    const other = await newProject(c.app, "Other");
-    const elsewhere = c.agents.create(other, agentContent("Elsewhere"));
-    const id = await newSession(c.app);
-    c.scripts.push(
-      [call("a", "agent_change", { agentId: elsewhere.id })],
-      done,
-    );
-
-    await go(c, id);
-    expect(results(c, id)[0]).toMatchObject({ isError: true });
-    expect(c.store.getSession(id)?.agent_id).toBeNull();
+  it("no longer has an agent_change tool", () => {
+    expect(allTools.map((t) => t.name)).not.toContain("agent_change");
   });
 });
 

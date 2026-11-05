@@ -7,7 +7,7 @@ import {
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
-import { useAppEvents, useSessionEvents } from "./live";
+import { useAppEvents, useLive, useSessionEvents } from "./live";
 import { EditableTitle } from "./routes/EditableTitle";
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
@@ -56,6 +56,7 @@ const detail: SessionDetail = {
   messages: [],
   lastEventId: 0,
   activeRun: null,
+  childRuns: [],
 } as SessionDetail;
 
 /** The chat header's title, kept live by the session's event stream. */
@@ -177,5 +178,134 @@ describe("projects.changed", () => {
       }),
     );
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["projects"] });
+  });
+});
+
+describe("a subagent's run", () => {
+  const ev = (type: string, runId: string, data: object) => ({
+    runId,
+    sessionId: "s1",
+    time: "2026-11-05T00:00:01Z",
+    type,
+    data,
+  });
+
+  function Host() {
+    const query = useQuery({
+      queryKey: ["session", "s1"],
+      queryFn: () => Promise.resolve(detail),
+    });
+    useSessionEvents("s1", query.data);
+    return <div>{query.data ? "ready" : ""}</div>;
+  }
+
+  async function open() {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    useLive.getState().set("s1", undefined);
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <Host />
+        </QueryClientProvider>
+      </MantineProvider>,
+    );
+    await screen.findByText("ready");
+  }
+  const push = (id: number, event: unknown) =>
+    act(() => FakeEventSource.last?.push(id, event));
+
+  it("is kept under the parent run, which is not replaced or cleared", async () => {
+    await open();
+    push(1, ev("run.started", "r1", { kind: "loop" }));
+    push(
+      2,
+      ev("run.started", "r2", {
+        kind: "loop",
+        parentRunId: "r1",
+        parentCallId: "c1",
+        agent: { id: "a", name: "Editor", version: 1, projectId: null },
+      }),
+    );
+
+    const live = useLive.getState().runs["s1"];
+    expect(live?.runId).toBe("r1");
+    expect(live?.children["r2"]).toMatchObject({
+      parentRunId: "r1",
+      parentCallId: "c1",
+      agent: { name: "Editor" },
+    });
+
+    // The child's run ending leaves the parent in place.
+    push(3, ev("run.finished", "r2", { reason: "handed_back" }));
+    await vi.waitFor(() =>
+      expect(useLive.getState().runs["s1"]?.children["r2"]).toBeUndefined(),
+    );
+    expect(useLive.getState().runs["s1"]?.runId).toBe("r1");
+  });
+
+  it("keeps its forms and approvals on its own run", async () => {
+    await open();
+    push(1, ev("run.started", "r1", { kind: "loop" }));
+    push(
+      2,
+      ev("run.started", "r2", {
+        kind: "loop",
+        parentRunId: "r1",
+        parentCallId: "c1",
+      }),
+    );
+    const request = {
+      requestId: "q1",
+      callId: "k1",
+      form: { title: "T", fields: [] },
+    };
+    push(3, ev("input.requested", "r2", request));
+
+    let live = useLive.getState().runs["s1"];
+    expect(live?.inputs).toEqual([]);
+    expect(live?.children["r2"]?.inputs).toEqual([request]);
+
+    push(4, ev("input.resolved", "r2", { requestId: "q1" }));
+    live = useLive.getState().runs["s1"];
+    expect(live?.children["r2"]?.inputs).toEqual([]);
+  });
+
+  it("starts from the snapshot's child runs", async () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    useLive.getState().set("s1", undefined);
+    const base = {
+      model: null,
+      reasoningEffort: null,
+      agent: null,
+      message: null,
+      approvals: [],
+      inputs: [],
+    };
+    const withRuns = {
+      ...detail,
+      activeRun: { runId: "r1", ...base },
+      childRuns: [
+        { runId: "r2", parentRunId: "r1", parentCallId: "c1", ...base },
+      ],
+    } as SessionDetail;
+    function Snapshot() {
+      const query = useQuery({
+        queryKey: ["session", "s1"],
+        queryFn: () => Promise.resolve(withRuns),
+      });
+      useSessionEvents("s1", query.data);
+      return <div>{query.data ? "ready" : ""}</div>;
+    }
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <Snapshot />
+        </QueryClientProvider>
+      </MantineProvider>,
+    );
+    await screen.findByText("ready");
+    expect(Object.keys(useLive.getState().runs["s1"]?.children ?? {})).toEqual([
+      "r2",
+    ]);
   });
 });

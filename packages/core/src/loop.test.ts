@@ -18,6 +18,7 @@ import type {
   AssistantMessage,
   Message,
   ToolResultMessage,
+  UserMessage,
 } from "./messages.js";
 import type { ChatRequest } from "./model.js";
 import { FakeSharedEntries } from "./fake-shared-entries.js";
@@ -52,8 +53,10 @@ function setup(
   signal = new AbortController().signal,
 ) {
   const events: HarnessEvent[] = [];
-  const saved: { id: string; message: AssistantMessage | ToolResultMessage }[] =
-    [];
+  const saved: {
+    id: string;
+    message: AssistantMessage | ToolResultMessage | UserMessage;
+  }[] = [];
   const approvals: ApprovalRequest[] = [];
   let n = 0;
   const ctx: LoopContext = {
@@ -1442,5 +1445,116 @@ describe("a tool the agent's setting makes ask", () => {
     expect(
       events.find((e) => e.type === "tool.approval_requested")?.data,
     ).not.toHaveProperty("agentSetting");
+  });
+});
+
+describe("runLoop as a subagent", () => {
+  const handback = defineTool({
+    name: "subagent_handback",
+    description: "Hands back.",
+    input: z.object({ output: z.string() }),
+    approval: "never",
+    execute: (input) => ({
+      data: { handedBack: true },
+      handback: input.output,
+    }),
+  });
+  const child = { reminders: 2, reminderText: "Hand back." };
+  const done = [{ type: "finish" as const, reason: "stop" as const }];
+
+  it("ends when the handback tool runs and returns its output", async () => {
+    const { ctx, model, events } = setup(
+      [
+        [call("c1", "subagent_handback", '{"output":"all done"}'), ...done],
+        [{ type: "text", text: "never reached" }],
+      ],
+      { tools: [handback, echo], child },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result).toMatchObject({ reason: "handed_back", output: "all done" });
+    expect(model.requests).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      data: { reason: "handed_back" },
+    });
+  });
+
+  it("skips calls after the handback in the same response", async () => {
+    const { ctx, model, saved } = setup(
+      [
+        [
+          call("c1", "subagent_handback", '{"output":"x"}'),
+          call("c2", "echo", '{"text":"hi"}'),
+          ...done,
+        ],
+      ],
+      { tools: [handback, echo], child },
+    );
+    await runLoop(model, request, ctx);
+    const second = results(saved).find((m) => m.callId === "c2");
+    expect(second?.isError).toBe(true);
+  });
+
+  it("sends a reminder as a user message when the child stops without handing back", async () => {
+    const { ctx, model, saved } = setup(
+      [
+        [{ type: "text", text: "thinking" }, ...done],
+        [call("c1", "subagent_handback", '{"output":"ok"}'), ...done],
+      ],
+      { tools: [handback], child },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result).toMatchObject({ reason: "handed_back", output: "ok" });
+    const reminder = saved.find((s) => s.message.role === "user");
+    expect(reminder?.message).toMatchObject({ content: "Hand back." });
+    expect((model.requests[1] as ChatRequest).messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "Hand back.",
+    });
+  });
+
+  it("uses the last text as the output when reminders run out", async () => {
+    const { ctx, model } = setup(
+      [
+        [{ type: "text", text: "a" }, ...done],
+        [{ type: "text", text: "b" }, ...done],
+        [{ type: "text", text: "final" }, ...done],
+      ],
+      { tools: [handback], child },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result).toMatchObject({ reason: "stop", output: "final" });
+    expect(model.requests).toHaveLength(3);
+  });
+
+  it("does not remind a top-level run", async () => {
+    const { ctx, model } = setup([[{ type: "text", text: "hi" }, ...done]]);
+    const result = await runLoop(model, request, ctx);
+    expect(result.reason).toBe("stop");
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("replays session entries from sessionMessages instead of the transcript", async () => {
+    const seen: number[] = [];
+    const { ctx, model } = setup(
+      [[call("c1", "probe", "{}"), ...done], [{ type: "text", text: "x" }]],
+      {
+        tools: [
+          defineTool({
+            name: "probe",
+            description: "p",
+            input: z.object({}),
+            approval: "never",
+            execute: () => ({ data: {} }),
+          }),
+        ],
+        sessionMessages: () => {
+          seen.push(1);
+          return [];
+        },
+      },
+    );
+    await runLoop(model, request, ctx);
+    expect(seen.length).toBeGreaterThan(0);
   });
 });

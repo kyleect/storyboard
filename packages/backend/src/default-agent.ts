@@ -8,6 +8,9 @@ import type { Store } from "./store.js";
  * else none. The user's own pick in a session wins afterwards.
  */
 
+/** The id of the built-in entry-point agent (migration 0020). */
+export const BUILTIN_DISPATCHER = "builtin-dispatcher";
+
 export function defaultAgentFor(
   deps: {
     store: Store;
@@ -28,5 +31,7 @@ export function defaultAgentFor(
   const global = usable(
     readSettings(deps.store.db, deps.env).effective.defaultAgentId,
   );
-  return global && global.projectId === null ? global : undefined;
+  if (global && global.projectId === null) return global;
+  // Nothing set: the built-in Dispatcher (agent delegation design, 9).
+  return usable(BUILTIN_DISPATCHER);
 }
