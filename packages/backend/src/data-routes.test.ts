@@ -9,7 +9,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { grant, tempDatabase } from "./test-helpers.js";
 
 /* Data routes (schemas and data design, decisions 19 to 25, 44), patch 3. */
 
@@ -315,8 +315,7 @@ describe("schema routes (patch 4)", () => {
       name: "Editor",
       description: "",
       prompt: "",
-      toolMode: "allow",
-      tools: [],
+      toolGrant: grant("allow", []),
       toolApproval: {},
     });
     const toProject = await api(app, "POST", "/api/global/schemas/task/copy", {

@@ -23,7 +23,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
+import { grant, clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 import { setToolAsks } from "./tool-settings.js";
 
 /* Schemas and data (schemas and data design), patch 1. */
@@ -243,8 +243,7 @@ describe("where data may live (decisions 6, 6a, 6b)", () => {
             name: "Editor",
             description: "",
             prompt: "",
-            toolMode: "allow",
-            tools: [],
+            toolGrant: grant("allow", []),
             toolApproval: {},
           });
     return createDataAccess({
@@ -594,8 +593,7 @@ describe("schemas and data in runs", () => {
       name: "Plain",
       description: "",
       prompt: "",
-      toolMode: "allow",
-      tools: [SKILL_LOAD],
+      toolGrant: grant("allow", [SKILL_LOAD]),
       toolApproval: {},
     });
     const session = (await api(s.app, "POST", "/api/sessions", {})).body

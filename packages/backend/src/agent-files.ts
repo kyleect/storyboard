@@ -1,6 +1,7 @@
 import { parse, stringify } from "yaml";
 import type { AgentContent, AgentInput } from "./agents-store.js";
 import { AgentError } from "./agents-store.js";
+import { grantFromNames, listedTools, type GrantTool } from "./tool-grants.js";
 
 /*
  * Agents as Markdown files with YAML front matter (agents design, decisions
@@ -29,14 +30,22 @@ import { AgentError } from "./agents-store.js";
  * (agent delegation design).
  */
 
-export function agentToMarkdown(agent: AgentInput): string {
+export function agentToMarkdown(
+  agent: AgentInput,
+  tools: readonly GrantTool[],
+  alwaysOnTools: ReadonlySet<string> = new Set(),
+): string {
+  // The grant is written as the names it comes to (tool management design,
+  // decision 17); always-on tools are left out, since they cannot be selected.
+  const listed = listedTools(agent.toolGrant, tools);
+  const listedNames = listed.tools.filter((t) => !alwaysOnTools.has(t));
   const approvals = Object.entries(agent.toolApproval);
   const asks = approvals.filter(([, ask]) => ask).map(([name]) => name);
   const skips = approvals.filter(([, ask]) => !ask).map(([name]) => name);
   const front: Record<string, unknown> = {
     name: agent.name,
     description: agent.description,
-    [agent.toolMode === "allow" ? "tools" : "disallowedTools"]: agent.tools,
+    [listed.toolMode === "allow" ? "tools" : "disallowedTools"]: listedNames,
     ...(asks.length > 0 ? { requireApproval: asks } : {}),
     ...(skips.length > 0 ? { skipApproval: skips } : {}),
     ...(agent.subagent ? { subagent: true } : {}),
@@ -81,8 +90,8 @@ function names(value: unknown, field: string): string[] {
  */
 export function agentFromMarkdown(
   text: string,
-  knownTools: readonly string[],
-  alwaysOnTools: readonly string[],
+  allTools: readonly GrantTool[],
+  alwaysOnTools: ReadonlySet<string>,
   alwaysAskTools: readonly string[] = [],
 ): ParsedAgentFile {
   const normalized = text.replace(/\r\n/g, "\n").replace(/^\uFEFF/, "");
@@ -131,8 +140,8 @@ export function agentFromMarkdown(
       ? names(f.disallowedTools, "disallowedTools")
       : [];
 
-  const known = new Set(knownTools);
-  const alwaysOn = new Set(alwaysOnTools);
+  const known = new Set(allTools.map((t) => t.name));
+  const alwaysOn = alwaysOnTools;
   const unknown = [...new Set(listed.filter((t) => !known.has(t)))];
   const tools = [
     ...new Set(listed.filter((t) => known.has(t) && !alwaysOn.has(t))),
@@ -195,8 +204,8 @@ export function agentFromMarkdown(
       name: f.name.trim(),
       description: typeof f.description === "string" ? f.description : "",
       prompt: body,
-      toolMode: hasAllow ? "allow" : "deny",
-      tools,
+      // Single tools only: an import never grants a group (decision 17).
+      toolGrant: grantFromNames(hasAllow ? "allow" : "deny", tools, allTools),
       toolApproval,
       childReminders: typeof reminders === "number" ? reminders : null,
       childPrompt: typeof f.childPrompt === "string" ? f.childPrompt : null,

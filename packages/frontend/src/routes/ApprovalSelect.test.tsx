@@ -9,6 +9,7 @@ import { ApprovalSelect } from "./Agents";
 const tool = (over: Partial<ToolApprovalInfo> = {}): ToolApprovalInfo => ({
   name: "web_fetch",
   description: "Fetches a page.",
+  group: "web",
   alwaysOn: false,
   ask: false,
   fixed: false,

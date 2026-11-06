@@ -48,7 +48,6 @@ function setup() {
     tools: [...schemaDataTools, ...skillTools],
     agents,
     skills,
-    skillTools: skillTools.map((s) => s.name),
     skillsPrompt: skillsInstruction,
     skillsList,
     data,

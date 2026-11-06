@@ -416,7 +416,7 @@ describe("approval", () => {
     );
     await waitIdle(runs, first);
 
-    expect((await api(app, "GET", "/api/tools")).body).toEqual([
+    expect((await api(app, "GET", "/api/tools")).body).toMatchObject([
       {
         name: "rec",
         description: "The rec tool.",
@@ -656,7 +656,7 @@ describe("tool settings", () => {
     const { app } = await setup([], [asks.tool, quiet.tool]);
     const list = async () => (await api(app, "GET", "/api/tools")).body;
 
-    expect(await list()).toEqual([
+    expect(await list()).toMatchObject([
       {
         name: "asks",
         description: "The asks tool.",
@@ -886,7 +886,9 @@ describe("with llama-server's wire format", () => {
     };
     // The handback tool is offered only to a subagent's run.
     expect(first.tools.map((x) => x.function.name)).toEqual(
-      allTools.map((t) => t.name).filter((n) => n !== "subagent_handback"),
+      allTools
+        .map((t) => t.name)
+        .filter((n) => n !== "subagent_handback" && n !== "skill_load"),
     );
     expect(first.tools[0]?.function.parameters).toEqual({
       type: "object",
@@ -930,7 +932,7 @@ describe("a tool that always asks", () => {
     const fixed = recorder("fixed", "always");
     const { app } = await setup([], [fixed.tool]);
 
-    expect((await api(app, "GET", "/api/tools")).body).toEqual([
+    expect((await api(app, "GET", "/api/tools")).body).toMatchObject([
       {
         name: "fixed",
         description: "The fixed tool.",

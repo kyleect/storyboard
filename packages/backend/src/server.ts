@@ -32,11 +32,15 @@ import { registerSkillRoutes } from "./skill-routes.js";
 import { SkillStore } from "./skills-store.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { DEFAULT_TITLE, type Store } from "./store.js";
+import { allowedNames } from "./tool-grants.js";
 import {
   FixedApprovalError,
   listToolSettings,
+  setToolAlwaysOn,
   setToolAsks,
+  setToolOff,
 } from "./tool-settings.js";
+import { TOOL_GROUPS, type Tool } from "@harness/core";
 
 /*
  * HTTP routes (design doc 6.10, 6.14). Routes are thin adapters over the
@@ -707,8 +711,43 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return { cleared: runs.clearErrors(sessionId) };
   });
 
-  /** Every tool, with its approval default and whether it asks now. */
-  app.get("/api/tools", async () => listToolSettings(store.db, runs.tools));
+  /**
+   * The live agents that list each tool, by name, so Settings can say who is
+   * affected before a tool is switched off (tool management design,
+   * decision 12, P6).
+   */
+  const agentsUsing = (tools: readonly Tool[]) => {
+    const live = [
+      ...agents.list(null),
+      ...store.listProjects().flatMap((p) => agents.list(p.id)),
+      ...agents.builtins(),
+    ];
+    const using = new Map<string, string[]>(tools.map((t) => [t.name, []]));
+    for (const a of live) {
+      for (const name of allowedNames(a.toolGrant, runs.tools)) {
+        using.get(name)?.push(a.name);
+      }
+    }
+    return using;
+  };
+
+  /** One tool with the agents that use it. */
+  const view = (tool: Tool) => ({
+    ...(listToolSettings(store.db, [tool])[0] as object),
+    usedByAgents: agentsUsing([tool]).get(tool.name) ?? [],
+  });
+
+  /**
+   * Every tool, with its group, approval default, whether it asks now,
+   * whether it is always on, whether it is off, and the agents using it.
+   */
+  app.get("/api/tools", async () => {
+    const using = agentsUsing(runs.tools);
+    return listToolSettings(store.db, runs.tools).map((t) => ({
+      ...t,
+      usedByAgents: using.get(t.name) ?? [],
+    }));
+  });
 
   /**
    * Sets whether a tool asks before running (either way, 6.5). 409 for a
@@ -720,7 +759,60 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const tool = runs.tools.find((t) => t.name === name);
     if (!tool) return reply.code(404).send({ error: "Tool not found." });
     setToolAsks(store.db, tool, ask);
-    return listToolSettings(store.db, [tool])[0];
+    return view(tool);
+  });
+
+  /** Sets whether a tool is offered to every agent (tool management design, 12). */
+  app.put("/api/tools/:name/always-on", async (req, reply) => {
+    const { name } = z.object({ name: z.string() }).parse(req.params);
+    const { alwaysOn } = z.object({ alwaysOn: z.boolean() }).parse(req.body);
+    const tool = runs.tools.find((t) => t.name === name);
+    if (!tool) return reply.code(404).send({ error: "Tool not found." });
+    setToolAlwaysOn(store.db, tool, alwaysOn);
+    return view(tool);
+  });
+
+  /** Switches a tool off for the whole harness, or back on. */
+  app.put("/api/tools/:name/off", async (req, reply) => {
+    const { name } = z.object({ name: z.string() }).parse(req.params);
+    const { off } = z.object({ off: z.boolean() }).parse(req.body);
+    const tool = runs.tools.find((t) => t.name === name);
+    if (!tool) return reply.code(404).send({ error: "Tool not found." });
+    setToolOff(store.db, tool, off);
+    return view(tool);
+  });
+
+  /**
+   * Applies settings to every tool in a group (tool management design,
+   * decision 2). A tool whose approval is fixed keeps it; the other values
+   * are applied to it as to any tool. Returns the group's tools.
+   */
+  app.put("/api/tool-groups/:group", async (req, reply) => {
+    const { group } = z.object({ group: z.string() }).parse(req.params);
+    if (!TOOL_GROUPS.some((g) => g.id === group))
+      return reply.code(404).send({ error: "Group not found." });
+    const body = z
+      .object({
+        ask: z.boolean().optional(),
+        alwaysOn: z.boolean().optional(),
+        off: z.boolean().optional(),
+      })
+      .parse(req.body);
+    const tools = runs.tools.filter((t) => t.group === group);
+    for (const tool of tools) {
+      if (body.ask !== undefined && tool.approval !== "always") {
+        setToolAsks(store.db, tool, body.ask);
+      }
+      if (body.alwaysOn !== undefined) {
+        setToolAlwaysOn(store.db, tool, body.alwaysOn);
+      }
+      if (body.off !== undefined) setToolOff(store.db, tool, body.off);
+    }
+    const using = agentsUsing(tools);
+    return listToolSettings(store.db, tools).map((t) => ({
+      ...t,
+      usedByAgents: using.get(t.name) ?? [],
+    }));
   });
 
   app.post("/api/runs/:id/cancel", async (req, reply) => {

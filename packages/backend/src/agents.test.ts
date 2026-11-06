@@ -16,7 +16,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
+import { grant, clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 const TOKEN = "t".repeat(64);
 
@@ -26,26 +26,38 @@ afterEach(async () => {
   cleanups = [];
 });
 
-const tool = (name: string): Tool =>
+const tool = (name: string, alwaysOn = false): Tool =>
   defineTool({
     name,
     description: `The ${name} tool.`,
     input: z.object({}),
     approval: "never",
     group: "utilities" as const,
+    alwaysOn,
     execute: () => ({ data: { ran: name } }),
   });
 
 /** `files_read` stands in for the always-on files and memory tools. */
-const TOOLS = [tool("alpha"), tool("beta"), tool("gamma"), tool("files_read")];
-const ALWAYS_ON = ["files_read"];
+const TOOLS = [
+  tool("alpha"),
+  tool("beta"),
+  tool("gamma"),
+  tool("files_read", true),
+];
+
+/** Tool facts for the agent file functions. */
+const gt = (...names: string[]) =>
+  names.map((name) => ({
+    name,
+    group: "utilities" as const,
+    needsReview: false,
+  }));
 
 const content = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "Be terse.",
-  toolMode: "allow",
-  tools: [],
+  toolGrant: grant("allow", []),
   toolApproval: {},
   ...over,
 });
@@ -70,7 +82,6 @@ async function setup(scripts: ScriptStep[][] = []) {
     }),
     model: () => model,
     tools: TOOLS,
-    alwaysOnTools: ALWAYS_ON,
     agents,
     systemPrompt: () => "BASE",
     now,
@@ -158,14 +169,14 @@ describe("agent store", () => {
     const agents = new AgentStore(t.db);
     const a = agents.create(
       null,
-      content({ name: "  Editor ", tools: ["x", "x"] }),
+      content({ name: "  Editor ", toolGrant: grant("allow", ["x", "x"]) }),
     );
     expect(a).toMatchObject({
       name: "Editor",
       projectId: null,
       version: 1,
       deleted: false,
-      tools: ["x"],
+      toolGrant: grant("allow", ["x"]),
     });
     const b = agents.update(a.id, content({ name: "Reviser", prompt: "P2" }));
     expect(b).toMatchObject({ name: "Reviser", prompt: "P2", version: 2 });
@@ -267,16 +278,16 @@ describe("agent files", () => {
       const c = content({
         description: "Tightens: prose",
         prompt: "Line one\n\nLine two",
-        toolMode,
-        tools: ["alpha"],
+        toolGrant: grant(toolMode, ["alpha"]),
       });
-      const md = agentToMarkdown(c);
+      const md = agentToMarkdown(c, gt("alpha"));
       expect(md).toContain(
         toolMode === "allow" ? "tools:" : "disallowedTools:",
       );
-      expect(agentFromMarkdown(md, ["alpha"], [])).toEqual({
+      expect(agentFromMarkdown(md, gt("alpha"), new Set())).toEqual({
         content: {
           ...c,
+          toolGrant: grant(toolMode, ["alpha"], ["alpha"]),
           childReminders: null,
           childPrompt: null,
           subagent: false,
@@ -299,14 +310,13 @@ describe("agent files", () => {
       "",
     ].join("\r\n");
     expect(
-      agentFromMarkdown(md, ["alpha", "files_read"], ["files_read"]),
+      agentFromMarkdown(md, gt("alpha", "files_read"), new Set(["files_read"])),
     ).toEqual({
       content: {
         name: "code-reviewer",
         description: "Reviews code",
         prompt: "You review code.",
-        toolMode: "allow",
-        tools: ["alpha"],
+        toolGrant: grant("allow", ["alpha"], ["alpha", "files_read"]),
         toolApproval: {},
         childReminders: null,
         childPrompt: null,
@@ -319,13 +329,12 @@ describe("agent files", () => {
 
   it("treats a file with no tool list as every tool on", () => {
     expect(
-      agentFromMarkdown("---\nname: A\n---\nP", ["alpha"], []).content,
+      agentFromMarkdown("---\nname: A\n---\nP", gt("alpha"), new Set()).content,
     ).toEqual({
       name: "A",
       description: "",
       prompt: "P",
-      toolMode: "deny",
-      tools: [],
+      toolGrant: grant("deny", [], ["alpha"]),
       toolApproval: {},
       childReminders: null,
       childPrompt: null,
@@ -334,7 +343,7 @@ describe("agent files", () => {
   });
 
   it("refuses files it cannot read", () => {
-    const read = (md: string) => () => agentFromMarkdown(md, [], []);
+    const read = (md: string) => () => agentFromMarkdown(md, [], new Set());
     expect(read("name: A\n")).toThrow(/no front matter/);
     expect(read("---\nname: [\n---\n")).toThrow(/not valid YAML/);
     expect(read("---\n- a\n---\n")).toThrow(/set of fields/);
@@ -354,13 +363,18 @@ describe("agent routes", () => {
     const { app } = await setup();
     const res = await api(app, "POST", "/api/global/agents", {
       ...content(),
-      tools: ["alpha", "files_read"],
+      toolGrant: grant("allow", ["alpha", "files_read"]),
     });
     expect(res.status).toBe(201);
-    // The always-on tools are not part of a selection.
+    // The always-on tools are not part of a selection, and a save records the
+    // tools that exist as the ones the agent knows.
     expect(res.body).toMatchObject({
       name: "Editor",
-      tools: ["alpha"],
+      toolGrant: grant(
+        "allow",
+        ["alpha"],
+        ["alpha", "beta", "gamma", "files_read"],
+      ),
       version: 1,
     });
     const id = res.body.id as string;
@@ -434,24 +448,40 @@ describe("agent routes", () => {
 
   it("lists the tools an agent can select", async () => {
     const { app } = await setup();
+    // Every tool, with its group and whether it is always on (shown locked).
+    const row = (name: string, alwaysOn = false) => ({
+      name,
+      description: `The ${name} tool.`,
+      group: "utilities",
+      alwaysOn,
+      off: false,
+      needsReview: false,
+    });
     expect((await api(app, "GET", "/api/agent-tools")).body).toEqual([
-      { name: "alpha", description: "The alpha tool." },
-      { name: "beta", description: "The beta tool." },
-      { name: "gamma", description: "The gamma tool." },
+      row("alpha"),
+      row("beta"),
+      row("gamma"),
+      row("files_read", true),
     ]);
   });
 
   it("exports one agent as Markdown", async () => {
     const { app } = await setup();
-    const a = await newAgent(app, { name: "Ed/itor", tools: ["beta"] });
+    const a = await newAgent(app, {
+      name: "Ed/itor",
+      toolGrant: grant("allow", ["beta"]),
+    });
     const res = await api(app, "GET", `/api/agents/${a.id}/export`);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/markdown/);
     expect(res.headers["content-disposition"]).toBe(
       "attachment; filename*=UTF-8''Ed_itor.md",
     );
-    expect(agentFromMarkdown(res.text, ["beta"], []).content).toEqual({
-      ...content({ name: "Ed/itor", tools: ["beta"] }),
+    expect(agentFromMarkdown(res.text, gt("beta"), new Set()).content).toEqual({
+      ...content({
+        name: "Ed/itor",
+        toolGrant: grant("allow", ["beta"], ["beta"]),
+      }),
       childReminders: null,
       childPrompt: null,
       subagent: false,
@@ -470,7 +500,11 @@ describe("agent routes", () => {
       agent: {
         name: "Editor",
         projectId: p,
-        tools: ["alpha"],
+        toolGrant: grant(
+          "allow",
+          ["alpha"],
+          ["alpha", "beta", "gamma", "files_read"],
+        ),
         prompt: "Imported.",
       },
       warnings: ["Dropped tool this harness does not have: nope."],
@@ -574,7 +608,7 @@ describe("sessions and agents", () => {
     const { app, runs, model, events } = await setup([answer, answer, answer]);
     const received: AppEvent[] = [];
     events.subscribe((e) => received.push(e));
-    const a = await newAgent(app, { tools: ["alpha"] });
+    const a = await newAgent(app, { toolGrant: grant("allow", ["alpha"]) });
     const s = await newSession(app);
 
     // No agent: the base prompt and every tool.
@@ -618,7 +652,7 @@ describe("sessions and agents", () => {
       app,
       "PUT",
       `/api/agents/${a.id}`,
-      content({ name: "Reviser", toolMode: "deny", tools: ["beta"] }),
+      content({ name: "Reviser", toolGrant: grant("deny", ["beta"]) }),
     );
     const after = (await api(app, "GET", `/api/sessions/${s}`)).body as {
       messages: { message: { role: string }; agent: unknown }[];
@@ -646,8 +680,7 @@ describe("sessions and agents", () => {
   it("uses a deny list and ignores tools that no longer exist", async () => {
     const { app, runs, model } = await setup([answer]);
     const a = await newAgent(app, {
-      toolMode: "deny",
-      tools: ["beta", "gone"],
+      toolGrant: grant("deny", ["beta", "gone"]),
     });
     const s = await newSession(app);
     const res = await api(app, "POST", `/api/sessions/${s}/messages`, {
@@ -664,7 +697,7 @@ describe("sessions and agents", () => {
 
   it("an empty allow list leaves only the always-on tools", async () => {
     const { app, runs, model } = await setup([answer]);
-    const a = await newAgent(app, { toolMode: "allow", tools: [] });
+    const a = await newAgent(app, { toolGrant: grant("allow", []) });
     const s = await newSession(app);
     const res = await api(app, "POST", `/api/sessions/${s}/messages`, {
       content: "Hi",
@@ -685,7 +718,7 @@ describe("sessions and agents", () => {
       answer,
       answer,
     ]);
-    const a = await newAgent(app, { tools: ["alpha"] });
+    const a = await newAgent(app, { toolGrant: grant("allow", ["alpha"]) });
     const s = await newSession(app);
     const res = await api(app, "POST", `/api/sessions/${s}/messages`, {
       content: "Hi",
@@ -709,7 +742,7 @@ describe("sessions and agents", () => {
       app,
       "PUT",
       `/api/agents/${a.id}`,
-      content({ prompt: "Changed.", tools: [] }),
+      content({ prompt: "Changed.", toolGrant: grant("allow", []) }),
     );
     release();
     await waitIdle(runs, runId);
@@ -816,7 +849,6 @@ describe("app-wide events", () => {
       }),
       model: () => new ScriptedModel([]),
       tools: TOOLS,
-      alwaysOnTools: ALWAYS_ON,
     });
     const app = buildServer({
       store,

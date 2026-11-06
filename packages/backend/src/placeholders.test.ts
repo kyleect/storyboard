@@ -12,7 +12,6 @@ import {
   skillLoad,
   skillsInstruction,
   skillsList,
-  skillTools,
   SKILL_LOAD,
 } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
@@ -28,7 +27,7 @@ import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { SkillStore, type SkillContent } from "./skills-store.js";
 import { Store } from "./store.js";
-import { clearBuiltins, tempDatabase } from "./test-helpers.js";
+import { grant, clearBuiltins, tempDatabase } from "./test-helpers.js";
 
 /* Placeholders (placeholders design). */
 
@@ -117,18 +116,27 @@ describe("toolsList (decision 7)", () => {
   });
 });
 
-const tool = (name: string, description = `The ${name} tool. More.`): Tool =>
+const tool = (
+  name: string,
+  description = `The ${name} tool. More.`,
+  alwaysOn = false,
+): Tool =>
   defineTool({
     name,
     description,
     input: z.object({}),
     approval: "never",
     group: "utilities" as const,
+    alwaysOn,
     execute: () => ({ data: { ran: name } }),
   });
 
-const TOOLS = [tool("alpha"), tool("beta"), tool("files_read"), skillLoad];
-const ALWAYS_ON = ["files_read", SKILL_LOAD];
+const TOOLS = [
+  tool("alpha"),
+  tool("beta"),
+  tool("files_read", "The files_read tool. More.", true),
+  skillLoad,
+];
 
 const skill = (over: Partial<SkillContent> = {}): SkillContent => ({
   displayName: "My Skill",
@@ -141,8 +149,7 @@ const agentContent = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "",
-  toolMode: "allow",
-  tools: [],
+  toolGrant: grant("allow", []),
   toolApproval: {},
   ...over,
 });
@@ -165,10 +172,8 @@ async function setup(scripts: ScriptStep[][]) {
     }),
     model: () => model,
     tools: TOOLS,
-    alwaysOnTools: ALWAYS_ON,
     agents,
     skills,
-    skillTools: skillTools.map((s) => s.name),
     skillsPrompt: skillsInstruction,
     skillsList,
     systemPrompt: () => "BASE",
@@ -240,7 +245,10 @@ describe("placeholders in runs", () => {
         s.app,
         "POST",
         "/api/global/agents",
-        agentContent({ prompt: "Tools:\n{{ tools }}", tools: ["alpha"] }),
+        agentContent({
+          prompt: "Tools:\n{{ tools }}",
+          toolGrant: grant("allow", ["alpha"]),
+        }),
       )
     ).body.id as string;
     await say(s, await newSession(s.app), agent);

@@ -28,11 +28,11 @@ import {
   type Session,
   type Settings as SettingsShape,
   type SettingsView,
-  type ToolView,
 } from "../api";
 import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
+import { ToolSettings } from "./ToolSettings";
 
 /**
  * The fields the main form saves; the system prompt and session titles
@@ -272,7 +272,7 @@ export function Settings() {
       <Divider />
       <SessionTitles view={query.data} />
       <Divider />
-      <ToolApprovals />
+      <ToolSettings />
       <Divider />
       <TrashSection />
     </Stack>
@@ -485,65 +485,6 @@ function SessionTitles({ view }: { view: SettingsView }) {
         </Button>
       </Stack>
     </form>
-  );
-}
-
-/** Per-tool "ask before running" switches, saved as they change. */
-function ToolApprovals() {
-  const queryClient = useQueryClient();
-  const tools = useQuery({ queryKey: ["tools"], queryFn: api.listTools });
-  const setAsks = useMutation({
-    mutationFn: (t: { name: string; ask: boolean }) =>
-      api.setToolAsks(t.name, t.ask),
-    onSuccess: (updated: ToolView) => {
-      queryClient.setQueryData<ToolView[]>(["tools"], (old) =>
-        old?.map((t) => (t.name === updated.name ? updated : t)),
-      );
-      // The agent editor shows each tool's setting.
-      void queryClient.invalidateQueries({
-        queryKey: ["agent-tool-approvals"],
-      });
-    },
-    onError: (err: Error) =>
-      notifications.show({
-        color: "red",
-        title: "Could not save",
-        message: err.message,
-      }),
-  });
-
-  return (
-    <Stack gap="xs">
-      <Title order={4}>Tools</Title>
-      <Text size="xs" c="dimmed">
-        Whether each tool asks before it runs. Saved when switched.
-      </Text>
-      {tools.isPending && <Loader size="sm" />}
-      {tools.isError && <Alert color="red">{tools.error.message}</Alert>}
-      {tools.data?.length === 0 && (
-        <Text size="sm" c="dimmed">
-          No tools.
-        </Text>
-      )}
-      {tools.data?.map((t) => (
-        <Switch
-          key={t.name}
-          label={`${t.name}: ask before running`}
-          description={
-            t.fixed
-              ? `${t.description} Always asks; this cannot be changed.`
-              : `${t.description} Default: ${
-                  t.askByDefault ? "asks" : "runs without asking"
-                }.`
-          }
-          checked={t.ask}
-          disabled={setAsks.isPending || t.fixed}
-          onChange={(e) =>
-            setAsks.mutate({ name: t.name, ask: e.currentTarget.checked })
-          }
-        />
-      ))}
-    </Stack>
   );
 }
 

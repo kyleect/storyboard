@@ -3,7 +3,6 @@ import { z } from "zod";
 import { agentFromMarkdown, agentToMarkdown } from "./agent-files.js";
 import {
   AgentError,
-  ToolMode,
   type Agent,
   type AgentContent,
   type AgentStore,
@@ -12,7 +11,8 @@ import type { AppEvents } from "./app-events.js";
 import { defaultAgentFor } from "./default-agent.js";
 import type { RunManager } from "./runs.js";
 import type { Store } from "./store.js";
-import { alwaysAsks, listToolSettings } from "./tool-settings.js";
+import { newToolNames, ToolGrant } from "./tool-grants.js";
+import { alwaysAsks, listToolSettings, offNames } from "./tool-settings.js";
 
 /*
  * Routes for agents (agents plan 1.2):
@@ -39,8 +39,7 @@ const AgentBody = z.object({
   name: z.string(),
   description: z.string().default(""),
   prompt: z.string(),
-  toolMode: ToolMode,
-  tools: z.array(z.string()),
+  toolGrant: ToolGrant,
   toolApproval: z.record(z.string(), z.boolean()).default({}),
   childReminders: z.number().int().min(0).nullable().default(null),
   childPrompt: z.string().nullable().default(null),
@@ -86,23 +85,31 @@ export function registerAgentRoutes(
   },
 ) {
   const { store, runs, agents, events } = deps;
-  const alwaysOn = new Set(runs.alwaysOnTools);
-  const selectable = () => runs.tools.filter((t) => !alwaysOn.has(t.name));
-
   const fixed = new Set(runs.tools.filter(alwaysAsks).map((t) => t.name));
 
   /**
-   * The always-on tools are not part of a selection (decision 8). A tool
-   * that always asks has no setting of the agent's (agent tool approval
-   * design, Q2). Names with no such tool are kept, as in `tools`.
+   * The always-on tools are not part of a selection (decision 8; design,
+   * decision 14), so they are left out of the grant's exceptions and extras.
+   * A tool that always asks has no setting of the agent's (agent tool
+   * approval design, Q2). Names with no such tool are kept. A save records
+   * the tools that exist now as the ones the agent knows (design, decisions
+   * 9, 10).
    */
-  const clean = (c: AgentContent): AgentContent => ({
-    ...c,
-    tools: c.tools.filter((t) => !alwaysOn.has(t)),
-    toolApproval: Object.fromEntries(
-      Object.entries(c.toolApproval).filter(([name]) => !fixed.has(name)),
-    ),
-  });
+  const clean = (c: AgentContent): AgentContent => {
+    const alwaysOn = runs.alwaysOnTools();
+    return {
+      ...c,
+      toolGrant: {
+        ...c.toolGrant,
+        except: c.toolGrant.except.filter((t) => !alwaysOn.has(t)),
+        extras: c.toolGrant.extras.filter((t) => !alwaysOn.has(t)),
+        known: runs.tools.map((t) => t.name),
+      },
+      toolApproval: Object.fromEntries(
+        Object.entries(c.toolApproval).filter(([name]) => !fixed.has(name)),
+      ),
+    };
+  };
 
   const announce = (agent: Agent, clearedSessions: string[] = []) =>
     events.publish({
@@ -126,8 +133,17 @@ export function registerAgentRoutes(
     return agent;
   };
 
-  const detail = (agent: Agent) => ({
+  /**
+   * The tools that exist now but were not there when the agent was last
+   * saved (design, decision 9). A built-in agent never has any (decision 16).
+   */
+  const withNew = (agent: Agent) => ({
     ...agent,
+    newTools: agent.builtin ? [] : newToolNames(agent.toolGrant, runs.tools),
+  });
+
+  const detail = (agent: Agent) => ({
+    ...withNew(agent),
     versions: agents.versions(agent.id),
   });
 
@@ -159,7 +175,10 @@ export function registerAgentRoutes(
       // the project's default, else the global one (default agent design 6;
       // global default agent design, Q9).
       const defaultId = defaultAgentFor(deps, projectId)?.id;
-      return list.map((a) => ({ ...a, isDefault: a.id === defaultId }));
+      return list.map((a) => ({
+        ...withNew(a),
+        isDefault: a.id === defaultId,
+      }));
     });
 
     app.post(base, async (req, reply) => {
@@ -182,8 +201,8 @@ export function registerAgentRoutes(
       const body = ImportBody.parse(req.body);
       const parsed = agentFromMarkdown(
         body.markdown,
-        runs.tools.map((t) => t.name),
-        runs.alwaysOnTools,
+        runs.tools,
+        runs.alwaysOnTools(),
         [...fixed],
       );
       const existing = agents.getByName(projectId, parsed.content.name);
@@ -252,7 +271,7 @@ export function registerAgentRoutes(
         "content-disposition",
         `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
       )
-      .send(agentToMarkdown(agent));
+      .send(agentToMarkdown(agent, runs.tools, runs.alwaysOnTools()));
   });
 
   /**
@@ -282,14 +301,28 @@ export function registerAgentRoutes(
     listToolSettings(store.db, runs.tools).map((t) => ({
       name: t.name,
       description: t.description,
-      alwaysOn: alwaysOn.has(t.name),
+      group: t.group,
+      alwaysOn: t.alwaysOn,
       ask: t.ask,
       fixed: t.fixed,
     })),
   );
 
-  /** The tools an agent can select: every tool but the always-on ones. */
-  app.get("/api/agent-tools", async () =>
-    selectable().map((t) => ({ name: t.name, description: t.description })),
-  );
+  /**
+   * Every tool, for the agent editor (tool management design, decisions 2,
+   * 14): its group, whether it is always on now (shown locked), whether it is
+   * off for the whole harness, and whether it needs review.
+   */
+  app.get("/api/agent-tools", async () => {
+    const alwaysOn = runs.alwaysOnTools();
+    const off = offNames(store.db);
+    return runs.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      group: t.group,
+      alwaysOn: alwaysOn.has(t.name),
+      off: off.has(t.name),
+      needsReview: t.needsReview,
+    }));
+  });
 }

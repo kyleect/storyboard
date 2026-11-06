@@ -434,6 +434,114 @@ describe("loadMigrations", () => {
     ).toThrow(/CHECK/);
   });
 
+  it("turns agents' tool lists into grants and drops the old columns", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 21),
+    );
+    const data = [
+      "schemas_list",
+      "schema_view",
+      "schema_create",
+      "schema_update",
+      "schema_copy",
+      "schema_delete",
+      "data_list",
+      "data_view",
+      "data_create",
+      "data_update",
+      "data_migrate",
+      "data_migrate_many",
+      "data_delete",
+    ];
+    const insert = db.prepare(
+      `INSERT INTO agents (id, project_id, name, prompt, tool_mode, tools, version, created_at, updated_at)
+       VALUES (?, NULL, ?, '', ?, ?, 1, 'T', 'T')`,
+    );
+    const version = db.prepare(
+      `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_mode, tools, deleted, created_at)
+       VALUES (?, 1, ?, '', '', ?, ?, 0, 'T')`,
+    );
+    const add = (id: string, mode: string, tools: string[]) => {
+      insert.run(id, id, mode, JSON.stringify(tools));
+      version.run(id, id, mode, JSON.stringify(tools));
+    };
+    // A whole group listed, and one more tool.
+    add("whole", "allow", [...data, "web_search"]);
+    // A denied group.
+    add("denied", "deny", ["projects_list", "project_view", "project_create"]);
+    // Part of a group, and a tool that does not exist (kept as an extra).
+    add("part", "allow", ["files_copy", "files_move", "nope"]);
+    add("empty", "allow", []);
+
+    expect(migrate(db, all)).toEqual([22]);
+
+    const cols = (table: string) =>
+      (
+        db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+      ).map((c) => c.name);
+    for (const table of ["agents", "agent_versions"]) {
+      expect(cols(table)).toContain("tool_grant");
+      expect(cols(table)).not.toContain("tool_mode");
+      expect(cols(table)).not.toContain("tools");
+    }
+
+    const grant = (table: string, id: string) =>
+      JSON.parse(
+        (
+          db
+            .prepare(
+              `SELECT tool_grant FROM ${table} WHERE ${table === "agents" ? "id" : "agent_id"} = ?`,
+            )
+            .get(id) as { tool_grant: string }
+        ).tool_grant,
+      ) as {
+        mode: string;
+        groups: string[];
+        except: string[];
+        extras: string[];
+        known: string[];
+      };
+    for (const table of ["agents", "agent_versions"]) {
+      expect(grant(table, "whole")).toMatchObject({
+        mode: "allow",
+        groups: ["structured-data"],
+        except: [],
+        extras: ["web_search"],
+      });
+      expect(grant(table, "denied")).toMatchObject({
+        mode: "deny",
+        groups: ["projects"],
+        extras: [],
+      });
+      expect(grant(table, "part")).toMatchObject({
+        mode: "allow",
+        groups: [],
+        extras: ["files_copy", "files_move", "nope"],
+      });
+      expect(grant(table, "empty")).toMatchObject({
+        mode: "allow",
+        groups: [],
+        extras: [],
+      });
+      // Today's 41 tools are known, so nothing shows as new.
+      expect(grant(table, "whole").known).toHaveLength(41);
+    }
+    // The built-in Dispatcher keeps its three tools as extras.
+    expect(grant("agents", "builtin-dispatcher")).toMatchObject({
+      mode: "allow",
+      groups: [],
+      extras: ["ask_user", "agents_list", "start_subagent"],
+    });
+    // Nothing else changed: the agent rows and their versions are still there.
+    expect(
+      db.prepare("SELECT count(*) AS n FROM agent_versions").get(),
+    ).toEqual({ n: 5 });
+  });
+
   it("applies the project's migrations to an encrypted database", () => {
     const t = tempDatabase();
     db = t.db;
