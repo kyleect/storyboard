@@ -37,6 +37,7 @@ const echo = defineTool({
   description: "Echoes its text.",
   input: z.object({ text: z.string() }),
   approval: "never",
+  group: "utilities" as const,
   execute: (input) => ({ data: { echoed: input.text } }),
 });
 
@@ -411,6 +412,7 @@ describe("runLoop", () => {
       description: "Counts calls.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: (_input, ctx) => {
         seen.push(ctx.state);
         const next = ((ctx.state as number | undefined) ?? 0) + 1;
@@ -518,6 +520,7 @@ const echoSpec = {
   description: "Echoes its text.",
   input: z.object({ text: z.string() }),
   approval: "never" as const,
+  group: "utilities" as const,
 };
 
 describe("a tool that always asks", () => {
@@ -525,6 +528,7 @@ describe("a tool that always asks", () => {
     defineTool({
       ...echoSpec,
       approval: "always",
+      group: "utilities" as const,
       execute: (input) => {
         run();
         return { data: input.text };
@@ -554,6 +558,7 @@ describe("a tool that always asks", () => {
           defineTool({
             ...echoSpec,
             approval: "ask",
+            group: "utilities" as const,
             execute: (input) => ({ data: input.text }),
           }),
         ],
@@ -597,6 +602,7 @@ describe("approval", () => {
     defineTool({
       ...echoSpec,
       approval: "ask",
+      group: "utilities" as const,
       execute: (input) => {
         run();
         return { data: input.text };
@@ -843,6 +849,7 @@ describe("asking the user (input forms)", () => {
     description: "Asks.",
     input: z.object({}),
     approval: "never",
+    group: "utilities" as const,
     execute: async (_i, ctx) => {
       const answer = await ctx.requestInput(form);
       return answer.outcome === "answered"
@@ -948,6 +955,7 @@ describe("asking the user (input forms)", () => {
       description: "Saves.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: async (_i, ctx) => {
         await ctx.requestInput(labelled);
         return { data: "saved" };
@@ -997,6 +1005,7 @@ describe("asking the user (input forms)", () => {
       description: "Asks twice.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: async (_i, ctx) => {
         await ctx.requestInput(form);
         await ctx.requestInput(form);
@@ -1029,6 +1038,7 @@ describe("asking the user (input forms)", () => {
       description: "Asks.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: async (_i, ctx) => {
         await ctx.requestInput(form);
         return { data: "x" };
@@ -1235,6 +1245,7 @@ describe("reporting errors (error reporting plan, P2)", () => {
     const tool = defineTool({
       ...echoSpec,
       approval: "ask",
+      group: "utilities" as const,
       execute: () => ({ data: "x" }),
     });
     const { reports } = await reportsFor(tool, '{"text":"a"}', {
@@ -1287,6 +1298,7 @@ describe("reporting errors (error reporting plan, P2)", () => {
       description: "Asks.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: () => ({ data: DECLINED, isError: true }),
     });
     expect((await reportsFor(declining, "{}")).reports).toEqual([]);
@@ -1297,6 +1309,7 @@ describe("reporting errors (error reporting plan, P2)", () => {
       description: "Asks.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: () => ({ data: "The form was not shown", isError: true }),
     });
     expect((await reportsFor(bad, "{}")).reports).toEqual([
@@ -1308,6 +1321,7 @@ describe("reporting errors (error reporting plan, P2)", () => {
       description: "Asks.",
       input: z.object({}),
       approval: "never",
+      group: "utilities" as const,
       execute: async (_i, ctx) => {
         await ctx.requestInput({ title: "T", fields: [] });
         return { data: "x" };
@@ -1331,6 +1345,7 @@ describe("runLoop with files and memory", () => {
     description: "Writes a session file and a global note.",
     input: z.object({ fail: z.boolean() }),
     approval: "never",
+    group: "utilities" as const,
     execute: (input, ctx) => {
       ctx.entries.writeFile("session", "a", "plain", "v");
       ctx.entries.addNote("global", "fact");
@@ -1344,6 +1359,7 @@ describe("runLoop with files and memory", () => {
     description: "Reads the session file.",
     input: z.object({}),
     approval: "never",
+    group: "utilities" as const,
     execute: (_input, ctx) => ({
       data: ctx.entries.readFile("session", "a")?.value ?? null,
     }),
@@ -1414,6 +1430,7 @@ describe("a tool the agent's setting makes ask", () => {
     defineTool({
       ...echoSpec,
       approval: "never",
+      group: "utilities" as const,
       execute: (input) => ({ data: input.text }),
     });
   const script = [
@@ -1454,6 +1471,7 @@ describe("runLoop as a subagent", () => {
     description: "Hands back.",
     input: z.object({ output: z.string() }),
     approval: "never",
+    group: "utilities" as const,
     execute: (input) => ({
       data: { handedBack: true },
       handback: input.output,
@@ -1545,6 +1563,7 @@ describe("runLoop as a subagent", () => {
             description: "p",
             input: z.object({}),
             approval: "never",
+            group: "utilities" as const,
             execute: () => ({ data: {} }),
           }),
         ],

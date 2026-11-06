@@ -43,6 +43,7 @@ const tool = (name: string): Tool =>
     description: `The ${name} tool.`,
     input: z.object({}),
     approval: "never",
+    group: "utilities" as const,
     execute: () => ({ data: { ran: name } }),
   });
 

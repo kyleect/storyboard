@@ -15,6 +15,7 @@ export const currentDate = defineTool({
     "Returns today's date (YYYY-MM-DD) in the user's local time zone.",
   input: z.object({}),
   approval: "never",
+  group: "utilities",
   execute: () => {
     const now = new Date();
     return {
@@ -32,6 +33,7 @@ export const currentTime = defineTool({
     "Returns the current time (HH:MM:SS, 24-hour) in the user's local time zone.",
   input: z.object({}),
   approval: "never",
+  group: "utilities",
   execute: () => {
     const now = new Date();
     return {

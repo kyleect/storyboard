@@ -253,6 +253,7 @@ export const webSearch = defineTool({
     query: z.string(),
   }),
   approval: "never",
+  group: "web",
   execute: async ({ query }) => {
     const q = encodeURIComponent(query);
     const url = `https://lite.duckduckgo.com/lite/?q=${q}`;
@@ -291,6 +292,7 @@ export const readWebpage = defineTool({
     url: z.string(),
   }),
   approval: "never",
+  group: "web",
   execute: async ({ url }) => {
     const { text } = await fetchText(url, `Could not read ${url}`);
 
@@ -309,6 +311,7 @@ export const readWiki = defineTool({
     topic: z.string(),
   }),
   approval: "never",
+  group: "web",
   execute: async ({ topic }) => {
     const topicSlug = topic.split(" ").join("_");
     const { text } = await fetchText(

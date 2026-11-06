@@ -14,6 +14,7 @@ export const projectsList = defineTool({
     "Lists projects (not those in the trash) with their id, name and description. Use an id as the destination of files_copy, memory_copy, files_move or memory_move.",
   input: z.object({}),
   approval: "never",
+  group: "projects",
   execute: (_input, ctx) => ({ data: { projects: ctx.projects.list() } }),
 });
 
@@ -23,6 +24,7 @@ export const projectView = defineTool({
     "Shows this session's project: its name, description, default agent and system prompt. Says so when the session is not in a project. The user must approve each call.",
   input: z.object({}),
   approval: "always",
+  group: "projects",
   execute: (_input, ctx) => {
     const project = ctx.projects.current();
     return {
@@ -60,6 +62,7 @@ export const projectCreate = defineTool({
       ),
   }),
   approval: "always",
+  group: "projects",
   execute: ({ name, description, systemPrompt }, ctx) =>
     guarded({}, async () => {
       const files = ctx.entries.listFiles("session");

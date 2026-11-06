@@ -40,6 +40,8 @@ export const startSubagent = defineTool({
       .describe("The full instructions for the agent: its only context."),
   }),
   approval: "ask",
+  group: "subagents",
+  available: (run) => run.canStartSubagent,
   execute: async ({ agentId, task }, ctx) => {
     if (!ctx.subagents.canStart) {
       return fail(
@@ -81,6 +83,9 @@ export const subagentHandback = defineTool({
     output: z.string().describe("Your result, for the agent that started you."),
   }),
   approval: "never",
+  group: "subagents",
+  alwaysOn: true,
+  available: (run) => run.isChild,
   execute: ({ output }) => {
     if (output.trim() === "") {
       return fail(

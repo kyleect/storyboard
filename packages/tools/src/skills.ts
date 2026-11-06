@@ -40,6 +40,9 @@ export const skillLoad = defineTool({
       .describe("Only when two listed skills have the same name."),
   }),
   approval: "never",
+  group: "skills",
+  alwaysOn: true,
+  available: (run) => run.hasSkills,
   execute: (input, ctx) => {
     const name = input.name.trim();
     const named = byName(ctx.skills).get(name) ?? [];

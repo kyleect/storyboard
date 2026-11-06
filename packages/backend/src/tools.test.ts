@@ -34,6 +34,7 @@ function recorder(name: string, approval: "ask" | "never" | "always") {
     description: `The ${name} tool.`,
     input: z.object({ text: z.string() }),
     approval,
+    group: "utilities",
     execute: (input) => {
       calls.push(input.text);
       return { data: { got: input.text } };
