@@ -19,6 +19,7 @@ packages/tools/src
   entries.ts         file and memory tools, entriesInstruction
   copy.ts            files_copy/move, memory_copy/move
   projects.ts        projects_list, project_view, project_create
+  project-copy.ts    what project_create copies: schemas and data, the agent, the delegation note
   agents.ts          agents_list, agent_view
   subagents.ts       start_subagent, subagent_handback
   skills.ts          skill_load, skillsList, skillsInstruction
@@ -146,13 +147,45 @@ whether the session is in a project.
 
 ### Projects and agents
 
-| Tool             | Approval | What it does                                                                                                                                                          |
-| ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `projects_list`  | never    | Lists projects not in the trash (id, name, description).                                                                                                              |
-| `project_view`   | always   | Shows the session's project: name, description, default agent, system prompt.                                                                                         |
-| `project_create` | always   | Creates a project from the session. The user edits the name, description and system prompt in a form and chooses whether the session's files and notes are copied in. |
-| `agents_list`    | never    | Lists the agents the session can pick (project agents first, then global), including tool selection and whether each can be started as a subagent.                    |
-| `agent_view`     | always   | Shows the agent this run is using, including its system prompt.                                                                                                       |
+| Tool             | Approval | What it does                                                                                                                                                                                                             |
+| ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `projects_list`  | never    | Lists projects not in the trash (id, name, description).                                                                                                                                                                 |
+| `project_view`   | always   | Shows the session's project: name, description, default agent, system prompt.                                                                                                                                            |
+| `project_create` | always   | Creates a project from the session. The user edits the name, description and system prompt in a form and chooses what is copied in: the session's files, notes, schemas and data, and the agent it is using (see below). |
+| `agents_list`    | never    | Lists the agents the session can pick (project agents first, then global), including tool selection and whether each can be started as a subagent.                                                                       |
+| `agent_view`     | always   | Shows the agent this run is using, including its system prompt.                                                                                                                                                          |
+
+#### What `project_create` copies
+
+One form offers each of these, ticked by default, only when there is something
+to copy. Everything comes from the **session** scope, and the session itself is
+not changed.
+
+| Offer           | Shown when                                               | What is created in the new project                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Files           | the session has files                                    | The files, with their keys and types.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Memory notes    | the session has notes                                    | The notes, each with a new id.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Structured data | the session has schemas or data                          | Each session schema with **every version**, and each piece of session data pinned to the version it was on. Data made from a global or built-in schema keeps using it. Data made from a schema only the session, the old project or the run's agent can see gets that schema copied too. A schema name already used by another copy becomes `Name (2)`. Data whose schema is unavailable is left out, and the result lists it as `dataSkipped`. |
+| Agent           | the run has an agent that is not the built-in Dispatcher | A project agent with the same prompt, tool grant, per-tool approvals and subagent settings, **marked as startable as a subagent** (the Dispatcher can only start such agents). The agent's own skills, schemas (every version) and data come with it; data made from a schema that is not global or built-in gets that schema copied into the new agent's scope. The original is not changed.                                                   |
+
+Copying the agent also makes the project usable at once. After the copy exists:
+
+- A note (`## Who does the work in this project`) is added to the end of the
+  project's system prompt, after what the user wrote. It names the agent and
+  tells agents that hand work on, such as the Dispatcher, to call `agents_list`
+  and start it with `start_subagent`. Every run in the project reads the project
+  prompt, the agent's own included, so the note says to ignore it for an agent
+  that does not hand work on. The user can edit or remove it afterwards.
+- If a new session in the project would not start with the built-in Dispatcher
+  (a global default agent is set), the project's default agent is set to the
+  Dispatcher. Otherwise the project's default is left unset, which already
+  means the Dispatcher.
+
+The note and the default are set only once the agent copy exists, so a failure
+never leaves a prompt that names an agent that is not there. The agent is copied
+first for the same reason: the project is usable even if copying data fails
+later. Anything created before a failure stays, and the error says what was
+copied.
 
 ### Subagents
 

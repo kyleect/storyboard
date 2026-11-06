@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  replaySessionData,
   ScriptedModel,
+  type ChatRequest,
+  type DataOp,
   type EntryOp,
   type Form,
   type ScriptStep,
@@ -9,7 +12,11 @@ import {
 import { allTools, entriesInstruction } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvent } from "./app-events.js";
+import { DataStore } from "./data-store.js";
+import { BUILTIN_DISPATCHER } from "./default-agent.js";
 import { EntryStore } from "./entries-store.js";
+import { schemaChecker } from "./json-schema.js";
+import { SkillStore } from "./skills-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -30,17 +37,26 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function setup() {
+async function setup(
+  options: {
+    /** Schemas and data reach the tools (the session's can be copied). */
+    data?: boolean;
+    /** Keep the built-in Dispatcher, so new sessions start with it. */
+    dispatcher?: boolean;
+  } = {},
+) {
   // Tests add scripts after creating what they refer to (ids, for example).
   const scripts: ScriptStep[][] = [];
   const t = tempDatabase();
-  clearBuiltinAgents(t.db);
+  if (!options.dispatcher) clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let clock = 0;
   const now = () => `2026-11-02T00:00:${String(++clock).padStart(2, "0")}Z`;
   const entries = new EntryStore(t.db, now);
   const agents = new AgentStore(t.db, now);
+  const data = new DataStore(t.db, schemaChecker, now);
+  const skills = new SkillStore(t.db, now);
   const model = new ScriptedModel(scripts);
   let note = 0;
   const runs = new RunManager({
@@ -53,6 +69,7 @@ async function setup() {
     tools: allTools,
     agents,
     entries,
+    ...(options.data ? { data, schemaChecker, skills } : {}),
     systemPrompt: (s) => entriesInstruction(s.project_id !== null),
     newNoteId: () => `n${++note}`,
     now,
@@ -62,7 +79,19 @@ async function setup() {
   const app = buildServer({ store, runs, entries, token: TOKEN, env: {} });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
-  return { t, store, runs, app, model, entries, agents, seen, scripts };
+  return {
+    t,
+    store,
+    runs,
+    app,
+    model,
+    entries,
+    agents,
+    data,
+    skills,
+    seen,
+    scripts,
+  };
 }
 
 type Ctx = Awaited<ReturnType<typeof setup>>;
@@ -388,6 +417,596 @@ describe("projects_list, project_view and project_create", () => {
       data: "Not created: the user chose not to create a project.",
     });
     expect(c.seen).toEqual([]);
+  });
+});
+
+/** A schema with two versions: data on the first does not pass the second. */
+const BEAT_V1 = {
+  type: "object",
+  properties: { title: { type: "string" } },
+  required: ["title"],
+};
+const BEAT_V2 = {
+  type: "object",
+  properties: { title: { type: "string" }, beat: { type: "string" } },
+  required: ["title", "beat"],
+};
+
+/** The session's schemas and data, as the user editing them. */
+function seedData(c: Ctx, sessionId: string, ops: DataOp[]) {
+  c.runs.editSessionData(sessionId, ops);
+}
+
+/**
+ * A two-version session schema, data on its first version that does not pass
+ * the second, and data made from a built-in schema.
+ */
+function seedBeats(c: Ctx, sessionId: string) {
+  const schema = { name: "Beat", description: "A story beat" };
+  seedData(c, sessionId, [
+    { op: "schema_put", id: "s-beat", ...schema, version: 1, body: BEAT_V1 },
+    { op: "schema_put", id: "s-beat", ...schema, version: 2, body: BEAT_V2 },
+    {
+      op: "data_put",
+      id: "d-open",
+      schemaId: "s-beat",
+      schemaVersion: 1,
+      name: "Opening",
+      description: "First beat",
+      value: { title: "Dawn" },
+    },
+    {
+      op: "data_put",
+      id: "d-todo",
+      schemaId: "builtin-task",
+      schemaVersion: 1,
+      name: "Draft",
+      description: "Write it",
+      value: { task: "Write" },
+    },
+  ]);
+}
+
+describe("project_create: structured data and the agent", () => {
+  it("offers structured data and the agent, with what each holds", async () => {
+    const c = await setup({ data: true });
+    const editor = c.agents.create(null, agentContent("Editor"));
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    seedData(c, id, [
+      {
+        op: "schema_put",
+        id: "s-beat",
+        name: "Beat",
+        description: "A story beat",
+        version: 1,
+        body: BEAT_V1,
+      },
+      {
+        op: "data_put",
+        id: "d-open",
+        schemaId: "s-beat",
+        schemaVersion: 1,
+        name: "Opening",
+        description: "First beat",
+        value: { title: "Dawn" },
+      },
+    ]);
+    c.scripts.push([call("a", "project_create")], done);
+
+    const { shown } = await go(c, id, {
+      forms: [{ name: "Ashfall", copyData: false, copyAgent: false }],
+    });
+
+    expect(shown[0]?.fields.map((f) => f.name)).toEqual([
+      "name",
+      "description",
+      "systemPrompt",
+      "copyData",
+      "copyAgent",
+    ]);
+    expect(shown[0]?.fields[3]).toMatchObject({
+      kind: "boolean",
+      default: true,
+      label:
+        "Copy this session's structured data (1 schema and 1 piece of data)",
+    });
+    expect(shown[0]?.fields[4]).toMatchObject({
+      kind: "boolean",
+      default: true,
+      label: 'Copy the agent this session is using ("Editor")',
+    });
+    expect(shown[0]?.description).toBe("This session stays where it is.");
+  });
+
+  it("copies schemas with every version, and data on the version it is pinned to", async () => {
+    const c = await setup({ data: true });
+    const id = await newSession(c.app);
+    seedBeats(c, id);
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        { name: "Ashfall", description: "", systemPrompt: "", copyData: true },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Ashfall");
+    const shared = c.data.shared({
+      projectId: created?.id ?? "",
+      agentId: null,
+    });
+    const schemas = shared.listSchemas("project");
+    expect(schemas).toMatchObject([
+      {
+        name: "Beat",
+        description: "A story beat",
+        version: 2,
+        scope: "project",
+      },
+    ]);
+    const beat = schemas[0];
+    expect(shared.schemaBody(beat?.id ?? "", 1)).toEqual(BEAT_V1);
+    expect(shared.schemaBody(beat?.id ?? "", 2)).toEqual(BEAT_V2);
+    expect(
+      shared.listData("project").map((d) => ({
+        name: d.name,
+        schemaId: d.schemaId,
+        schemaVersion: d.schemaVersion,
+        value: d.value,
+      })),
+    ).toEqual([
+      // A built-in schema stays where it is: the data keeps using it.
+      {
+        name: "Draft",
+        schemaId: "builtin-task",
+        schemaVersion: 1,
+        value: { task: "Write" },
+      },
+      // Did not pass version 2, so it stays pinned to version 1.
+      {
+        name: "Opening",
+        schemaId: beat?.id,
+        schemaVersion: 1,
+        value: { title: "Dawn" },
+      },
+    ]);
+    expect(results(c, id)[0]?.data).toMatchObject({
+      project: { name: "Ashfall" },
+      schemasCopied: 1,
+      dataCopied: 2,
+    });
+    // The session's own are still there.
+    const session = replaySessionData(
+      c.store.listMessages(id).map((m) => m.message),
+    );
+    expect([...session.schemas.keys()]).toEqual(["s-beat"]);
+    expect([...session.data.keys()]).toEqual(["d-open", "d-todo"]);
+  });
+
+  it("copies no schemas or data when that is not ticked", async () => {
+    const c = await setup({ data: true });
+    const id = await newSession(c.app);
+    seedBeats(c, id);
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        { name: "Ashfall", description: "", systemPrompt: "", copyData: false },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Ashfall");
+    const shared = c.data.shared({
+      projectId: created?.id ?? "",
+      agentId: null,
+    });
+    expect(shared.listSchemas("project")).toEqual([]);
+    expect(shared.listData("project")).toEqual([]);
+    expect(results(c, id)[0]?.data).not.toHaveProperty("schemasCopied");
+  });
+
+  it("brings along the project schema that session data uses, renaming a clash", async () => {
+    const c = await setup({ data: true });
+    const from = await newProject(c.app, "From");
+    c.data.shared({ projectId: from, agentId: null }).createSchema(
+      "project",
+      {
+        id: "p-scene",
+        name: "Scene",
+        description: "A scene",
+        copiedFrom: null,
+      },
+      BEAT_V1,
+    );
+    const id = await newSession(c.app, from);
+    seedData(c, id, [
+      {
+        op: "schema_put",
+        id: "s-scene",
+        name: "Scene",
+        description: "A session scene",
+        version: 1,
+        body: BEAT_V2,
+      },
+      {
+        op: "data_put",
+        id: "d-1",
+        schemaId: "p-scene",
+        schemaVersion: 1,
+        name: "Harbour",
+        description: "Opening scene",
+        value: { title: "Harbour" },
+      },
+    ]);
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        { name: "Copy", description: "", systemPrompt: "", copyData: true },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Copy");
+    const shared = c.data.shared({
+      projectId: created?.id ?? "",
+      agentId: null,
+    });
+    expect(shared.listSchemas("project").map((s) => s.name)).toEqual([
+      "Scene",
+      "Scene (2)",
+    ]);
+    const [harbour] = shared.listData("project");
+    const used = shared.getSchema(harbour?.schemaId ?? "");
+    // The data follows its schema into the new project, not the old one.
+    expect(used).toMatchObject({
+      scope: "project",
+      name: expect.stringMatching(/^Scene/),
+    });
+    expect(used?.id).not.toBe("p-scene");
+    expect(shared.getSchema("p-scene")).toBeUndefined();
+  });
+
+  it("leaves out data whose schema is not available, and says so", async () => {
+    const c = await setup({ data: true });
+    const id = await newSession(c.app);
+    seedData(c, id, [
+      {
+        op: "data_put",
+        id: "d-lost",
+        schemaId: "gone",
+        schemaVersion: 1,
+        name: "Lost",
+        description: "Its schema is out of reach",
+        value: {},
+      },
+      {
+        op: "data_put",
+        id: "d-todo",
+        schemaId: "builtin-task",
+        schemaVersion: 1,
+        name: "Draft",
+        description: "Write it",
+        value: { task: "Write" },
+      },
+    ]);
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        { name: "Ashfall", description: "", systemPrompt: "", copyData: true },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Ashfall");
+    const shared = c.data.shared({
+      projectId: created?.id ?? "",
+      agentId: null,
+    });
+    expect(shared.listData("project").map((d) => d.name)).toEqual(["Draft"]);
+    expect(results(c, id)[0]?.data).toMatchObject({
+      schemasCopied: 0,
+      dataCopied: 1,
+      dataSkipped: [
+        { name: "Lost", because: "its schema is not available here" },
+      ],
+    });
+  });
+
+  it("copies the agent as a startable project agent and tells the Dispatcher to use it", async () => {
+    const c = await setup({ dispatcher: true });
+    const editor = c.agents.create(null, {
+      ...agentContent("Editor"),
+      toolApproval: { web_search: false },
+      childReminders: 3,
+      childPrompt: "Hand back when done.",
+      subagent: false,
+    });
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    c.scripts.push([call("a", "project_create", { name: "Ashfall" })], done);
+
+    const { shown } = await go(c, id, {
+      forms: [
+        {
+          name: "Ashfall",
+          description: "A story",
+          systemPrompt: "Be brief.",
+          copyAgent: true,
+        },
+      ],
+    });
+
+    expect(shown[0]?.description).toBe("This session stays where it is.");
+    const created = c.store.listProjects().find((p) => p.name === "Ashfall");
+    const [copy] = c.agents.list(created?.id ?? "");
+    expect(copy).toMatchObject({
+      name: "Editor",
+      description: "Editor agent",
+      prompt: "You are Editor.",
+      toolApproval: { web_search: false },
+      childReminders: 3,
+      childPrompt: "Hand back when done.",
+      // The Dispatcher can only start agents marked as subagents.
+      subagent: true,
+      projectId: created?.id,
+    });
+    expect(copy?.toolGrant).toEqual(editor.toolGrant);
+    // The original is left alone.
+    expect(c.agents.get(editor.id)).toMatchObject({
+      subagent: false,
+      projectId: null,
+    });
+
+    // The prompt keeps what the user wrote, then names the agent.
+    const prompt = created?.system_prompt ?? "";
+    expect(
+      prompt.startsWith("Be brief.\n\n## Who does the work in this project"),
+    ).toBe(true);
+    expect(prompt).toContain('project agent "Editor"');
+    expect(prompt).toContain("start_subagent");
+    // No global default, so the Dispatcher is what a new session starts with
+    // anyway: the project's default is left unset.
+    expect(created?.default_agent_id).toBeNull();
+    expect(results(c, id)[0]?.data).toMatchObject({
+      project: { id: created?.id, name: "Ashfall" },
+      agent: { id: copy?.id, name: "Editor" },
+    });
+    expect(c.seen).toContainEqual({
+      type: "agents.changed",
+      data: { agentId: copy?.id, projectId: created?.id, clearedSessions: [] },
+    });
+  });
+
+  it("makes the Dispatcher the project's starting agent when a global default would win", async () => {
+    const c = await setup({ dispatcher: true });
+    const planner = c.agents.create(null, agentContent("Planner"));
+    writeSettings(c.t.db, { defaultAgentId: planner.id });
+    const editor = c.agents.create(null, agentContent("Editor"));
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        { name: "Ashfall", description: "", systemPrompt: "", copyAgent: true },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Ashfall");
+    expect(created?.default_agent_id).toBe(BUILTIN_DISPATCHER);
+    expect(created?.system_prompt.startsWith("## Who does the work")).toBe(
+      true,
+    );
+    expect(JSON.stringify(results(c, id)[0]?.data)).toContain(
+      "new sessions in the project start with the Dispatcher",
+    );
+    // A session created in the project now starts with the Dispatcher.
+    const inside = await newSession(c.app, created?.id);
+    expect(c.store.getSession(inside)?.agent_id).toBe(BUILTIN_DISPATCHER);
+  });
+
+  it("copies the agent's own skills, schemas and data with it", async () => {
+    const c = await setup({ data: true });
+    const from = await newProject(c.app, "From");
+    const editor = c.agents.create(from, agentContent("Editor"));
+    c.skills.create(
+      { scope: "agent", id: editor.id },
+      { displayName: "Tighten Prose", description: "Cut it", body: "Cut." },
+    );
+    c.data.shared({ projectId: from, agentId: null }).createSchema(
+      "project",
+      {
+        id: "p-scene",
+        name: "Scene",
+        description: "A scene",
+        copiedFrom: null,
+      },
+      BEAT_V1,
+    );
+    const own = c.data.shared({ projectId: from, agentId: editor.id });
+    own.createSchema(
+      "agent",
+      { id: "a-beat", name: "Beat", description: "A beat", copiedFrom: null },
+      BEAT_V1,
+    );
+    own.addSchemaVersion("a-beat", BEAT_V2);
+    const put = (id: string, schemaId: string, name: string, version = 1) =>
+      own.putData(
+        "agent",
+        {
+          id,
+          schemaId,
+          schemaVersion: version,
+          name,
+          description: "d",
+          value: { title: name },
+        },
+        { by: "user" },
+      );
+    put("d1", "a-beat", "Opening");
+    put("d2", "p-scene", "Harbour");
+    put("d3", "builtin-task", "Draft");
+    const id = await newSession(c.app, from);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        { name: "Copy", description: "", systemPrompt: "", copyAgent: true },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Copy");
+    const [copy] = c.agents.list(created?.id ?? "");
+    expect(
+      c.skills
+        .list({ scope: "agent", id: copy?.id ?? "" })
+        .map((k) => [k.name, k.body]),
+    ).toEqual([["tighten-prose", "Cut."]]);
+    const mine = c.data.shared({
+      projectId: created?.id ?? "",
+      agentId: copy?.id ?? "",
+    });
+    const schemas = mine.listSchemas("agent");
+    expect(schemas.map((x) => [x.name, x.version])).toEqual([
+      ["Beat", 2],
+      ["Scene", 1],
+    ]);
+    const beat = schemas.find((x) => x.name === "Beat");
+    expect(mine.schemaBody(beat?.id ?? "", 1)).toEqual(BEAT_V1);
+    expect(mine.schemaBody(beat?.id ?? "", 2)).toEqual(BEAT_V2);
+    const scene = schemas.find((x) => x.name === "Scene");
+    expect(
+      mine.listData("agent").map((d) => [d.name, d.schemaId, d.schemaVersion]),
+    ).toEqual([
+      ["Draft", "builtin-task", 1],
+      ["Harbour", scene?.id, 1],
+      ["Opening", beat?.id, 1],
+    ]);
+    // The original keeps its own, and the new project got no schemas of its own.
+    expect(c.skills.list({ scope: "agent", id: editor.id })).toHaveLength(1);
+    expect(own.listData("agent")).toHaveLength(3);
+    expect(mine.listSchemas("project")).toEqual([]);
+    expect(results(c, id)[0]?.data).toMatchObject({
+      agent: { name: "Editor", skills: 1, schemas: 2, data: 3 },
+    });
+  });
+
+  it("leaves the agent, the prompt and the default alone when it is not ticked", async () => {
+    const c = await setup({ dispatcher: true });
+    const planner = c.agents.create(null, agentContent("Planner"));
+    writeSettings(c.t.db, { defaultAgentId: planner.id });
+    const editor = c.agents.create(null, agentContent("Editor"));
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    c.scripts.push([call("a", "project_create")], done);
+
+    await go(c, id, {
+      forms: [
+        {
+          name: "Ashfall",
+          description: "",
+          systemPrompt: "Be brief.",
+          copyAgent: false,
+        },
+      ],
+    });
+
+    const created = c.store.listProjects().find((p) => p.name === "Ashfall");
+    expect(c.agents.list(created?.id ?? "")).toEqual([]);
+    expect(created).toMatchObject({
+      system_prompt: "Be brief.",
+      default_agent_id: null,
+    });
+    expect(results(c, id)[0]?.data).not.toHaveProperty("agent");
+  });
+
+  it("lets a new session in the project start chatting: the Dispatcher finds the copy and starts it", async () => {
+    const c = await setup({ dispatcher: true });
+    const editor = c.agents.create(null, {
+      ...agentContent("Editor"),
+      subagent: false,
+    });
+    const from = await newSession(c.app);
+    c.store.setSessionChoices(from, { agentId: editor.id });
+    c.scripts.push([call("a", "project_create")], done);
+    await go(c, from, {
+      forms: [
+        {
+          name: "Ashfall",
+          description: "",
+          systemPrompt: "Stories about a volcano.",
+          copyAgent: true,
+        },
+      ],
+    });
+    const project = c.store.listProjects().find((p) => p.name === "Ashfall");
+    const [copy] = c.agents.list(project?.id ?? "");
+
+    // Open the project and chat: nothing to pick, the Dispatcher starts.
+    const inside = await newSession(c.app, project?.id);
+    expect(c.store.getSession(inside)?.agent_id).toBe(BUILTIN_DISPATCHER);
+    c.scripts.push(
+      [call("l", "agents_list")],
+      [call("s", "start_subagent", { agentId: copy?.id, task: "Tighten it" })],
+      [call("h", "subagent_handback", { output: "Tightened." })],
+      done,
+    );
+    const before = c.model.requests.length;
+    await go(c, inside);
+
+    // The Dispatcher's system message: the project prompt, with the note
+    // naming the agent, ahead of its own prompt.
+    const system = (n: number) =>
+      (c.model.requests[before + n] as ChatRequest).messages.find(
+        (m) => m.role === "system",
+      )?.content as string;
+    const dispatcher = system(0);
+    expect(dispatcher).toContain("Stories about a volcano.");
+    expect(dispatcher).toContain('project agent "Editor"');
+    expect(dispatcher.indexOf("Stories about a volcano.")).toBeLessThan(
+      dispatcher.indexOf("You are the user's entry point"),
+    );
+
+    // It sees the copy first, marked as startable, and can start it.
+    const calls = results(c, inside);
+    const list = calls.find((r) => r.name === "agents_list")?.data as {
+      agents: {
+        name: string;
+        scope: string;
+        project?: string;
+        subagent: boolean;
+      }[];
+    };
+    expect(list.agents[0]).toEqual(
+      expect.objectContaining({
+        name: "Editor",
+        scope: "project",
+        project: "Ashfall",
+        subagent: true,
+      }),
+    );
+    expect(calls.find((r) => r.name === "start_subagent")).toMatchObject({
+      isError: false,
+      data: { agent: "Editor", output: "Tightened." },
+    });
+    // The copy ran with its own prompt (the original agent is untouched).
+    expect(system(2)).toContain("You are Editor.");
+    expect(c.agents.get(editor.id)?.subagent).toBe(false);
+  });
+
+  it("does not offer the agent when the session has none", async () => {
+    const c = await setup({ dispatcher: true });
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: null });
+    c.scripts.push([call("a", "project_create")], done);
+
+    const { shown } = await go(c, id, { forms: [null] });
+    expect(shown[0]?.fields.map((f) => f.name)).not.toContain("copyAgent");
+    expect(shown[0]?.description).toBe(
+      "The project has no agent. This session stays where it is.",
+    );
   });
 });
 

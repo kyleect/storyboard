@@ -72,9 +72,9 @@ export interface ProjectInfo extends ProjectSummary {
 }
 
 /**
- * A way to send files and notes to a project. It can only write: nothing in
- * the project can be read through it (agent tools design, Q6, Q2 of the
- * plan).
+ * A way to send files, notes, schemas, data and an agent to a project. It can
+ * only write: nothing in the project can be read through it (agent tools
+ * design, Q6, Q2 of the plan).
  */
 export interface ProjectPush {
   /** Whether the project has a live file with this key. */
@@ -83,6 +83,52 @@ export interface ProjectPush {
   putFile(key: string, type: FileType, value: string): void;
   /** Adds a note with a new id; returns the id. */
   addNote(text: string): string;
+  /**
+   * Creates a schema in the project's scope with every one of `versions`
+   * (JSON Schemas, oldest first), so data pinned to an older version stays
+   * valid. Returns the new schema's id. The name must be free in the project.
+   */
+  putSchema(schema: {
+    name: string;
+    description: string;
+    copiedFrom: string | null;
+    versions: readonly unknown[];
+  }): string;
+  /**
+   * Creates data in the project's scope, pinned to a version of a schema the
+   * project can use: a global or built-in one, or one made with `putSchema`.
+   * Returns the new data's id.
+   */
+  putData(data: {
+    schemaId: string;
+    schemaVersion: number;
+    name: string;
+    description: string;
+    value: unknown;
+  }): string;
+  /**
+   * Copies the agent this run uses into the project as a project agent that
+   * can be started as a subagent (whatever the original is), with what
+   * belongs to it: its own skills, schemas (every version) and data. Data
+   * made from a schema that is not global or built-in keeps working because
+   * that schema is copied into the new agent's scope. Throws an `EntryError`
+   * when the run has no agent, or its agent is a built-in one.
+   */
+  putAgent(): {
+    id: string;
+    name: string;
+    skills: number;
+    schemas: number;
+    data: number;
+  };
+  /**
+   * Makes the built-in Dispatcher the agent new sessions in the project start
+   * with, when they would not start with it already (a global default agent
+   * is set). Returns whether it changed anything.
+   */
+  useDispatcher(): boolean;
+  /** Replaces the project's system prompt. */
+  setSystemPrompt(text: string): void;
 }
 
 /** Projects, for the tools that list, view, create and send to them. */

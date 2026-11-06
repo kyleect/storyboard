@@ -1388,6 +1388,9 @@ export class RunManager {
                 projects: projectAccess({
                   store: this.store,
                   entries: this.options.entries,
+                  data: this.options.data,
+                  skills: this.options.skills,
+                  runAgent: agent,
                   agents: this.options.agents,
                   events: this.events,
                   session,
