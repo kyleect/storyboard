@@ -114,6 +114,12 @@ Each line is the name of a schema, then the name and description of a piece of d
 {{data}}
 </data>
 
+<agents>
+These are the agents available to you. If none appear below, then there are no agents available.
+
+{{agents}}
+</agents>
+
 <rules>
 - Be concise in your responses
 </rules>

@@ -29,7 +29,7 @@ packages/backend
     tool-settings.ts     per-tool approval, always-on and off settings
     tool-grants.ts       an agent's tool grant: groups, exceptions, extras
     tool-access.ts       project and agent access for tools
-    placeholders.ts      {{skills}} {{tools}} {{schemas}} {{data}}
+    placeholders.ts      {{skills}} {{tools}} {{schemas}} {{data}} {{agents}}
     default-agent.ts     which agent a new session starts with
     search-index.ts, search.ts, embedder.ts, embed-prefix.ts   search
     json-schema.ts       Ajv-based schema checker
@@ -338,15 +338,16 @@ empty parts dropped and the rest joined by blank lines:
    one).
 
 **Placeholders.** In prompts the user writes (parts 1 to 3), `{{skills}}`,
-`{{tools}}`, `{{schemas}}` and `{{data}}` are replaced once, when the run
-starts, with what _this run_ has:
+`{{tools}}`, `{{schemas}}`, `{{data}}` and `{{agents}}` are replaced once, when
+the run starts, with what _this run_ has:
 
-| Placeholder   | Expands to                                                                    |
-| ------------- | ----------------------------------------------------------------------------- |
-| `{{skills}}`  | One line per skill in scope: `- name: description`.                           |
-| `{{tools}}`   | One line per offered tool: name and the first sentence of its description.    |
-| `{{schemas}}` | One line per schema in scope. Empty if the run offers no schema or data tool. |
-| `{{data}}`    | One line per piece of data in scope, with its schema's name.                  |
+| Placeholder   | Expands to                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| `{{skills}}`  | One line per skill in scope: `- name: description`.                                                     |
+| `{{tools}}`   | One line per offered tool: name and the first sentence of its description.                              |
+| `{{schemas}}` | One line per schema in scope. Empty if the run offers no schema or data tool.                           |
+| `{{data}}`    | One line per piece of data in scope, with its schema's name.                                            |
+| `{{agents}}`  | One line per startable agent: `- (id) name: description`. Empty unless the run offers `start_subagent`. |
 
 Expansion is a single pass: text produced by an expansion is not scanned again.
 Anything else in braces is left as typed. Because the same lists are generated

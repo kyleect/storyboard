@@ -63,10 +63,14 @@ import {
 import { allowedNames } from "./tool-grants.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
 import {
+  agentsList,
   expandPlaceholders,
   toolsList,
   usesPlaceholder,
 } from "./placeholders.js";
+
+/** The tool that starts a subagent; `{{agents}}` is listed only with it. */
+const START_SUBAGENT = "start_subagent";
 
 /** Choices sent with a message or continue; they become the session's. */
 export interface RunChoices {
@@ -1211,8 +1215,8 @@ export class RunManager {
         : [];
     const schemasText = this.options.schemasPrompt?.(schemas);
     // The prompts the user wrote may place the lists with {{skills}},
-    // {{tools}}, {{schemas}} and {{data}}; they are filled in once, here,
-    // from what this run has
+    // {{tools}}, {{schemas}}, {{data}} and {{agents}}; they are filled in
+    // once, here, from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
     // {{skills}} the skill list goes after them, as before (decision 10).
     // A subagent's system message is built the same way, with its own line
@@ -1225,11 +1229,18 @@ export class RunManager {
       project?.system_prompt,
       agent?.prompt,
     ];
+    // The agents this run can start: only when it is offered `start_subagent`
+    // (so not at the depth limit, and not when the agent or the user has it
+    // off), and the ones the session can pick, as `agents_list` shows them.
+    const agentsText = tools.some((t) => t.name === START_SUBAGENT)
+      ? agentsList(this.options.agents?.pickable(dataOwner.projectId) ?? [])
+      : "";
     const values = {
       skills: this.options.skillsList?.(skills) ?? "",
       tools: toolsList(tools),
       schemas: this.options.schemasList?.(schemas) ?? "",
       data: this.options.dataList?.(dataItems) ?? "",
+      agents: agentsText,
     };
     const expanded = written.map((p) =>
       p === undefined ? p : expandPlaceholders(p, values),
