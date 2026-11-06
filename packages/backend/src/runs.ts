@@ -155,6 +155,12 @@ export interface RunManagerOptions {
    * 6.11); an agent narrows them (agents design 6).
    */
   tools?: readonly Tool[];
+  /**
+   * Tools that come and go while the backend runs: the MCP servers' (MCP
+   * design). Asked every time a run starts or a tool is looked up, and
+   * added after `tools`. A name already in `tools` is not replaced.
+   */
+  dynamicTools?: () => readonly Tool[];
   /** Agents. Left out: sessions cannot pick one. */
   agents?: AgentStore;
   /** Skills. Left out: no run has any. */
@@ -275,7 +281,7 @@ export class RunManager {
   private shuttingDown = false;
   private readonly now: () => string;
   private readonly newId: () => string;
-  readonly tools: readonly Tool[];
+  private readonly fixedTools: readonly Tool[];
   /** Tool errors and failed runs (error reporting plan, P4). */
   readonly errors: ErrorStore;
   /** App-wide events; `errors.changed` is published here. */
@@ -283,11 +289,19 @@ export class RunManager {
 
   constructor(private readonly options: RunManagerOptions) {
     this.store = options.store;
-    this.tools = options.tools ?? [];
+    this.fixedTools = options.tools ?? [];
     this.now = options.now ?? (() => new Date().toISOString());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.errors = options.errors ?? new ErrorStore(this.store.db, this.newId);
     this.events = options.events ?? new AppEvents();
+  }
+
+  /** Every tool there is now: the fixed ones, then those that come and go. */
+  get tools(): readonly Tool[] {
+    const dynamic = this.options.dynamicTools?.() ?? [];
+    if (dynamic.length === 0) return this.fixedTools;
+    const taken = new Set(this.fixedTools.map((t) => t.name));
+    return [...this.fixedTools, ...dynamic.filter((t) => !taken.has(t.name))];
   }
 
   /** Records an error and tells every window (error reporting plan, P6). */

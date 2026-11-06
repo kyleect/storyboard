@@ -196,6 +196,7 @@ describe("TOOL_GROUPS", () => {
       "sessions",
       "skills",
       "web",
+      "mcp",
       "utilities",
     ]);
     expect(new Set(TOOL_GROUPS.map((g) => g.label)).size).toBe(

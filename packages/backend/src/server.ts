@@ -28,6 +28,9 @@ import { registerDataRoutes } from "./data-routes.js";
 import { registerEntryRoutes } from "./entry-routes.js";
 import { schemaChecker } from "./json-schema.js";
 import { RunError, type RunManager } from "./runs.js";
+import { registerMcpRoutes } from "./mcp-routes.js";
+import type { McpManager } from "./mcp-manager.js";
+import type { McpServerStore } from "./mcp-store.js";
 import { registerSkillRoutes } from "./skill-routes.js";
 import { SkillStore } from "./skills-store.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -63,6 +66,11 @@ export interface ServerOptions {
   skills?: SkillStore;
   /** Global, project and agent schemas and data. Default: over `store.db`. */
   data?: DataStore;
+  /**
+   * MCP servers and their connections. Left out: no MCP routes (the
+   * backend's `main` passes them).
+   */
+  mcp?: { store: McpServerStore; manager: McpManager };
   /** The app-wide event stream's source. Default: the run manager's. */
   events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
@@ -198,6 +206,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     skills: options.skills ?? new SkillStore(store.db, now, newId),
     events,
   });
+
+  if (options.mcp) registerMcpRoutes(app, { ...options.mcp, events });
 
   app.get("/api/settings", async () => readSettings(store.db, env));
 

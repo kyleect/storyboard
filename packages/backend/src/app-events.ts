@@ -45,6 +45,15 @@ export type AppEvent =
     }
   | {
       /**
+       * An MCP server was created, saved, deleted or reconnected, or its
+       * connection changed (MCP design): windows refetch the servers and
+       * their tools.
+       */
+      type: "mcp.changed";
+      data: { serverId: string };
+    }
+  | {
+      /**
        * An error was recorded, or errors were cleared (error reporting
        * plan, P6).
        */

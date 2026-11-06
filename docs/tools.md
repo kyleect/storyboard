@@ -59,18 +59,19 @@ Every tool belongs to exactly one group. The agent editor and Settings show tool
 under their group, and an agent can be given or refused a whole group at once.
 The groups, in display order, are defined by `TOOL_GROUPS` in core:
 
-| Group (id)                          | Tools                                                 |
-| ----------------------------------- | ----------------------------------------------------- |
-| Files (`files`)                     | `files_*`, including `files_copy` and `files_move`    |
-| Memory (`memory`)                   | `memory_*`, including `memory_copy` and `memory_move` |
-| Structured Data (`structured-data`) | `schemas_list`, `schema_*`, `data_*`                  |
-| Projects (`projects`)               | `projects_list`, `project_view`, `project_create`     |
-| Agents (`agents`)                   | `agents_list`, `agent_view`                           |
-| Subagents (`subagents`)             | `start_subagent`, `subagent_handback`                 |
-| Sessions (`sessions`)               | none yet                                              |
-| Skills (`skills`)                   | `skill_load`                                          |
-| Web (`web`)                         | `web_search`, `read_webpage`, `read_wiki`             |
-| Utilities (`utilities`)             | `current_date`, `current_time`, `ask_user`            |
+| Group (id)                          | Tools                                                             |
+| ----------------------------------- | ----------------------------------------------------------------- |
+| Files (`files`)                     | `files_*`, including `files_copy` and `files_move`                |
+| Memory (`memory`)                   | `memory_*`, including `memory_copy` and `memory_move`             |
+| Structured Data (`structured-data`) | `schemas_list`, `schema_*`, `data_*`                              |
+| Projects (`projects`)               | `projects_list`, `project_view`, `project_create`                 |
+| Agents (`agents`)                   | `agents_list`, `agent_view`                                       |
+| Subagents (`subagents`)             | `start_subagent`, `subagent_handback`                             |
+| Sessions (`sessions`)               | none yet                                                          |
+| Skills (`skills`)                   | `skill_load`                                                      |
+| Web (`web`)                         | `web_search`, `read_webpage`, `read_wiki`                         |
+| MCP (`mcp`)                         | `mcp_<server>_<tool>`, from [MCP servers](backend.md#mcp-servers) |
+| Utilities (`utilities`)             | `current_date`, `current_time`, `ask_user`                        |
 
 Three more facts are declared on each tool:
 
@@ -79,8 +80,8 @@ Three more facts are declared on each tool:
   the always-on tools are the file and memory tools (`files_*` and `memory_*`
   except the copy and move tools), `skill_load` and `subagent_handback`.
 - **`needsReview`**: the tool is destructive or changes prompts, so a group grant
-  does not cover it; an agent has it only when it is listed on its own. No tool
-  sets it yet.
+  does not cover it; an agent has it only when it is listed on its own. An MCP
+  tool sets it unless its server marks it read-only.
 - **`available(run)`**: a function of the run's facts (`hasSkills`, `isChild`,
   `canStartSubagent`). A tool whose function returns false is not offered in
   that run.

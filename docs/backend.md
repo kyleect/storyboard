@@ -50,23 +50,25 @@ packages/backend
 3. Load or create the database key; open the encrypted database.
 4. Apply pending migrations.
 5. Create the stores (`Store`, `EntryStore`, `AgentStore`, `SkillStore`,
-   `DataStore`) and the `SearchIndex`.
-6. Create the `RunManager`, giving it the stores, the settings reader, a factory
-   for the llama-server adapter, the full tool list, and the prompt builders from
-   the tools package.
-7. **Recover**: runs still marked `running` from a previous process are closed as
+   `DataStore`, `McpServerStore`) and the `SearchIndex`.
+6. Create the `McpManager` (it connects in step 11).
+7. Create the `RunManager`, giving it the stores, the settings reader, a factory
+   for the llama-server adapter, the full tool list, the MCP manager's tools
+   (`dynamicTools`), and the prompt builders from the tools package.
+8. **Recover**: runs still marked `running` from a previous process are closed as
    `interrupted` (see [recovery](#recovery)).
-8. **Purge expired trash** according to `trashRetentionDays`.
-9. **Index** existing files and notes if the search index has not been built.
-10. Load or create the API token; start the `Embedder`; build the Fastify server;
-    listen on `127.0.0.1` at the configured port.
-11. Write `backend.json` (`pid`, `port`, `token`) and print the dev frontend URL
+9. **Purge expired trash** according to `trashRetentionDays`.
+10. **Index** existing files and notes if the search index has not been built.
+11. Load or create the API token; start the `Embedder`; build the Fastify server;
+    **start the MCP servers**, which connect in the background (the backend does
+    not wait for them); listen on `127.0.0.1` at the configured port.
+12. Write `backend.json` (`pid`, `port`, `token`) and print the dev frontend URL
     containing the token in its fragment.
 
 On `SIGINT` or `SIGTERM` the backend stops accepting new runs, aborts active runs
-(they end as `interrupted` and keep their partial output), waits for them, stops
-the embedder, closes the server and the database, removes `backend.json` and
-exits.
+(they end as `interrupted` and keep their partial output), waits for them, closes
+the MCP connections (which stops the programs it started), stops the embedder,
+closes the server and the database, removes `backend.json` and exits.
 
 The server binds only to the loopback address. Nothing else is exposed.
 
@@ -106,6 +108,7 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 
 | Area             | Tables                                                                                     | Notes                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| MCP              | `mcp_servers`                                                                              | Servers the backend connects to; see [MCP servers](#mcp-servers).                             |
 | Settings         | `settings`                                                                                 | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.       |
 | Conversation     | `sessions`, `messages`, `projects`                                                         | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session. |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`                                 | See below.                                                                                    |
@@ -539,6 +542,52 @@ and report back. It is restricted to those three tools (plus the always-on ones)
 | Schemas | Task, Goal, Decision                      |
 | Skills  | Schemas and data, Tasks, Goals, Decisions |
 
+## MCP servers
+
+The backend is an MCP client. Each row of `mcp_servers` is a server it connects
+to; the server's tools become harness tools in the `mcp` group, so they go
+through the same grants, approvals and settings as any other tool. Only tools are
+used (not resources, prompts or sampling).
+
+- **Transports.** `stdio`: the backend starts a program (`command`, `args`, `env`,
+  `cwd`; `env` is added to a small safe subset of the backend's own, not all of
+  it). `http`: a remote Streamable HTTP server (`url`, `headers`, for example an
+  `Authorization` header). Secrets are stored in the encrypted database like the
+  rest. A stdio server runs with the backend's permissions, so the settings page
+  says to add only ones you trust.
+- **Names.** A tool is named `mcp_<server>_<tool>`: the server's `name` (at most
+  24 lowercase letters, digits and `-`), then the server's own tool name with
+  characters a tool name cannot have turned into `_`, cut to 64 characters and
+  made unique.
+- **Approval and grants.** Every MCP tool asks by default; the server's hints
+  never lower that. A tool the server does not mark `readOnlyHint` sets
+  `needsReview`, so an agent's group grant does not cover it and it has to be
+  granted on its own (see [tool grants](#tool-grants)).
+- **Lifecycle.** `McpManager` connects enabled servers in the background at
+  startup (15 s limit), lists their tools, and follows `tools/list_changed`. A
+  tool of a server that is not connected is not offered to new runs. A call to a
+  tool a run was already offered, when its server has gone, tries to reconnect
+  once and otherwise fails with an error the model sees. Saving a server
+  reconnects it with the new settings; turning it off closes the connection.
+- **Results.** Text is passed on. Images, audio and binary resources are named
+  and left out (the model is text only). A result the server marks as an error
+  is an error result; one with no content but structured content is that as
+  JSON. Results are cut at 60 000 characters, and a call times out after 60 s.
+- **`RunManager.tools`** is the built-in tools followed by `dynamicTools()`, read
+  each time, so a run starts with the tools that exist then.
+
+Routes (all need the token):
+
+| Route                                 | Does                                                            |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `GET /api/mcp/servers`                | Every server with its status (`state`, `error`, `tools`).       |
+| `POST /api/mcp/servers`               | Creates one (`name`, `enabled`, `config`); it connects at once. |
+| `GET/PUT/DELETE /api/mcp/servers/:id` | Read, replace (reconnects), delete.                             |
+| `POST /api/mcp/servers/:id/reconnect` | Connects again and answers when the attempt is over.            |
+
+Not yet: OAuth for remote servers, the older SSE transport, and MCP resources and
+prompts.
+
 ## Search
 
 Files and notes in every scope are searchable by **keywords and by meaning**.
@@ -688,6 +737,7 @@ Sends `AppEvent`s, not stored and not replayed:
 
 | Event              | Meaning                                                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `mcp.changed`      | An MCP server was created, saved or deleted, or its connection or tools changed.                             |
 | `agents.changed`   | An agent was created, saved, deleted, restored or imported (includes sessions whose agent pick was cleared). |
 | `skills.changed`   | A skill changed.                                                                                             |
 | `data.changed`     | Global, project or agent schemas or data changed.                                                            |

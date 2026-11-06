@@ -32,6 +32,7 @@ import {
 import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
+import { McpServers } from "./McpServers";
 import { ToolSettings } from "./ToolSettings";
 
 /**
@@ -271,6 +272,8 @@ export function Settings() {
       <Subagents view={query.data} />
       <Divider />
       <SessionTitles view={query.data} />
+      <Divider />
+      <McpServers />
       <Divider />
       <ToolSettings />
       <Divider />

@@ -9,6 +9,7 @@
   "dependencies": {
     "@harness/core": "workspace:*",
     "@harness/tools": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "better-sqlite3-multiple-ciphers": "13.0.3",

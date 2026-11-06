@@ -496,6 +496,11 @@ type AppEvent =
       };
     }
   | {
+      /** An MCP server or its connection changed (MCP design). */
+      type: "mcp.changed";
+      data: { serverId: string };
+    }
+  | {
       /** Errors recorded or cleared (error reporting plan, P6). */
       type: "errors.changed";
       data: { sessionId: string | null };
@@ -510,7 +515,7 @@ type AppEvent =
  * Listens to the app-wide stream for the whole app. Its events are not
  * replayed, so agent data and errors are refetched whenever the stream
  * opens or reopens, then on each `agents.changed`, `projects.changed`,
- * `skills.changed` or
+ * `skills.changed`, `mcp.changed` or
  * `errors.changed`.
  */
 export function useAppEvents() {
@@ -528,6 +533,16 @@ export function useAppEvents() {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     const refreshData = () =>
       void queryClient.invalidateQueries({ queryKey: ["data"] });
+    // A server's tools come and go with its connection, so the tool lists
+    // (settings, agent editor) change with it.
+    const refreshMcp = () => {
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+      void queryClient.invalidateQueries({ queryKey: ["tools"] });
+      void queryClient.invalidateQueries({ queryKey: ["agent-tools"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["agent-tool-approvals"],
+      });
+    };
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 500;
@@ -541,6 +556,7 @@ export function useAppEvents() {
         refreshErrors();
         refreshProjects();
         refreshData();
+        refreshMcp();
       };
       source.onmessage = (msg: MessageEvent<string>) => {
         const event = JSON.parse(msg.data) as AppEvent;
@@ -559,6 +575,10 @@ export function useAppEvents() {
         }
         if (event.type === "data.changed") {
           refreshData();
+          return;
+        }
+        if (event.type === "mcp.changed") {
+          refreshMcp();
           return;
         }
         if (event.type !== "agents.changed") return;

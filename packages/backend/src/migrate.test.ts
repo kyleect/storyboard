@@ -477,7 +477,7 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([22]);
+    expect(migrate(db, all)).toEqual([22, 23]);
 
     const cols = (table: string) =>
       (
@@ -562,6 +562,7 @@ describe("loadMigrations", () => {
       "entry_versions",
       "errors",
       "events",
+      "mcp_servers",
       "messages",
       "projects",
       "run_messages",

@@ -13,12 +13,15 @@ import {
   skillsList,
 } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
+import { AppEvents } from "./app-events.js";
 import { DataStore } from "./data-store.js";
 import { schemaChecker } from "./json-schema.js";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
 import { Embedder } from "./embedder.js";
 import { EntryStore } from "./entries-store.js";
+import { McpManager } from "./mcp-manager.js";
+import { McpServerStore } from "./mcp-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
 import { SkillStore } from "./skills-store.js";
@@ -57,11 +60,23 @@ async function main() {
       ...(signal ? { signal } : {}),
     });
 
+  const mcpStore = new McpServerStore(db);
+  const events = new AppEvents();
+  const mcp = new McpManager({
+    store: mcpStore,
+    events,
+    // Only called after `app` exists: connections start below.
+    onProblem: (message, err) =>
+      app.log.warn({ err: err instanceof Error ? err.message : err }, message),
+  });
+
   const runs = new RunManager({
     store,
+    events,
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
+    dynamicTools: () => mcp.tools,
     agents,
     skills,
     skillsPrompt: skillsInstruction,
@@ -106,11 +121,14 @@ async function main() {
     skills,
     data,
     token,
+    mcp: { store: mcpStore, manager: mcp },
     logger: true,
     onSettingsSaved: () => embedder.settingsChanged(),
   });
   index.onChunksAdded = () => embedder.kick();
   embedder.kick();
+  // Servers connect in the background; the backend does not wait for them.
+  mcp.start();
   const { port } = settings();
   await app.listen({ host: "127.0.0.1", port });
   const address = app.server.address();
@@ -146,6 +164,7 @@ async function main() {
     stopping = true;
     app.log.info("stopping");
     await runs.shutdown();
+    await mcp.shutdown();
     await embedder.stop();
     await app.close();
     db.close();

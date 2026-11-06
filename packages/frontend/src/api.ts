@@ -715,6 +715,53 @@ export interface ErrorFilterOptions {
 export const errorsKey = (filter: ErrorFilter = {}) => ["errors", filter];
 export const errorFiltersKey = ["errors", "filters"];
 
+/** How an MCP server's connection stands (MCP design). */
+export type McpState = "disabled" | "connecting" | "connected" | "failed";
+
+export interface McpToolInfo {
+  /** The name agents and settings use. */
+  name: string;
+  /** The server's own name for it. */
+  serverName: string;
+  description: string;
+}
+
+export type McpConfig =
+  | {
+      transport: "stdio";
+      command: string;
+      args: string[];
+      env: Record<string, string>;
+      cwd?: string;
+    }
+  | {
+      transport: "http";
+      url: string;
+      headers: Record<string, string>;
+    };
+
+/** What the user enters for an MCP server. */
+export interface McpServerInput {
+  name: string;
+  enabled: boolean;
+  config: McpConfig;
+}
+
+export interface McpServerView extends McpServerInput {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: {
+    state: McpState;
+    /** Set when `state` is "failed". */
+    error: string | null;
+    /** The tools of a connected server. */
+    tools: McpToolInfo[];
+  };
+}
+
+export const mcpServersKey = ["mcp-servers"] as const;
+
 export const api = {
   listErrors: (filter: ErrorFilter = {}) => {
     const q = new URLSearchParams(
@@ -858,6 +905,23 @@ export const api = {
       "POST",
       `/api/runs/${runId}/inputs/${encodeURIComponent(requestId)}`,
       answer,
+    ),
+  listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp/servers"),
+  createMcpServer: (input: McpServerInput) =>
+    request<McpServerView>("POST", "/api/mcp/servers", input),
+  saveMcpServer: (id: string, input: McpServerInput) =>
+    request<McpServerView>(
+      "PUT",
+      `/api/mcp/servers/${encodeURIComponent(id)}`,
+      input,
+    ),
+  deleteMcpServer: (id: string) =>
+    request<unknown>("DELETE", `/api/mcp/servers/${encodeURIComponent(id)}`),
+  /** Connects again; answers when the attempt is over. */
+  reconnectMcpServer: (id: string) =>
+    request<McpServerView>(
+      "POST",
+      `/api/mcp/servers/${encodeURIComponent(id)}/reconnect`,
     ),
   listTools: () => request<ToolView[]>("GET", "/api/tools"),
   setToolAsks: (name: string, ask: boolean) =>

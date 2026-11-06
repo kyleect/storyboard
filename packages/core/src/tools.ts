@@ -35,6 +35,7 @@ export const TOOL_GROUPS = [
   { id: "sessions", label: "Sessions" },
   { id: "skills", label: "Skills" },
   { id: "web", label: "Web" },
+  { id: "mcp", label: "MCP" },
   { id: "utilities", label: "Utilities" },
 ] as const;
 
