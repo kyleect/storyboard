@@ -15,8 +15,10 @@ import type {
   Selection,
   StoredEvent,
   ToolDefinition,
+  ToolGroup,
   Usage,
 } from "@harness/core";
+import type { ToolGrant, ToolMode } from "./tool-grant";
 
 /*
  * Talks to the backend. The token arrives once in the URL fragment
@@ -251,14 +253,32 @@ export interface SessionDebug {
   events: StoredEvent[];
 }
 
-/** A tool and whether it asks before running. */
+/** A tool and how Settings has it (tool management design, decision 12). */
 export interface ToolView {
   name: string;
   description: string;
+  group: ToolGroup;
   askByDefault: boolean;
   ask: boolean;
   /** True for a tool that always asks: its setting cannot be changed. */
   fixed: boolean;
+  /** Offered to every agent now: the setting, else the tool's default. */
+  alwaysOn: boolean;
+  /** The tool's own default for always on. */
+  alwaysOnByDefault: boolean;
+  /** Switched off for the whole harness. */
+  off: boolean;
+  /** Destructive or prompt-changing: a group grant does not cover it. */
+  needsReview: boolean;
+  /** The live agents that list the tool, by name. */
+  usedByAgents: string[];
+}
+
+/** What a Settings change to a whole group can set. */
+export interface ToolGroupChange {
+  ask?: boolean;
+  alwaysOn?: boolean;
+  off?: boolean;
 }
 
 export interface Settings {
@@ -384,16 +404,18 @@ export interface MessageAgent {
   projectId: string | null;
 }
 
-export type ToolMode = "allow" | "deny";
+export type { ToolGrant, ToolMode };
 
 /** What each version of an agent holds. */
 export interface AgentContent {
   name: string;
   description: string;
   prompt: string;
-  /** "allow": only `tools`; "deny": every tool but `tools`. */
-  toolMode: ToolMode;
-  tools: string[];
+  /**
+   * Which tools the agent has: groups, exceptions and extras (tool
+   * management design). `known` is set by the backend on every save.
+   */
+  toolGrant: ToolGrant;
   /**
    * Tool name to true (ask before each call) or false (don't ask). A tool
    * not named follows its own setting.
@@ -413,11 +435,25 @@ export interface AgentContent {
   subagent: boolean;
 }
 
+/** A tool as the agent editor lists it. */
+export interface AgentToolInfo {
+  name: string;
+  description: string;
+  group: ToolGroup;
+  /** Offered to every agent: shown locked. */
+  alwaysOn: boolean;
+  /** Switched off for the whole harness in Settings. */
+  off: boolean;
+  /** Destructive or prompt-changing: it has to be listed on its own. */
+  needsReview: boolean;
+}
+
 /** A tool as the agent editor's approval choices list it. */
 export interface ToolApprovalInfo {
   name: string;
   description: string;
-  /** The files, memory and skill tools, which an agent cannot switch off. */
+  group: ToolGroup;
+  /** Offered to every agent now, whatever its selection. */
   alwaysOn: boolean;
   /** Whether the tool asks now, by its setting or default. */
   ask: boolean;
@@ -427,6 +463,11 @@ export interface ToolApprovalInfo {
 
 export interface Agent extends AgentContent {
   id: string;
+  /**
+   * Tools added since the agent was last saved (design, decision 9). Empty
+   * for a deny agent and a built-in one.
+   */
+  newTools: string[];
   /** Null: global. */
   projectId: string | null;
   version: number;
@@ -825,6 +866,23 @@ export const api = {
       `/api/tools/${encodeURIComponent(name)}/approval`,
       { ask },
     ),
+  setToolAlwaysOn: (name: string, alwaysOn: boolean) =>
+    request<ToolView>(
+      "PUT",
+      `/api/tools/${encodeURIComponent(name)}/always-on`,
+      { alwaysOn },
+    ),
+  setToolOff: (name: string, off: boolean) =>
+    request<ToolView>("PUT", `/api/tools/${encodeURIComponent(name)}/off`, {
+      off,
+    }),
+  /** Applies settings to every tool of a group; returns the group's tools. */
+  setToolGroup: (group: ToolGroup, change: ToolGroupChange) =>
+    request<ToolView[]>(
+      "PUT",
+      `/api/tool-groups/${encodeURIComponent(group)}`,
+      change,
+    ),
   listEntries: (s: EntryScope, kind: EntryKind, deleted: boolean) =>
     request<Entry[]>(
       "GET",
@@ -891,9 +949,8 @@ export const api = {
     ),
   sessionAgents: (sessionId: string) =>
     request<PickableAgent[]>("GET", `/api/sessions/${sessionId}/agents`),
-  /** The tools an agent can select (all but the files and memory tools). */
-  agentTools: () =>
-    request<{ name: string; description: string }[]>("GET", "/api/agent-tools"),
+  /** Every tool, with its group and whether it is always on (shown locked). */
+  agentTools: () => request<AgentToolInfo[]>("GET", "/api/agent-tools"),
   agentToolApprovals: () =>
     request<ToolApprovalInfo[]>("GET", "/api/agent-tool-approvals"),
   listSkills: (o: SkillOwner, deleted: boolean) =>

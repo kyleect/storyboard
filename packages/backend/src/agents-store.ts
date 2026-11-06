@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
-import { z } from "zod";
+import { ToolGrant, ToolMode, normalizeGrant } from "./tool-grants.js";
 
 /*
  * Agents and their versions (agents design, decisions 2 to 9 and 19 to 25).
@@ -8,8 +8,7 @@ import { z } from "zod";
  * its agents (`Store.purgeProject`).
  */
 
-export const ToolMode = z.enum(["allow", "deny"]);
-export type ToolMode = z.infer<typeof ToolMode>;
+export { ToolMode };
 
 /** What a version holds. */
 export interface AgentContent {
@@ -17,9 +16,12 @@ export interface AgentContent {
   /** Empty when there is none. */
   description: string;
   prompt: string;
-  /** "allow": only `tools`; "deny": every tool but `tools` (decision 6). */
-  toolMode: ToolMode;
-  tools: string[];
+  /**
+   * Which tools the agent has: groups, exceptions and extras, plus the tools
+   * that existed when this version was saved (tool management design,
+   * decisions 1, 5, 6, 9).
+   */
+  toolGrant: ToolGrant;
   /**
    * Tool name to true (ask before each call) or false (don't ask), for the
    * tools this agent has its own say on. A tool not named follows its own
@@ -87,8 +89,7 @@ interface AgentRow {
   name: string;
   description: string;
   prompt: string;
-  tool_mode: ToolMode;
-  tools: string;
+  tool_grant: string;
   tool_approval: string;
   child_reminders: number | null;
   child_prompt: string | null;
@@ -105,8 +106,7 @@ interface VersionRow {
   name: string;
   description: string;
   prompt: string;
-  tool_mode: ToolMode;
-  tools: string;
+  tool_grant: string;
   tool_approval: string;
   child_reminders: number | null;
   child_prompt: string | null;
@@ -116,7 +116,7 @@ interface VersionRow {
 }
 
 const COLUMNS =
-  "id, project_id, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, builtin, version, created_at, updated_at, deleted_at";
+  "id, project_id, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, builtin, version, created_at, updated_at, deleted_at";
 
 const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
@@ -124,8 +124,7 @@ const toAgent = (r: AgentRow): Agent => ({
   name: r.name,
   description: r.description,
   prompt: r.prompt,
-  toolMode: r.tool_mode,
-  tools: JSON.parse(r.tools) as string[],
+  toolGrant: ToolGrant.parse(JSON.parse(r.tool_grant)),
   toolApproval: JSON.parse(r.tool_approval) as Record<string, boolean>,
   childReminders: r.child_reminders,
   childPrompt: r.child_prompt,
@@ -142,8 +141,7 @@ const toVersion = (r: VersionRow): AgentVersion => ({
   name: r.name,
   description: r.description,
   prompt: r.prompt,
-  toolMode: r.tool_mode,
-  tools: JSON.parse(r.tools) as string[],
+  toolGrant: ToolGrant.parse(JSON.parse(r.tool_grant)),
   toolApproval: JSON.parse(r.tool_approval) as Record<string, boolean>,
   childReminders: r.child_reminders,
   childPrompt: r.child_prompt,
@@ -166,7 +164,7 @@ function normalize(content: AgentInput): AgentContent {
   return {
     ...content,
     name,
-    tools: [...new Set(content.tools)],
+    toolGrant: normalizeGrant(content.toolGrant),
     childReminders: r,
     childPrompt: content.childPrompt ?? null,
     subagent: content.subagent ?? false,
@@ -250,8 +248,8 @@ export class AgentStore {
       const now = this.now();
       this.db
         .prepare(
-          `INSERT INTO agents (id, project_id, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          `INSERT INTO agents (id, project_id, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           id,
@@ -259,8 +257,7 @@ export class AgentStore {
           c.name,
           c.description,
           c.prompt,
-          c.toolMode,
-          JSON.stringify(c.tools),
+          JSON.stringify(c.toolGrant),
           JSON.stringify(c.toolApproval),
           c.childReminders,
           c.childPrompt,
@@ -363,7 +360,7 @@ export class AgentStore {
     return (
       this.db
         .prepare(
-          `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at
+          `SELECT seq, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at
            FROM agent_versions WHERE agent_id = ? ORDER BY seq`,
         )
         .all(id) as VersionRow[]
@@ -373,7 +370,7 @@ export class AgentStore {
   version(id: string, seq: number): AgentVersion | undefined {
     const row = this.db
       .prepare(
-        `SELECT seq, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at
+        `SELECT seq, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at
          FROM agent_versions WHERE agent_id = ? AND seq = ?`,
       )
       .get(id, seq) as VersionRow | undefined;
@@ -418,8 +415,8 @@ export class AgentStore {
     const seq = agent.version + 1;
     this.db
       .prepare(
-        `UPDATE agents SET name = ?, description = ?, prompt = ?, tool_mode = ?,
-           tools = ?, tool_approval = ?, child_reminders = ?, child_prompt = ?,
+        `UPDATE agents SET name = ?, description = ?, prompt = ?,
+           tool_grant = ?, tool_approval = ?, child_reminders = ?, child_prompt = ?,
            subagent = ?, version = ?, updated_at = ?,
            deleted_at = ?
          WHERE id = ?`,
@@ -428,8 +425,7 @@ export class AgentStore {
         c.name,
         c.description,
         c.prompt,
-        c.toolMode,
-        JSON.stringify(c.tools),
+        JSON.stringify(c.toolGrant),
         JSON.stringify(c.toolApproval),
         c.childReminders,
         c.childPrompt,
@@ -452,8 +448,8 @@ export class AgentStore {
   ) {
     this.db
       .prepare(
-        `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_mode, tools, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_versions (agent_id, seq, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, deleted, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         agentId,
@@ -461,8 +457,7 @@ export class AgentStore {
         c.name,
         c.description,
         c.prompt,
-        c.toolMode,
-        JSON.stringify(c.tools),
+        JSON.stringify(c.toolGrant),
         JSON.stringify(c.toolApproval),
         c.childReminders,
         c.childPrompt,

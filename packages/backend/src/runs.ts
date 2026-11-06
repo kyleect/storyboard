@@ -23,6 +23,7 @@ import {
   type RunSkill,
   type ModelAdapter,
   type StoredEvent,
+  type RunFacts,
   type Tool,
   type ToolResultMessage,
   type UserMessage,
@@ -52,7 +53,14 @@ import {
   type SessionRow,
   type Store,
 } from "./store.js";
-import { alwaysAsks, setToolAsks, toolApproval } from "./tool-settings.js";
+import {
+  alwaysAsks,
+  alwaysOnNames,
+  offNames,
+  setToolAsks,
+  toolApproval,
+} from "./tool-settings.js";
+import { allowedNames } from "./tool-grants.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
 import {
   expandPlaceholders,
@@ -147,21 +155,10 @@ export interface RunManagerOptions {
    * 6.11); an agent narrows them (agents design 6).
    */
   tools?: readonly Tool[];
-  /**
-   * Names of the tools every agent gets, whatever its selection (the files
-   * and memory tools, agents design 8).
-   */
-  alwaysOnTools?: readonly string[];
   /** Agents. Left out: sessions cannot pick one. */
   agents?: AgentStore;
   /** Skills. Left out: no run has any. */
   skills?: SkillStore;
-  /**
-   * Names of the tools that are offered only when a skill is in scope (skills
-   * design, decision 9). They are also in `alwaysOnTools`, so an agent's
-   * selection cannot remove them.
-   */
-  skillTools?: readonly string[];
   /**
    * The skill list for the system message, or undefined for none (skills
    * design, decisions 6, 11). It goes after the agent prompt and before
@@ -258,9 +255,6 @@ interface ChildStart {
   signal: AbortSignal;
 }
 
-const START_SUBAGENT = "start_subagent";
-const SUBAGENT_HANDBACK = "subagent_handback";
-
 const INTERRUPTED_CALL =
   "Interrupted: the backend stopped before this call finished.";
 const STOPPED_CALL = "Not run: the backend was stopped.";
@@ -282,8 +276,6 @@ export class RunManager {
   private readonly now: () => string;
   private readonly newId: () => string;
   readonly tools: readonly Tool[];
-  /** Tools every agent gets (agents design 8). */
-  readonly alwaysOnTools: readonly string[];
   /** Tool errors and failed runs (error reporting plan, P4). */
   readonly errors: ErrorStore;
   /** App-wide events; `errors.changed` is published here. */
@@ -292,7 +284,6 @@ export class RunManager {
   constructor(private readonly options: RunManagerOptions) {
     this.store = options.store;
     this.tools = options.tools ?? [];
-    this.alwaysOnTools = options.alwaysOnTools ?? [];
     this.now = options.now ?? (() => new Date().toISOString());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.errors = options.errors ?? new ErrorStore(this.store.db, this.newId);
@@ -975,34 +966,26 @@ export class RunManager {
     }
   }
 
+  /** The names of the tools that are always on now (Settings; design, decision 12). */
+  alwaysOnTools(): Set<string> {
+    return alwaysOnNames(this.store.db, this.tools);
+  }
+
   /**
-   * The tools a run gets with this agent (agents design 6, 8, 35). The
-   * handback tool is offered only in a subagent's run, and `start_subagent`
-   * not at the depth limit (agent delegation design, decisions 3, 4).
+   * The tools a run gets with this agent (agents design 6; tool management
+   * design, decisions 12, 15). A tool that is off for the whole harness, or
+   * not available in this run (`available`), is not offered. With an agent,
+   * a tool is offered when it is always on or the agent's grant allows it.
    */
-  private toolsFor(
-    agent: Agent | null,
-    hasSkills: boolean,
-    run: { child: boolean; canStart: boolean },
-  ): readonly Tool[] {
-    // The skill tools are offered only when a skill is in scope (skills
-    // design, decision 9).
-    const skillTools = new Set(this.options.skillTools ?? []);
-    const offered = (
-      hasSkills ? this.tools : this.tools.filter((t) => !skillTools.has(t.name))
-    ).filter(
-      (t) =>
-        (run.child || t.name !== SUBAGENT_HANDBACK) &&
-        (run.canStart || t.name !== START_SUBAGENT),
+  private toolsFor(agent: Agent | null, run: RunFacts): readonly Tool[] {
+    const off = offNames(this.store.db);
+    const offered = this.tools.filter(
+      (t) => !off.has(t.name) && (t.available?.(run) ?? true),
     );
     if (!agent) return offered;
-    const alwaysOn = new Set(this.alwaysOnTools);
-    const listed = new Set(agent.tools);
-    return offered.filter(
-      (t) =>
-        alwaysOn.has(t.name) ||
-        (agent.toolMode === "allow" ? listed.has(t.name) : !listed.has(t.name)),
-    );
+    const alwaysOn = this.alwaysOnTools();
+    const allowed = new Set(allowedNames(agent.toolGrant, this.tools));
+    return offered.filter((t) => alwaysOn.has(t.name) || allowed.has(t.name));
   }
 
   private requireIdle(sessionId: string) {
@@ -1167,9 +1150,10 @@ export class RunManager {
         session?.project_id ?? null,
         agent?.id ?? null,
       ) ?? [];
-    const tools = this.toolsFor(agent, skills.length > 0, {
-      child: child !== null,
-      canStart: depth < settings.subagentDepth,
+    const tools = this.toolsFor(agent, {
+      hasSkills: skills.length > 0,
+      isChild: child !== null,
+      canStartSubagent: depth < settings.subagentDepth,
     });
     // The schemas in scope, listed only when the run offers a schema or data
     // tool (schemas and data design, decisions 37, 41): global, project,
@@ -1417,6 +1401,7 @@ export class RunManager {
                   agents: this.options.agents,
                   session,
                   runAgent: agent,
+                  tools: this.tools,
                 }),
               }
             : {}),

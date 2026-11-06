@@ -3,7 +3,6 @@ import {
   Anchor,
   Badge,
   Button,
-  Checkbox,
   FileButton,
   Group,
   Loader,
@@ -12,7 +11,6 @@ import {
   NumberInput,
   Paper,
   ScrollArea,
-  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -38,13 +36,17 @@ import {
   type MessageAgent,
   type PickableAgent,
   type Project,
-  type ToolApprovalInfo,
-  type ToolMode,
 } from "../api";
 import { showError } from "./SessionActions";
 import { DataPanel } from "./Data";
 import { SchemasPanel } from "./Schemas";
 import { SkillsPanel } from "./Skills";
+import { ApprovalSelect } from "./ApprovalSelect";
+import { ToolGrantEditor } from "./ToolGrantEditor";
+import { TOOL_GROUPS } from "@harness/core";
+import { emptyGrant, type ToolGrant } from "../tool-grant";
+
+export { ApprovalSelect };
 
 /*
  * Agents (agents design, decisions 15 and 30 to 37): a page per scope with
@@ -147,45 +149,74 @@ function TextBox({ value }: { value: string }) {
 
 /**
  * The tool selection in words, with tools that no longer exist marked
- * (P6). The files and memory tools are always on.
+ * (P6). Tools that are always on are not listed.
  */
 function ToolsSummary({
-  toolMode,
-  tools,
+  toolGrant,
   toolApproval,
   known,
 }: {
-  toolMode: ToolMode;
-  tools: string[];
+  toolGrant: ToolGrant;
   toolApproval: Record<string, boolean>;
   known: Set<string> | undefined;
 }) {
   const approvals = Object.entries(toolApproval);
-  const label =
-    toolMode === "allow"
-      ? tools.length === 0
-        ? "No tools besides files and memory."
-        : "Only these tools, plus files and memory:"
-      : tools.length === 0
-        ? "Every tool."
-        : "Every tool except:";
+  const labelOf = (id: string) =>
+    TOOL_GROUPS.find((g) => g.id === id)?.label ?? id;
+  const allow = toolGrant.mode === "allow";
+  const nothing =
+    toolGrant.groups.length === 0 &&
+    toolGrant.except.length === 0 &&
+    toolGrant.extras.length === 0;
+  const label = allow
+    ? nothing
+      ? "Only the tools that are always on."
+      : "Only these tools, plus those that are always on:"
+    : nothing
+      ? "Every tool but those that need review."
+      : "Every tool but those that need review, except:";
+  const names = (list: string[]) =>
+    list.map((t) => (
+      <Badge
+        key={t}
+        size="sm"
+        variant="light"
+        color={known && !known.has(t) ? "red" : "gray"}
+        tt="none"
+      >
+        {t}
+        {known && !known.has(t) ? " (missing)" : ""}
+      </Badge>
+    ));
   return (
     <Stack gap={4}>
       <Text size="sm">{label}</Text>
-      {tools.length > 0 && (
+      {toolGrant.groups.length > 0 && (
         <Group gap={4}>
-          {tools.map((t) => (
-            <Badge
-              key={t}
-              size="sm"
-              variant="light"
-              color={known && !known.has(t) ? "red" : "gray"}
-              tt="none"
-            >
-              {t}
-              {known && !known.has(t) ? " (missing)" : ""}
+          <Text size="xs" c="dimmed">
+            Groups:
+          </Text>
+          {toolGrant.groups.map((g) => (
+            <Badge key={g} size="sm" variant="light" tt="none">
+              {labelOf(g)}
             </Badge>
           ))}
+        </Group>
+      )}
+      {toolGrant.except.length > 0 && (
+        <Group gap={4}>
+          <Text size="xs" c="dimmed">
+            {allow ? "Left out of those groups:" : "Still allowed:"}
+          </Text>
+          {names(toolGrant.except)}
+        </Group>
+      )}
+      {toolGrant.extras.length > 0 && (
+        <Group gap={4}>
+          <Text size="xs" c="dimmed">
+            Also:
+          </Text>
+          {names(toolGrant.extras)}
         </Group>
       )}
       {approvals.length > 0 && (
@@ -236,8 +267,7 @@ function VersionContent({
         Tools
       </Text>
       <ToolsSummary
-        toolMode={v.toolMode}
-        tools={v.tools}
+        toolGrant={v.toolGrant}
         toolApproval={v.toolApproval}
         known={known}
       />
@@ -494,8 +524,13 @@ export function AgentsPanel({
               rightSection={
                 a.deleted ? (
                   <DeletedBadge />
-                ) : a.isDefault || a.builtin ? (
+                ) : a.isDefault || a.builtin || a.newTools.length > 0 ? (
                   <Group gap={4} wrap="nowrap">
+                    {a.newTools.length > 0 && (
+                      <Badge size="xs" variant="light" color="blue">
+                        {a.newTools.length} new
+                      </Badge>
+                    )}
                     {a.builtin && <BuiltinBadge />}
                     {a.isDefault && <DefaultBadge />}
                   </Group>
@@ -675,6 +710,15 @@ function AgentView({
         {a.deleted && ". Open Versions to restore it."}
       </Text>
       {a.description && <Text size="sm">{a.description}</Text>}
+      {a.newTools.length > 0 && !a.deleted && !a.builtin && (
+        <Alert color="blue" p="xs" title="New tools">
+          {a.newTools.length === 1
+            ? "1 tool has been added since this agent was last saved: "
+            : `${a.newTools.length} tools have been added since this agent was last saved: `}
+          {a.newTools.join(", ")}. Edit and save the agent to count them as
+          seen.
+        </Alert>
+      )}
       <Text size="xs" c="dimmed">
         As a subagent
       </Text>
@@ -687,8 +731,7 @@ function AgentView({
         Tools
       </Text>
       <ToolsSummary
-        toolMode={a.toolMode}
-        tools={a.tools}
+        toolGrant={a.toolGrant}
         toolApproval={a.toolApproval}
         known={known}
       />
@@ -744,57 +787,6 @@ function AgentView({
 }
 
 /** Creates an agent, or saves `existing` as a new version. */
-const FOLLOW = "follow";
-const ASK = "ask";
-const SKIP = "skip";
-
-/**
- * Whether calls to a tool ask, for this agent (agent tool approval design,
- * Q1, Q2, Q4, Q5): the tool's own setting, or the agent's own choice. A tool
- * that always asks is locked, and the choice is disabled for a tool the
- * agent does not have.
- */
-export function ApprovalSelect({
-  tool,
-  value,
-  disabled,
-  onChange,
-}: {
-  tool: ToolApprovalInfo | undefined;
-  value: boolean | undefined;
-  disabled: boolean;
-  onChange: (value: boolean | undefined) => void;
-}) {
-  const fixed = tool?.fixed ?? false;
-  return (
-    <Select
-      size="xs"
-      w={200}
-      aria-label={`Approval for ${tool?.name ?? "this tool"}`}
-      allowDeselect={false}
-      disabled={disabled || fixed || !tool}
-      value={
-        fixed ? "always" : value === undefined ? FOLLOW : value ? ASK : SKIP
-      }
-      onChange={(v) =>
-        onChange(v === ASK ? true : v === SKIP ? false : undefined)
-      }
-      data={
-        fixed
-          ? [{ value: "always", label: "Always asks" }]
-          : [
-              {
-                value: FOLLOW,
-                label: `Tool's setting (${tool?.ask ? "asks" : "doesn't ask"})`,
-              },
-              { value: ASK, label: "Ask" },
-              { value: SKIP, label: "Don't ask" },
-            ]
-      }
-    />
-  );
-}
-
 function AgentEditor({
   scope,
   existing,
@@ -820,8 +812,9 @@ function AgentEditor({
   const [description, setDescription] = useState(from?.description ?? "");
   const [prompt, setPrompt] = useState(from?.prompt ?? "");
   // A new agent starts as an allow list with nothing ticked (P8).
-  const [toolMode, setToolMode] = useState<ToolMode>(from?.toolMode ?? "allow");
-  const [picked, setPicked] = useState<string[]>(from?.tools ?? []);
+  const [grant, setGrant] = useState<ToolGrant>(
+    from?.toolGrant ?? emptyGrant(),
+  );
   // The agent's own approval choices, by tool; a tool not here follows its
   // own setting.
   const [approval, setApproval] = useState<Record<string, boolean>>(
@@ -837,27 +830,9 @@ function AgentEditor({
   const [childLine, setChildLine] = useState<string | null>(
     from?.childPrompt ?? null,
   );
-  const setAsks = (tool: string, ask: boolean | undefined) =>
-    setApproval((old) => {
-      const rest = Object.fromEntries(
-        Object.entries(old).filter(([name]) => name !== tool),
-      );
-      return ask === undefined ? rest : { ...rest, [tool]: ask };
-    });
-  const approvalOf = (name: string) =>
-    approvals.data?.find((t) => t.name === name);
-  // Whether the agent has the tool, for the choice's disabled state.
-  const hasTool = (name: string) =>
-    toolMode === "allow" ? picked.includes(name) : !picked.includes(name);
-  const alwaysOn = (approvals.data ?? []).filter((t) => t.alwaysOn);
-  // Stored choices for tools that no longer exist, shown so they can be
-  // removed.
-  const missingApproval = approvals.data
-    ? Object.keys(approval).filter((t) => !approvalOf(t))
-    : [];
-  const known = new Set(tools.data?.map((t) => t.name) ?? []);
-  // Stored names with no such tool, shown so they can be removed (P6).
-  const missing = tools.data ? picked.filter((t) => !known.has(t)) : [];
+  // Tools added since the agent was last saved (decision 4). A copy of a
+  // built-in agent has none.
+  const newTools = new Set(existing?.newTools ?? []);
 
   const save = useMutation({
     mutationFn: () => {
@@ -865,8 +840,7 @@ function AgentEditor({
         name,
         description,
         prompt,
-        toolMode,
-        tools: picked,
+        toolGrant: grant,
         toolApproval: approval,
         childReminders: reminders,
         childPrompt: childLine,
@@ -961,109 +935,26 @@ function AgentEditor({
           Tools
         </Text>
         <Text size="xs" c="dimmed">
-          The files and memory tools are always on. For each tool, you can also
-          choose whether this agent asks before a call, or follows the
-          tool&apos;s own setting.
+          Tools that are always on are ticked and locked. For each tool or
+          group, you can also choose whether this agent asks before a call, or
+          follows the tool&apos;s own setting. Saving counts new tools as seen.
         </Text>
-        <SegmentedControl
-          size="xs"
-          w="fit-content"
-          value={toolMode}
-          onChange={(v) => setToolMode(v as ToolMode)}
-          data={[
-            { value: "allow", label: "Only the ticked tools" },
-            { value: "deny", label: "Every tool except the ticked ones" },
-          ]}
-        />
         {(tools.isPending || approvals.isPending) && <Loader size="xs" />}
         {tools.isError && <Alert color="red">{tools.error.message}</Alert>}
         {approvals.isError && (
           <Alert color="red">{approvals.error.message}</Alert>
         )}
-        <Checkbox.Group value={picked} onChange={setPicked}>
-          <Stack gap="xl" mt={4}>
-            {tools.data?.map((t) => (
-              <Stack>
-                <Group
-                  key={t.name}
-                  justify="space-between"
-                  align="flex-start"
-                  wrap="nowrap"
-                >
-                  <Checkbox
-                    value={t.name}
-                    label={t.name}
-                    description={t.description}
-                  />
-                </Group>
-                <ApprovalSelect
-                  tool={approvalOf(t.name)}
-                  value={approval[t.name]}
-                  disabled={!hasTool(t.name)}
-                  onChange={(ask) => setAsks(t.name, ask)}
-                />
-              </Stack>
-            ))}
-            {missing.map((t) => (
-              <Checkbox
-                key={t}
-                value={t}
-                color="red"
-                label={`${t} (missing)`}
-                description="No tool has this name any more. Untick it to remove it."
-              />
-            ))}
-          </Stack>
-        </Checkbox.Group>
-        {alwaysOn.length > 0 && (
-          <Stack gap="lg" mt="xl">
-            <Text size="xs" c="dimmed">
-              Tools Always Enabled
-            </Text>
-            {alwaysOn.map((t) => (
-              <Stack>
-                <Group
-                  key={t.name}
-                  justify="space-between"
-                  align="flex-start"
-                  wrap="nowrap"
-                >
-                  <Stack gap={0}>
-                    <Text size="sm">{t.name}</Text>
-                    <Text size="xs" c="dimmed">
-                      {t.description}
-                    </Text>
-                  </Stack>
-                </Group>
-                <ApprovalSelect
-                  tool={t}
-                  value={approval[t.name]}
-                  disabled={false}
-                  onChange={(ask) => setAsks(t.name, ask)}
-                />
-              </Stack>
-            ))}
-          </Stack>
+        {tools.data && approvals.data && (
+          <ToolGrantEditor
+            grant={grant}
+            onGrant={setGrant}
+            approval={approval}
+            onApproval={setApproval}
+            tools={tools.data}
+            approvals={approvals.data}
+            newTools={newTools}
+          />
         )}
-        {missingApproval.map((t) => (
-          <Group key={t} justify="space-between" wrap="nowrap">
-            <Stack gap={0}>
-              <Text size="sm" c="red">
-                {t} (missing)
-              </Text>
-              <Text size="xs" c="dimmed">
-                No tool has this name any more. Remove its approval setting.
-              </Text>
-            </Stack>
-            <Button
-              size="compact-xs"
-              variant="default"
-              onClick={() => setAsks(t, undefined)}
-            >
-              Remove
-            </Button>
-          </Group>
-        ))}
       </Stack>
       <Group gap="xs">
         <Button

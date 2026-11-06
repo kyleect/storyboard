@@ -328,6 +328,8 @@ export const filesList = defineTool({
     "Lists files (keys, types and sizes) with the scope each is in. Covers every scope unless you name some in scopes. The same key can exist in several scopes.",
   input: z.object({ scopes: Scopes.optional() }),
   approval: "never",
+  group: "files",
+  alwaysOn: true,
   execute: ({ scopes }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
@@ -353,6 +355,8 @@ export const filesRead = defineTool({
     "Reads one file's full value, by key. If the key is in more than one scope, the user picks the copy.",
   input: z.object({ key: z.string().describe(KEY_RULE) }),
   approval: "never",
+  group: "files",
+  alwaysOn: true,
   execute: ({ key }, ctx) =>
     guarded({ key }, async () => {
       checkFileKey(key);
@@ -399,6 +403,8 @@ export const filesWrite = defineTool({
     scope: SuggestedScope.optional(),
   }),
   approval: "never",
+  group: "files",
+  alwaysOn: true,
   execute: ({ key, type = "markdown", value, scope }, ctx) =>
     guarded({ key, type, scope }, async () => {
       // A bad value fails before the user is asked. A bad suggested name is
@@ -491,6 +497,8 @@ export const filesDelete = defineTool({
     "Deletes a file, by key. If the key is in more than one scope, the user picks the copy. Its history is kept, and the user can restore it.",
   input: z.object({ key: z.string().describe(KEY_RULE) }),
   approval: "never",
+  group: "files",
+  alwaysOn: true,
   execute: ({ key }, ctx) =>
     guarded({ key }, async () => {
       checkFileKey(key);
@@ -516,6 +524,8 @@ export const memoryList = defineTool({
     "Lists your memory notes (ids, text and scope). Covers every scope unless you name some in scopes.",
   input: z.object({ scopes: Scopes.optional() }),
   approval: "never",
+  group: "memory",
+  alwaysOn: true,
   execute: ({ scopes }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
@@ -544,6 +554,8 @@ export const memoryAdd = defineTool({
     scope: SuggestedScope.optional(),
   }),
   approval: "never",
+  group: "memory",
+  alwaysOn: true,
   execute: ({ text, scope }, ctx) =>
     guarded({ scope }, async () => {
       // The scope the user chose to keep using for notes (D15).
@@ -583,6 +595,8 @@ export const memoryUpdate = defineTool({
   description: "Replaces the text of one of your memory notes, by id.",
   input: z.object({ id: z.string(), text: z.string().min(1) }),
   approval: "never",
+  group: "memory",
+  alwaysOn: true,
   execute: ({ id, text }, ctx) =>
     guarded({ id }, async () => {
       const scope = await pickCopy(ctx, noteCopies(ctx, id), {
@@ -604,6 +618,8 @@ export const memoryDelete = defineTool({
   description: "Deletes one of your memory notes, by id.",
   input: z.object({ id: z.string() }),
   approval: "never",
+  group: "memory",
+  alwaysOn: true,
   execute: ({ id }, ctx) =>
     guarded({ id }, async () => {
       const scope = await pickCopy(ctx, noteCopies(ctx, id), {
@@ -649,6 +665,8 @@ export const filesSearch = defineTool({
     "Searches files by keywords and by meaning. Covers every scope unless you name some in scopes. Returns the best matches with the scope and the matching excerpt; read a whole file with files_read.",
   input: z.object({ query: Query, scopes: Scopes.optional(), limit: Limit }),
   approval: "never",
+  group: "files",
+  alwaysOn: true,
   execute: ({ query, scopes, limit }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
@@ -690,6 +708,8 @@ export const memorySearch = defineTool({
     limit: NoteLimit,
   }),
   approval: "never",
+  group: "memory",
+  alwaysOn: true,
   execute: ({ query, scopes, limit }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {

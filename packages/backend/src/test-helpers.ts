@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { loadOrCreateKey, openDatabase } from "./db.js";
 import { loadMigrations, migrate } from "./migrate.js";
+import type { ToolGrant, ToolMode } from "./tool-grants.js";
 
 export const MIGRATIONS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -110,4 +111,17 @@ export function clearBuiltinAgents(db: Database): void {
     DELETE FROM agent_versions WHERE agent_id IN (SELECT id FROM agents WHERE builtin = 1);
     DELETE FROM agents WHERE builtin = 1;
   `);
+}
+
+/**
+ * A tool grant made of single tools, the way a plain list of names used to
+ * be: `grant("allow", ["a"])` allows only `a`; `grant("deny", ["a"])` allows
+ * every tool but `a`. `known` is empty unless given.
+ */
+export function grant(
+  mode: ToolMode,
+  tools: string[] = [],
+  known: string[] = [],
+): ToolGrant {
+  return { mode, groups: [], except: [], extras: tools, known };
 }

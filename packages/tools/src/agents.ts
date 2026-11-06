@@ -29,6 +29,7 @@ export const agentsList = defineTool({
     "Lists the agents this session can pick: the project's agents first, then global ones. Each has an id, name, scope (global, or project with its name), description, the tools it allows or denies, and subagent: true if start_subagent can start it. Use an id with start_subagent.",
   input: z.object({}),
   approval: "never",
+  group: "agents",
   execute: (_input, ctx) => ({
     data: { agents: ctx.agents.list().map(shown) },
   }),
@@ -40,6 +41,7 @@ export const agentView = defineTool({
     "Shows the agent this run is using: its id, name, scope, version, description, tool selection and system prompt, so you can judge whether the prompt could be improved. Says so when there is no agent. The user must approve each call.",
   input: z.object({}),
   approval: "always",
+  group: "agents",
   execute: (_input, ctx) => {
     const current: CurrentAgent | null = ctx.agents.current();
     return {

@@ -6,14 +6,11 @@ import {
   allTools,
   dataText,
   entriesInstruction,
-  entryTools,
   schemaDataTools,
   schemasInstruction,
   schemasText,
   skillsInstruction,
   skillsList,
-  skillTools,
-  subagentHandback,
 } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
 import { DataStore } from "./data-store.js";
@@ -65,16 +62,8 @@ async function main() {
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
-    // Every agent gets the files and memory tools (agents design 8, P5), and
-    // the skill tool whenever a skill is in scope (skills design 9). The
-    // handback tool is always on too, but only a subagent's run is offered it
-    // (agent delegation design, decision 3).
-    alwaysOnTools: [...entryTools, ...skillTools, subagentHandback].map(
-      (t) => t.name,
-    ),
     agents,
     skills,
-    skillTools: skillTools.map((t) => t.name),
     skillsPrompt: skillsInstruction,
     skillsList,
     entries,

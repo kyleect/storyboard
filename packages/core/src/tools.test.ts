@@ -9,6 +9,7 @@ import {
   ToolDefinitionError,
   ToolError,
   ToolRunError,
+  TOOL_GROUPS,
   truncate,
 } from "./tools.js";
 
@@ -16,10 +17,36 @@ const base = {
   name: "t",
   description: "A test tool.",
   approval: "never" as const,
+  group: "utilities" as const,
   execute: () => ({ data: null }),
 };
 
 describe("defineTool", () => {
+  it("defaults alwaysOn and needsReview to false and has no available()", () => {
+    const tool = defineTool({ ...base, input: z.object({}) });
+    expect(tool.group).toBe("utilities");
+    expect(tool.alwaysOn).toBe(false);
+    expect(tool.needsReview).toBe(false);
+    expect(tool.available).toBeUndefined();
+  });
+
+  it("passes alwaysOn, needsReview and available through", () => {
+    const tool = defineTool({
+      ...base,
+      group: "files",
+      alwaysOn: true,
+      needsReview: true,
+      available: (run) => run.isChild,
+      input: z.object({}),
+    });
+    expect(tool.group).toBe("files");
+    expect(tool.alwaysOn).toBe(true);
+    expect(tool.needsReview).toBe(true);
+    const run = { hasSkills: false, isChild: true, canStartSubagent: false };
+    expect(tool.available?.(run)).toBe(true);
+    expect(tool.available?.({ ...run, isChild: false })).toBe(false);
+  });
+
   it("generates the JSON Schema without $schema", () => {
     const tool = defineTool({
       ...base,
@@ -154,5 +181,25 @@ describe("ToolError", () => {
     expect(run).toBeInstanceOf(ToolError);
     expect(run.details).toBeUndefined();
     expect(run.name).toBe("ToolRunError");
+  });
+});
+
+describe("TOOL_GROUPS", () => {
+  it("lists each group once, in display order", () => {
+    expect(TOOL_GROUPS.map((g) => g.id)).toEqual([
+      "files",
+      "memory",
+      "structured-data",
+      "projects",
+      "agents",
+      "subagents",
+      "sessions",
+      "skills",
+      "web",
+      "utilities",
+    ]);
+    expect(new Set(TOOL_GROUPS.map((g) => g.label)).size).toBe(
+      TOOL_GROUPS.length,
+    );
   });
 });

@@ -19,6 +19,40 @@ import type { FileType, Message, ToolDefinition } from "./messages.js";
  */
 export type ApprovalDefault = "ask" | "never" | "always";
 
+/*
+ * Tool groups (tool management design, decisions 3, 4). Every tool belongs to
+ * one group. The agent editor and Settings show tools under their group, and
+ * an agent can be given or refused a whole group. The order is the order they
+ * are shown in.
+ */
+export const TOOL_GROUPS = [
+  { id: "files", label: "Files" },
+  { id: "memory", label: "Memory" },
+  { id: "structured-data", label: "Structured Data" },
+  { id: "projects", label: "Projects" },
+  { id: "agents", label: "Agents" },
+  { id: "subagents", label: "Subagents" },
+  { id: "sessions", label: "Sessions" },
+  { id: "skills", label: "Skills" },
+  { id: "web", label: "Web" },
+  { id: "utilities", label: "Utilities" },
+] as const;
+
+export type ToolGroup = (typeof TOOL_GROUPS)[number]["id"];
+
+/**
+ * What a tool's `available` function can know about the run it would be
+ * offered in (tool management design, decision 15).
+ */
+export interface RunFacts {
+  /** Whether any skill is in scope for the run. */
+  hasSkills: boolean;
+  /** Whether the run is a subagent's. */
+  isChild: boolean;
+  /** Whether the run may still start a subagent (the depth limit is not reached). */
+  canStartSubagent: boolean;
+}
+
 /** The most the "copy limit" setting can be set to (a call's key list is bounded by it). */
 export const COPY_LIMIT_MAX = 200;
 
@@ -256,6 +290,23 @@ export interface Tool {
   name: string;
   description: string;
   approval: ApprovalDefault;
+  /** The group the tool is shown under. */
+  group: ToolGroup;
+  /**
+   * Whether the tool is offered to every agent whatever its selection, until
+   * Settings says otherwise (design, decisions 12, 13).
+   */
+  alwaysOn: boolean;
+  /**
+   * A destructive or prompt-changing tool. A group grant does not cover it:
+   * an agent has it only when it is listed on its own (design, decision 11).
+   */
+  needsReview: boolean;
+  /**
+   * Whether it makes sense to offer the tool in this run (design, decision
+   * 15). A tool without one is always available.
+   */
+  available?: (run: RunFacts) => boolean;
   /** JSON Schema for the model, generated from `input`. */
   inputSchema: Record<string, unknown>;
   /** Checks the model's arguments against the input schema. */
@@ -277,6 +328,12 @@ export interface ToolSpec<S extends z.ZodType> {
   /** Must be an object schema. Every integer needs both bounds. */
   input: S;
   approval: ApprovalDefault;
+  group: ToolGroup;
+  /** Default: false. */
+  alwaysOn?: boolean;
+  /** Default: false. */
+  needsReview?: boolean;
+  available?: (run: RunFacts) => boolean;
   execute: (
     input: z.output<S>,
     ctx: ToolContext,
@@ -388,6 +445,10 @@ export function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): Tool {
     name: spec.name,
     description: spec.description,
     approval: spec.approval,
+    group: spec.group,
+    alwaysOn: spec.alwaysOn ?? false,
+    needsReview: spec.needsReview ?? false,
+    ...(spec.available ? { available: spec.available } : {}),
     inputSchema: schema,
     parse: (args) => {
       const result = spec.input.safeParse(args);

@@ -1,6 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
-import type { Tool } from "@harness/core";
+import type { Tool, ToolGroup } from "@harness/core";
 
 /*
  * Per-tool approval settings (tools design 6.5). Each tool has a default
@@ -12,9 +12,29 @@ import type { Tool } from "@harness/core";
 const KEY = "toolApproval";
 const Stored = z.record(z.string(), z.object({ ask: z.boolean() }));
 
+/*
+ * Which tools are always on, and which are off for the whole harness (tool
+ * management design, decision 12). Like the approval setting, only
+ * differences from the tool's own default are stored: `alwaysOn` holds a
+ * tool's value when it differs from `tool.alwaysOn`, and `off` is a list.
+ */
+const ALWAYS_ON_KEY = "toolAlwaysOn";
+const OFF_KEY = "toolsOff";
+const StoredAlwaysOn = z.record(z.string(), z.boolean());
+const StoredOff = z.array(z.string());
+
 export interface ToolView {
   name: string;
   description: string;
+  group: ToolGroup;
+  /** Whether it is offered to every agent now: the setting, else the default. */
+  alwaysOn: boolean;
+  /** The tool's own default for always on. */
+  alwaysOnByDefault: boolean;
+  /** Switched off for the whole harness. */
+  off: boolean;
+  /** Destructive or prompt-changing: a group grant does not cover it. */
+  needsReview: boolean;
   /** The tool's own default. */
   askByDefault: boolean;
   /** Whether it asks now: the setting, else the default. */
@@ -62,14 +82,75 @@ export function toolAsks(db: Database, tool: Tool): boolean {
   return readStored(db)[tool.name]?.ask ?? tool.approval === "ask";
 }
 
+function readJson<T>(
+  db: Database,
+  key: string,
+  schema: z.ZodType<T>,
+  empty: T,
+): T {
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  if (!row) return empty;
+  const parsed = schema.safeParse(JSON.parse(row.value));
+  return parsed.success ? parsed.data : empty;
+}
+
+function writeJson(db: Database, key: string, value: unknown) {
+  db.prepare(
+    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(key, JSON.stringify(value));
+}
+
+/** The names of the tools that are always on now. */
+export function alwaysOnNames(
+  db: Database,
+  tools: readonly Tool[],
+): Set<string> {
+  const stored = readJson(db, ALWAYS_ON_KEY, StoredAlwaysOn, {});
+  return new Set(
+    tools.filter((t) => stored[t.name] ?? t.alwaysOn).map((t) => t.name),
+  );
+}
+
+/** The names of the tools that are off for the whole harness. */
+export function offNames(db: Database): Set<string> {
+  return new Set(readJson(db, OFF_KEY, StoredOff, []));
+}
+
+/** Sets whether the tool is always on. A value equal to the default is not stored. */
+export function setToolAlwaysOn(db: Database, tool: Tool, value: boolean) {
+  const stored = Object.fromEntries(
+    Object.entries(readJson(db, ALWAYS_ON_KEY, StoredAlwaysOn, {})).filter(
+      ([name]) => name !== tool.name,
+    ),
+  );
+  if (value !== tool.alwaysOn) stored[tool.name] = value;
+  writeJson(db, ALWAYS_ON_KEY, stored);
+}
+
+/** Switches a tool off for the whole harness, or back on. */
+export function setToolOff(db: Database, tool: Tool, off: boolean) {
+  const names = [...offNames(db)].filter((n) => n !== tool.name);
+  if (off) names.push(tool.name);
+  writeJson(db, OFF_KEY, names);
+}
+
 export function listToolSettings(
   db: Database,
   tools: readonly Tool[],
 ): ToolView[] {
   const stored = readStored(db);
+  const alwaysOn = alwaysOnNames(db, tools);
+  const off = offNames(db);
   return tools.map((t) => ({
     name: t.name,
     description: t.description,
+    group: t.group,
+    alwaysOn: alwaysOn.has(t.name),
+    alwaysOnByDefault: t.alwaysOn,
+    off: off.has(t.name),
+    needsReview: t.needsReview,
     askByDefault: t.approval !== "never",
     ask: alwaysAsks(t) || (stored[t.name]?.ask ?? t.approval === "ask"),
     fixed: alwaysAsks(t),

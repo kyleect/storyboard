@@ -274,6 +274,7 @@ export const schemasList = defineTool({
     ),
   }),
   approval: "never",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ scope: input.scope }, () => ({
       data: { schemas: ctx.data.listSchemas(input.scope).map(shownSchema) },
@@ -289,6 +290,7 @@ export const schemaView = defineTool({
     version: Version.optional().describe("Leave out for the latest."),
   }),
   approval: "never",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ id: input.id }, () => {
       const s = ctx.data.getSchema(input.id);
@@ -320,6 +322,7 @@ export const schemaCreate = defineTool({
     schema: SchemaBody,
   }),
   approval: "ask",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ scope: input.scope, name: input.name }, () => ({
       data: {
@@ -368,6 +371,7 @@ export const schemaUpdate = defineTool({
     ),
   }),
   approval: "ask",
+  group: "structured-data",
   review: (input, ctx) =>
     reviewGuarded({ id: input.id }, () => {
       const plan = ctx.data.planSchemaUpdate(input.id, schemaChanges(input));
@@ -450,6 +454,7 @@ export const schemaCopy = defineTool({
     name: Name.optional().describe("Leave out to keep the name."),
   }),
   approval: "ask",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ id: input.id, scope: input.scope }, () => ({
       data: {
@@ -466,6 +471,7 @@ export const schemaDelete = defineTool({
     "Deletes a schema together with all the data made from it. The user can restore them together.",
   input: z.object({ id: Id.describe("The schema to delete.") }),
   approval: "ask",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ id: input.id }, () => {
       const { data } = ctx.data.deleteSchema(input.id);
@@ -492,6 +498,7 @@ export const dataList = defineTool({
     schemaId: Id.optional().describe("Only data made from this schema."),
   }),
   approval: "never",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ scope: input.scope, schemaId: input.schemaId }, () => ({
       data: {
@@ -511,6 +518,7 @@ export const dataView = defineTool({
     "Shows a piece of data with its value, the schema version it is on, and a warning when it is out of date.",
   input: z.object({ id: Id.describe("The data's id, from data_list.") }),
   approval: "never",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ id: input.id }, () => ({
       data: shownData(ctx.data.getData(input.id)),
@@ -557,6 +565,7 @@ export const dataCreate = defineTool({
     value: Json("The value, matching the schema."),
   }),
   approval: "ask",
+  group: "structured-data",
   review: (input, ctx) =>
     reviewGuarded({ schemaId: input.schemaId }, () =>
       dataReview(ctx, [
@@ -590,6 +599,7 @@ export const dataUpdate = defineTool({
     description: Description.optional(),
   }),
   approval: "ask",
+  group: "structured-data",
   review: (input, ctx) =>
     reviewGuarded({ id: input.id }, () =>
       dataReview(ctx, [
@@ -636,6 +646,7 @@ export const dataMigrate = defineTool({
     ).optional(),
   }),
   approval: "ask",
+  group: "structured-data",
   review: (input, ctx) =>
     reviewGuarded({ id: input.id }, () =>
       dataReview(ctx, [
@@ -699,6 +710,7 @@ export const dataMigrateMany = defineTool({
       .max(100),
   }),
   approval: "ask",
+  group: "structured-data",
   review: (input, ctx) => {
     const { plans, errors } = migrationPlans(ctx, input.items);
     // Nothing to ask about: every item is refused as it stands.
@@ -748,6 +760,7 @@ export const dataDelete = defineTool({
   description: "Deletes a piece of data. The user can restore it.",
   input: z.object({ id: Id.describe("The data to delete.") }),
   approval: "ask",
+  group: "structured-data",
   execute: (input, ctx) =>
     guarded({ id: input.id }, () => {
       ctx.data.deleteData(input.id);

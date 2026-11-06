@@ -13,6 +13,7 @@ import type { Agent, AgentStore } from "./agents-store.js";
 import type { AppEvents } from "./app-events.js";
 import type { EntryStore } from "./entries-store.js";
 import type { SessionRow, Store } from "./store.js";
+import { listedTools, type GrantTool } from "./tool-grants.js";
 
 /*
  * What the project and agent tools reach through their context (agent tools
@@ -121,6 +122,8 @@ export interface AgentAccessDeps {
   session: SessionRow;
   /** The agent this run started with; null: none. */
   runAgent: Agent | null;
+  /** Every tool, to show an agent's grant as a list of names. */
+  tools: readonly GrantTool[];
 }
 
 export function agentAccess(deps: AgentAccessDeps): AgentAccess {
@@ -134,8 +137,7 @@ export function agentAccess(deps: AgentAccessDeps): AgentAccess {
         ? null
         : (store.getProject(a.projectId)?.name ?? null),
     description: a.description,
-    toolMode: a.toolMode,
-    tools: [...a.tools],
+    ...listedTools(a.toolGrant, deps.tools),
     subagent: a.subagent,
     builtin: a.builtin,
   });

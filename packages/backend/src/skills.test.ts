@@ -8,12 +8,7 @@ import {
   type ScriptStep,
   type Tool,
 } from "@harness/core";
-import {
-  skillLoad,
-  skillsInstruction,
-  skillTools,
-  SKILL_LOAD,
-} from "@harness/tools";
+import { skillLoad, skillsInstruction, SKILL_LOAD } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents, type AppEvent } from "./app-events.js";
 import { RunManager } from "./runs.js";
@@ -27,7 +22,7 @@ import {
   type SkillOwner,
 } from "./skills-store.js";
 import { Store } from "./store.js";
-import { clearBuiltins, tempDatabase } from "./test-helpers.js";
+import { grant, clearBuiltins, tempDatabase } from "./test-helpers.js";
 
 const TOKEN = "t".repeat(64);
 
@@ -37,18 +32,19 @@ afterEach(async () => {
   cleanups = [];
 });
 
-const tool = (name: string): Tool =>
+const tool = (name: string, alwaysOn = false): Tool =>
   defineTool({
     name,
     description: `The ${name} tool.`,
     input: z.object({}),
     approval: "never",
+    group: "utilities" as const,
+    alwaysOn,
     execute: () => ({ data: { ran: name } }),
   });
 
 /** `files_read` stands in for the always-on files and memory tools. */
-const TOOLS = [tool("alpha"), tool("files_read"), skillLoad];
-const ALWAYS_ON = ["files_read", SKILL_LOAD];
+const TOOLS = [tool("alpha"), tool("files_read", true), skillLoad];
 
 const content = (over: Partial<SkillContent> = {}): SkillContent => ({
   displayName: "My Skill",
@@ -61,8 +57,7 @@ const agentContent = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "Be terse.",
-  toolMode: "allow",
-  tools: [],
+  toolGrant: grant("allow", []),
   toolApproval: {},
   ...over,
 });
@@ -88,10 +83,8 @@ async function setup(scripts: ScriptStep[][] = []) {
     }),
     model: () => model,
     tools: TOOLS,
-    alwaysOnTools: ALWAYS_ON,
     agents,
     skills,
-    skillTools: skillTools.map((s) => s.name),
     skillsPrompt: skillsInstruction,
     systemPrompt: () => "BASE",
     now,
@@ -644,8 +637,12 @@ describe("skills in runs", () => {
       .body as unknown as {
       name: string;
     }[];
-    expect(tools.map((t) => t.name)).toEqual(["alpha"]);
-    const agent = await newAgent(app, { toolMode: "allow", tools: [] });
+    expect(tools.map((t) => t.name)).toEqual([
+      "alpha",
+      "files_read",
+      SKILL_LOAD,
+    ]);
+    const agent = await newAgent(app, { toolGrant: grant("allow", []) });
     res = await api(app, "POST", `/api/sessions/${s}/messages`, {
       content: "Third",
       agentId: agent.id,

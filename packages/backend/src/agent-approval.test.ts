@@ -13,7 +13,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { tempDatabase } from "./test-helpers.js";
+import { grant, tempDatabase } from "./test-helpers.js";
 import { toolApproval } from "./tool-settings.js";
 
 /* Per-agent tool approval (agent tool approval design). */
@@ -27,13 +27,19 @@ afterEach(async () => {
 });
 
 /** Records its calls. */
-function recorder(name: string, approval: "ask" | "never" | "always") {
+function recorder(
+  name: string,
+  approval: "ask" | "never" | "always",
+  alwaysOn = false,
+) {
   const calls: string[] = [];
   const tool = defineTool({
     name,
     description: `The ${name} tool.`,
     input: z.object({ text: z.string() }),
     approval,
+    group: "utilities",
+    alwaysOn,
     execute: (input) => {
       calls.push(input.text);
       return { data: { got: input.text } };
@@ -43,13 +49,13 @@ function recorder(name: string, approval: "ask" | "never" | "always") {
 }
 
 /** `notes` stands in for an always-on files or memory tool. */
-const ALWAYS_ON = ["notes"];
+const ALWAYS_ON = new Set(["notes"]);
 
 function tools() {
   const safe = recorder("safe", "never");
   const risky = recorder("risky", "ask");
   const locked = recorder("locked", "always");
-  const notes = recorder("notes", "never");
+  const notes = recorder("notes", "never", true);
   return {
     list: [safe.tool, risky.tool, locked.tool, notes.tool] as Tool[],
     safe: safe.calls,
@@ -63,8 +69,7 @@ const content = (over: Partial<AgentInput> = {}): AgentInput => ({
   name: "Editor",
   description: "",
   prompt: "",
-  toolMode: "deny",
-  tools: [],
+  toolGrant: grant("deny", []),
   toolApproval: {},
   ...over,
 });
@@ -84,7 +89,6 @@ async function setup(scripts: ScriptStep[][] = []) {
     }),
     model: () => model,
     tools: seen.list,
-    alwaysOnTools: ALWAYS_ON,
     agents,
   });
   const app = buildServer({ store, runs, agents, token: TOKEN, env: {} });
@@ -348,8 +352,7 @@ describe("saving, versions and restore", () => {
     name: "Editor",
     description: "",
     prompt: "",
-    toolMode: "deny",
-    tools: [],
+    toolGrant: grant("deny", []),
     ...over,
   });
 
@@ -432,7 +435,7 @@ describe("saving, versions and restore", () => {
     const { t, agents } = await setup();
     // The column's default, as in a row that existed at the migration.
     t.db.exec(
-      "INSERT INTO agents (id, name, description, prompt, tool_mode, tools, version, created_at, updated_at) VALUES ('old', 'Old', '', '', 'deny', '[]', 1, 'T', 'T')",
+      "INSERT INTO agents (id, name, description, prompt, version, created_at, updated_at) VALUES ('old', 'Old', '', '', 1, 'T', 'T')",
     );
     expect(agents.get("old")?.toolApproval).toEqual({});
   });
@@ -447,6 +450,7 @@ describe("the tools the editor lists", () => {
       {
         name: "safe",
         description: "The safe tool.",
+        group: "utilities",
         alwaysOn: false,
         ask: true,
         fixed: false,
@@ -454,6 +458,7 @@ describe("the tools the editor lists", () => {
       {
         name: "risky",
         description: "The risky tool.",
+        group: "utilities",
         alwaysOn: false,
         ask: true,
         fixed: false,
@@ -461,6 +466,7 @@ describe("the tools the editor lists", () => {
       {
         name: "locked",
         description: "The locked tool.",
+        group: "utilities",
         alwaysOn: false,
         ask: true,
         fixed: true,
@@ -468,6 +474,7 @@ describe("the tools the editor lists", () => {
       {
         name: "notes",
         description: "The notes tool.",
+        group: "utilities",
         alwaysOn: true,
         ask: false,
         fixed: false,
@@ -478,28 +485,34 @@ describe("the tools the editor lists", () => {
 
 describe("agent files", () => {
   const known = ["safe", "risky", "locked", "notes"];
+  const all = known.map((name) => ({
+    name,
+    group: "utilities" as const,
+    needsReview: false,
+  }));
   const read = (md: string) =>
-    agentFromMarkdown(md, known, ALWAYS_ON, ["locked"]);
+    agentFromMarkdown(md, all, ALWAYS_ON, ["locked"]);
+  const write = (c: AgentInput) => agentToMarkdown(c, all, ALWAYS_ON);
 
   it("writes the two lists only when they have something", () => {
-    expect(agentToMarkdown(content())).not.toContain("Approval");
-    const md = agentToMarkdown(
-      content({ toolApproval: { safe: true, risky: false } }),
-    );
+    expect(write(content())).not.toContain("Approval");
+    const md = write(content({ toolApproval: { safe: true, risky: false } }));
     expect(md).toContain("requireApproval:");
     expect(md).toContain("skipApproval:");
-    expect(
-      agentToMarkdown(content({ toolApproval: { safe: true } })),
-    ).not.toContain("skipApproval");
+    expect(write(content({ toolApproval: { safe: true } }))).not.toContain(
+      "skipApproval",
+    );
   });
 
   it("round-trips", () => {
     const c = content({
       toolApproval: { safe: true, risky: false, notes: true },
     });
-    expect(read(agentToMarkdown(c))).toEqual({
+    expect(read(write(c))).toEqual({
       content: {
         ...c,
+        // An import records the tools that exist as the ones the agent knows.
+        toolGrant: { ...c.toolGrant, known },
         childReminders: null,
         childPrompt: null,
         subagent: false,
@@ -510,7 +523,7 @@ describe("agent files", () => {
 
   it("round-trips the subagent settings, writing them only when set", () => {
     const c = content({ subagent: true, childReminders: 0, childPrompt: "" });
-    const md = agentToMarkdown(c);
+    const md = write(c);
     expect(md).toContain("subagent: true");
     expect(md).toContain("childReminders: 0");
     expect(read(md).content).toMatchObject({
@@ -518,7 +531,7 @@ describe("agent files", () => {
       childReminders: 0,
       childPrompt: "",
     });
-    const plain = agentToMarkdown(content());
+    const plain = write(content());
     expect(plain).not.toContain("subagent");
     expect(plain).not.toContain("child");
   });

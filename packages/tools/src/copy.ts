@@ -459,6 +459,7 @@ function build(
     description: describe,
     input: schema,
     approval: "always",
+    group: adapter.noun === "file" ? "files" : "memory",
     execute: (raw, ctx) => {
       const i = raw as {
         keys?: string[];

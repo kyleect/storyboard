@@ -30,6 +30,7 @@ const echo = defineTool({
   description: "Echoes its input.",
   input: z.object({ text: z.string() }),
   approval: "never",
+  group: "utilities" as const,
   execute: ({ text }) => ({ data: text }),
 });
 const TOOLS: Tool[] = [echo];

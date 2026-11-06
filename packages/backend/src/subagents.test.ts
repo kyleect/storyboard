@@ -5,19 +5,14 @@ import {
   type ChatRequest,
   type ScriptStep,
 } from "@harness/core";
-import {
-  allTools,
-  entriesInstruction,
-  entryTools,
-  subagentHandback,
-} from "@harness/tools";
+import { allTools, entriesInstruction, entryTools } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { EntryStore } from "./entries-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings, type Settings } from "./settings.js";
 import { Store } from "./store.js";
-import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
+import { grant, clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 /*
  * Subagents (agent delegation design): real runs through the HTTP routes and
@@ -58,7 +53,6 @@ async function setup(
     }),
     model: () => model,
     tools: allTools,
-    alwaysOnTools: [...entryTools, subagentHandback].map((x) => x.name),
     agents,
     entries,
     systemPrompt: (s) => entriesInstruction(s.project_id !== null),
@@ -108,8 +102,7 @@ const content = (name: string, over: Partial<AgentInput> = {}): AgentInput => ({
   name,
   description: `${name} agent`,
   prompt: `You are ${name}.`,
-  toolMode: "deny",
-  tools: [],
+  toolGrant: grant("deny", []),
   toolApproval: {},
   ...over,
 });
@@ -231,7 +224,7 @@ describe("a subagent's run", () => {
     ]);
     const dispatcher = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     const editor = startable(c, "Editor");
     // The model script needs the editor's id: patch it into the first step.
@@ -306,7 +299,7 @@ describe("a subagent's run", () => {
     const editor = startable(c, "Editor");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -345,7 +338,7 @@ describe("a subagent's run", () => {
     const editor = startable(c, "Editor");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -406,7 +399,7 @@ describe("a subagent's run", () => {
     const editor = startable(c, "Editor");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -435,7 +428,7 @@ describe("a subagent's run", () => {
     const editor = startable(c, "Editor", { childReminders: 1 });
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -460,7 +453,7 @@ describe("a subagent's run", () => {
     const editor = startable(c, "Editor", { childReminders: 0 });
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -482,7 +475,7 @@ describe("a subagent's run", () => {
     const editor = startable(c, "Editor");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.push(
       [call("p1", "start_subagent", { agentId: editor.id, task: "Do it" })],
@@ -507,7 +500,7 @@ describe("a subagent's run", () => {
     const quiet = c.agents.create(null, content("Quiet"));
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -532,7 +525,7 @@ describe("a subagent's run", () => {
     const plain = startable(c, "Plain");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     const handback = [call("k", "subagent_handback", { output: "ok" })];
     c.scripts.splice(
@@ -564,7 +557,7 @@ describe("what a subagent asks of the user", () => {
     const editor = startable(c, "Editor");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -629,7 +622,7 @@ describe("what a subagent asks of the user", () => {
     });
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -674,8 +667,7 @@ describe("a subagent and files", () => {
     const boss = c.agents.create(
       null,
       content("Boss", {
-        toolMode: "allow",
-        tools: ["start_subagent", "files_read"],
+        toolGrant: grant("allow", ["start_subagent", "files_read"]),
       }),
     );
     c.scripts.splice(
@@ -720,7 +712,7 @@ describe("cancelling", () => {
     const editor = startable(c, "Editor");
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     c.scripts.splice(
       0,
@@ -840,19 +832,23 @@ describe("the built-in Dispatcher", () => {
         id: string;
         name: string;
         builtin: boolean;
-        tools: string[];
+        toolGrant: unknown;
       }[]
     ).find((a) => a.name === "Dispatcher");
     expect(dispatcher).toMatchObject({
       id: "builtin-dispatcher",
       builtin: true,
-      tools: ["ask_user", "agents_list", "start_subagent"],
+      toolGrant: {
+        mode: "allow",
+        groups: [],
+        except: [],
+        extras: ["ask_user", "agents_list", "start_subagent"],
+      },
     });
     const body = {
       name: "Dispatcher",
       prompt: "x",
-      toolMode: "deny",
-      tools: [],
+      toolGrant: grant("deny", []),
     };
     expect(
       (await api(c.app, "PUT", "/api/agents/builtin-dispatcher", body)).status,
@@ -917,8 +913,7 @@ describe("the built-in Dispatcher", () => {
     const mine = await api(c.app, "POST", "/api/global/agents", {
       name: "Dispatcher",
       prompt: "Mine.",
-      toolMode: "deny",
-      tools: [],
+      toolGrant: grant("deny", []),
     });
     expect(mine.status).toBe(201);
     const imported = await api(c.app, "POST", "/api/global/agents/import", {
@@ -971,8 +966,7 @@ describe("agent settings for subagents", () => {
   const body = (over: object = {}) => ({
     name: "Writer",
     prompt: "P",
-    toolMode: "deny",
-    tools: [],
+    toolGrant: grant("deny", []),
     ...over,
   });
 
@@ -1143,7 +1137,7 @@ describe("the session debug export with a subagent", () => {
     ]);
     const boss = c.agents.create(
       null,
-      content("Boss", { toolMode: "allow", tools: ["start_subagent"] }),
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
     );
     const editor = startable(c, "Editor");
     c.scripts[0] = [

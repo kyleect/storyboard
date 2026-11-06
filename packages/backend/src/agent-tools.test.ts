@@ -6,7 +6,7 @@ import {
   type Form,
   type ScriptStep,
 } from "@harness/core";
-import { allTools, entriesInstruction, entryTools } from "@harness/tools";
+import { allTools, entriesInstruction } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvent } from "./app-events.js";
 import { EntryStore } from "./entries-store.js";
@@ -14,7 +14,7 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
-import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
+import { grant, clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
 /*
  * The copy, move, project and agent tools (agent tools design), driven
@@ -51,7 +51,6 @@ async function setup() {
     }),
     model: () => model,
     tools: allTools,
-    alwaysOnTools: entryTools.map((x) => x.name),
     agents,
     entries,
     systemPrompt: (s) => entriesInstruction(s.project_id !== null),
@@ -192,8 +191,7 @@ const agentContent = (name: string) => ({
   name,
   description: `${name} agent`,
   prompt: `You are ${name}.`,
-  toolMode: "deny" as const,
-  tools: ["web_search"],
+  toolGrant: grant("deny", ["web_search"]),
   toolApproval: {},
 });
 

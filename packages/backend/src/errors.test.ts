@@ -33,6 +33,7 @@ const fetcher = defineTool({
   description: "Fails to fetch.",
   input: z.object({ url: z.string() }),
   approval: "never",
+  group: "utilities" as const,
   execute: ({ url }) => {
     throw new ToolError(`HTTP 404 fetching ${url}`, {
       details: { url, status: 404 },
@@ -46,6 +47,7 @@ const stopper = defineTool({
   description: "Ends the run.",
   input: z.object({}),
   approval: "never",
+  group: "utilities" as const,
   execute: () => {
     throw new ToolRunError("cannot go on", { details: { why: "x" } });
   },
@@ -57,6 +59,7 @@ const asker = defineTool({
   description: "Asks first.",
   input: z.object({}),
   approval: "ask",
+  group: "utilities" as const,
   execute: () => ({ data: "ran" }),
 });
 

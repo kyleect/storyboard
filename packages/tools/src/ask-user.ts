@@ -23,6 +23,7 @@ export const askUser = defineTool({
   ].join("\n\n"),
   input: AskUserInput,
   approval: "never",
+  group: "utilities",
   execute: async (input, ctx) => {
     const read = readForm(input);
     if (!read.ok) {
