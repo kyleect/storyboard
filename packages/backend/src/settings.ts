@@ -80,16 +80,16 @@ export type Settings = z.infer<typeof Settings>;
 
 export const DEFAULTS: Settings = {
   llamaServerUrl: "http://127.0.0.1:8080",
-  model: "gemma-4-E4B-it-Q8_0",
+  model: "",
   reasoningEffort: "",
   port: 4317,
-  loopLimit: 40,
+  loopLimit: 20,
   copyLimit: DEFAULT_COPY_LIMIT,
   trashRetentionDays: 30,
-  embeddingModel: "nomic-embed-text-v1.5.Q8_0",
+  embeddingModel: "",
   autoRename: true,
   autoRenameSource: "model",
-  titleModel: "gemma-4-E4B-it-Q8_0",
+  titleModel: "",
   titlePrompt:
     "Write a short title (at most 6 words) for a chat session that starts with the user's message below. Reply with the title only.",
   systemPrompt: `
@@ -124,7 +124,7 @@ These are the agents available to you. If none appear below, then there are no a
 - Be concise in your responses
 </rules>
   `.trim(),
-  defaultAgentId: "builtin-dispatcher",
+  defaultAgentId: "",
   childReminders: 2,
   childPrompt:
     "You are working on a task for another agent. When you are done, call subagent_handback with your result. If you need something from the user, ask with ask_user, not in plain text.",

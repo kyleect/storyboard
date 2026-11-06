@@ -13,10 +13,12 @@ import {
   skillsInstruction,
   skillsList,
   SKILL_LOAD,
+  startSubagent,
 } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents } from "./app-events.js";
 import {
+  agentsList,
   expandPlaceholders,
   firstSentence,
   toolsList,
@@ -45,6 +47,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
     tools: "- t: T.",
     schemas: "- S.",
     data: "- S: D.",
+    agents: "- (a1) Ed: Edits.",
   };
 
   it("replaces {{skills}} and {{tools}}, with spaces allowed inside", () => {
@@ -69,8 +72,17 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
   });
 
   it("leaves anything else as typed", () => {
-    const text = "{{skill}} {{Skills}} {{ }} {skills} {{{}}} {{agents}}";
+    const text =
+      "{{skill}} {{Skills}} {{ }} {skills} {{{}}} {{Agents}} {{agent}}";
     expect(expandPlaceholders(text, values)).toBe(text);
+  });
+
+  it("replaces {{agents}}", () => {
+    expect(expandPlaceholders("<a>{{ agents }}</a>", values)).toBe(
+      "<a>- (a1) Ed: Edits.</a>",
+    );
+    expect(usesPlaceholder("x {{agents}}", "agents")).toBe(true);
+    expect(usesPlaceholder("x {{agents}}", "tools")).toBe(false);
   });
 
   it("does not scan an expansion again", () => {
@@ -79,6 +91,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
       tools: "NOPE",
       schemas: "",
       data: "",
+      agents: "",
     });
     expect(out).toBe("- a: see {{tools}}");
   });
@@ -90,6 +103,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
         tools: "",
         schemas: "",
         data: "",
+        agents: "",
       }),
     ).toBe("A  B");
   });
@@ -113,6 +127,37 @@ describe("toolsList (decision 7)", () => {
       ]),
     ).toBe("- a: Does A.\n- b: Does B");
     expect(toolsList([])).toBe("");
+  });
+});
+
+describe("agentsList", () => {
+  const a = (over: Partial<Parameters<typeof agentsList>[0][number]> = {}) => ({
+    id: "id1",
+    name: "Editor",
+    description: "Edits prose.",
+    subagent: true,
+    ...over,
+  });
+
+  it("gives the id, name and description of each startable agent", () => {
+    expect(
+      agentsList([
+        a(),
+        a({ id: "id2", name: "Critic", description: "Critiques." }),
+      ]),
+    ).toBe("- (id1) Editor: Edits prose.\n- (id2) Critic: Critiques.");
+  });
+
+  it("leaves out agents that are not startable, and is empty with none", () => {
+    expect(agentsList([a({ subagent: false })])).toBe("");
+    expect(agentsList([])).toBe("");
+  });
+
+  it("keeps a description on one line, and drops an empty one", () => {
+    expect(agentsList([a({ description: "Two\n  lines." })])).toBe(
+      "- (id1) Editor: Two lines.",
+    );
+    expect(agentsList([a({ description: "  " })])).toBe("- (id1) Editor");
   });
 });
 
@@ -154,7 +199,7 @@ const agentContent = (over: Partial<AgentInput> = {}): AgentInput => ({
   ...over,
 });
 
-async function setup(scripts: ScriptStep[][]) {
+async function setup(scripts: ScriptStep[][], tools: readonly Tool[] = TOOLS) {
   const t = tempDatabase();
   clearBuiltins(t.db);
   writeSettings(t.db, { systemPrompt: "" });
@@ -171,7 +216,7 @@ async function setup(scripts: ScriptStep[][]) {
       autoRename: false,
     }),
     model: () => model,
-    tools: TOOLS,
+    tools,
     agents,
     skills,
     skillsPrompt: skillsInstruction,
@@ -287,11 +332,87 @@ describe("placeholders in runs", () => {
 
   it("lists no skill tool when no skill is in scope, and leaves unknown names", async () => {
     const s = await setup([answer]);
-    writeSettings(s.t.db, { systemPrompt: "{{tools}} {{agents}}" });
+    writeSettings(s.t.db, { systemPrompt: "{{tools}} {{agent}}" });
     await say(s, await newSession(s.app));
     const system = systemOf(s.model.requests[0]) as string;
     expect(system).not.toContain(SKILL_LOAD);
-    expect(system).toContain("{{agents}}");
+    expect(system).toContain("{{agent}}");
+  });
+
+  describe("{{agents}}", () => {
+    const WITH_START = [...TOOLS, startSubagent];
+
+    it("lists the agents the run can start, and no others", async () => {
+      const s = await setup([answer], WITH_START);
+      writeSettings(s.t.db, { systemPrompt: "A:\n{{agents}}" });
+      const editor = s.agents.create(
+        null,
+        agentContent({
+          name: "Editor",
+          description: "Edits prose.",
+          subagent: true,
+        }),
+      );
+      s.agents.create(
+        null,
+        agentContent({ name: "Notes", description: "Not startable." }),
+      );
+      await say(s, await newSession(s.app));
+      expect(systemOf(s.model.requests[0])).toBe(
+        `A:\n- (${editor.id}) Editor: Edits prose.\n\nBASE`,
+      );
+    });
+
+    it("lists a project's agents first, then the global ones", async () => {
+      const s = await setup([answer], WITH_START);
+      writeSettings(s.t.db, { systemPrompt: "{{agents}}" });
+      const project = (await api(s.app, "POST", "/api/projects", { name: "P" }))
+        .body.id as string;
+      const global = s.agents.create(
+        null,
+        agentContent({ name: "Aaa global", subagent: true }),
+      );
+      const own = s.agents.create(
+        project,
+        agentContent({ name: "Zzz project", subagent: true }),
+      );
+      // An agent of another project is not offered here.
+      const other = (await api(s.app, "POST", "/api/projects", { name: "Q" }))
+        .body.id as string;
+      s.agents.create(other, agentContent({ name: "Other", subagent: true }));
+      const session = (
+        await api(s.app, "POST", "/api/sessions", { projectId: project })
+      ).body.id as string;
+      await say(s, session);
+      expect(systemOf(s.model.requests[0])).toBe(
+        `- (${own.id}) Zzz project\n- (${global.id}) Aaa global\n\nBASE`,
+      );
+    });
+
+    it("is empty when the run is not offered start_subagent", async () => {
+      // The default tools have no start_subagent.
+      const s = await setup([answer]);
+      writeSettings(s.t.db, { systemPrompt: "A{{agents}}" });
+      s.agents.create(null, agentContent({ subagent: true }));
+      await say(s, await newSession(s.app));
+      expect(systemOf(s.model.requests[0])).toBe("A\n\nBASE");
+    });
+
+    it("is empty at the depth limit, and when the agent does not allow start_subagent", async () => {
+      const s = await setup([answer, answer], WITH_START);
+      writeSettings(s.t.db, { systemPrompt: "A{{agents}}" });
+      s.agents.create(null, agentContent({ subagent: true }));
+      const boss = s.agents.create(
+        null,
+        agentContent({ name: "Boss", toolGrant: grant("allow", ["alpha"]) }),
+      );
+      await say(s, await newSession(s.app), boss.id);
+      expect(systemOf(s.model.requests[0])).toBe("A\n\nBASE");
+
+      writeSettings(s.t.db, { subagentDepth: 0 });
+      await say(s, await newSession(s.app));
+      expect(systemOf(s.model.requests[1])).toBe("A\n\nBASE");
+    });
   });
 
   it("does not scan a skill description that holds a placeholder", async () => {

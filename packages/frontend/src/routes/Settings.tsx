@@ -310,7 +310,7 @@ function SystemPrompt({ view }: { view: SettingsView }) {
           label="Global system prompt"
           description={
             envNote("systemPrompt") ??
-            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}} or {{data}} to put the list of skills, tools, schemas or data the chat has at that place."
+            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place."
           }
           autosize
           minRows={4}

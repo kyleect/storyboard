@@ -239,8 +239,8 @@ global prompt, the project prompt, the agent prompt, and generated lists and
 instructions. See [backend.md](backend.md#the-system-message).
 
 **Placeholder**
-A token in a prompt the user writes: `{{skills}}`, `{{tools}}`, `{{schemas}}`
-or `{{data}}`. It is replaced when a run starts with what that run has.
+A token in a prompt the user writes: `{{skills}}`, `{{tools}}`, `{{schemas}}`,
+`{{data}}` or `{{agents}}`. It is replaced when a run starts with what that run has.
 
 **Skill**
 A named block of written instructions. The system message lists each skill
