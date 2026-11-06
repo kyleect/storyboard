@@ -5,10 +5,11 @@
  * with what the run has access to.
  */
 
-export type PlaceholderName = "skills" | "tools" | "schemas" | "data";
+export type PlaceholderName =
+  "skills" | "tools" | "schemas" | "data" | "agents";
 
 /** A placeholder, with spaces inside the braces allowed. */
-const PLACEHOLDER = /\{\{\s*(skills|tools|schemas|data)\s*\}\}/g;
+const PLACEHOLDER = /\{\{\s*(skills|tools|schemas|data|agents)\s*\}\}/g;
 
 /**
  * Replaces each placeholder in `text` with its value (decisions 1 to 5). One

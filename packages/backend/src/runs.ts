@@ -1230,6 +1230,12 @@ export class RunManager {
       tools: toolsList(tools),
       schemas: this.options.schemasList?.(schemas) ?? "",
       data: this.options.dataList?.(dataItems) ?? "",
+      agents:
+        this.options.agents
+          ?.list(dataOwner.projectId ?? dataOwner.agentId, false)
+          .filter((agent) => agent.subagent)
+          .map((agent) => `- (${agent.id}) ${agent.name}: ${agent.description}`)
+          .join("\n") ?? "",
     };
     const expanded = written.map((p) =>
       p === undefined ? p : expandPlaceholders(p, values),
