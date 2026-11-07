@@ -73,7 +73,7 @@ export function Layout() {
 
   return (
     <AppShell navbar={{ width: 260, breakpoint: "sm" }} padding="md">
-      <AppShell.Navbar p="sm">
+      <AppShell.Navbar p="xs">
         <Stack gap="xs" h="100%">
           <Group justify="space-between">
             <Title order={3}>🤖</Title>
@@ -243,37 +243,43 @@ export function Layout() {
 
           <Stack gap={0}>
             <NavLink
-              p="md"
+              px="md"
+              py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/agents" />}
               label="Agents"
             />
             <NavLink
-              p="md"
+              px="md"
+              py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/skills" />}
               label="Skills"
             />
             <NavLink
-              p="md"
+              px="md"
+              py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/files" />}
               label="Files/Memory"
             />
             <NavLink
-              p="md"
+              px="md"
+              py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/data" />}
               label="Structural Data"
             />
             <NavLink
-              p="md"
+              px="md"
+              py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/errors" />}
               label="Errors"
             />
             <NavLink
-              p="md"
+              px="md"
+              py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/settings" />}
               label="Settings"
