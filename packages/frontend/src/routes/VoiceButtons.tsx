@@ -9,11 +9,20 @@ import {
 } from "../audio";
 
 /*
- * Records from the microphone and hands back a WAV file to attach (see
- * audio.ts for why WAV, 16 kHz and 30 seconds). Press to start, press again
- * to stop; it also stops by itself at the length limit. Needs a secure page
- * (https or localhost) and the user's permission.
+ * Records from the microphone and hands back a WAV file (see audio.ts for
+ * why WAV, 16 kHz and 30 seconds). There are two buttons:
+ *
+ * - Record: the recording is attached to the message being written.
+ * - Record & send: the recording is sent as soon as it is made.
+ *
+ * Either one starts the recording and turns into a Stop button; it also stops
+ * by itself at the length limit. What happens to the file is up to the
+ * caller, which is told which button started the recording. Needs a secure
+ * page (https or localhost) and the user's permission.
  */
+
+/** What to do with a recording: attach it, or attach it and send. */
+export type RecordingMode = "attach" | "send";
 
 type Phase = "idle" | "recording" | "processing";
 
@@ -24,18 +33,23 @@ const release = (stream: MediaStream) => {
   for (const track of stream.getTracks()) track.stop();
 };
 
-export function VoiceButton({
+export function VoiceButtons({
   onRecorded,
   disabled,
+  sendDisabled,
   title,
 }: {
-  /** Called with the finished recording. */
-  onRecorded: (file: File) => void;
+  /** Called with the finished recording and the button that started it. */
+  onRecorded: (file: File, mode: RecordingMode) => void;
+  /** Disables both buttons. */
   disabled?: boolean;
-  /** A tooltip, to say why the button is disabled. */
+  /** Disables Record & send only, for example while a run is in progress. */
+  sendDisabled?: boolean;
+  /** A tooltip for both buttons, to say why they are disabled. */
   title?: string;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
+  const [mode, setMode] = useState<RecordingMode>("attach");
   const [seconds, setSeconds] = useState(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -58,7 +72,7 @@ export function VoiceButton({
     };
   }, []);
 
-  const start = async () => {
+  const start = async (startedAs: RecordingMode) => {
     if (phase !== "idle") return;
     if (
       !navigator.mediaDevices?.getUserMedia ||
@@ -104,7 +118,7 @@ export function VoiceButton({
       if (!mounted.current) return;
       setPhase("processing");
       recordingFile(new Blob(chunks, { type: rec.mimeType }), new Date())
-        .then((file) => callback.current(file))
+        .then((file) => callback.current(file, startedAs))
         .catch((err: unknown) => warn((err as Error).message))
         .finally(() => {
           if (mounted.current) setPhase("idle");
@@ -122,6 +136,7 @@ export function VoiceButton({
     recorder.current = rec;
     rec.start();
     setSeconds(0);
+    setMode(startedAs);
     setPhase("recording");
   };
 
@@ -130,21 +145,39 @@ export function VoiceButton({
   };
 
   if (phase === "recording") {
+    const sending = mode === "send";
     return (
-      <Button color="red" onClick={stop} aria-label="Stop recording">
-        Stop {formatDuration(seconds)} / {formatDuration(MAX_RECORDING_SECONDS)}
+      <Button
+        color="red"
+        onClick={stop}
+        aria-label={sending ? "Stop recording and send" : "Stop recording"}
+      >
+        {sending ? "Stop & send" : "Stop"} {formatDuration(seconds)} /{" "}
+        {formatDuration(MAX_RECORDING_SECONDS)}
       </Button>
     );
   }
+  const processing = phase === "processing";
   return (
-    <Button
-      variant="default"
-      loading={phase === "processing"}
-      disabled={disabled ?? false}
-      onClick={() => void start()}
-      {...(title ? { title } : {})}
-    >
-      Record
-    </Button>
+    <>
+      <Button
+        variant="default"
+        loading={processing && mode === "attach"}
+        disabled={(disabled ?? false) || processing}
+        onClick={() => void start("attach")}
+        title={title ?? "Record from the microphone and attach it"}
+      >
+        Record
+      </Button>
+      <Button
+        variant="default"
+        loading={processing && mode === "send"}
+        disabled={(disabled ?? false) || (sendDisabled ?? false) || processing}
+        onClick={() => void start("send")}
+        title={title ?? "Record, and send the message when you stop"}
+      >
+        Record & send
+      </Button>
+    </>
   );
 }

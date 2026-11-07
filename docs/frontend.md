@@ -186,16 +186,21 @@ removed; when it does not say, attaching is allowed. A sent message shows its
 files above the text. Chosen audio can be played back in the composer before it is sent. The bytes are fetched with the token and shown from object
 URLs, because `<img>` and `<audio>` cannot send the token themselves.
 
-**Voice.** The Record button (`routes/VoiceButton.tsx`, helpers in `audio.ts`)
-records from the microphone and attaches the result like any other file; the
-user then sends it with or without text. Browsers record WebM/Opus or MP4/AAC,
-which llama-server cannot read, so the page decodes the recording, mixes it
-down to mono, resamples it to 16 kHz (what Gemma 4 takes) and writes a 16-bit
-WAV file, which is uploaded as `voice-<date>-<time>.wav`. A recording stops by
-itself at 30 seconds, Gemma 4's audio limit. The button is disabled when the
-model is known not to hear audio. Recording needs the user's permission and a
-secure page: `https` or `localhost` (a plain `http://` address on another host
-cannot use the microphone).
+**Voice.** Two buttons record from the microphone (`routes/VoiceButtons.tsx`,
+helpers in `audio.ts`). **Record** attaches the recording like any other file;
+the user then sends it with or without text. **Record & send** sends the
+message as soon as the recording has uploaded, with the text already in the
+composer and any files already attached. Either button turns into a Stop button
+while recording. Record & send is disabled while a run is in progress; if a run
+started after the recording began, or the model cannot read some attached file,
+the recording is attached and a notice says to press Send. Browsers record
+WebM/Opus or MP4/AAC, which llama-server cannot read, so the page decodes the
+recording, mixes it down to mono, resamples it to 16 kHz (what Gemma 4 takes) and
+writes a 16-bit WAV file, which is uploaded as `voice-<date>-<time>.wav`. A
+recording stops by itself at 30 seconds, Gemma 4's audio limit. Both buttons are
+disabled when the model is known not to hear audio. Recording needs the user's
+permission and a secure page: `https` or `localhost` (a plain `http://` address
+on another host cannot use the microphone).
 
 **Composer actions.** Send, Continue, Cancel and "Stop thinking" call the
 corresponding endpoints. Sending includes the session's current model, effort and

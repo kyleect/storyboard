@@ -64,7 +64,7 @@ import {
   MessageAttachments,
   useAttachmentDraft,
 } from "./Attachments";
-import { VoiceButton } from "./VoiceButton";
+import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
@@ -163,6 +163,11 @@ export function Chat() {
   const [draft, setDraft] = useState("");
   // Images and audio attached to the message being written.
   const files = useAttachmentDraft(sessionId);
+  // The newest draft and files, for a send that waits for an upload.
+  const composer = useRef({ draft, items: files.items });
+  useEffect(() => {
+    composer.current = { draft, items: files.items };
+  });
   // What each model can read, to tell when an attachment cannot be used.
   const models = useQuery({
     queryKey: modelKeys.list(),
@@ -513,6 +518,34 @@ export function Chat() {
       attachmentIds: files.items.map((i) => i.attachment.id),
     });
   };
+  // A finished recording is attached; from "Record & send" it is also sent,
+  // with the text and files already in the composer. It is sent once it has
+  // uploaded, using what the composer holds by then, so text typed while it
+  // uploaded goes with it.
+  const recorded = async (file: File, mode: RecordingMode) => {
+    const uploaded = await files.add([file]);
+    if (mode !== "send" || uploaded.length === 0) return;
+    if (busy || unreadable.length > 0) {
+      notifications.show({
+        color: "yellow",
+        title: "Recording attached",
+        message: busy
+          ? "A run is in progress. Press Send when it ends."
+          : "The model cannot read some of the attached files. Remove them, then press Send.",
+      });
+      return;
+    }
+    const latest = composer.current;
+    send.mutate({
+      content: latest.draft.trim() === "" ? "" : latest.draft,
+      attachmentIds: [
+        ...new Set([
+          ...latest.items.map((i) => i.attachment.id),
+          ...uploaded.map((a) => a.id),
+        ]),
+      ],
+    });
+  };
   // How full the context is: the running count while a call streams, else
   // the latest stored message's.
   const contextUsage =
@@ -814,14 +847,13 @@ export function Chat() {
               onFiles={(picked) => void files.add(picked)}
               disabled={trashed}
             />
-            <VoiceButton
-              onRecorded={(file) => void files.add([file])}
+            <VoiceButtons
+              onRecorded={(file, mode) => void recorded(file, mode)}
               disabled={trashed || support?.audio === false}
-              title={
-                support?.audio === false
-                  ? "The model in use cannot hear audio."
-                  : "Record from the microphone and attach it"
-              }
+              sendDisabled={busy}
+              {...(support?.audio === false
+                ? { title: "The model in use cannot hear audio." }
+                : {})}
             />
             <Button type="submit" disabled={!canSend}>
               Send

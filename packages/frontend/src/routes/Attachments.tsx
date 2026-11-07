@@ -76,7 +76,9 @@ export function useAttachmentDraft(sessionId: string) {
       items: change(prev.sessionId === sessionId ? prev.items : []),
     }));
 
-  const add = async (files: readonly File[]) => {
+  /** Uploads files; returns the ones that were uploaded. */
+  const add = async (files: readonly File[]): Promise<Attachment[]> => {
+    const uploaded: Attachment[] = [];
     let room = MAX_ATTACHMENTS - items.length - uploading;
     for (const file of files) {
       const label = file.name || "That file";
@@ -105,12 +107,14 @@ export function useAttachmentDraft(sessionId: string) {
         );
         const previewUrl = URL.createObjectURL(file);
         update((prev) => [...prev, { attachment, previewUrl }]);
+        uploaded.push(attachment);
       } catch (err) {
         warn(`${label}: ${(err as Error).message}`);
       } finally {
         setUploading((n) => n - 1);
       }
     }
+    return uploaded;
   };
 
   return {
