@@ -2,14 +2,48 @@
  * Placeholders in the prompts the user writes (placeholders design). A
  * placeholder is `{{skills}}`, `{{tools}}`, `{{schemas}}`, `{{data}}` or
  * `{{agents}}` (schemas and data design, decision 39); it is replaced, when a
- * run starts, with what the run has access to.
+ * run starts, with what the run has access to. `{{date}}` and `{{time}}` are
+ * replaced with the date and the time of day the run starts.
  */
 
 export type PlaceholderName =
-  "skills" | "tools" | "schemas" | "data" | "agents";
+  "skills" | "tools" | "schemas" | "data" | "agents" | "date" | "time";
 
 /** A placeholder, with spaces inside the braces allowed. */
-const PLACEHOLDER = /\{\{\s*(skills|tools|schemas|data|agents)\s*\}\}/g;
+const PLACEHOLDER =
+  /\{\{\s*(skills|tools|schemas|data|agents|date|time)\s*\}\}/g;
+
+/**
+ * What `{{date}}` expands to: the weekday and the date, such as `Friday,
+ * November 6, 2026`, in `timeZone` (an IANA name; the computer's own when
+ * not given).
+ */
+export function formatDate(now: Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    ...(timeZone ? { timeZone } : {}),
+  }).format(now);
+}
+
+/**
+ * What `{{time}}` expands to: the time on a 24-hour clock with the time zone's
+ * short name, such as `14:32 PST`, in `timeZone` (the computer's own when not
+ * given). It is the time when the run starts, not a clock that keeps moving.
+ */
+export function formatTime(now: Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+    ...(timeZone ? { timeZone } : {}),
+  })
+    .format(now)
+    .replace(/^(\d{2}:\d{2})\s+/, "$1 ");
+}
 
 /**
  * Replaces each placeholder in `text` with its value (decisions 1 to 5). One

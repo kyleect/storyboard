@@ -131,7 +131,7 @@ export function ProjectPage() {
       <SavedText
         key={`p:${project.data.system_prompt}`}
         label="System prompt"
-        help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place."
+        help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
         what="system prompt"
         initial={project.data.system_prompt}
         disabled={trashed}

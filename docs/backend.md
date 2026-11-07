@@ -339,8 +339,8 @@ empty parts dropped and the rest joined by blank lines:
    one).
 
 **Placeholders.** In prompts the user writes (parts 1 to 3), `{{skills}}`,
-`{{tools}}`, `{{schemas}}`, `{{data}}` and `{{agents}}` are replaced once, when
-the run starts, with what _this run_ has:
+`{{tools}}`, `{{schemas}}`, `{{data}}`, `{{agents}}`, `{{date}}` and `{{time}}`
+are replaced once, when the run starts, with what _this run_ has:
 
 | Placeholder   | Expands to                                                                                              |
 | ------------- | ------------------------------------------------------------------------------------------------------- |
@@ -349,10 +349,17 @@ the run starts, with what _this run_ has:
 | `{{schemas}}` | One line per schema in scope. Empty if the run offers no schema or data tool.                           |
 | `{{data}}`    | One line per piece of data in scope, with its schema's name.                                            |
 | `{{agents}}`  | One line per startable agent: `- (id) name: description`. Empty unless the run offers `start_subagent`. |
+| `{{date}}`    | The weekday and date when the run starts, in the computer's time zone: `Friday, November 6, 2026`.      |
+| `{{time}}`    | The time on a 24-hour clock when the run starts, with the zone's short name: `14:32 PST`.               |
 
 Expansion is a single pass: text produced by an expansion is not scanned again.
 Anything else in braces is left as typed. Because the same lists are generated
 at launch, the model always sees what is actually available for the run.
+
+The date and time are read once per run, so they do not move while a run goes
+on. Each user message starts a new run, and a subagent is a run of its own: its
+system message is built, and its placeholders expanded, when it starts, so it
+gets the time then, not its parent's.
 
 ### Approvals
 

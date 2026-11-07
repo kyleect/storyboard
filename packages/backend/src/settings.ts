@@ -100,6 +100,8 @@ export const DEFAULTS: Settings = {
   systemPrompt: `
 You are an expert AI agent operating inside an agent harness. You help users with whatever they need help with. Use the skills below to accomplish that goal.
 
+Today is {{date}}. The time is {{time}}.
+
 <skills>
 {{skills}}
 </skills>

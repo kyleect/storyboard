@@ -30,7 +30,10 @@ async function setup(scripts: ScriptStep[][] = []) {
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let clock = 0;
-  const now = () => `2026-11-01T00:00:${String(++clock).padStart(2, "0")}Z`;
+  const now = () =>
+    new Date(Date.UTC(2026, 10, 1, 0, 0, ++clock))
+      .toISOString()
+      .replace(".000Z", "Z");
   const entries = new EntryStore(t.db, now);
   const model = new ScriptedModel(scripts);
   let note = 0;

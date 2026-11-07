@@ -52,7 +52,10 @@ async function setup(
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
   let clock = 0;
-  const now = () => `2026-11-02T00:00:${String(++clock).padStart(2, "0")}Z`;
+  const now = () =>
+    new Date(Date.UTC(2026, 10, 2, 0, 0, ++clock))
+      .toISOString()
+      .replace(".000Z", "Z");
   const entries = new EntryStore(t.db, now);
   const agents = new AgentStore(t.db, now);
   const data = new DataStore(t.db, schemaChecker, now);

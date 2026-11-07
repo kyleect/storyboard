@@ -829,6 +829,10 @@ describe("system prompts (system prompts design)", () => {
     expect(readSettings(t.db, {}).effective.systemPrompt).toMatch(
       /^You are an expert AI agent operating inside an agent harness\./,
     );
+    // The default tells the model the date and the time.
+    expect(readSettings(t.db, {}).effective.systemPrompt).toContain(
+      "Today is {{date}}. The time is {{time}}.",
+    );
     expect(
       readSettings(t.db, { HARNESS_SYSTEM_PROMPT: "From env." }).effective
         .systemPrompt,

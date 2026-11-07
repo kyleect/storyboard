@@ -65,6 +65,8 @@ import { agentAccess, projectAccess } from "./tool-access.js";
 import {
   agentsList,
   expandPlaceholders,
+  formatDate,
+  formatTime,
   toolsList,
   usesPlaceholder,
 } from "./placeholders.js";
@@ -1263,7 +1265,8 @@ export class RunManager {
         : [];
     const schemasText = this.options.schemasPrompt?.(schemas);
     // The prompts the user wrote may place the lists with {{skills}},
-    // {{tools}}, {{schemas}}, {{data}} and {{agents}}; they are filled in
+    // {{tools}}, {{schemas}}, {{data}} and {{agents}}, and the date and time
+    // with {{date}} and {{time}}; they are filled in
     // once, here, from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
     // {{skills}} the skill list goes after them, as before (decision 10).
@@ -1288,12 +1291,18 @@ export class RunManager {
           ),
         )
       : "";
+    // {{date}} and {{time}} are read here, so a subagent, which is launched
+    // through this same method, gets the time when it starts, not its
+    // parent's.
+    const startedAt = new Date(this.now());
     const values = {
       skills: this.options.skillsList?.(skills) ?? "",
       tools: toolsList(tools),
       schemas: this.options.schemasList?.(schemas) ?? "",
       data: this.options.dataList?.(dataItems) ?? "",
       agents: agentsText,
+      date: formatDate(startedAt),
+      time: formatTime(startedAt),
     };
     const expanded = written.map((p) =>
       p === undefined ? p : expandPlaceholders(p, values),

@@ -21,6 +21,8 @@ import {
   agentsList,
   expandPlaceholders,
   firstSentence,
+  formatDate,
+  formatTime,
   toolsList,
   usesPlaceholder,
 } from "./placeholders.js";
@@ -48,7 +50,17 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
     schemas: "- S.",
     data: "- S: D.",
     agents: "- (a1) Ed: Edits.",
+    date: "Friday, November 6, 2026",
+    time: "14:32 UTC",
   };
+
+  it("replaces {{date}} and {{time}}, with spaces allowed inside", () => {
+    expect(expandPlaceholders("{{date}}, {{ time }}. {{Date}}", values)).toBe(
+      "Friday, November 6, 2026, 14:32 UTC. {{Date}}",
+    );
+    expect(usesPlaceholder("x {{ date }}", "date")).toBe(true);
+    expect(usesPlaceholder("x {{time}}", "date")).toBe(false);
+  });
 
   it("replaces {{skills}} and {{tools}}, with spaces allowed inside", () => {
     expect(expandPlaceholders("{{skills}} and {{ tools }}", values)).toBe(
@@ -92,6 +104,8 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
       schemas: "",
       data: "",
       agents: "",
+      date: "",
+      time: "",
     });
     expect(out).toBe("- a: see {{tools}}");
   });
@@ -104,6 +118,8 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
         schemas: "",
         data: "",
         agents: "",
+        date: "",
+        time: "",
       }),
     ).toBe("A  B");
   });
@@ -112,6 +128,36 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
     expect(usesPlaceholder("x {{ skills }}", "skills")).toBe(true);
     expect(usesPlaceholder("x {{tools}}", "skills")).toBe(false);
     expect(usesPlaceholder(undefined, "skills")).toBe(false);
+  });
+});
+
+describe("formatDate and formatTime", () => {
+  // 2026-11-06 22:32 UTC is the evening of the 6th in London and in Los
+  // Angeles it is 14:32 PST on the same day; in Tokyo it is already the 7th.
+  const at = new Date(Date.UTC(2026, 10, 6, 22, 32, 5));
+
+  it("gives the weekday and the date", () => {
+    expect(formatDate(at, "UTC")).toBe("Friday, November 6, 2026");
+    expect(formatDate(at, "America/Los_Angeles")).toBe(
+      "Friday, November 6, 2026",
+    );
+    expect(formatDate(at, "Asia/Tokyo")).toBe("Saturday, November 7, 2026");
+  });
+
+  it("gives the time on a 24-hour clock with the zone's short name", () => {
+    expect(formatTime(at, "UTC")).toBe("22:32 UTC");
+    expect(formatTime(at, "America/Los_Angeles")).toBe("14:32 PST");
+  });
+
+  it("writes midnight as 00:xx, not 24:xx", () => {
+    expect(formatTime(new Date(Date.UTC(2026, 10, 7, 0, 5)), "UTC")).toBe(
+      "00:05 UTC",
+    );
+  });
+
+  it("uses the computer's own zone when none is given", () => {
+    expect(formatTime(at)).toMatch(/^\d{2}:\d{2} \S+$/);
+    expect(formatDate(at)).toMatch(/^\w+day, \w+ \d{1,2}, 2026$/);
   });
 });
 
@@ -434,6 +480,31 @@ describe("placeholders in runs", () => {
       await say(s, await newSession(s.app));
       expect(systemOf(s.model.requests[1])).toBe("A\n\nBASE");
     });
+  });
+
+  it("fills {{date}} and {{time}} from the clock when the run starts", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, {
+      systemPrompt: "Today is {{date}}.",
+    });
+    const agent = (
+      await api(
+        s.app,
+        "POST",
+        "/api/global/agents",
+        agentContent({ prompt: "It is {{ time }}." }),
+      )
+    ).body.id as string;
+    await say(s, await newSession(s.app), agent);
+    const system = systemOf(s.model.requests[0]) as string;
+    // The test clock starts at 2026-01-01T00:00:00Z and ticks a second per
+    // call, so the date and time are the formatted run start, in whatever
+    // zone the test computer is in.
+    const date = system.match(/^Today is (.+)\.\n\n/)?.[1];
+    const time = system.match(/It is (.+)\.\n\nBASE$/)?.[1];
+    expect(date).toMatch(/^\w+day, (December|January) \d{1,2}, (2025|2026)$/);
+    expect(time).toMatch(/^\d{2}:\d{2} \S+$/);
+    expect(system).not.toContain("{{");
   });
 
   it("does not scan a skill description that holds a placeholder", async () => {

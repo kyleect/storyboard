@@ -873,7 +873,7 @@ function AgentEditor({
       />
       <Textarea
         label="System prompt"
-        description="Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place."
+        description="Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
         autosize
         minRows={8}
         maxRows={30}

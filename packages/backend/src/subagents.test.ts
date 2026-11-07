@@ -39,6 +39,8 @@ async function setup(
     settings?: Partial<Settings>;
     /** Keep the built-in Dispatcher (the default). */
     keepDispatcher?: boolean;
+    /** The clock, instead of one that ticks a second per call. */
+    now?: () => string;
   } = {},
 ) {
   const t = tempDatabase();
@@ -46,7 +48,14 @@ async function setup(
   writeSettings(t.db, { systemPrompt: "", ...options.settings });
   const store = new Store(t.db);
   let clock = 0;
-  const now = () => `2026-11-05T00:00:${String(++clock).padStart(2, "0")}Z`;
+  const now =
+    options.now ??
+    // A second per call; still a valid time after 60 calls, because a run
+    // reads the time for {{date}} and {{time}}.
+    (() =>
+      new Date(Date.UTC(2026, 10, 5, 0, 0, ++clock))
+        .toISOString()
+        .replace(".000Z", "Z"));
   const entries = new EntryStore(t.db, now);
   const agents = new AgentStore(t.db, now);
   const model = new ScriptedModel(scripts);
@@ -221,6 +230,41 @@ const REMINDER =
   "You have not handed back. If you are finished, call subagent_handback with your result. If you need something from the user, call ask_user.";
 
 describe("a subagent's run", () => {
+  it("expands {{date}} and {{time}} when it starts, not from its parent", async () => {
+    // A clock that jumps ten minutes per call, so the child starts at a
+    // different time of day than its parent.
+    let n = 0;
+    const now = () =>
+      new Date(Date.UTC(2026, 10, 5, 9, 0) + ++n * 10 * 60_000).toISOString();
+    const c = await setup(
+      [
+        [],
+        [call("k1", "subagent_handback", { output: "Done." })],
+        text("All done"),
+      ],
+      { now, settings: { systemPrompt: "Now: {{date}} / {{time}}." } },
+    );
+    const boss = c.agents.create(
+      null,
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
+    );
+    const editor = startable(c, "Editor");
+    c.scripts[0] = [
+      call("p1", "start_subagent", { agentId: editor.id, task: "Edit." }),
+    ];
+    await go(c, await newSession(c, boss.id));
+
+    const stamp = (r: ChatRequest) =>
+      /Now: (.+ \/ \d{2}:\d{2} \S+)\./.exec(systemOf(r))?.[1];
+    const parent = stamp(request(c, 0));
+    const child = stamp(request(c, 1));
+    expect(parent).toBeDefined();
+    expect(child).toBeDefined();
+    // Both were expanded (no braces left), each at its own start.
+    expect(systemOf(request(c, 1))).not.toContain("{{");
+    expect(child).not.toBe(parent);
+  });
+
   it("runs as a run of its own and hands its output to the parent", async () => {
     const c = await setup([
       [],

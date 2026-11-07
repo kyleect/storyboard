@@ -245,7 +245,8 @@ instructions. See [backend.md](backend.md#the-system-message).
 
 **Placeholder**
 A token in a prompt the user writes: `{{skills}}`, `{{tools}}`, `{{schemas}}`,
-`{{data}}` or `{{agents}}`. It is replaced when a run starts with what that run has.
+`{{data}}`, `{{agents}}`, `{{date}}` or `{{time}}`. It is replaced when a run
+starts with what that run has, or with the date or time then.
 
 **Skill**
 A named block of written instructions. The system message lists each skill
