@@ -10,6 +10,7 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
+import { modelKeys } from "../queries";
 
 const INPUT_FIRST: ("label" | "input" | "description" | "error")[] = [
   "label",
@@ -47,7 +48,7 @@ export function ModelPicker(props: {
 }) {
   const queryClient = useQueryClient();
   const models = useQuery({
-    queryKey: ["models"],
+    queryKey: modelKeys.list(),
     queryFn: api.listModels,
     refetchInterval: (q) =>
       q.state.data?.some((m) => m.status === "loading") ? 1000 : false,
@@ -62,7 +63,7 @@ export function ModelPicker(props: {
           message: result.message,
         });
       }
-      void queryClient.invalidateQueries({ queryKey: ["models"] });
+      void queryClient.invalidateQueries({ queryKey: modelKeys.list() });
     },
     onError: (err: Error) =>
       notifications.show({
@@ -80,7 +81,9 @@ export function ModelPicker(props: {
   const previous = useRef(info?.status);
   useEffect(() => {
     if (previous.current === "loading" && info?.status === "loaded") {
-      void queryClient.invalidateQueries({ queryKey: ["reasoning-levels"] });
+      void queryClient.invalidateQueries({
+        queryKey: modelKeys.reasoningLevels(),
+      });
     }
     previous.current = info?.status;
   }, [info?.status, queryClient]);
@@ -171,7 +174,7 @@ export function ModelPicker(props: {
             void models.refetch();
             // Levels depend on whether a model is loaded, which may have changed.
             void queryClient.invalidateQueries({
-              queryKey: ["reasoning-levels"],
+              queryKey: modelKeys.reasoningLevels(),
             });
           }}
         >

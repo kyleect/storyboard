@@ -8,6 +8,7 @@ import { act, render, screen } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
+import { projectKeys, sessionKeys } from "./queries";
 import { useAppEvents, useLive, useSessionEvents } from "./live";
 import { EditableTitle } from "./routes/EditableTitle";
 
@@ -64,7 +65,7 @@ const detail: SessionDetail = {
 /** The chat header's title, kept live by the session's event stream. */
 function Header() {
   const query = useQuery({
-    queryKey: ["session", "s1"],
+    queryKey: sessionKeys.detail("s1"),
     queryFn: () => Promise.resolve(detail),
   });
   useSessionEvents("s1", query.data);
@@ -118,7 +119,7 @@ describe("session.agent_changed", () => {
     let agentId: string | null = null;
     function AgentLabel() {
       const query = useQuery({
-        queryKey: ["session", "s1"],
+        queryKey: sessionKeys.detail("s1"),
         queryFn: () =>
           Promise.resolve({
             ...detail,
@@ -179,7 +180,7 @@ describe("projects.changed", () => {
         data: { projectId: "p1" },
       }),
     );
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["projects"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: projectKeys.list() });
   });
 });
 
@@ -194,7 +195,7 @@ describe("a subagent's run", () => {
 
   function Host() {
     const query = useQuery({
-      queryKey: ["session", "s1"],
+      queryKey: sessionKeys.detail("s1"),
       queryFn: () => Promise.resolve(detail),
     });
     useSessionEvents("s1", query.data);
@@ -293,7 +294,7 @@ describe("a subagent's run", () => {
     } as SessionDetail;
     function Snapshot() {
       const query = useQuery({
-        queryKey: ["session", "s1"],
+        queryKey: sessionKeys.detail("s1"),
         queryFn: () => Promise.resolve(withRuns),
       });
       useSessionEvents("s1", query.data);

@@ -346,14 +346,6 @@ export type EntryScope =
   | { scope: "project"; id: string }
   | { scope: "session"; id: string };
 
-/** The query key prefix for a scope's files or notes. */
-export const entriesKey = (s: EntryScope, kind?: EntryKind) => [
-  "entries",
-  s.scope,
-  s.scope === "global" ? null : s.id,
-  ...(kind ? [kind] : []),
-];
-
 const entriesBase = (s: EntryScope, kind: EntryKind) =>
   `${
     s.scope === "global"
@@ -501,13 +493,6 @@ export interface AgentDetail extends Agent {
 /** Where agents live: global, or a project. */
 export type AgentScope = { scope: "global" } | { scope: "project"; id: string };
 
-/** The query key prefix for a scope's agents. */
-export const agentsKey = (s: AgentScope) => [
-  "agents",
-  s.scope,
-  s.scope === "global" ? null : s.id,
-];
-
 const agentsBase = (s: AgentScope) =>
   s.scope === "global" ? "/api/global/agents" : `/api/projects/${s.id}/agents`;
 
@@ -564,13 +549,6 @@ export type SkillOwner =
   | { scope: "project"; id: string }
   | { scope: "agent"; id: string };
 
-/** The query key prefix for an owner's skills. */
-export const skillsKey = (o: SkillOwner) => [
-  "skills",
-  o.scope,
-  o.scope === "global" ? null : o.id,
-];
-
 const skillsBase = (o: SkillOwner) =>
   o.scope === "global"
     ? "/api/global/skills"
@@ -586,13 +564,6 @@ export type DataOwner =
   | { scope: "project"; id: string }
   | { scope: "agent"; id: string }
   | { scope: "session"; id: string };
-
-/** The query key prefix for an owner's data; ["data"] is every owner's. */
-export const dataKey = (o: DataOwner) => [
-  "data",
-  o.scope,
-  o.scope === "global" ? null : o.id,
-];
 
 const dataBase = (o: DataOwner) =>
   o.scope === "global"
@@ -715,10 +686,6 @@ export interface ErrorFilterOptions {
   runs: boolean;
 }
 
-/** Query keys for errors; invalidate ["errors"] to refresh every console. */
-export const errorsKey = (filter: ErrorFilter = {}) => ["errors", filter];
-export const errorFiltersKey = ["errors", "filters"];
-
 /** How an MCP server's connection stands (MCP design). */
 export type McpState = "disabled" | "connecting" | "connected" | "failed";
 
@@ -763,8 +730,6 @@ export interface McpServerView extends McpServerInput {
     tools: McpToolInfo[];
   };
 }
-
-export const mcpServersKey = ["mcp-servers"] as const;
 
 export const api = {
   listErrors: (filter: ErrorFilter = {}) => {

@@ -21,6 +21,7 @@ import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api, type DebugRun, type SessionDebug } from "../api";
+import { sessionKeys } from "../queries";
 import { renderLinearText } from "../linear";
 import {
   copyText,
@@ -172,7 +173,7 @@ function RunRequest({ run, index }: { run: DebugRun; index: number }) {
 
 export function DebugPanel({ sessionId }: { sessionId: string }) {
   const query = useQuery({
-    queryKey: ["session-debug", sessionId],
+    queryKey: sessionKeys.debug(sessionId),
     queryFn: () => api.getSessionDebug(sessionId),
     // Always current when the tab opens; the Refresh button updates it later.
     staleTime: 0,

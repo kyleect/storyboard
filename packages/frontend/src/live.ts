@@ -12,13 +12,20 @@ import {
   type RunAgent,
   type Usage,
 } from "@harness/core";
+import { appEventsUrl, eventsUrl, type SessionDetail } from "./api";
 import {
-  appEventsUrl,
-  entriesKey,
-  errorsKey,
-  eventsUrl,
-  type SessionDetail,
-} from "./api";
+  agentKeys,
+  dataKeys,
+  entryKeys,
+  errorKeys,
+  mcpKeys,
+  modelKeys,
+  projectKeys,
+  sessionKeys,
+  skillKeys,
+  toolKeys,
+  trashKeys,
+} from "./queries";
 
 /*
  * The in-flight run of each session, built from streamed events. A run can
@@ -180,8 +187,10 @@ export function useSessionEvents(
     // A model is loaded by its first request, so what llama-server reports
     // about models (status, reasoning levels) can change during a run.
     const refreshModelInfo = () => {
-      void queryClient.invalidateQueries({ queryKey: ["models"] });
-      void queryClient.invalidateQueries({ queryKey: ["reasoning-levels"] });
+      void queryClient.invalidateQueries({ queryKey: modelKeys.list() });
+      void queryClient.invalidateQueries({
+        queryKey: modelKeys.reasoningLevels(),
+      });
     };
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -196,49 +205,49 @@ export function useSessionEvents(
         case "session.trashed":
           // Trashed here or in another window (sessions and projects
           // design, Q7a).
-          void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-          void queryClient.invalidateQueries({ queryKey: ["trash"] });
+          void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+          void queryClient.invalidateQueries({ queryKey: trashKeys.all });
           void queryClient.invalidateQueries({
-            queryKey: ["session", sessionId],
+            queryKey: sessionKeys.detail(sessionId),
           });
           void navigate({ to: "/" });
           break;
         case "session.entries_changed":
           // An edit to session-scoped files or notes added a message.
           void queryClient.invalidateQueries({
-            queryKey: ["session", sessionId],
+            queryKey: sessionKeys.detail(sessionId),
           });
           void queryClient.invalidateQueries({
-            queryKey: entriesKey({ scope: "session", id: sessionId }),
+            queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
           });
           break;
         case "session.data_changed":
           // An edit to session schemas or data added a message.
           void queryClient.invalidateQueries({
-            queryKey: ["session", sessionId],
+            queryKey: sessionKeys.detail(sessionId),
           });
-          void queryClient.invalidateQueries({ queryKey: ["data"] });
+          void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           break;
         case "session.agent_changed":
           // A tool changed the session's agent; the picker reads it from
           // the session (agent tools design, Q18).
           void queryClient.invalidateQueries({
-            queryKey: ["session", sessionId],
+            queryKey: sessionKeys.detail(sessionId),
           });
           break;
         case "session.renamed":
           // Renamed automatically or by the user, here or in another
           // window (auto-rename plan, decision 8).
           queryClient.setQueryData<SessionDetail>(
-            ["session", sessionId],
+            sessionKeys.detail(sessionId),
             (old) =>
               old && {
                 ...old,
                 session: { ...old.session, title: event.data.title },
               },
           );
-          void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-          void queryClient.invalidateQueries({ queryKey: ["trash"] });
+          void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+          void queryClient.invalidateQueries({ queryKey: trashKeys.all });
           break;
         case "run.started": {
           const started = {
@@ -266,10 +275,9 @@ export function useSessionEvents(
           break;
         }
         case "message.started": {
-          const cached = queryClient.getQueryData<SessionDetail>([
-            "session",
-            sessionId,
-          ]);
+          const cached = queryClient.getQueryData<SessionDetail>(
+            sessionKeys.detail(sessionId),
+          );
           const existing = cached?.messages.find(
             (m) => m.id === event.data.messageId,
           );
@@ -295,7 +303,7 @@ export function useSessionEvents(
             (event.runId !== null ? top?.children[event.runId] : undefined)
               ?.parentCallId ?? null;
           queryClient.setQueryData<SessionDetail>(
-            ["session", sessionId],
+            sessionKeys.detail(sessionId),
             (old) => {
               if (!old || event.data.message.content.length === 0) return old;
               const stored = {
@@ -326,23 +334,23 @@ export function useSessionEvents(
         case "tool.result":
           // The result message is stored before this event.
           void queryClient.invalidateQueries({
-            queryKey: ["session", sessionId],
+            queryKey: sessionKeys.detail(sessionId),
           });
           // The Data tab and the data pages update live (schemas and data
           // design).
           if (/^(schemas?|data)_/.test(event.data.name)) {
-            void queryClient.invalidateQueries({ queryKey: ["data"] });
+            void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           }
           // The session's Files and Memory tabs update live (decision 35).
           if (/^(files|memory)_/.test(event.data.name)) {
             void queryClient.invalidateQueries({
-              queryKey: entriesKey({ scope: "session", id: sessionId }),
+              queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
             });
           }
           // The session's errors panel (error reporting plan, P6).
           if (event.data.isError) {
             void queryClient.invalidateQueries({
-              queryKey: errorsKey({ sessionId }),
+              queryKey: errorKeys.list({ sessionId }),
             });
           }
           break;
@@ -354,7 +362,7 @@ export function useSessionEvents(
             userMessages: run.userMessages.slice(1),
           }));
           void queryClient.invalidateQueries({
-            queryKey: ["session", sessionId],
+            queryKey: sessionKeys.detail(sessionId),
           });
           break;
         case "tool.approval_requested":
@@ -392,7 +400,7 @@ export function useSessionEvents(
               message: event.data.error,
             });
             void queryClient.invalidateQueries({
-              queryKey: errorsKey({ sessionId }),
+              queryKey: errorKeys.list({ sessionId }),
             });
           }
           answering.delete(event.runId);
@@ -417,7 +425,7 @@ export function useSessionEvents(
             // A subagent's run ended; the run that started it carries on. Its
             // messages come from the refetch.
             void queryClient
-              .invalidateQueries({ queryKey: ["session", sessionId] })
+              .invalidateQueries({ queryKey: sessionKeys.detail(sessionId) })
               .then(() =>
                 useLive
                   .getState()
@@ -426,9 +434,9 @@ export function useSessionEvents(
             break;
           }
           // The session lists show each session's latest usage.
-          void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+          void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
           void queryClient
-            .invalidateQueries({ queryKey: ["session", sessionId] })
+            .invalidateQueries({ queryKey: sessionKeys.detail(sessionId) })
             .then(() => {
               const current = useLive.getState().runs[sessionId];
               if (current?.runId === event.runId)
@@ -549,25 +557,27 @@ export function useAppEvents() {
   const queryClient = useQueryClient();
   useEffect(() => {
     const refreshAgents = () => {
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
-      void queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+      void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.pickableAgents(),
+      });
     };
     const refreshSkills = () =>
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+      void queryClient.invalidateQueries({ queryKey: skillKeys.all });
     const refreshErrors = () =>
-      void queryClient.invalidateQueries({ queryKey: ["errors"] });
+      void queryClient.invalidateQueries({ queryKey: errorKeys.all });
     const refreshProjects = () =>
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     const refreshData = () =>
-      void queryClient.invalidateQueries({ queryKey: ["data"] });
+      void queryClient.invalidateQueries({ queryKey: dataKeys.all });
     // A server's tools come and go with its connection, so the tool lists
     // (settings, agent editor) change with it.
     const refreshMcp = () => {
-      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
-      void queryClient.invalidateQueries({ queryKey: ["tools"] });
-      void queryClient.invalidateQueries({ queryKey: ["agent-tools"] });
+      void queryClient.invalidateQueries({ queryKey: mcpKeys.all });
+      void queryClient.invalidateQueries({ queryKey: toolKeys.list() });
+      void queryClient.invalidateQueries({ queryKey: toolKeys.selectable() });
       void queryClient.invalidateQueries({
-        queryKey: ["agent-tool-approvals"],
+        queryKey: toolKeys.approvals(),
       });
     };
     let source: EventSource | undefined;
@@ -612,7 +622,9 @@ export function useAppEvents() {
         refreshAgents();
         // A deleted agent is cleared from the sessions that had it picked.
         for (const id of event.data.clearedSessions) {
-          void queryClient.invalidateQueries({ queryKey: ["session", id] });
+          void queryClient.invalidateQueries({
+            queryKey: sessionKeys.detail(id),
+          });
         }
       };
       // EventSource reconnects on its own after a dropped connection, but

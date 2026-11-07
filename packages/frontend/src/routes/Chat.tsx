@@ -39,6 +39,7 @@ import {
   type MessageAgent,
   type SessionDetail,
 } from "../api";
+import { projectKeys, sessionKeys, settingsKeys, toolKeys } from "../queries";
 import {
   liveRuns,
   useLive,
@@ -127,11 +128,11 @@ interface ShownMessage {
 export function Chat() {
   const { sessionId } = useParams({ from: "/sessions/$sessionId" });
   const detail = useQuery({
-    queryKey: ["session", sessionId],
+    queryKey: sessionKeys.detail(sessionId),
     queryFn: () => api.getSession(sessionId),
   });
   const settings = useQuery({
-    queryKey: ["settings"],
+    queryKey: settingsKeys.all,
     queryFn: api.getSettings,
   });
   // Start the stream from a fresh load, not from cached data: a cached
@@ -213,8 +214,9 @@ export function Chat() {
       agentId?: string | null;
     }) => api.setSessionChoices(sessionId, c),
     onSuccess: (updated) => {
-      queryClient.setQueryData<SessionDetail>(["session", sessionId], (old) =>
-        old ? { ...old, session: updated } : old,
+      queryClient.setQueryData<SessionDetail>(
+        sessionKeys.detail(sessionId),
+        (old) => (old ? { ...old, session: updated } : old),
       );
     },
     onError,
@@ -225,10 +227,12 @@ export function Chat() {
     onSuccess: () => {
       setDraft("");
       // Shows the stored user message.
-      void queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.detail(sessionId),
+      });
       // Sending in a project's session counts as using the project.
       if (session?.project_id)
-        void queryClient.invalidateQueries({ queryKey: ["projects"] });
+        void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
     onError,
   });
@@ -236,7 +240,7 @@ export function Chat() {
     mutationFn: () => api.continueLast(sessionId, choices),
     onSuccess: () => {
       if (session?.project_id)
-        void queryClient.invalidateQueries({ queryKey: ["projects"] });
+        void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
     onError,
   });
@@ -253,9 +257,9 @@ export function Chat() {
     onSuccess: (_r, a) => {
       // "Always allow" changes the tool's setting.
       if (a.answer.choice === "always") {
-        void queryClient.invalidateQueries({ queryKey: ["tools"] });
+        void queryClient.invalidateQueries({ queryKey: toolKeys.list() });
         void queryClient.invalidateQueries({
-          queryKey: ["agent-tool-approvals"],
+          queryKey: toolKeys.approvals(),
         });
       }
     },

@@ -1,6 +1,7 @@
 import { Loader, Select } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { modelKeys } from "../queries";
 
 const INPUT_FIRST: ("label" | "input" | "description" | "error")[] = [
   "label",
@@ -34,7 +35,7 @@ export function ReasoningPicker(props: {
   size?: "xs" | "sm";
 }) {
   const levels = useQuery({
-    queryKey: ["reasoning-levels", props.model ?? null],
+    queryKey: modelKeys.reasoningLevel(props.model),
     queryFn: () => api.reasoningLevels(props.model),
     retry: false,
   });

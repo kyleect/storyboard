@@ -28,12 +28,12 @@ import { useState } from "react";
 import type { EntryKind, FileType } from "@harness/core";
 import {
   api,
-  entriesKey,
   type Entry,
   type EntryDetail,
   type EntryScope,
   type EntryVersion,
 } from "../api";
+import { entryKeys, projectKeys } from "../queries";
 import { Markdown } from "./Markdown";
 import { showError } from "./SessionActions";
 
@@ -125,7 +125,8 @@ const when = (iso: string) => (iso ? new Date(iso).toLocaleString() : "");
 /** Refreshes a scope's lists and open entries after a change. */
 function useRefresh(scope: EntryScope) {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: entriesKey(scope) });
+  return () =>
+    queryClient.invalidateQueries({ queryKey: entryKeys.inScope(scope) });
 }
 
 /** Earlier versions of one file or note; one can be made current. */
@@ -269,7 +270,7 @@ export function FilesPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<FileMode>({ mode: "view" });
   const list = useQuery({
-    queryKey: [...entriesKey(scope, "file"), "list", showDeleted],
+    queryKey: entryKeys.list(scope, "file", showDeleted),
     queryFn: () => api.listEntries(scope, "file", showDeleted),
   });
 
@@ -388,7 +389,7 @@ function FileView({
   const refresh = useRefresh(scope);
   const [versions, setVersions] = useState(false);
   const file = useQuery({
-    queryKey: [...entriesKey(scope, "file"), "one", fileKey],
+    queryKey: entryKeys.detail(scope, "file", fileKey),
     queryFn: () => api.getEntry(scope, "file", fileKey),
   });
   const remove = useMutation({
@@ -564,7 +565,7 @@ export function NotesPanel({
 }) {
   const [showDeleted, setShowDeleted] = useState(false);
   const list = useQuery({
-    queryKey: [...entriesKey(scope, "note"), "list", showDeleted],
+    queryKey: entryKeys.list(scope, "note", showDeleted),
     queryFn: () => api.listEntries(scope, "note", showDeleted),
   });
   const notes = [...(list.data ?? [])].sort((a, b) =>
@@ -608,7 +609,7 @@ function NoteCard({
   const [draft, setDraft] = useState(note.value);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const detail = useQuery({
-    queryKey: [...entriesKey(scope, "note"), "one", note.key],
+    queryKey: entryKeys.detail(scope, "note", note.key),
     queryFn: () => api.getEntry(scope, "note", note.key),
     enabled: versionsOpen,
   });
@@ -770,7 +771,7 @@ export function GlobalEntriesPage() {
 export function ProjectEntriesPage() {
   const { projectId } = useParams({ from: "/projects/$projectId/files" });
   const project = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),
   });
   if (project.isPending) return <Loader />;

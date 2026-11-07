@@ -22,12 +22,12 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   api,
-  skillsKey,
   type SkillContent,
   type SkillDetail,
   type SkillOwner,
   type SkillVersion,
 } from "../api";
+import { projectKeys, skillKeys } from "../queries";
 import { showError } from "./SessionActions";
 
 /*
@@ -45,7 +45,7 @@ const when = (iso: string) => (iso ? new Date(iso).toLocaleString() : "");
 function useRefresh() {
   const queryClient = useQueryClient();
   return async () => {
-    await queryClient.invalidateQueries({ queryKey: ["skills"] });
+    await queryClient.invalidateQueries({ queryKey: skillKeys.all });
   };
 }
 
@@ -200,7 +200,7 @@ export function SkillsPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ mode: "view" });
   const list = useQuery({
-    queryKey: [...skillsKey(owner), "list", showDeleted],
+    queryKey: skillKeys.list(owner, showDeleted),
     queryFn: () => api.listSkills(owner, showDeleted),
   });
   // Inside an agent's page the list gets less room.
@@ -322,7 +322,7 @@ function SkillView({
   const refresh = useRefresh();
   const [versions, setVersions] = useState(false);
   const skill = useQuery({
-    queryKey: ["skills", "one", skillId],
+    queryKey: skillKeys.detail(skillId),
     queryFn: () => api.getSkill(skillId),
   });
   const remove = useMutation({
@@ -524,7 +524,7 @@ export function GlobalSkillsPage() {
 export function ProjectSkillsPage() {
   const { projectId } = useParams({ from: "/projects/$projectId/skills" });
   const project = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),
   });
   if (project.isPending) return <Loader />;

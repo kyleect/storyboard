@@ -15,6 +15,7 @@ import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ToolGroupChange, type ToolView } from "../api";
+import { toolKeys } from "../queries";
 import { groupTools } from "../tool-grant";
 
 /*
@@ -42,15 +43,15 @@ const unique = (list: string[]) => [...new Set(list)].sort();
 
 export function ToolSettings() {
   const queryClient = useQueryClient();
-  const tools = useQuery({ queryKey: ["tools"], queryFn: api.listTools });
+  const tools = useQuery({ queryKey: toolKeys.list(), queryFn: api.listTools });
 
   // The agent editor shows each tool's setting, and what is on or off.
   const refreshAgents = () => {
-    void queryClient.invalidateQueries({ queryKey: ["agent-tool-approvals"] });
-    void queryClient.invalidateQueries({ queryKey: ["agent-tools"] });
+    void queryClient.invalidateQueries({ queryKey: toolKeys.approvals() });
+    void queryClient.invalidateQueries({ queryKey: toolKeys.selectable() });
   };
   const merge = (updated: ToolView[]) => {
-    queryClient.setQueryData<ToolView[]>(["tools"], (old) =>
+    queryClient.setQueryData<ToolView[]>(toolKeys.list(), (old) =>
       old?.map((t) => updated.find((u) => u.name === t.name) ?? t),
     );
     refreshAgents();

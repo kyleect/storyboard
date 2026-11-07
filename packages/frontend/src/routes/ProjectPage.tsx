@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type Project } from "../api";
+import { projectKeys, sessionKeys } from "../queries";
 import { DefaultAgentSelect } from "./Agents";
 import { EditableTitle } from "./EditableTitle";
 import { UsageBadge } from "./ContextMeter";
@@ -28,11 +29,11 @@ export function ProjectPage() {
   const navigate = useNavigate();
   const actions = useProjectActions();
   const project = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),
   });
   const sessions = useQuery({
-    queryKey: ["sessions", projectId],
+    queryKey: sessionKeys.list(projectId),
     queryFn: () => api.listSessions(projectId),
   });
 
@@ -42,16 +43,16 @@ export function ProjectPage() {
     systemPrompt?: string;
   }) => {
     const updated = await api.updateProject(projectId, fields);
-    queryClient.setQueryData<Project>(["project", projectId], updated);
+    queryClient.setQueryData<Project>(projectKeys.detail(projectId), updated);
     // Editing counts as using the project; the picker shows the name.
-    await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
   };
 
   const create = useMutation({
     mutationFn: () => api.createSession(projectId),
     onSuccess: async (session) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
       await navigate({
         to: "/sessions/$sessionId",
         params: { sessionId: session.id },

@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { api } from "../api";
+import { projectKeys, sessionKeys } from "../queries";
 import { useAppEvents } from "../live";
 import { usePicked } from "../picked";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
@@ -36,11 +37,11 @@ export function Layout() {
   useAppEvents();
 
   const projects = useQuery({
-    queryKey: ["projects"],
+    queryKey: projectKeys.list(),
     queryFn: api.listProjects,
   });
   const sessions = useQuery({
-    queryKey: ["sessions", picked],
+    queryKey: sessionKeys.list(picked),
     queryFn: () => api.listSessions(picked),
   });
 
@@ -58,10 +59,10 @@ export function Layout() {
   const create = useMutation({
     mutationFn: () => api.createSession(picked),
     onSuccess: async (session) => {
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      await queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
       // Creating a session in a project counts as using it.
       if (picked !== null)
-        await queryClient.invalidateQueries({ queryKey: ["projects"] });
+        await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
       await navigate({
         to: "/sessions/$sessionId",
         params: { sessionId: session.id },

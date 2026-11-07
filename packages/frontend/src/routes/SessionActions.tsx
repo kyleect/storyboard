@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type Project, type Session } from "../api";
+import { projectKeys, sessionKeys, trashKeys } from "../queries";
 import { usePicked } from "../picked";
 
 /*
@@ -38,9 +39,9 @@ export function useSessionActions() {
   /** Refetches every view that shows the session. */
   const refresh = async (id: string) => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["sessions"] }),
-      queryClient.invalidateQueries({ queryKey: ["session", id] }),
-      queryClient.invalidateQueries({ queryKey: ["trash"] }),
+      queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
+      queryClient.invalidateQueries({ queryKey: sessionKeys.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: trashKeys.all }),
     ]);
   };
 
@@ -92,11 +93,11 @@ export function useSessionActions() {
   /** Refetches every view that shows projects. */
   const refreshProjects = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["projects"] }),
-      queryClient.invalidateQueries({ queryKey: ["project"] }),
-      queryClient.invalidateQueries({ queryKey: ["sessions"] }),
-      queryClient.invalidateQueries({ queryKey: ["session"] }),
-      queryClient.invalidateQueries({ queryKey: ["trash"] }),
+      queryClient.invalidateQueries({ queryKey: projectKeys.list() }),
+      queryClient.invalidateQueries({ queryKey: projectKeys.details() }),
+      queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
+      queryClient.invalidateQueries({ queryKey: sessionKeys.details() }),
+      queryClient.invalidateQueries({ queryKey: trashKeys.all }),
     ]);
   };
 

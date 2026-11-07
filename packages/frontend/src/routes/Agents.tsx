@@ -25,7 +25,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  agentsKey,
   api,
   ApiError,
   type AgentContent,
@@ -37,6 +36,13 @@ import {
   type PickableAgent,
   type Project,
 } from "../api";
+import {
+  agentKeys,
+  projectKeys,
+  sessionKeys,
+  settingsKeys,
+  toolKeys,
+} from "../queries";
 import { showError } from "./SessionActions";
 import { DataPanel } from "./Data";
 import { SchemasPanel } from "./Schemas";
@@ -61,21 +67,28 @@ const when = (iso: string) => (iso ? new Date(iso).toLocaleString() : "");
 function useRefresh(scope: AgentScope) {
   const queryClient = useQueryClient();
   return async () => {
-    await queryClient.invalidateQueries({ queryKey: agentsKey(scope) });
-    await queryClient.invalidateQueries({ queryKey: ["agents", "one"] });
-    await queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+    await queryClient.invalidateQueries({
+      queryKey: agentKeys.scopeLists(scope),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: agentKeys.copyTargets(scope),
+    });
+    await queryClient.invalidateQueries({ queryKey: agentKeys.details() });
+    await queryClient.invalidateQueries({
+      queryKey: sessionKeys.pickableAgents(),
+    });
   };
 }
 
 /** The tools an agent can select, by name. */
 function useSelectableTools() {
-  return useQuery({ queryKey: ["agent-tools"], queryFn: api.agentTools });
+  return useQuery({ queryKey: toolKeys.selectable(), queryFn: api.agentTools });
 }
 
 /** Every tool with its setting now, for the approval choices. */
 function useToolApprovals() {
   return useQuery({
-    queryKey: ["agent-tool-approvals"],
+    queryKey: toolKeys.approvals(),
     queryFn: api.agentToolApprovals,
   });
 }
@@ -398,7 +411,7 @@ export function AgentsPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ mode: "view" });
   const list = useQuery({
-    queryKey: [...agentsKey(scope), "list", showDeleted],
+    queryKey: agentKeys.list(scope, showDeleted),
     queryFn: () => api.listAgents(scope, showDeleted),
   });
 
@@ -597,7 +610,7 @@ function AgentView({
   const known = tools.data ? new Set(tools.data.map((t) => t.name)) : undefined;
   const [versions, setVersions] = useState(false);
   const agent = useQuery({
-    queryKey: ["agents", "one", agentId],
+    queryKey: agentKeys.detail(agentId),
     queryFn: () => api.getAgent(agentId),
   });
   const remove = useMutation({
@@ -997,20 +1010,22 @@ const NO_DEFAULT = "";
 function GlobalDefaultAgentSelect() {
   const queryClient = useQueryClient();
   const settings = useQuery({
-    queryKey: ["settings"],
+    queryKey: settingsKeys.all,
     queryFn: api.getSettings,
   });
   const global = useQuery({
-    queryKey: [...agentsKey({ scope: "global" }), "list", false],
+    queryKey: agentKeys.list({ scope: "global" }, false),
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
   const save = useMutation({
     mutationFn: (defaultAgentId: string) =>
       api.saveSettings({ defaultAgentId }),
     onSuccess: async (view) => {
-      queryClient.setQueryData(["settings"], view);
-      await queryClient.invalidateQueries({ queryKey: ["agents"] });
-      await queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+      queryClient.setQueryData(settingsKeys.all, view);
+      await queryClient.invalidateQueries({ queryKey: agentKeys.all });
+      await queryClient.invalidateQueries({
+        queryKey: sessionKeys.pickableAgents(),
+      });
     },
     onError: showError("Could not set the default agent"),
   });
@@ -1063,19 +1078,15 @@ export function DefaultAgentSelect({
 }) {
   const queryClient = useQueryClient();
   const own = useQuery({
-    queryKey: [
-      ...agentsKey({ scope: "project", id: project.id }),
-      "list",
-      false,
-    ],
+    queryKey: agentKeys.list({ scope: "project", id: project.id }, false),
     queryFn: () => api.listAgents({ scope: "project", id: project.id }, false),
   });
   const global = useQuery({
-    queryKey: [...agentsKey({ scope: "global" }), "list", false],
+    queryKey: agentKeys.list({ scope: "global" }, false),
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
   const settings = useQuery({
-    queryKey: ["settings"],
+    queryKey: settingsKeys.all,
     queryFn: api.getSettings,
   });
   // With none, new sessions start with the global default, if there is one.
@@ -1086,10 +1097,15 @@ export function DefaultAgentSelect({
     mutationFn: (defaultAgentId: string | null) =>
       api.updateProject(project.id, { defaultAgentId }),
     onSuccess: async (updated) => {
-      queryClient.setQueryData<Project>(["project", project.id], updated);
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      await queryClient.invalidateQueries({ queryKey: ["agents"] });
-      await queryClient.invalidateQueries({ queryKey: ["session-agents"] });
+      queryClient.setQueryData<Project>(
+        projectKeys.detail(project.id),
+        updated,
+      );
+      await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+      await queryClient.invalidateQueries({ queryKey: agentKeys.all });
+      await queryClient.invalidateQueries({
+        queryKey: sessionKeys.pickableAgents(),
+      });
     },
     onError: showError("Could not set the default agent"),
   });
@@ -1152,7 +1168,7 @@ export function DefaultAgentSelect({
 export function ProjectAgentsPage() {
   const { projectId } = useParams({ from: "/projects/$projectId/agents" });
   const project = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),
   });
   if (project.isPending) return <Loader />;
@@ -1204,7 +1220,7 @@ export function AgentPicker({
   disabled?: boolean;
 }) {
   const agents = useQuery({
-    queryKey: ["session-agents", sessionId],
+    queryKey: sessionKeys.pickableAgentsFor(sessionId),
     queryFn: () => api.sessionAgents(sessionId),
   });
   const group = (scope: PickableAgent["scope"], label: string) => {
@@ -1273,7 +1289,7 @@ function AgentVersionModal({
   const known = tools.data ? new Set(tools.data.map((t) => t.name)) : undefined;
   // Versions never change, so this is never refetched.
   const version = useQuery({
-    queryKey: ["agent-version", agent.id, agent.version],
+    queryKey: agentKeys.version(agent.id, agent.version),
     queryFn: () => api.getAgentVersion(agent.id, agent.version),
     staleTime: Infinity,
   });

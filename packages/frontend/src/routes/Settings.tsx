@@ -29,6 +29,7 @@ import {
   type Settings as SettingsShape,
   type SettingsView,
 } from "../api";
+import { projectKeys, settingsKeys, trashKeys } from "../queries";
 import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
@@ -97,7 +98,7 @@ function useSaveSettings() {
   return useMutation({
     mutationFn: api.saveSettings,
     onSuccess: (view: SettingsView) => {
-      queryClient.setQueryData(["settings"], view);
+      queryClient.setQueryData(settingsKeys.all, view);
       notifications.show({ color: "green", message: "Settings saved" });
     },
     onError: (err: Error) =>
@@ -117,7 +118,10 @@ function envNoteFor(view: SettingsView) {
 }
 
 export function Settings() {
-  const query = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const query = useQuery({
+    queryKey: settingsKeys.all,
+    queryFn: api.getSettings,
+  });
   const form = useForm<MainSettings>({
     initialValues: {
       llamaServerUrl: "",
@@ -511,9 +515,9 @@ function SessionTitles({ view }: { view: SettingsView }) {
  */
 function TrashSection() {
   const actions = useSessionActions();
-  const trash = useQuery({ queryKey: ["trash"], queryFn: api.getTrash });
+  const trash = useQuery({ queryKey: trashKeys.all, queryFn: api.getTrash });
   const projects = useQuery({
-    queryKey: ["projects"],
+    queryKey: projectKeys.list(),
     queryFn: api.listProjects,
   });
   const [busy, setBusy] = useState<string | null>(null);

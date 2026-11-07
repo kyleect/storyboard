@@ -39,11 +39,11 @@ import {
 } from "@harness/core";
 import {
   api,
-  dataKey,
   type CopyTarget,
   type DataOwner,
   type SchemaDetail,
 } from "../api";
+import { agentKeys, dataKeys, projectKeys, schemaKeys } from "../queries";
 import {
   addField,
   changeType,
@@ -72,13 +72,10 @@ import { showError } from "./SessionActions";
  * editor, switchable (decision 15). Earlier versions can be viewed.
  */
 
-/** Schemas share the ["data", …] keys, so a change refreshes both. */
-const schemasKey = (o: DataOwner) => [...dataKey(o), "schemas-panel"];
-
 function useRefresh() {
   const queryClient = useQueryClient();
   return async () => {
-    await queryClient.invalidateQueries({ queryKey: ["data"] });
+    await queryClient.invalidateQueries({ queryKey: dataKeys.all });
   };
 }
 
@@ -96,7 +93,7 @@ export function SchemasPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "edit" | "new">("view");
   const list = useQuery({
-    queryKey: [...schemasKey(owner), "list", showDeleted],
+    queryKey: schemaKeys.list(owner, showDeleted),
     queryFn: () => api.listSchemas(owner, showDeleted),
   });
   const locked =
@@ -227,7 +224,7 @@ function SchemaView({
   const [versions, setVersions] = useState(false);
   const [copying, setCopying] = useState(false);
   const schema = useQuery({
-    queryKey: [...schemasKey(owner), "one", schemaId],
+    queryKey: schemaKeys.detail(owner, schemaId),
     queryFn: () => api.getSchema(owner, schemaId),
   });
   const remove = useMutation({
@@ -412,16 +409,16 @@ function CopyModal({
 }) {
   const refresh = useRefresh();
   const projects = useQuery({
-    queryKey: ["projects"],
+    queryKey: projectKeys.list(),
     queryFn: () => api.listProjects(),
   });
   const globalAgents = useQuery({
-    queryKey: ["agents", "global", null, "copy-targets"],
+    queryKey: agentKeys.copyTargets({ scope: "global" }),
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
   const projectAgents = useQueries({
     queries: (projects.data ?? []).map((p) => ({
-      queryKey: ["agents", "project", p.id, "copy-targets"],
+      queryKey: agentKeys.copyTargets({ scope: "project", id: p.id }),
       queryFn: () => api.listAgents({ scope: "project", id: p.id }, false),
     })),
   });

@@ -20,12 +20,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   api,
-  mcpServersKey,
   type McpConfig,
   type McpServerInput,
   type McpServerView,
   type McpState,
 } from "../api";
+import { mcpKeys, toolKeys } from "../queries";
 import {
   formatEnv,
   formatHeaders,
@@ -117,15 +117,15 @@ const summary = (c: McpConfig) =>
 export function McpServers() {
   const queryClient = useQueryClient();
   const servers = useQuery({
-    queryKey: mcpServersKey,
+    queryKey: mcpKeys.list(),
     queryFn: api.listMcpServers,
   });
   /** The server being edited; "new": the form for a new one. */
   const [editing, setEditing] = useState<McpServerView | "new" | null>(null);
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: mcpServersKey });
-    void queryClient.invalidateQueries({ queryKey: ["tools"] });
+    void queryClient.invalidateQueries({ queryKey: mcpKeys.all });
+    void queryClient.invalidateQueries({ queryKey: toolKeys.list() });
   };
   const failed = (title: string) => (err: Error) =>
     notifications.show({ color: "red", title, message: err.message });

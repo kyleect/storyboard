@@ -2,6 +2,7 @@ import { Badge, Group, RingProgress, Text, Tooltip } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import type { Usage } from "@harness/core";
 import { api } from "../api";
+import { modelKeys } from "../queries";
 
 /*
  * How full a session's context is (context usage design): the latest model
@@ -58,7 +59,7 @@ export function ContextMeter({
   subagentUsage?: Usage | null;
 }) {
   const size = useQuery({
-    queryKey: ["context-size", model ?? null],
+    queryKey: modelKeys.contextSize(model),
     queryFn: () => api.contextSize(model),
     retry: false,
   });

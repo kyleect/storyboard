@@ -37,12 +37,12 @@ import {
 } from "@harness/core";
 import {
   api,
-  dataKey,
   type DataDetail,
   type DataItem,
   type DataOwner,
   type DataVersion,
 } from "../api";
+import { dataKeys, projectKeys, schemaKeys } from "../queries";
 import { AskUserForm } from "./AskUserForm";
 import { DataValue } from "./DataValue";
 import { SchemasPanel } from "./Schemas";
@@ -63,7 +63,7 @@ const when = (iso: string | null) =>
 function useRefresh() {
   const queryClient = useQueryClient();
   return async () => {
-    await queryClient.invalidateQueries({ queryKey: ["data"] });
+    await queryClient.invalidateQueries({ queryKey: dataKeys.all });
   };
 }
 
@@ -140,11 +140,11 @@ export function DataPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ mode: "view" });
   const list = useQuery({
-    queryKey: [...dataKey(owner), "list", showDeleted],
+    queryKey: dataKeys.list(owner, showDeleted),
     queryFn: () => api.listData(owner, showDeleted),
   });
   const schemas = useQuery({
-    queryKey: [...dataKey(owner), "schemas"],
+    queryKey: dataKeys.schemaInfos(owner),
     queryFn: () => api.dataSchemas(owner),
   });
   const names = new Map((schemas.data ?? []).map((s) => [s.id, s.name]));
@@ -312,7 +312,7 @@ function NewDataForm({
   onCancel: () => void;
 }) {
   const body = useQuery({
-    queryKey: ["data", "schema-latest", schema.id],
+    queryKey: schemaKeys.latest(schema.id),
     queryFn: () => api.schemaBody(owner, schema.id),
   });
   if (body.isPending) return <Loader size="sm" />;
@@ -461,7 +461,7 @@ function DataItemView({
   const refresh = useRefresh();
   const [versions, setVersions] = useState(false);
   const item = useQuery({
-    queryKey: [...dataKey(owner), "one", dataId],
+    queryKey: dataKeys.detail(owner, dataId),
     queryFn: () => api.getData(owner, dataId),
   });
   const remove = useMutation({
@@ -744,7 +744,7 @@ export function GlobalDataPage() {
 export function ProjectDataPage() {
   const { projectId } = useParams({ from: "/projects/$projectId/data" });
   const project = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),
   });
   if (project.isPending) return <Loader />;

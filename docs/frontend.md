@@ -13,7 +13,8 @@ notifications), [TanStack Router](https://tanstack.com/router) (routing),
 ```
 packages/frontend/src
   main.tsx               providers, router, route table
-  api.ts                 token handling, typed API client, query keys, stream URLs
+  api.ts                 token handling, typed API client, stream URLs
+  queries/               query-key factories, one file per feature
   live.ts                live run state (Zustand) and the two event-stream hooks
   picked.ts              the project picked in the navbar
   linear.ts, debug.ts    debug export → linear view; clipboard helpers
@@ -90,9 +91,15 @@ The central idea: **the cache holds what is stored; `useLive` holds what is
 happening right now.** When something finishes, the cache is updated (or
 invalidated and refetched) and the live entry is cleared.
 
-Query-key helpers in `api.ts` (`entriesKey`, `agentsKey`, `skillsKey`,
-`dataKey`, `errorsKey`) build keys so that streams can invalidate the right
-lists.
+Query keys come from the factories in `queries/` (`sessionKeys`, `agentKeys`,
+`entryKeys`, and so on), one per feature, following
+[Effective React Query Keys](https://tkdodo.eu/blog/effective-react-query-keys).
+Never write a key inline. Keys go from the most generic to the most specific,
+for example `["sessions", "list", { projectId }]` and
+`["sessions", "detail", id]`, so a mutation or a stream event can invalidate
+exactly what it changed: `sessionKeys.lists()` for every session list,
+`sessionKeys.detail(id)` for one session. `queries/keys.test.ts` pins down how
+far each prefix reaches.
 
 ## Live updates
 

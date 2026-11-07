@@ -19,13 +19,8 @@ import { modals } from "@mantine/modals";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  api,
-  errorFiltersKey,
-  errorsKey,
-  type ErrorEntry,
-  type ErrorFilter,
-} from "../api";
+import { api, type ErrorEntry, type ErrorFilter } from "../api";
+import { errorKeys } from "../queries";
 import { showError } from "./SessionActions";
 
 /*
@@ -217,11 +212,11 @@ const NO_PROJECT = "none";
 export function ErrorsPage() {
   const [filter, setFilter] = useState<ErrorFilter>({});
   const errors = useQuery({
-    queryKey: errorsKey(filter),
+    queryKey: errorKeys.list(filter),
     queryFn: () => api.listErrors(filter),
   });
   const options = useQuery({
-    queryKey: errorFiltersKey,
+    queryKey: errorKeys.filters(),
     queryFn: api.errorFilters,
   });
   const clear = useMutation({
@@ -335,7 +330,7 @@ export function SessionErrorsPanel({
 }) {
   const [open, setOpen] = useState(false);
   const errors = useQuery({
-    queryKey: errorsKey({ sessionId }),
+    queryKey: errorKeys.list({ sessionId }),
     queryFn: () => api.listErrors({ sessionId }),
   });
   const clear = useMutation({
