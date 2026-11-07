@@ -374,6 +374,37 @@ export class RunManager {
     });
   }
 
+  /** The ids among `ids` that have a run in progress. */
+  runningSessionIds(ids: readonly string[]): string[] {
+    const running = new Set<string>();
+    for (const run of this.active.values()) running.add(run.sessionId);
+    return ids.filter((id) => running.has(id));
+  }
+
+  /**
+   * Moves each of the sessions to the trash as `trashSession` does, and
+   * moves the rest when one is refused (Sessions page plan, P3): a session
+   * that is not found, is already in the trash, or has a run in progress is
+   * reported with the reason. Emits `session.trashed` for each one moved.
+   */
+  trashSessions(ids: readonly string[]): {
+    trashed: string[];
+    refused: { id: string; error: string }[];
+  } {
+    const trashed: string[] = [];
+    const refused: { id: string; error: string }[] = [];
+    for (const id of new Set(ids)) {
+      try {
+        this.trashSession(id);
+        trashed.push(id);
+      } catch (err) {
+        if (!(err instanceof RunError)) throw err;
+        refused.push({ id, error: err.message });
+      }
+    }
+    return { trashed, refused };
+  }
+
   /**
    * Moves a project and its sessions to the trash, emitting
    * `session.trashed` for each session moved (design Q12). Refused while a

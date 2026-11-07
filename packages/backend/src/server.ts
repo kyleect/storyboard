@@ -90,6 +90,10 @@ export interface ServerOptions {
 }
 
 const IdParams = z.object({ id: z.string() });
+
+/** The page sizes the Sessions page offers, and the one it starts on. */
+const PAGE_SIZES = [10, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 10;
 /** Trimmed; empty is rejected; no maximum (design Q2). */
 const Title = z.string().trim().min(1);
 const ModelName = z.string().min(1);
@@ -252,6 +256,66 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       .object({ projectId: z.string().min(1).optional() })
       .parse(req.query);
     return store.listSessions(projectId ?? null);
+  });
+
+  /**
+   * One page of the sessions not in the trash, for the Sessions page (its
+   * plan, P1): the project's with `?projectId=`, else the standalone ones,
+   * ordered by creation time in `direction`. Each carries `running`, true
+   * while a run is in progress in it.
+   */
+  app.get("/api/sessions-page", async (req) => {
+    const query = z
+      .object({
+        projectId: z.string().min(1).optional(),
+        direction: z.enum(["asc", "desc"]).default("desc"),
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce
+          .number()
+          .int()
+          .refine((n) => PAGE_SIZES.includes(n), {
+            message: `The page size must be one of ${PAGE_SIZES.join(", ")}.`,
+          })
+          .default(DEFAULT_PAGE_SIZE),
+      })
+      .parse(req.query);
+    const { items, total } = store.listSessionsPage({
+      projectId: query.projectId ?? null,
+      direction: query.direction,
+      limit: query.pageSize,
+      offset: (query.page - 1) * query.pageSize,
+    });
+    const running = new Set(runs.runningSessionIds(items.map((s) => s.id)));
+    return {
+      items: items.map((s) => ({ ...s, running: running.has(s.id) })),
+      total,
+    };
+  });
+
+  /**
+   * Every session not in the trash, for one project (`?projectId=`) or the
+   * standalone ones, with whether a run is in progress in it: what "select
+   * all" on the Sessions page needs (its plan, P2).
+   */
+  app.get("/api/sessions-page/ids", async (req) => {
+    const { projectId } = z
+      .object({ projectId: z.string().min(1).optional() })
+      .parse(req.query);
+    const ids = store.listSessionIds(projectId ?? null);
+    const running = new Set(runs.runningSessionIds(ids));
+    return { sessions: ids.map((id) => ({ id, running: running.has(id) })) };
+  });
+
+  /**
+   * Moves several sessions to the trash. The ones that cannot be moved (not
+   * found, already in the trash, a run in progress) are listed with the
+   * reason; the others are moved (Sessions page plan, P3).
+   */
+  app.post("/api/sessions/trash", async (req) => {
+    const { ids } = z
+      .object({ ids: z.array(z.string().min(1)).min(1) })
+      .parse(req.body);
+    return runs.trashSessions(ids);
   });
 
   /** Creates a session, in a project when `projectId` is given. */

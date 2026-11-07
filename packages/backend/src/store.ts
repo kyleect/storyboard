@@ -33,6 +33,17 @@ export const DEFAULT_TITLE = "New session";
 const SESSION_COLUMNS =
   "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id";
 
+/**
+ * The usage of a session's latest message that reported one, leaving out
+ * subagents' messages. For a query over `sessions`.
+ */
+const LATEST_USAGE = `(SELECT m.usage FROM messages m
+            WHERE m.session_id = sessions.id AND m.usage IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM run_messages x JOIN runs xr ON xr.id = x.run_id
+                WHERE x.message_id = m.id AND xr.parent_run_id IS NOT NULL)
+            ORDER BY m.seq DESC LIMIT 1) AS usage`;
+
 /** A session in a list, with how full its context is. */
 export interface SessionListRow extends SessionRow {
   /**
@@ -41,6 +52,12 @@ export interface SessionListRow extends SessionRow {
    * header does); null when none has.
    */
   usage: Usage | null;
+}
+
+/** A session in the Sessions page's table. */
+export interface SessionTableRow extends SessionListRow {
+  /** The agents that ran in it, subagents included; empty when none did. */
+  agents: { id: string; name: string }[];
 }
 
 export interface ProjectRow {
@@ -199,19 +216,95 @@ export class Store {
   listSessions(projectId: string | null = null): SessionListRow[] {
     const rows = this.db
       .prepare(
-        `SELECT ${SESSION_COLUMNS},
-           (SELECT m.usage FROM messages m
-            WHERE m.session_id = sessions.id AND m.usage IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM run_messages x JOIN runs xr ON xr.id = x.run_id
-                WHERE x.message_id = m.id AND xr.parent_run_id IS NOT NULL)
-            ORDER BY m.seq DESC LIMIT 1) AS usage
+        `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}
          FROM sessions
          WHERE trashed_at IS NULL AND project_id IS ?
          ORDER BY created_at DESC`,
       )
       .all(projectId) as (SessionRow & { usage: string | null })[];
     return rows.map((r) => ({ ...r, usage: parseUsage(r.usage) }));
+  }
+
+  /**
+   * One page of the sessions that are not in the trash (the project's, or
+   * the standalone ones when `projectId` is null), ordered by creation time
+   * in `direction`. The id breaks ties, so pages do not shift. `total` is
+   * the number of such sessions, for the page count.
+   */
+  listSessionsPage(options: {
+    projectId: string | null;
+    direction: "asc" | "desc";
+    limit: number;
+    offset: number;
+  }): { items: SessionTableRow[]; total: number } {
+    // Not a parameter: a direction cannot be bound. It is one of two words.
+    const order = options.direction === "asc" ? "ASC" : "DESC";
+    const rows = this.db
+      .prepare(
+        `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}
+         FROM sessions
+         WHERE trashed_at IS NULL AND project_id IS ?
+         ORDER BY created_at ${order}, id ${order}
+         LIMIT ? OFFSET ?`,
+      )
+      .all(options.projectId, options.limit, options.offset) as (SessionRow & {
+      usage: string | null;
+    })[];
+    const { total } = this.db
+      .prepare(
+        `SELECT count(*) AS total FROM sessions
+         WHERE trashed_at IS NULL AND project_id IS ?`,
+      )
+      .get(options.projectId) as { total: number };
+    const agents = this.sessionAgents(rows.map((r) => r.id));
+    return {
+      items: rows.map((r) => ({
+        ...r,
+        usage: parseUsage(r.usage),
+        agents: agents.get(r.id) ?? [],
+      })),
+      total,
+    };
+  }
+
+  /**
+   * The agents that ran in each of the sessions, subagents' runs included,
+   * by their current name, in the order each first ran. Sessions where no
+   * agent ran have no entry.
+   */
+  private sessionAgents(
+    sessionIds: readonly string[],
+  ): Map<string, { id: string; name: string }[]> {
+    const result = new Map<string, { id: string; name: string }[]>();
+    if (sessionIds.length === 0) return result;
+    const rows = this.db
+      .prepare(
+        `SELECT r.session_id AS session_id, a.id AS id, a.name AS name
+         FROM runs r JOIN agents a ON a.id = r.agent_id
+         WHERE r.session_id IN (${sessionIds.map(() => "?").join(", ")})
+         GROUP BY r.session_id, a.id
+         ORDER BY min(r.started_at), a.name`,
+      )
+      .all(...sessionIds) as { session_id: string; id: string; name: string }[];
+    for (const row of rows) {
+      const list = result.get(row.session_id) ?? [];
+      list.push({ id: row.id, name: row.name });
+      result.set(row.session_id, list);
+    }
+    return result;
+  }
+
+  /** The ids of every session that is not in the trash, for one project. */
+  listSessionIds(projectId: string | null): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id FROM sessions
+           WHERE trashed_at IS NULL AND project_id IS ?
+           ORDER BY created_at DESC, id DESC`,
+        )
+        .all(projectId) as { id: string }[]
+    ).map((r) => r.id);
   }
 
   /**

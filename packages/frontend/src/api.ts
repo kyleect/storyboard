@@ -132,6 +132,39 @@ export interface SessionListItem extends Session {
   usage: Usage | null;
 }
 
+/** A session in the Sessions page's table. */
+export interface SessionTableItem extends SessionListItem {
+  /** The agents that ran in it, subagents included; empty when none did. */
+  agents: { id: string; name: string }[];
+  /** True while a run is in progress in it. */
+  running: boolean;
+}
+
+/** One page of the Sessions page's table. */
+export interface SessionPage {
+  items: SessionTableItem[];
+  /** How many sessions there are in all, not only on this page. */
+  total: number;
+}
+
+/** What the Sessions page asks for: one page of a project's sessions. */
+export interface SessionPageQuery {
+  /** A project, or null for the standalone sessions. */
+  projectId: string | null;
+  /** By creation time: "desc" is newest first. */
+  direction: "asc" | "desc";
+  /** From 1. */
+  page: number;
+  pageSize: number;
+}
+
+/** What moving several sessions to the trash did. */
+export interface TrashSessionsResult {
+  trashed: string[];
+  /** The sessions that could not be moved, and why. */
+  refused: { id: string; error: string }[];
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -789,6 +822,27 @@ export const api = {
         projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""
       }`,
     ),
+  /** One page of a project's sessions, or of the standalone ones. */
+  listSessionsPage: (q: SessionPageQuery) => {
+    const params = new URLSearchParams({
+      direction: q.direction,
+      page: String(q.page),
+      pageSize: String(q.pageSize),
+    });
+    if (q.projectId) params.set("projectId", q.projectId);
+    return request<SessionPage>("GET", `/api/sessions-page?${params}`);
+  },
+  /** Every session of a project (or the standalone ones), and whether it is running. */
+  listSessionIds: (projectId: string | null) =>
+    request<{ sessions: { id: string; running: boolean }[] }>(
+      "GET",
+      `/api/sessions-page/ids${
+        projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""
+      }`,
+    ),
+  /** Moves several sessions to the trash; the ones that cannot move are listed. */
+  trashSessions: (ids: readonly string[]) =>
+    request<TrashSessionsResult>("POST", "/api/sessions/trash", { ids }),
   /** Creates a session, in a project when one is given. */
   createSession: (projectId: string | null) =>
     request<Session>("POST", "/api/sessions", projectId ? { projectId } : {}),

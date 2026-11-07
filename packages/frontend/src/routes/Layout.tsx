@@ -12,7 +12,13 @@ import {
   Title,
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import { api } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
@@ -28,6 +34,15 @@ export function Layout() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const params = useParams({ strict: false });
+  const pathname = useLocation({ select: (location) => location.pathname });
+  // The session list is shown on the Sessions page and on a session page
+  // (Sessions page plan, D2). The project picker, and the project links that
+  // go with it, are also shown on a project's pages; everywhere else the
+  // links are stacked together at the top.
+  const onSessions =
+    pathname === "/sessions" || pathname.startsWith("/sessions/");
+  const showSessionList = onSessions;
+  const showPicker = onSessions || pathname.startsWith("/projects/");
   const projectActions = useProjectActions();
   const picked = usePicked((s) => s.projectId);
   const pick = usePicked((s) => s.pick);
@@ -71,6 +86,16 @@ export function Layout() {
     onError: showError("Could not create a session"),
   });
 
+  const sessionsLink = (
+    <NavLink
+      px="md"
+      py="xs"
+      fw="bold"
+      renderRoot={(props) => <Link {...props} to="/sessions" />}
+      label="Sessions"
+    />
+  );
+
   return (
     <AppShell navbar={{ width: 260, breakpoint: "sm" }} padding="md">
       <AppShell.Navbar p="xs">
@@ -87,71 +112,77 @@ export function Layout() {
               New session
             </Button>
           </Group>
-          <Stack gap={4}>
-            <Select
-              aria-label="Project"
-              allowDeselect={false}
-              data={[
-                { value: NO_PROJECT, label: "No project selected" },
-                { value: NEW_PROJECT, label: "New project…" },
-                ...(projects.data ?? []).map((p) => ({
-                  value: p.id,
-                  label: `🗂️  ${p.name}`,
-                })),
-              ]}
-              value={picked ?? NO_PROJECT}
-              onChange={(value) => {
-                if (value === NEW_PROJECT) {
-                  projectActions.openCreate((project) => pick(project.id));
-                } else {
-                  pick(value === NO_PROJECT || value === null ? null : value);
-                }
-              }}
-            />
-
-            {projects.isError && (
-              <Text c="red" size="xs">
-                {projects.error.message}
-              </Text>
-            )}
-          </Stack>
-          <ScrollArea style={{ flex: 1 }}>
-            {sessions.isError && (
-              <Text c="red" size="sm">
-                {sessions.error.message}
-              </Text>
-            )}
-            {sessions.data?.length === 0 && (
-              <Text c="dimmed" size="sm">
-                No sessions.
-              </Text>
-            )}
-            <Stack gap={0}>
-              {sessions.data?.map((s) => (
-                <NavLink
-                  p={5}
-                  variant="filled"
-                  key={s.id}
-                  renderRoot={(props) => (
-                    <Link
-                      {...props}
-                      to="/sessions/$sessionId"
-                      params={{ sessionId: s.id }}
-                    />
-                  )}
-                  label={s.title}
-                  active={params.sessionId === s.id}
-                  rightSection={
-                    <Group gap={4} wrap="nowrap">
-                      <SessionMenu session={s} />
-                    </Group>
+          {/* Above the picker; where there is no picker it joins the links below. */}
+          {showPicker && sessionsLink}
+          {showPicker && (
+            <Stack gap={4}>
+              <Select
+                aria-label="Project"
+                allowDeselect={false}
+                data={[
+                  { value: NO_PROJECT, label: "No project selected" },
+                  { value: NEW_PROJECT, label: "New project…" },
+                  ...(projects.data ?? []).map((p) => ({
+                    value: p.id,
+                    label: `🗂️  ${p.name}`,
+                  })),
+                ]}
+                value={picked ?? NO_PROJECT}
+                onChange={(value) => {
+                  if (value === NEW_PROJECT) {
+                    projectActions.openCreate((project) => pick(project.id));
+                  } else {
+                    pick(value === NO_PROJECT || value === null ? null : value);
                   }
-                />
-              ))}
-            </Stack>
-          </ScrollArea>
+                }}
+              />
 
-          {picked && (
+              {projects.isError && (
+                <Text c="red" size="xs">
+                  {projects.error.message}
+                </Text>
+              )}
+            </Stack>
+          )}
+          {showSessionList && (
+            <ScrollArea style={{ flex: 1 }}>
+              {sessions.isError && (
+                <Text c="red" size="sm">
+                  {sessions.error.message}
+                </Text>
+              )}
+              {sessions.data?.length === 0 && (
+                <Text c="dimmed" size="sm">
+                  No sessions.
+                </Text>
+              )}
+              <Stack gap={0}>
+                {sessions.data?.map((s) => (
+                  <NavLink
+                    p={5}
+                    variant="filled"
+                    key={s.id}
+                    renderRoot={(props) => (
+                      <Link
+                        {...props}
+                        to="/sessions/$sessionId"
+                        params={{ sessionId: s.id }}
+                      />
+                    )}
+                    label={s.title}
+                    active={params.sessionId === s.id}
+                    rightSection={
+                      <Group gap={4} wrap="nowrap">
+                        <SessionMenu session={s} />
+                      </Group>
+                    }
+                  />
+                ))}
+              </Stack>
+            </ScrollArea>
+          )}
+
+          {showPicker && picked && (
             <Stack>
               <Collapse
                 expanded={projectLinksExpanded}
@@ -242,6 +273,7 @@ export function Layout() {
           )}
 
           <Stack gap={0}>
+            {!showPicker && sessionsLink}
             <NavLink
               px="md"
               py="xs"

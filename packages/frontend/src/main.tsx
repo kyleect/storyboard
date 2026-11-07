@@ -21,12 +21,18 @@ import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/Entries";
 import { ErrorsPage } from "./routes/Errors";
 import { Home, Layout } from "./routes/Layout";
 import { ProjectPage } from "./routes/ProjectPage";
+import { SessionsPage } from "./routes/Sessions";
 import { Settings } from "./routes/Settings";
 import { GlobalSkillsPage, ProjectSkillsPage } from "./routes/Skills";
 
 const rootRoute = createRootRoute({ component: Layout });
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/sessions",
+    component: SessionsPage,
+  }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/sessions/$sessionId",

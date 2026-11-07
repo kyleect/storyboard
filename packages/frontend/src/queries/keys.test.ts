@@ -32,6 +32,18 @@ describe("session and project keys", () => {
   const keys: Keys = {
     listOfProject: sessionKeys.list("p1"),
     listWithoutProject: sessionKeys.list(null),
+    page: sessionKeys.page({
+      projectId: "p1",
+      direction: "desc",
+      page: 1,
+      pageSize: 10,
+    }),
+    otherPage: sessionKeys.page({
+      projectId: null,
+      direction: "asc",
+      page: 2,
+      pageSize: 25,
+    }),
     detail: sessionKeys.detail("s1"),
     otherDetail: sessionKeys.detail("s2"),
     debug: sessionKeys.debug("s1"),
@@ -41,10 +53,12 @@ describe("session and project keys", () => {
     project: projectKeys.detail("p1"),
   };
 
-  it("lists() reaches every session list and nothing else", async () => {
+  it("lists() reaches every session list, the Sessions page's too, and nothing else", async () => {
     expect(await reach(sessionKeys.lists(), keys)).toEqual([
       "listOfProject",
       "listWithoutProject",
+      "otherPage",
+      "page",
     ]);
   });
 
@@ -52,6 +66,24 @@ describe("session and project keys", () => {
     expect(await reach(sessionKeys.list("p1"), keys)).toEqual([
       "listOfProject",
     ]);
+  });
+
+  it("pages() reaches every page of the Sessions page, page(...) one", async () => {
+    expect(await reach(sessionKeys.pages(), keys)).toEqual([
+      "otherPage",
+      "page",
+    ]);
+    expect(
+      await reach(
+        sessionKeys.page({
+          projectId: "p1",
+          direction: "desc",
+          page: 1,
+          pageSize: 10,
+        }),
+        keys,
+      ),
+    ).toEqual(["page"]);
   });
 
   it("details() reaches every open session, detail(id) one", async () => {

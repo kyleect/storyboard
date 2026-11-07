@@ -90,6 +90,50 @@ export function useSessionActions() {
     });
   };
 
+  /**
+   * Asks, then moves the sessions to the trash. The ones the backend
+   * refuses (a run started, or already in the trash) are reported in a
+   * notification, and the rest are moved (Sessions page plan, D4, P3).
+   * `onDone` runs after the call, moved or refused.
+   */
+  const confirmTrashMany = (ids: readonly string[], onDone: () => void) => {
+    const count = ids.length;
+    const noun = count === 1 ? "session" : "sessions";
+    modals.openConfirmModal({
+      title: `Move ${count} ${noun} to trash?`,
+      children: (
+        <Text size="sm">
+          {count === 1 ? "It moves" : `All ${count} move`} to the trash. You can
+          restore {count === 1 ? "it" : "them"} from the Trash section in
+          Settings.
+        </Text>
+      ),
+      labels: { confirm: "Move to trash", cancel: "Cancel" },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        api
+          .trashSessions(ids)
+          .then(async (result) => {
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
+              queryClient.invalidateQueries({ queryKey: trashKeys.all }),
+            ]);
+            if (result.refused.length > 0) {
+              const reasons = [...new Set(result.refused.map((r) => r.error))];
+              const n = result.refused.length;
+              notifications.show({
+                color: "yellow",
+                title: `${n} ${n === 1 ? "session was" : "sessions were"} not moved`,
+                message: reasons.join(" "),
+              });
+            }
+            onDone();
+          })
+          .catch(showError("Could not move to trash"));
+      },
+    });
+  };
+
   /** Refetches every view that shows projects. */
   const refreshProjects = async () => {
     await Promise.all([
@@ -153,6 +197,7 @@ export function useSessionActions() {
     rename,
     openRename,
     confirmTrash,
+    confirmTrashMany,
     restore,
     refresh,
     refreshProjects,
