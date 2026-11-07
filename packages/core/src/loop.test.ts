@@ -1524,7 +1524,10 @@ describe("runLoop as a subagent", () => {
     const result = await runLoop(model, request, ctx);
     expect(result).toMatchObject({ reason: "handed_back", output: "ok" });
     const reminder = saved.find((s) => s.message.role === "user");
-    expect(reminder?.message).toMatchObject({ content: "Hand back." });
+    expect(reminder?.message).toMatchObject({
+      content: "Hand back.",
+      source: "reminder",
+    });
     expect((model.requests[1] as ChatRequest).messages.at(-1)).toMatchObject({
       role: "user",
       content: "Hand back.",
@@ -1550,6 +1553,142 @@ describe("runLoop as a subagent", () => {
     const result = await runLoop(model, request, ctx);
     expect(result.reason).toBe("stop");
     expect(model.requests).toHaveLength(1);
+  });
+
+  describe("messages from the user", () => {
+    /** A queue the test fills; `take` empties it as the loop does. */
+    const queue = (...initial: string[]) => {
+      const waiting = [...initial];
+      return {
+        send: (text: string) => waiting.push(text),
+        take: () => waiting.splice(0),
+      };
+    };
+    const lastMessage = (model: { requests: unknown[] }, n: number) =>
+      (model.requests[n] as ChatRequest).messages.at(-1);
+
+    it("adds a waiting message as a user message before the next model call", async () => {
+      const q = queue();
+      const { ctx, model, saved, events } = setup(
+        [
+          [call("c1", "echo", '{"text":"a"}'), ...done],
+          [call("c2", "subagent_handback", '{"output":"ok"}'), ...done],
+        ],
+        { tools: [handback, echo], child, takeUserMessages: q.take },
+      );
+      // Sent while the first model call runs.
+      q.send("use echo2 instead");
+      const result = await runLoop(model, request, ctx);
+      expect(result).toMatchObject({ reason: "handed_back", output: "ok" });
+      const user = saved.find((s) => s.message.role === "user");
+      expect(user?.message).toEqual({
+        role: "user",
+        content: "use echo2 instead",
+        source: "user",
+      });
+      expect(events.find((e) => e.type === "user.message")?.data).toMatchObject(
+        {
+          messageId: user?.id,
+          source: "user",
+          content: "use echo2 instead",
+        },
+      );
+    });
+
+    it("lets the step that is running finish first", async () => {
+      const q = queue();
+      const send = defineTool({
+        name: "send",
+        description: "Sends a message while it runs.",
+        input: z.object({}),
+        approval: "never",
+        group: "utilities" as const,
+        execute: () => {
+          q.send("change of plan");
+          return { data: {} };
+        },
+      });
+      const { ctx, model } = setup(
+        [
+          [
+            call("c1", "send", "{}"),
+            call("c2", "echo", '{"text":"b"}'),
+            ...done,
+          ],
+          [call("c3", "subagent_handback", '{"output":"ok"}'), ...done],
+        ],
+        { tools: [handback, echo, send], child, takeUserMessages: q.take },
+      );
+      await runLoop(model, request, ctx);
+      const second = (model.requests[1] as ChatRequest).messages;
+      // Both calls of the first response ran; the message came after them.
+      expect(second.filter((m) => m.role === "tool")).toHaveLength(2);
+      expect(second.at(-1)).toMatchObject({
+        role: "user",
+        content: "change of plan",
+      });
+    });
+
+    it("gives a subagent that stopped a step to read it, not a reminder", async () => {
+      const q = queue();
+      let takes = 0;
+      const { ctx, model, saved } = setup(
+        [
+          [{ type: "text", text: "done?" }, ...done],
+          [call("c1", "subagent_handback", '{"output":"ok"}'), ...done],
+        ],
+        {
+          tools: [handback],
+          child,
+          // Nothing at the start of the step; the message arrives during it.
+          takeUserMessages: () => (++takes === 2 ? q.take() : []),
+        },
+      );
+      q.send("not yet");
+      const result = await runLoop(model, request, ctx);
+      expect(result).toMatchObject({ reason: "handed_back", output: "ok" });
+      expect(lastMessage(model, 1)).toMatchObject({ content: "not yet" });
+      expect(
+        saved.filter((s) => s.message.role === "user").map((s) => s.message),
+      ).toHaveLength(1);
+    });
+
+    it("gives a subagent that handed back a step to read it", async () => {
+      const q = queue();
+      let calls = 0;
+      const handbackAndSend = defineTool({
+        name: "subagent_handback",
+        description: "Hands back. The first time, a message arrives meanwhile.",
+        input: z.object({ output: z.string() }),
+        approval: "never",
+        group: "utilities" as const,
+        execute: (input) => {
+          if (++calls === 1) q.send("wait, also check b");
+          return { data: { handedBack: true }, handback: input.output };
+        },
+      });
+      const { ctx, model } = setup(
+        [
+          [call("c1", "subagent_handback", '{"output":"first"}'), ...done],
+          [call("c2", "subagent_handback", '{"output":"second"}'), ...done],
+        ],
+        { tools: [handbackAndSend], child, takeUserMessages: q.take },
+      );
+      const result = await runLoop(model, request, ctx);
+      expect(result).toMatchObject({ reason: "handed_back", output: "second" });
+      expect(model.requests).toHaveLength(2);
+      expect(lastMessage(model, 1)).toMatchObject({
+        content: "wait, also check b",
+      });
+    });
+
+    it("does nothing without a queue", async () => {
+      const { ctx, model, events } = setup([
+        [{ type: "text", text: "hi" }, ...done],
+      ]);
+      await runLoop(model, request, ctx);
+      expect(events.some((e) => e.type === "user.message")).toBe(false);
+    });
   });
 
   it("replays session entries from sessionMessages instead of the transcript", async () => {

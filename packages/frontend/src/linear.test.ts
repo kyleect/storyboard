@@ -152,6 +152,43 @@ describe("buildLinear", () => {
     ]);
   });
 
+  it("titles a user message by where it came from and puts it at its event", () => {
+    const base = session();
+    const items = buildLinear({
+      ...base,
+      messages: [
+        ...base.messages,
+        msg("sent", 6, "B", {
+          role: "user",
+          content: "Label\n\nUse tool_b",
+          source: "user",
+        }),
+        msg("rem", 6, "B", {
+          role: "user",
+          content: "Hand back.",
+          source: "reminder",
+        }),
+      ],
+      events: [
+        ...base.events,
+        ev(6, "B", "user.message", {
+          messageId: "sent",
+          source: "user",
+          content: "Label\n\nUse tool_b",
+        }),
+      ],
+    });
+    const sent = items.find((i) => i.text === "Label\n\nUse tool_b");
+    expect(sent?.title).toBe("User (sent to the subagent)");
+    // Shown once, at its event, not again as a loose message.
+    expect(items.filter((i) => i.text === "Label\n\nUse tool_b")).toHaveLength(
+      1,
+    );
+    expect(items.find((i) => i.text === "Hand back.")?.title).toBe(
+      "User (reminder)",
+    );
+  });
+
   it("leaves out what a message already holds", () => {
     const types = buildLinear(session())
       .filter((i) => i.kind === "event")

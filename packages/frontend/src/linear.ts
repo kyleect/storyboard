@@ -71,6 +71,7 @@ const REPEATS: ReadonlySet<string> = new Set([
 const ANCHORS: ReadonlySet<string> = new Set([
   "message.finished",
   "tool.result",
+  "user.message",
   "session.entries_changed",
   "session.data_changed",
 ]);
@@ -151,7 +152,19 @@ function messageItem(
   const msg = m.message;
   switch (msg.role) {
     case "user":
-      return { ...base, kind: "user", title: "User", text: msg.content };
+      return {
+        ...base,
+        kind: "user",
+        title:
+          msg.source === "task"
+            ? "User (task from the agent)"
+            : msg.source === "reminder"
+              ? "User (reminder)"
+              : msg.source === "user"
+                ? "User (sent to the subagent)"
+                : "User",
+        text: msg.content,
+      };
     case "assistant": {
       const meta = metaOf(m);
       return {

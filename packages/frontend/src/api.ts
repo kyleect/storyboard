@@ -194,6 +194,8 @@ export interface ActiveRunSnapshot {
   approvals: ApprovalRequest[];
   /** Forms waiting for an answer (input forms design). */
   inputs: InputRequest[];
+  /** Messages the user sent that the run has not read yet, oldest first. */
+  userMessages: string[];
 }
 
 /** A subagent's run in progress, with the run and call that started it. */
@@ -316,6 +318,8 @@ export interface Settings {
   childReminders: number;
   /** The line added to the end of a subagent's system message. */
   childPrompt: string;
+  /** The line put before a message the user sends to a running subagent. */
+  subagentMessageLabel: string;
   /** How deep subagents can nest; 0: subagents are off. */
   subagentDepth: number;
 }
@@ -906,6 +910,11 @@ export const api = {
       `/api/runs/${runId}/inputs/${encodeURIComponent(requestId)}`,
       answer,
     ),
+  /** Sends a message to a running subagent; it reads it at its next step. */
+  sendRunMessage: (runId: string, text: string) =>
+    request<{ waiting: number }>("POST", `/api/runs/${runId}/messages`, {
+      text,
+    }),
   listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp/servers"),
   createMcpServer: (input: McpServerInput) =>
     request<McpServerView>("POST", "/api/mcp/servers", input),

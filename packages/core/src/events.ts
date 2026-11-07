@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { Review, type Selection } from "./review.js";
 import { Form } from "./forms.js";
-import { AssistantMessage, TokenInfo, Usage } from "./messages.js";
+import {
+  AssistantMessage,
+  TokenInfo,
+  Usage,
+  UserMessageSource,
+} from "./messages.js";
 
 /*
  * The streamed event contract (design doc, "Streamed event contract").
@@ -258,6 +263,21 @@ export const ToolResult = event(
   }),
 );
 
+/**
+ * A user message the loop added to the run's transcript while it ran: a
+ * message the user sent to a running subagent. `messageId` is the stored
+ * message, saved before this event is sent. `content` is what the model
+ * reads, including any label.
+ */
+export const UserMessageAdded = event(
+  "user.message",
+  z.object({
+    messageId: z.string(),
+    source: UserMessageSource,
+    content: z.string(),
+  }),
+);
+
 export const RunFinished = event(
   "run.finished",
   z.object({
@@ -290,6 +310,7 @@ export const EventBody = z.discriminatedUnion("type", [
   RequestCancel,
   ToolUpdate,
   ToolResult,
+  UserMessageAdded,
   RunFinished,
   RunFailed,
   RunInterrupted,

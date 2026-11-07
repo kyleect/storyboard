@@ -27,6 +27,8 @@ function chat(message: Message, streaming = false) {
         busy: false,
         onAnswer: () => {},
         subagents: new Map(),
+        onSendToSubagent: () => {},
+        sendingToSubagent: false,
       }}
     />,
   );

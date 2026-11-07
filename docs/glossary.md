@@ -65,6 +65,11 @@ set. See [backend.md](backend.md#subagents).
 An agent that runs as a child run. Only agents marked `subagent: true` can be
 started this way.
 
+**Message to a subagent**
+A message the user types in a running subagent's panel. It waits in a queue and
+is read at the start of the subagent's next step, as a user message with
+`source: "user"`. See [backend.md](backend.md#subagents).
+
 **Handback**
 How a subagent ends: it calls `subagent_handback` with its output, which ends
 its run and becomes the result of the parent's `start_subagent` call.

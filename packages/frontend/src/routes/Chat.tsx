@@ -79,6 +79,10 @@ interface Asks {
    * (agent delegation design, decision 42).
    */
   subagents: ReadonlyMap<string, SubagentView>;
+  /** Sends a message to a running subagent (by its run id). */
+  onSendToSubagent: (runId: string, text: string) => void;
+  /** A message to a subagent is being sent. */
+  sendingToSubagent: boolean;
   /** The anchor of a message to scroll to, so its subagent opens. */
   reveal?: string | null;
 }
@@ -95,6 +99,10 @@ interface SubagentView {
   /** Its messages, the task first, with the one being written now. */
   messages: ShownMessage[];
   running: boolean;
+  /** Its run id while it runs; the user can send it messages. */
+  runId: string | null;
+  /** Messages the user sent that it has not read yet, oldest first. */
+  queued: readonly string[];
   /** It is waiting for the user: a form or an approval is open. */
   waiting: boolean;
 }
@@ -257,6 +265,27 @@ export function Chat() {
   const [submitted, setSubmitted] = useState<ReadonlyMap<string, Sent>>(
     new Map(),
   );
+  // The message is shown as waiting at once, so the run reading it before the
+  // answer arrives still finds it to remove.
+  const sendToSubagent = useMutation({
+    mutationFn: (a: { runId: string; text: string }) =>
+      api.sendRunMessage(a.runId, a.text),
+    onMutate: (a) =>
+      useLive.getState().update(sessionId, a.runId, (run) => ({
+        ...run,
+        userMessages: [...run.userMessages, a.text],
+      })),
+    onError: (err: Error, a) => {
+      useLive.getState().update(sessionId, a.runId, (run) => {
+        const at = run.userMessages.lastIndexOf(a.text);
+        return {
+          ...run,
+          userMessages: run.userMessages.filter((_, i) => i !== at),
+        };
+      });
+      onError(err);
+    },
+  });
   const answerForm = useMutation({
     mutationFn: (a: {
       runId: string;
@@ -357,6 +386,8 @@ export function Chat() {
         "subagent",
       messages,
       running: child !== undefined,
+      runId: child?.runId ?? null,
+      queued: child?.userMessages ?? [],
       waiting:
         child !== undefined &&
         (child.approvals.length > 0 || child.inputs.length > 0),
@@ -405,6 +436,9 @@ export function Chat() {
     submitted,
     busy: answerForm.isPending,
     subagents,
+    onSendToSubagent: (runId, text) =>
+      sendToSubagent.mutate({ runId, text: text.trim() }),
+    sendingToSubagent: sendToSubagent.isPending,
     reveal: hashTarget ?? revealed,
     onAnswer: (open, answer) =>
       answerForm.mutate({
@@ -956,13 +990,92 @@ function SubagentPanel({
                 {...m}
                 notes={notes}
                 asks={asks}
-                userLabel={i === 0 ? "Task from the agent" : "Reminder"}
+                userLabel={subagentUserLabel(m.message, i)}
               />
             </div>
           ))}
+          {view.queued.map((text, i) => (
+            <Paper key={i} p="sm" withBorder style={{ borderStyle: "dashed" }}>
+              <Text size="xs" c="dimmed">
+                You, to the subagent: waiting for its next step
+              </Text>
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                {text}
+              </Text>
+            </Paper>
+          ))}
+          {view.running && view.runId && (
+            <SubagentMessageBox
+              runId={view.runId}
+              agentName={view.agentName}
+              asks={asks}
+            />
+          )}
         </Stack>
       )}
     </Paper>
+  );
+}
+
+/**
+ * The label over a user message in a subagent's panel: by where it came from
+ * (`source`), or, for messages saved before that was recorded, by position.
+ */
+function subagentUserLabel(message: Message, index: number): string {
+  if (message.role === "user") {
+    if (message.source === "task") return "Task from the agent";
+    if (message.source === "reminder") return "Reminder";
+    if (message.source === "user") return "You, to the subagent";
+  }
+  return index === 0 ? "Task from the agent" : "Reminder";
+}
+
+/**
+ * A box to send a message to a running subagent. It reads the message at the
+ * start of its next step; the current step is not stopped.
+ */
+function SubagentMessageBox({
+  runId,
+  agentName,
+  asks,
+}: {
+  runId: string;
+  agentName: string;
+  asks: Asks;
+}) {
+  const [draft, setDraft] = useState("");
+  const send = () => {
+    if (!draft.trim() || asks.sendingToSubagent) return;
+    asks.onSendToSubagent(runId, draft);
+    setDraft("");
+  };
+  return (
+    <Group align="flex-end" gap="xs" wrap="nowrap">
+      <Textarea
+        style={{ flex: 1 }}
+        size="xs"
+        autosize
+        minRows={1}
+        maxRows={6}
+        aria-label={`Message to ${agentName}`}
+        placeholder={`Message to ${agentName}, read at its next step (Ctrl+Enter to send)`}
+        value={draft}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            send();
+          }
+        }}
+      />
+      <Button
+        size="xs"
+        onClick={send}
+        disabled={asks.sendingToSubagent || !draft.trim()}
+      >
+        Send
+      </Button>
+    </Group>
   );
 }
 

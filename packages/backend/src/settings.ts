@@ -71,6 +71,11 @@ export const Settings = z.object({
    */
   childPrompt: z.string(),
   /**
+   * The line put before a message the user sends to a running subagent,
+   * so the subagent can tell it from its task. Empty: no label.
+   */
+  subagentMessageLabel: z.string(),
+  /**
    * How deep subagents can nest; a top-level run is depth 0. 0: subagents
    * are off.
    */
@@ -128,6 +133,8 @@ These are the agents available to you. If none appear below, then there are no a
   childReminders: 2,
   childPrompt:
     "You are working on a task for another agent. When you are done, call subagent_handback with your result. If you need something from the user, ask with ask_user, not in plain text.",
+  subagentMessageLabel:
+    "Message from the user (not from the agent that gave you your task):",
   subagentDepth: 2,
 };
 
@@ -148,6 +155,7 @@ const ENV: Record<keyof Settings, string> = {
   defaultAgentId: "HARNESS_DEFAULT_AGENT_ID",
   childReminders: "HARNESS_CHILD_REMINDERS",
   childPrompt: "HARNESS_CHILD_PROMPT",
+  subagentMessageLabel: "HARNESS_SUBAGENT_MESSAGE_LABEL",
   subagentDepth: "HARNESS_SUBAGENT_DEPTH",
 };
 

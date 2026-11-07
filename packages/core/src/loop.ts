@@ -213,6 +213,14 @@ export interface LoopContext extends RunContext {
    */
   child?: { reminders: number; reminderText: string };
   /**
+   * Takes the messages the user sent to this run while it ran, oldest first,
+   * each as the text the model reads. The loop adds them as user messages
+   * (source `user`) at the start of a step, and also when a subagent would
+   * stop or hand back, so it gets one more step to read them. Left out:
+   * none.
+   */
+  takeUserMessages?: () => string[];
+  /**
    * All the session's messages, read when a tool runs, to rebuild the
    * session's files, notes, schemas and data (decision 30). A run's request
    * can leave out other runs' messages; what they changed still counts.
@@ -418,6 +426,7 @@ export async function runLoop(
     if (index >= ctx.maxIterations)
       return finish({ reason: "iteration_limit" });
     emit({ type: "step.started", data: { index } });
+    addUserMessages();
 
     const continuing = index === 0 ? ctx.continueMessage : undefined;
     const messageId =
@@ -464,11 +473,14 @@ export async function runLoop(
       // A subagent ends by handing back. Remind it, then take its text.
       const text = textOf(step.message);
       if (text !== "") lastText = text;
+      // A message is waiting: the next step reads it instead of a reminder.
+      if (addUserMessages()) continue;
       if (remindersSent < ctx.child.reminders) {
         remindersSent++;
         const reminder: UserMessage = {
           role: "user",
           content: ctx.child.reminderText,
+          source: "reminder",
         };
         ctx.onMessage?.(newId(), reminder);
         transcript.push(reminder);
@@ -510,9 +522,30 @@ export async function runLoop(
     emit({ type: "step.finished", data: { index } });
     if (failed !== undefined)
       return finish({ reason: "failed", error: failed });
-    if (handback !== undefined)
+    // A message is waiting: the subagent reads it before it hands back, and
+    // may hand back again.
+    if (handback !== undefined && (ctx.signal.aborted || !addUserMessages()))
       return finish({ reason: "handed_back", output: handback });
     if (ctx.signal.aborted) return finish({ reason: "cancelled" });
+  }
+
+  /**
+   * Adds the messages the user sent to this run as user messages and sends
+   * their events. Returns whether there were any.
+   */
+  function addUserMessages(): boolean {
+    const texts = ctx.takeUserMessages?.() ?? [];
+    for (const content of texts) {
+      const messageId = newId();
+      const message: UserMessage = { role: "user", content, source: "user" };
+      ctx.onMessage?.(messageId, message);
+      transcript.push(message);
+      emit({
+        type: "user.message",
+        data: { messageId, source: "user", content },
+      });
+    }
+    return texts.length > 0;
   }
 
   /**

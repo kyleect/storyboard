@@ -203,6 +203,14 @@ messages, and finally its last text is used as the output. If the user presses
 Cancel, the cancel request resolves to the root run, and the abort signal reaches
 the child.
 
+While the child works, the user can send it a message from its panel
+(`POST /api/runs/:id/messages`). The message waits in a queue on the child's run.
+At the start of the child's next step the loop takes it, stores it with the
+setting `subagentMessageLabel` in front, and adds it to the child's transcript as
+a user message. The step that was running is not interrupted. If the child would
+stop or hand back while a message waits, it gets one more step to read it. The
+parent does not see the message.
+
 Files, notes, schemas and data the child wrote in the session scope are rebuilt
 from the whole session's messages, so the parent sees them.
 

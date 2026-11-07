@@ -35,13 +35,13 @@ packages/core/src
 `messages.ts` defines the provider-neutral transcript format. Model adapters
 translate to and from it.
 
-| Role        | Shape                            | Meaning                                                                        |
-| ----------- | -------------------------------- | ------------------------------------------------------------------------------ |
-| `system`    | `{ content }`                    | System prompt. Added per request by the backend; not stored in the transcript. |
-| `user`      | `{ content }`                    | What the user typed (or a reminder or task given to a subagent).               |
-| `assistant` | `{ content: ContentBlock[] }`    | What the model produced.                                                       |
-| `tool`      | see below                        | The outcome of one tool call.                                                  |
-| `edit`      | `{ content, entries, dataOps? }` | The user edited session files, notes, schemas or data.                         |
+| Role        | Shape                            | Meaning                                                                                                                                                      |
+| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `system`    | `{ content }`                    | System prompt. Added per request by the backend; not stored in the transcript.                                                                               |
+| `user`      | `{ content, source? }`           | What the user typed, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
+| `assistant` | `{ content: ContentBlock[] }`    | What the model produced.                                                                                                                                     |
+| `tool`      | see below                        | The outcome of one tool call.                                                                                                                                |
+| `edit`      | `{ content, entries, dataOps? }` | The user edited session files, notes, schemas or data.                                                                                                       |
 
 **Content blocks** of an assistant message:
 
@@ -92,27 +92,28 @@ Session events have `runId: null`.
 
 ### Run events
 
-| Group   | Event                              | Data                                                                                  |
-| ------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
-| Run     | `run.started`                      | `kind`, `model?`, `reasoningEffort?`, `agent?`, `parentRunId?`, `parentCallId?`       |
-|         | `run.finished`                     | `reason`: `stop`, `iteration_limit`, `cancelled`, `handed_back`; `usage?`             |
-|         | `run.failed`                       | `error`                                                                               |
-|         | `run.interrupted`                  | (empty) The backend stopped while the run was active.                                 |
-| Step    | `step.started`, `step.finished`    | `index`                                                                               |
-| Message | `message.started`                  | `messageId`, `role`, `continuing?`                                                    |
-|         | `text.delta`                       | `messageId`, `contentIndex`, `text`, `tokens?`, `usage?`                              |
-|         | `text.end`                         | `messageId`, `contentIndex`, full `text`                                              |
-|         | `reasoning.delta`, `reasoning.end` | as for text                                                                           |
-|         | `message.finished`                 | `messageId`, the complete `message`, `finishReason`, `usage?`                         |
-| Tool    | `tool.called`                      | `messageId`, `contentIndex`, `callId`, `name`, `arguments`                            |
-|         | `tool.malformed`                   | `callId`, `name`, `error`, and (in a loop) `contentIndex`, raw `arguments`            |
-|         | `tool.approval_requested`          | `requestId`, `callId`, `name`, `arguments`, `alwaysAsks?`, `agentSetting?`, `review?` |
-|         | `tool.approval_resolved`           | `requestId`, `choice`, `note?`                                                        |
-|         | `input.requested`                  | `requestId`, `callId`, `form`                                                         |
-|         | `input.resolved`                   | `requestId`, `outcome` (`answered` or `skipped`)                                      |
-|         | `request.cancel`                   | `requestId`, `reason`. Withdraws an open approval or form.                            |
-|         | `tool.update`                      | `callId`, `partial`. Progress text from a running tool.                               |
-|         | `tool.result`                      | `messageId`, `callId`, `name`, `isError`, truncated `preview`, `durationMs`, `error?` |
+| Group   | Event                              | Data                                                                                                               |
+| ------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Run     | `run.started`                      | `kind`, `model?`, `reasoningEffort?`, `agent?`, `parentRunId?`, `parentCallId?`                                    |
+|         | `run.finished`                     | `reason`: `stop`, `iteration_limit`, `cancelled`, `handed_back`; `usage?`                                          |
+|         | `run.failed`                       | `error`                                                                                                            |
+|         | `run.interrupted`                  | (empty) The backend stopped while the run was active.                                                              |
+| Step    | `step.started`, `step.finished`    | `index`                                                                                                            |
+| Message | `message.started`                  | `messageId`, `role`, `continuing?`                                                                                 |
+|         | `text.delta`                       | `messageId`, `contentIndex`, `text`, `tokens?`, `usage?`                                                           |
+|         | `text.end`                         | `messageId`, `contentIndex`, full `text`                                                                           |
+|         | `reasoning.delta`, `reasoning.end` | as for text                                                                                                        |
+|         | `message.finished`                 | `messageId`, the complete `message`, `finishReason`, `usage?`                                                      |
+| Tool    | `tool.called`                      | `messageId`, `contentIndex`, `callId`, `name`, `arguments`                                                         |
+|         | `tool.malformed`                   | `callId`, `name`, `error`, and (in a loop) `contentIndex`, raw `arguments`                                         |
+|         | `tool.approval_requested`          | `requestId`, `callId`, `name`, `arguments`, `alwaysAsks?`, `agentSetting?`, `review?`                              |
+|         | `tool.approval_resolved`           | `requestId`, `choice`, `note?`                                                                                     |
+|         | `input.requested`                  | `requestId`, `callId`, `form`                                                                                      |
+|         | `input.resolved`                   | `requestId`, `outcome` (`answered` or `skipped`)                                                                   |
+|         | `request.cancel`                   | `requestId`, `reason`. Withdraws an open approval or form.                                                         |
+|         | `tool.update`                      | `callId`, `partial`. Progress text from a running tool.                                                            |
+|         | `tool.result`                      | `messageId`, `callId`, `name`, `isError`, truncated `preview`, `durationMs`, `error?`                              |
+|         | `user.message`                     | `messageId`, `source`, `content`. A message the user sent to a running subagent, added by the loop (stored first). |
 
 Rules that make the stream reliable:
 
@@ -353,6 +354,22 @@ When `ctx.child` is set the loop runs as a subagent:
 - If a tool result has `handback`, the run ends with `handed_back` and
   `LoopResult.output` holds that text.
 
+### Messages from the user to a running run
+
+`ctx.takeUserMessages` returns the messages the user sent to the run while it
+ran, oldest first. The loop takes them:
+
+- at the start of every step, before the model call, so a message sent during a
+  step is read at the next one. The step that is running is not interrupted and
+  its remaining tool calls still run;
+- when a subagent would stop with no tool calls, or has handed back, and a
+  message is waiting. The run then gets one more step to read it instead of a
+  reminder (a hand back is dropped; the subagent can hand back again).
+
+Each message is added as a user message with `source: "user"`, passed to
+`onMessage` (so it is stored first), sent as a `user.message` event, and added to
+the transcript. Without the hook, nothing is taken.
+
 ### The loop context
 
 `LoopContext` is how the caller supplies everything else:
@@ -370,6 +387,7 @@ When `ctx.child` is set the loop runs as a subagent:
 | `projects`, `agents`, `subagents`                                      | Access for the project, agent and subagent tools.                                                      |
 | `skills`, `copyLimit`                                                  | The skills in scope; the maximum keys per copy or move call.                                           |
 | `child`                                                                | Present for a subagent's run.                                                                          |
+| `takeUserMessages`                                                     | Takes the messages the user sent to the run (see above).                                               |
 | `sessionMessages`                                                      | A function returning **all** of the session's messages, used to rebuild session-scoped state.          |
 | `parentRunId`, `parentCallId`, `agent`, `continueMessage`, `messageId` | Run identity and continuation.                                                                         |
 

@@ -682,6 +682,20 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
+   * Sends a message to a running subagent. The subagent reads it at the start
+   * of its next step. 400 when the message is empty or too long or the run
+   * is not a subagent's, 404 when the run does not exist, 409 when the run
+   * is not active or too many messages are already waiting.
+   */
+  app.post("/api/runs/:id/messages", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { text } = z.object({ text: z.string() }).parse(req.body);
+    if (!store.getRun(id))
+      return reply.code(404).send({ error: "Run not found." });
+    return { waiting: runs.sendUserMessage(id, text) };
+  });
+
+  /**
    * Errors of sessions not in the trash, newest first (error reporting
    * plan, P5). `projectId=none` means standalone sessions; `source` is
    * "tool" or "run"; `tool` is a tool name.

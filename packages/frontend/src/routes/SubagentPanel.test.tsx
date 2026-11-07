@@ -32,16 +32,24 @@ const form: InputRequest = {
 type Subagents = Parameters<typeof MessageView>[0]["asks"]["subagents"];
 
 function view(
-  subagent: { running: boolean; waiting: boolean; messages?: object[] },
+  subagent: {
+    running: boolean;
+    waiting: boolean;
+    messages?: object[];
+    queued?: string[];
+  },
   opens: { request: InputRequest; runId: string }[] = [],
   onAnswer = vi.fn(),
 ) {
+  const onSendToSubagent = vi.fn();
   const subagents: Subagents = new Map([
     [
       "p1",
       {
         agentName: "Editor",
         running: subagent.running,
+        runId: subagent.running ? "child-run" : null,
+        queued: subagent.queued ?? [],
         waiting: subagent.waiting,
         messages: (subagent.messages ?? [
           {
@@ -99,11 +107,13 @@ function view(
           busy: false,
           onAnswer,
           subagents,
+          onSendToSubagent,
+          sendingToSubagent: false,
         }}
       />
     </MantineProvider>,
   );
-  return { onAnswer };
+  return { onAnswer, onSendToSubagent };
 }
 
 describe("a subagent under its call", () => {
@@ -128,9 +138,7 @@ describe("a subagent under its call", () => {
     fireEvent.change(screen.getByLabelText(/Your name/), {
       target: { value: "Ada" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: /submit|send|answer/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /submit|answer/i }));
     expect(onAnswer).toHaveBeenCalledTimes(1);
     const [open, answer] = onAnswer.mock.calls[0] as [
       { runId: string },
@@ -151,5 +159,82 @@ describe("a subagent under its call", () => {
     ]);
     fireEvent.click(screen.getByText("Hide its work"));
     expect(screen.getByText("Show its work")).toBeTruthy();
+  });
+});
+
+describe("a message to a running subagent", () => {
+  const open = () => fireEvent.click(screen.getByText("Show its work"));
+
+  it("has a box in its panel that sends to its own run", () => {
+    const { onSendToSubagent } = view({ running: true, waiting: false });
+    open();
+    const box = screen.getByLabelText("Message to Editor");
+    fireEvent.change(box, { target: { value: "  Use tool_b  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onSendToSubagent).toHaveBeenCalledWith(
+      "child-run",
+      "  Use tool_b  ",
+    );
+    expect((box as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("sends with Ctrl+Enter", () => {
+    const { onSendToSubagent } = view({ running: true, waiting: false });
+    open();
+    const box = screen.getByLabelText("Message to Editor");
+    fireEvent.change(box, { target: { value: "Stop" } });
+    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
+    expect(onSendToSubagent).toHaveBeenCalledWith("child-run", "Stop");
+  });
+
+  it("does not send an empty message", () => {
+    const { onSendToSubagent } = view({ running: true, waiting: false });
+    open();
+    const button = screen.getByRole("button", { name: "Send" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByLabelText("Message to Editor"), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    expect(onSendToSubagent).not.toHaveBeenCalled();
+  });
+
+  it("is not offered once the subagent is done", () => {
+    view({ running: false, waiting: false });
+    open();
+    expect(screen.queryByLabelText("Message to Editor")).toBeNull();
+  });
+
+  it("shows a message as waiting until the subagent reads it", () => {
+    view({ running: true, waiting: false, queued: ["Use tool_b"] });
+    open();
+    expect(screen.getByText("Use tool_b")).toBeTruthy();
+    expect(screen.getByText(/waiting for its next step/)).toBeTruthy();
+  });
+
+  it("labels its user messages by where they came from", () => {
+    const user = (id: string, content: string, source?: string) => ({
+      id,
+      message: { role: "user", content, ...(source ? { source } : {}) },
+      model: null,
+      reasoningEffort: null,
+      agent: null,
+      streaming: false,
+    });
+    view({
+      running: true,
+      waiting: false,
+      messages: [
+        user("m1", "Do it", "task"),
+        user("m2", "Hand back.", "reminder"),
+        user("m3", "Use tool_b", "user"),
+        // Saved before the source was recorded: by position.
+        user("m4", "Old reminder"),
+      ],
+    });
+    open();
+    expect(screen.getByText("Task from the agent")).toBeTruthy();
+    expect(screen.getAllByText("Reminder")).toHaveLength(2);
+    expect(screen.getByText("You, to the subagent")).toBeTruthy();
   });
 });

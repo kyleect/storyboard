@@ -50,13 +50,14 @@ type MainSettings = Omit<
 /** The subagent settings have their own form (agent delegation design). */
 type SubagentSettings = Pick<
   SettingsShape,
-  "childReminders" | "childPrompt" | "subagentDepth"
+  "childReminders" | "childPrompt" | "subagentMessageLabel" | "subagentDepth"
 >;
 
 function subagentSettings(s: SettingsShape): SubagentSettings {
   return {
     childReminders: s.childReminders,
     childPrompt: s.childPrompt,
+    subagentMessageLabel: s.subagentMessageLabel,
     subagentDepth: s.subagentDepth,
   };
 }
@@ -396,6 +397,17 @@ function Subagents({ view }: { view: SettingsView }) {
             know to hand back or to ask you with a form.
           </Alert>
         )}
+        <Textarea
+          label="Message label"
+          description={
+            envNote("subagentMessageLabel") ??
+            "Put before a message you send to a running subagent, so it can tell your message from its task. Empty: no label."
+          }
+          autosize
+          minRows={2}
+          disabled={!!env.subagentMessageLabel}
+          {...form.getInputProps("subagentMessageLabel")}
+        />
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save
         </Button>

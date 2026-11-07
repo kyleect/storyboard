@@ -117,6 +117,11 @@ interface ActiveRun {
   inputs: Map<string, OpenInput>;
   /** For a subagent's run: the run and call that started it. */
   parent: { runId: string; callId: string } | null;
+  /**
+   * Messages the user sent to this run that it has not read yet, oldest
+   * first. The loop takes them at the start of a step.
+   */
+  userMessages: string[];
   done: Promise<void>;
 }
 
@@ -137,6 +142,8 @@ export interface RunSnapshot {
   approvals: ApprovalRequest[];
   /** Forms waiting for an answer (input forms design, D13). */
   inputs: InputRequest[];
+  /** Messages the user sent that the run has not read yet, oldest first. */
+  userMessages: string[];
 }
 
 export interface Snapshot {
@@ -250,6 +257,12 @@ export interface RunManagerOptions {
   now?: () => string;
   newId?: () => string;
 }
+
+/** The longest message the user can send to a running subagent. */
+export const MAX_USER_MESSAGE_LENGTH = 4000;
+
+/** How many messages can wait for one subagent to read them. */
+export const MAX_QUEUED_USER_MESSAGES = 5;
 
 /** What a subagent run is told when it stops without handing back. */
 const CHILD_REMINDER =
@@ -741,6 +754,35 @@ export class RunManager {
     open.resolve(final);
   }
 
+  /**
+   * Queues a message from the user for a running subagent. The subagent
+   * reads it at the start of its next step, not at once. Returns how many
+   * messages are now waiting.
+   */
+  sendUserMessage(runId: string, text: string): number {
+    const run = this.active.get(runId);
+    if (!run) throw new RunError("The run is not active.", 409);
+    if (!run.parent) {
+      throw new RunError("Only a subagent's run takes messages.", 400);
+    }
+    const trimmed = text.trim();
+    if (trimmed === "") throw new RunError("The message is empty.", 400);
+    if (trimmed.length > MAX_USER_MESSAGE_LENGTH) {
+      throw new RunError(
+        `The message is longer than ${MAX_USER_MESSAGE_LENGTH} characters.`,
+        400,
+      );
+    }
+    if (run.userMessages.length >= MAX_QUEUED_USER_MESSAGES) {
+      throw new RunError(
+        `${MAX_QUEUED_USER_MESSAGES} messages are already waiting; wait for the subagent to read them.`,
+        409,
+      );
+    }
+    run.userMessages.push(trimmed);
+    return run.userMessages.length;
+  }
+
   snapshot(sessionId: string): Snapshot {
     const lastEventId = this.store.lastEventId(sessionId);
     const runs = [...this.active.values()].filter(
@@ -754,6 +796,7 @@ export class RunManager {
       message: this.inFlight(this.store.runEvents(run.runId)),
       approvals: [...run.approvals.values()].map((a) => a.request),
       inputs: [...run.inputs.values()].map((i) => i.request),
+      userMessages: [...run.userMessages],
     });
     const top = runs.find((r) => r.parent === null);
     return {
@@ -1286,6 +1329,7 @@ export class RunManager {
     }
     const approvals = new Map<string, OpenApproval>();
     const inputs = new Map<string, OpenInput>();
+    const userMessages: string[] = [];
     const emit = (event: HarnessEvent) => {
       // Runs stopped by shutdown end as interrupted, not cancelled.
       const e: HarnessEvent =
@@ -1324,7 +1368,11 @@ export class RunManager {
     // every subagent's (decision 29).
     if (child) {
       const taskId = this.newId();
-      const task: UserMessage = { role: "user", content: child.task };
+      const task: UserMessage = {
+        role: "user",
+        content: child.task,
+        source: "task",
+      };
       saveMessage(taskId, task);
     }
     const request: ChatRequest = {
@@ -1461,6 +1509,14 @@ export class RunManager {
                 { once: true },
               );
             }),
+          // The label is read when the loop takes the message, so a change to
+          // the setting applies to messages already waiting.
+          takeUserMessages: () => {
+            const label = this.options.settings().subagentMessageLabel.trim();
+            return userMessages
+              .splice(0)
+              .map((text) => (label === "" ? text : `${label}\n\n${text}`));
+          },
           onMessage: saveMessage,
           reportError: (report) => {
             if (report.endsRun) endedByTool = true;
@@ -1544,6 +1600,7 @@ export class RunManager {
       approvals,
       inputs,
       parent: child?.parent ?? null,
+      userMessages,
       done: Promise.resolve(),
     };
     this.active.set(runId, run);

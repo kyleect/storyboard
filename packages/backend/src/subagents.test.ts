@@ -8,7 +8,12 @@ import {
 import { allTools, entriesInstruction, entryTools } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { EntryStore } from "./entries-store.js";
-import { RunManager } from "./runs.js";
+import {
+  MAX_QUEUED_USER_MESSAGES,
+  MAX_USER_MESSAGE_LENGTH,
+  RunManager,
+  type RunError,
+} from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings, type Settings } from "./settings.js";
 import { Store } from "./store.js";
@@ -413,7 +418,11 @@ describe("a subagent's run", () => {
     await go(c, id);
 
     const reminded = request(c, 2).messages.at(-1);
-    expect(reminded).toEqual({ role: "user", content: REMINDER });
+    expect(reminded).toEqual({
+      role: "user",
+      content: REMINDER,
+      source: "reminder",
+    });
     expect(results(c, id)[0]?.data).toMatchObject({ output: "Really done." });
     // The reminder is part of the child's stored messages.
     const [child] = childRuns(c, id);
@@ -1084,6 +1093,269 @@ describe("subagent settings", () => {
       childPrompt: "",
       subagentDepth: 3,
     });
+  });
+});
+
+const LABEL =
+  "Message from the user (not from the agent that gave you your task):";
+
+describe("a message from the user to a running subagent", () => {
+  /**
+   * A boss that starts an Editor. The Editor asks a form, so it is waiting
+   * (with its form open) while the test sends; then it hands back.
+   */
+  async function waitingChild(settings: Partial<Settings> = {}) {
+    const c = await setup([[], [], [], []], { settings });
+    const editor = startable(c, "Editor");
+    const boss = c.agents.create(
+      null,
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
+    );
+    c.scripts.splice(
+      0,
+      4,
+      [call("p1", "start_subagent", { agentId: editor.id, task: "Do it" })],
+      [
+        call("k1", "ask_user", {
+          schema: {
+            title: "Question",
+            properties: { name: { type: "string", title: "Name" } },
+            required: ["name"],
+          },
+        }),
+      ],
+      [call("k2", "subagent_handback", { output: "Done" })],
+      text("Fine"),
+    );
+    const id = await newSession(c, boss.id);
+    return { c, id };
+  }
+
+  /** Runs the session; calls `act` once, when the child's form is open. */
+  async function sendWhileAsking(
+    c: Ctx,
+    id: string,
+    act: (live: LiveRuns, childRunId: string) => void,
+  ) {
+    let acted = false;
+    await go(c, id, {
+      forms: [{ name: "Ada" }],
+      onTick: (live) => {
+        const child = live.childRuns[0];
+        if (!acted && child && child.inputs.length > 0) {
+          acted = true;
+          act(live, child.runId);
+        }
+      },
+    });
+    expect(acted).toBe(true);
+  }
+
+  it("is read at the start of the child's next step, with the label, and stored in order", async () => {
+    const { c, id } = await waitingChild();
+    await sendWhileAsking(c, id, (_live, runId) => {
+      c.runs.sendUserMessage(runId, "  Use tool_b, not tool_a.  ");
+    });
+
+    // Parent call, then the child's two calls: the second one reads it.
+    const read = request(c, 2).messages.at(-1);
+    expect(read).toEqual({
+      role: "user",
+      content: `${LABEL}\n\nUse tool_b, not tool_a.`,
+      source: "user",
+    });
+    // It comes after the form's answer, which the step that was running got.
+    const roles = request(c, 2).messages.map((m) => m.role);
+    expect(roles.slice(-3)).toEqual(["assistant", "tool", "user"]);
+
+    const [child] = childRuns(c, id);
+    const stored = c.store
+      .listMessages(id, { run: child?.runId as string })
+      .map((m) => m.message);
+    expect(stored.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    expect(stored[0]).toMatchObject({ source: "task" });
+    expect(stored[3]).toMatchObject({ source: "user" });
+    // The parent never saw it.
+    expect(
+      c.store
+        .listMessages(id, "top")
+        .some((m) => m.message.role === "user" && m.message.source === "user"),
+    ).toBe(false);
+    // The event the panel uses to show it was read.
+    const added = c.store
+      .eventsAfter(id, 0)
+      .find((e) => e.type === "user.message");
+    expect(added).toMatchObject({
+      runId: child?.runId,
+      data: { source: "user", content: expect.stringContaining("tool_b") },
+    });
+  });
+
+  it("shows the waiting messages in the run's snapshot until it reads them", async () => {
+    const { c, id } = await waitingChild();
+    const waiting: string[][] = [];
+    await sendWhileAsking(c, id, (_live, runId) => {
+      expect(c.runs.sendUserMessage(runId, "one")).toBe(1);
+      expect(c.runs.sendUserMessage(runId, "two")).toBe(2);
+      waiting.push(c.runs.snapshot(id).childRuns[0]?.userMessages ?? []);
+    });
+    expect(waiting[0]).toEqual(["one", "two"]);
+    // Both are read together, oldest first, as two messages.
+    const last = request(c, 2).messages.slice(-2);
+    expect(last.map((m) => m.content)).toEqual([
+      `${LABEL}\n\none`,
+      `${LABEL}\n\ntwo`,
+    ]);
+  });
+
+  it("sends the text as typed when the label is empty", async () => {
+    const { c, id } = await waitingChild({ subagentMessageLabel: "" });
+    await sendWhileAsking(c, id, (_live, runId) => {
+      c.runs.sendUserMessage(runId, "Just this");
+    });
+    expect(request(c, 2).messages.at(-1)).toMatchObject({
+      content: "Just this",
+    });
+  });
+
+  it("refuses an empty or long message and too many waiting", async () => {
+    const { c, id } = await waitingChild();
+    const errors: [number | undefined, string][] = [];
+    await sendWhileAsking(c, id, (_live, runId) => {
+      const attempt = (text: string) => {
+        try {
+          c.runs.sendUserMessage(runId, text);
+        } catch (err) {
+          errors.push([(err as RunError).statusCode, (err as Error).message]);
+        }
+      };
+      attempt("   ");
+      attempt("x".repeat(MAX_USER_MESSAGE_LENGTH + 1));
+      for (let i = 0; i < MAX_QUEUED_USER_MESSAGES + 1; i++) attempt("ok");
+    });
+    expect(errors).toEqual([
+      [400, "The message is empty."],
+      [
+        400,
+        `The message is longer than ${MAX_USER_MESSAGE_LENGTH} characters.`,
+      ],
+      [
+        409,
+        `${MAX_QUEUED_USER_MESSAGES} messages are already waiting; wait for the subagent to read them.`,
+      ],
+    ]);
+  });
+
+  it("is refused for a top-level run", async () => {
+    const { c, id } = await waitingChild();
+    const errors: [number | undefined, string][] = [];
+    await sendWhileAsking(c, id, (live) => {
+      try {
+        c.runs.sendUserMessage(live.activeRun?.runId as string, "Hi");
+      } catch (err) {
+        errors.push([(err as RunError).statusCode, (err as Error).message]);
+      }
+    });
+    expect(errors).toEqual([[400, "Only a subagent's run takes messages."]]);
+  });
+
+  it("goes through POST /api/runs/:id/messages, with 400, 404 and 409 when it cannot", async () => {
+    const { c, id } = await waitingChild();
+    const started = await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "Go",
+    });
+    const topId = started.body.runId as string;
+    // Wait for the child's form to open.
+    const deadline = Date.now() + 8000;
+    let child = c.runs.snapshot(id).childRuns[0];
+    while (!child || child.inputs.length === 0) {
+      if (Date.now() > deadline) throw new Error("The form did not open.");
+      const live = c.runs.snapshot(id);
+      for (const run of [
+        ...(live.activeRun ? [live.activeRun] : []),
+        ...live.childRuns,
+      ]) {
+        const approval = run.approvals[0];
+        if (approval) {
+          c.runs.answerApproval(run.runId, approval.requestId, {
+            choice: "once",
+          });
+        }
+      }
+      await new Promise((r) => setTimeout(r, 5));
+      child = c.runs.snapshot(id).childRuns[0];
+    }
+
+    const sent = await api(c.app, "POST", `/api/runs/${child.runId}/messages`, {
+      text: "Hello",
+    });
+    expect(sent.status).toBe(200);
+    expect(sent.body).toEqual({ waiting: 1 });
+    const empty = await api(
+      c.app,
+      "POST",
+      `/api/runs/${child.runId}/messages`,
+      {
+        text: " ",
+      },
+    );
+    expect(empty.status).toBe(400);
+    const noBody = await api(
+      c.app,
+      "POST",
+      `/api/runs/${child.runId}/messages`,
+      {},
+    );
+    expect(noBody.status).toBe(400);
+    const top = await api(c.app, "POST", `/api/runs/${topId}/messages`, {
+      text: "Hi",
+    });
+    expect(top.status).toBe(400);
+    const missing = await api(c.app, "POST", "/api/runs/nope/messages", {
+      text: "Hi",
+    });
+    expect(missing.status).toBe(404);
+
+    const input = child.inputs[0];
+    c.runs.answerInput(child.runId, input?.requestId as string, {
+      outcome: "answered",
+      answers: { name: "Ada" },
+    });
+    while (c.runs.isActive(topId)) await new Promise((r) => setTimeout(r, 5));
+
+    const ended = await api(
+      c.app,
+      "POST",
+      `/api/runs/${child.runId}/messages`,
+      {
+        text: "Too late",
+      },
+    );
+    expect(ended.status).toBe(409);
+    expect(ended.body.error).toBe("The run is not active.");
+  });
+
+  it("has a label setting with a default, an environment variable and a save", async () => {
+    const t = tempDatabase();
+    cleanups.push(t.cleanup);
+    expect(readSettings(t.db, {}).effective.subagentMessageLabel).toBe(LABEL);
+    expect(
+      readSettings(t.db, { HARNESS_SUBAGENT_MESSAGE_LABEL: "From the user:" })
+        .effective.subagentMessageLabel,
+    ).toBe("From the user:");
+    const c = await setup([]);
+    const res = await api(c.app, "PUT", "/api/settings", {
+      subagentMessageLabel: "",
+    });
+    expect(res.status).toBe(200);
+    expect(readSettings(c.t.db, {}).effective.subagentMessageLabel).toBe("");
   });
 });
 

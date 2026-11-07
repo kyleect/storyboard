@@ -59,9 +59,20 @@ export const SystemMessage = z.object({
   content: z.string(),
 });
 
+/**
+ * Where a user message came from, for labels in the app. Not sent to the
+ * model. Left out on messages saved before this field existed.
+ * - `task`: the task a parent agent gave a subagent.
+ * - `reminder`: the loop reminded a subagent to hand back.
+ * - `user`: the user typed it into a running subagent's panel.
+ */
+export const UserMessageSource = z.enum(["task", "reminder", "user"]);
+export type UserMessageSource = z.infer<typeof UserMessageSource>;
+
 export const UserMessage = z.object({
   role: z.literal("user"),
   content: z.string(),
+  source: UserMessageSource.optional(),
 });
 
 export const AssistantMessage = z.object({

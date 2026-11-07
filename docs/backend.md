@@ -153,25 +153,26 @@ resolved by precedence: **environment variable, then stored value, then
 default.** `GET /api/settings` returns the effective values, the stored values,
 and which are overridden by the environment.
 
-| Setting              | Env variable                   | Default                 | Meaning                                                            |
-| -------------------- | ------------------------------ | ----------------------- | ------------------------------------------------------------------ |
-| `llamaServerUrl`     | `HARNESS_LLAMA_URL`            | `http://127.0.0.1:8080` | Address of llama-server.                                           |
-| `model`              | `HARNESS_MODEL`                | empty (not sent)        | Default model (router mode).                                       |
-| `reasoningEffort`    | `HARNESS_REASONING_EFFORT`     | empty (not sent)        | Default effort; `none` turns reasoning off.                        |
-| `port`               | `HARNESS_PORT`                 | `4317`                  | Backend port.                                                      |
-| `loopLimit`          | `HARNESS_LOOP_LIMIT`           | `20`                    | Most model calls per run.                                          |
-| `copyLimit`          | `HARNESS_COPY_LIMIT`           | `20` (max 200)          | Most keys per copy/move call.                                      |
-| `trashRetentionDays` | `HARNESS_TRASH_RETENTION_DAYS` | `30`                    | Days in trash before purge at startup; `0` never.                  |
-| `embeddingModel`     | `HARNESS_EMBEDDING_MODEL`      | empty                   | Router model for embeddings; empty means keyword search only.      |
-| `autoRename`         | `HARNESS_AUTO_RENAME`          | `true`                  | Title a new session from its first message.                        |
-| `autoRenameSource`   | `HARNESS_AUTO_RENAME_SOURCE`   | `model`                 | `model` or `message`.                                              |
-| `titleModel`         | `HARNESS_TITLE_MODEL`          | empty                   | Model that writes titles; empty uses the session's model.          |
-| `titlePrompt`        | `HARNESS_TITLE_PROMPT`         | built-in text           | System prompt of the title call.                                   |
-| `systemPrompt`       | `HARNESS_SYSTEM_PROMPT`        | built-in text           | Global system prompt (see below).                                  |
-| `defaultAgentId`     | `HARNESS_DEFAULT_AGENT_ID`     | empty                   | Global default agent.                                              |
-| `childReminders`     | `HARNESS_CHILD_REMINDERS`      | `2`                     | Reminders a subagent gets before its last text is taken as output. |
-| `childPrompt`        | `HARNESS_CHILD_PROMPT`         | built-in text           | Line appended to a subagent's system message.                      |
-| `subagentDepth`      | `HARNESS_SUBAGENT_DEPTH`       | `2`                     | How deep subagents nest; `0` turns subagents off.                  |
+| Setting                | Env variable                     | Default                 | Meaning                                                                      |
+| ---------------------- | -------------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
+| `llamaServerUrl`       | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080` | Address of llama-server.                                                     |
+| `model`                | `HARNESS_MODEL`                  | empty (not sent)        | Default model (router mode).                                                 |
+| `reasoningEffort`      | `HARNESS_REASONING_EFFORT`       | empty (not sent)        | Default effort; `none` turns reasoning off.                                  |
+| `port`                 | `HARNESS_PORT`                   | `4317`                  | Backend port.                                                                |
+| `loopLimit`            | `HARNESS_LOOP_LIMIT`             | `20`                    | Most model calls per run.                                                    |
+| `copyLimit`            | `HARNESS_COPY_LIMIT`             | `20` (max 200)          | Most keys per copy/move call.                                                |
+| `trashRetentionDays`   | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                    | Days in trash before purge at startup; `0` never.                            |
+| `embeddingModel`       | `HARNESS_EMBEDDING_MODEL`        | empty                   | Router model for embeddings; empty means keyword search only.                |
+| `autoRename`           | `HARNESS_AUTO_RENAME`            | `true`                  | Title a new session from its first message.                                  |
+| `autoRenameSource`     | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                 | `model` or `message`.                                                        |
+| `titleModel`           | `HARNESS_TITLE_MODEL`            | empty                   | Model that writes titles; empty uses the session's model.                    |
+| `titlePrompt`          | `HARNESS_TITLE_PROMPT`           | built-in text           | System prompt of the title call.                                             |
+| `systemPrompt`         | `HARNESS_SYSTEM_PROMPT`          | built-in text           | Global system prompt (see below).                                            |
+| `defaultAgentId`       | `HARNESS_DEFAULT_AGENT_ID`       | empty                   | Global default agent.                                                        |
+| `childReminders`       | `HARNESS_CHILD_REMINDERS`        | `2`                     | Reminders a subagent gets before its last text is taken as output.           |
+| `childPrompt`          | `HARNESS_CHILD_PROMPT`           | built-in text           | Line appended to a subagent's system message.                                |
+| `subagentMessageLabel` | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text           | Line put before a message the user sends to a running subagent. Empty: none. |
+| `subagentDepth`        | `HARNESS_SUBAGENT_DEPTH`         | `2`                     | How deep subagents nest; `0` turns subagents off.                            |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.
@@ -414,6 +415,19 @@ A subagent is a child run.
    `failed`, `cancelled`, `iteration_limit` or `no_output`.
 7. **Cancelling** any run in a tree cancels the root; the parent's abort signal
    propagates to every child. A child has no stop button of its own.
+8. **Messages from the user.** `POST /api/runs/:id/messages` with `{ text }`
+   queues a message on a running subagent's run (`ActiveRun.userMessages`, at
+   most 5 waiting, at most 4,000 characters; the response is
+   `{ waiting }`). The loop takes the queue at the start of its next step (see
+   core.md). The backend adds `subagentMessageLabel` and a blank line before
+   each text when the loop takes it, so a change to the setting applies to
+   messages already waiting. The message is saved, linked to the child's run,
+   when the loop takes it, so the transcript stays in order, and a
+   `user.message` event follows. 404: no such run. 409: the run is not active
+   or 5 messages are already waiting. 400: empty or too long text, or a
+   top-level run. A message still waiting when the run ends is dropped, never
+   stored. The snapshot of an active run lists its waiting texts
+   (`userMessages`). The parent run is not told.
 
 Limits: the depth is capped by `subagentDepth` (a top-level run is depth 0), and
 a child run is subject to the same `loopLimit` as any run.
@@ -673,6 +687,7 @@ errors return `{ error }` with a status (400 invalid request, 401 unauthorized,
 | `POST /api/sessions/:id/continue`                            | Continue the last message or take the next step.                                                                  |
 | `POST /api/runs/:id/cancel`                                  | Cancel a run (and its children).                                                                                  |
 | `POST /api/runs/:id/end-reasoning`                           | Ask the model to stop thinking and answer.                                                                        |
+| `POST /api/runs/:id/messages`                                | Send a message to a running subagent; it reads it at its next step (`{ text }`; 200 with `{ waiting }`).          |
 | `POST /api/runs/:id/approvals/:requestId`                    | Answer an approval: `choice`, optional `note`, optional `selection`.                                              |
 | `POST /api/runs/:id/approvals/:requestId/check`, `…/refresh` | Validate a selection; recompute a review.                                                                         |
 | `POST /api/runs/:id/inputs/:requestId`                       | Answer or skip a form.                                                                                            |

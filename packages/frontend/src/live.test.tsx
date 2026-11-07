@@ -5,6 +5,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
+import { notifications } from "@mantine/notifications";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
 import { useAppEvents, useLive, useSessionEvents } from "./live";
@@ -281,6 +282,7 @@ describe("a subagent's run", () => {
       message: null,
       approvals: [],
       inputs: [],
+      userMessages: ["wait"],
     };
     const withRuns = {
       ...detail,
@@ -308,5 +310,67 @@ describe("a subagent's run", () => {
     expect(Object.keys(useLive.getState().runs["s1"]?.children ?? {})).toEqual([
       "r2",
     ]);
+    // The messages the child had not read yet come back with the snapshot.
+    expect(useLive.getState().runs["s1"]?.children["r2"]?.userMessages).toEqual(
+      ["wait"],
+    );
+  });
+
+  it("takes the oldest waiting message off when the child reads one", async () => {
+    await open();
+    push(1, ev("run.started", "r1", { kind: "loop" }));
+    push(
+      2,
+      ev("run.started", "r2", {
+        kind: "loop",
+        parentRunId: "r1",
+        parentCallId: "c1",
+      }),
+    );
+    act(() =>
+      useLive.getState().update("s1", "r2", (run) => ({
+        ...run,
+        userMessages: ["one", "two"],
+      })),
+    );
+    push(
+      3,
+      ev("user.message", "r2", {
+        messageId: "m9",
+        source: "user",
+        content: "label\n\none",
+      }),
+    );
+    expect(useLive.getState().runs["s1"]?.children["r2"]?.userMessages).toEqual(
+      ["two"],
+    );
+  });
+
+  it("tells the user when the child ends before it read a message", async () => {
+    await open();
+    push(1, ev("run.started", "r1", { kind: "loop" }));
+    push(
+      2,
+      ev("run.started", "r2", {
+        kind: "loop",
+        parentRunId: "r1",
+        parentCallId: "c1",
+      }),
+    );
+    act(() =>
+      useLive.getState().update("s1", "r2", (run) => ({
+        ...run,
+        userMessages: ["Use tool_b"],
+      })),
+    );
+    const show = vi.spyOn(notifications, "show").mockReturnValue("n1");
+    push(3, ev("run.finished", "r2", { reason: "handed_back" }));
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Message not delivered",
+        message: expect.stringContaining("Use tool_b"),
+      }),
+    );
+    show.mockRestore();
   });
 });

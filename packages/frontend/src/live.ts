@@ -46,6 +46,8 @@ export interface LiveRunState {
   approvals: ApprovalRequest[];
   /** Forms waiting for an answer, oldest first (input forms design). */
   inputs: InputRequest[];
+  /** Messages the user sent that the run has not read yet, oldest first. */
+  userMessages: string[];
   /** The latest running token count from the stream. */
   usage?: Usage;
 }
@@ -247,6 +249,7 @@ export function useSessionEvents(
             message: null,
             approvals: [],
             inputs: [],
+            userMessages: [],
           };
           const { parentRunId, parentCallId } = event.data;
           if (parentRunId && parentCallId) {
@@ -343,6 +346,17 @@ export function useSessionEvents(
             });
           }
           break;
+        case "user.message":
+          // The run read the oldest message that was waiting; it is stored
+          // before this event.
+          state.update(sessionId, event.runId, (run) => ({
+            ...run,
+            userMessages: run.userMessages.slice(1),
+          }));
+          void queryClient.invalidateQueries({
+            queryKey: ["session", sessionId],
+          });
+          break;
         case "tool.approval_requested":
           state.update(sessionId, event.runId, (run) => ({
             ...run,
@@ -387,6 +401,19 @@ export function useSessionEvents(
             event.runId &&
             useLive.getState().runs[sessionId]?.children[event.runId]
           ) {
+            const unread =
+              useLive.getState().runs[sessionId]?.children[event.runId]
+                ?.userMessages ?? [];
+            if (unread.length > 0) {
+              notifications.show({
+                color: "yellow",
+                title: "Message not delivered",
+                message: `The subagent finished before it read ${
+                  unread.length === 1 ? "this message" : "these messages"
+                }: ${unread.join(" | ")}`,
+                autoClose: false,
+              });
+            }
             // A subagent's run ended; the run that started it carries on. Its
             // messages come from the refetch.
             void queryClient
