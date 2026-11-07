@@ -49,7 +49,11 @@ export function foldNotes(messages: readonly Message[]): Message[] {
     const notes = formatNotes(turn);
     turn = [];
     if (notes !== undefined && m.role === "user") {
-      out.push({ role: "user", content: `${notes}\n\n${m.content}` });
+      out.push({
+        role: "user",
+        content: `${notes}\n\n${m.content}`,
+        ...(m.attachments ? { attachments: m.attachments } : {}),
+      });
       continue;
     }
     if (notes !== undefined) out.push({ role: "user", content: notes });

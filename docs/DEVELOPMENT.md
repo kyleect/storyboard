@@ -7,6 +7,24 @@
   model picker, or set a default model in Settings. Picking a model in a session
   asks the router to load it. Reasoning effort works the same way.
 
+### Multimodal models
+
+To attach images and audio, the model must be loaded with its multimodal
+projector (an `mmproj-*.gguf` file). For Gemma 4 E4B, both images and audio are
+supported.
+
+- Router mode (`--models-dir`): put the model and its projector in one
+  subdirectory, for example `~/llm/models/gemma-4-E4B-it/` holding
+  `gemma-4-E4B-it-<quant>.gguf` and `mmproj-<name>.gguf`.
+- A single model: `llama-server -m model.gguf --mmproj mmproj-<name>.gguf`.
+- Images and audio take context; consider `-c 16384` or more.
+
+The model list shows what each model can read (`architecture.input_modalities`
+from `GET /models`); the chat only offers to attach what the model in use reads.
+Images may be PNG, JPEG, GIF or BMP; audio may be WAV, MP3 or FLAC. Gemma 4
+takes up to 30 seconds of audio per clip (about 25 tokens a second). The Record
+button works only on `https` or `localhost`.
+
 ## Run (development)
 
 ```sh

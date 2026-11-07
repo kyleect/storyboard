@@ -18,6 +18,8 @@ import {
   type StoredEvent,
 } from "@harness/core";
 import { registerAgentRoutes } from "./agent-routes.js";
+import { registerAttachmentRoutes } from "./attachment-routes.js";
+import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachment-types.js";
 import { buildSessionDebug } from "./session-debug.js";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
@@ -186,6 +188,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   app.get("/api/health", async () => ({ ok: true }));
+
+  registerAttachmentRoutes(app, { store, newId, now });
 
   registerEntryRoutes(app, {
     store,
@@ -648,14 +652,42 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return { ok: true };
   });
 
+  /**
+   * Sends a message and starts a run that answers it. `attachmentIds` are
+   * files uploaded to this session (POST /api/sessions/:id/attachments); a
+   * message needs text or at least one of them. 400 for an id that was not
+   * uploaded to this session.
+   */
   app.post("/api/sessions/:id/messages", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const { content, ...choices } = Choices.extend({
-      content: z.string().min(1),
-    }).parse(req.body);
+    const { content, attachmentIds, ...choices } = Choices.extend({
+      content: z.string(),
+      attachmentIds: z
+        .array(z.string())
+        .max(MAX_ATTACHMENTS_PER_MESSAGE)
+        .optional(),
+    })
+      .refine(
+        (m) => m.content.length > 0 || (m.attachmentIds?.length ?? 0) > 0,
+        {
+          message: "The message is empty.",
+          path: ["content"],
+        },
+      )
+      .parse(req.body);
+    const attachments = [];
+    for (const attachmentId of new Set(attachmentIds ?? [])) {
+      const attachment = store.getSessionAttachment(id, attachmentId);
+      if (!attachment) {
+        return reply.code(400).send({
+          error: `Attachment ${attachmentId} was not uploaded to this session.`,
+        });
+      }
+      attachments.push(attachment);
+    }
     return reply
       .code(202)
-      .send(runs.sendMessage(id, content, defined(choices)));
+      .send(runs.sendMessage(id, content, defined(choices), attachments));
   });
 
   app.post("/api/sessions/:id/continue", async (req, reply) => {

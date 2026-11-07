@@ -17,6 +17,7 @@ import {
   type ChatRequest,
   type ContentBlock,
   type ControlResult,
+  type Attachment,
   type HarnessEvent,
   type Message,
   type RunAgent,
@@ -455,15 +456,21 @@ export class RunManager {
     sessionId: string,
     content: string,
     choices: RunChoices = {},
+    attachments: readonly Attachment[] = [],
   ): { runId: string } {
     this.requireIdle(sessionId);
     this.checkAgentChoice(sessionId, choices);
     this.store.setSessionChoices(sessionId, choices);
-    const rename = this.wantsAutoRename(sessionId);
+    // A message of attachments only has no text to title the session from.
+    const rename = this.wantsAutoRename(sessionId) && content.trim() !== "";
     this.store.addMessage(
       sessionId,
       this.newId(),
-      { role: "user", content },
+      {
+        role: "user",
+        content,
+        ...(attachments.length > 0 ? { attachments: [...attachments] } : {}),
+      },
       this.now(),
     );
     const started = this.start(sessionId, null);
@@ -1434,6 +1441,10 @@ export class RunManager {
           .map((m) => m.message),
       ],
       control,
+      // Attachments are kept apart from the messages; their bytes are read
+      // when a request is made.
+      resolveAttachment: (a) =>
+        this.store.getAttachmentData(a.id)?.data.toString("base64"),
       ...(generation.model ? { model: generation.model } : {}),
       ...(generation.reasoningEffort
         ? { reasoningEffort: generation.reasoningEffort }

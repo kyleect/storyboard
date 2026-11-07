@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   EntryKind,
   EntryOp,
   FileType,
@@ -420,20 +421,35 @@ export function editNotice(ops: readonly EntryOp[]): string {
  */
 export function foldEdits(messages: readonly Message[]): ModelMessage[] {
   const out: ModelMessage[] = [];
-  let run: { texts: string[]; hasEdit: boolean } | null = null;
+  let run: {
+    items: { content: string; attachments?: readonly Attachment[] }[];
+    hasEdit: boolean;
+  } | null = null;
   const flush = () => {
     if (!run) return;
     if (run.hasEdit) {
-      out.push({ role: "user", content: run.texts.join("\n\n") });
+      // Folded into one message, which keeps every attachment in order.
+      out.push(
+        userMessage(
+          run.items.map((i) => i.content).join("\n\n"),
+          run.items.flatMap((i) => i.attachments ?? []),
+        ),
+      );
     } else {
-      for (const content of run.texts) out.push({ role: "user", content });
+      for (const i of run.items) {
+        out.push(userMessage(i.content, i.attachments));
+      }
     }
     run = null;
   };
   for (const m of messages) {
     if (m.role === "user" || m.role === "edit") {
-      run ??= { texts: [], hasEdit: false };
-      run.texts.push(m.content);
+      run ??= { items: [], hasEdit: false };
+      run.items.push(
+        m.role === "user" && m.attachments
+          ? { content: m.content, attachments: m.attachments }
+          : { content: m.content },
+      );
       if (m.role === "edit") run.hasEdit = true;
     } else {
       flush();
@@ -442,4 +458,14 @@ export function foldEdits(messages: readonly Message[]): ModelMessage[] {
   }
   flush();
   return out;
+}
+
+/** A user message for a model; `attachments` is left out when there are none. */
+function userMessage(
+  content: string,
+  attachments: readonly Attachment[] | undefined,
+): ModelMessage {
+  return attachments && attachments.length > 0
+    ? { role: "user", content, attachments: [...attachments] }
+    : { role: "user", content };
 }

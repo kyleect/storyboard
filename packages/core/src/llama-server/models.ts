@@ -6,7 +6,9 @@
  * - A single-model server has no /models route; GET /v1/models lists the one
  *   loaded model.
  *
- * Shapes follow llama.cpp's server README (master).
+ * Shapes follow llama.cpp's server README (master). Both routes carry
+ * `architecture.input_modalities`, so what a model can read is known without
+ * loading it.
  */
 
 export interface ModelInfo {
@@ -15,15 +17,26 @@ export interface ModelInfo {
   status?: string;
   /** Router mode only: the last load attempt failed. */
   failed?: boolean;
+  /**
+   * What the model can read, from `architecture.input_modalities`: "text"
+   * and each media type it supports (for example "image" and "audio"). Left
+   * out when llama-server does not say, as older servers do not.
+   */
+  inputModalities?: string[];
 }
 
 interface ListedModel {
   id: string;
   status?: { value?: unknown; failed?: unknown };
+  architecture?: { input_modalities?: unknown };
 }
 
 interface ModelList {
-  data?: { id?: unknown; status?: ListedModel["status"] }[];
+  data?: {
+    id?: unknown;
+    status?: ListedModel["status"];
+    architecture?: ListedModel["architecture"];
+  }[];
 }
 
 export async function listLlamaServerModels(
@@ -45,13 +58,23 @@ export async function listLlamaServerModels(
   const body = (await res.json()) as ModelList;
   return (body.data ?? [])
     .filter((m): m is ListedModel => typeof m.id === "string")
-    .map((m) => ({
-      id: m.id,
-      ...(typeof m.status?.value === "string"
-        ? { status: m.status.value }
-        : {}),
-      ...(m.status?.failed === true ? { failed: true } : {}),
-    }));
+    .map((m) => {
+      const modalities = m.architecture?.input_modalities;
+      return {
+        id: m.id,
+        ...(typeof m.status?.value === "string"
+          ? { status: m.status.value }
+          : {}),
+        ...(m.status?.failed === true ? { failed: true } : {}),
+        ...(Array.isArray(modalities)
+          ? {
+              inputModalities: modalities.filter(
+                (v): v is string => typeof v === "string",
+              ),
+            }
+          : {}),
+      };
+    });
 }
 
 /** The outcome of asking the router to load a model. */
@@ -87,4 +110,26 @@ export async function loadLlamaServerModel(
   }
   if (res.status >= 400 && res.status < 500) return { ok: false, message };
   throw new Error(message);
+}
+
+/** What a model can read as attachments, from its `inputModalities`. */
+export interface MediaSupport {
+  image: boolean;
+  audio: boolean;
+}
+
+/**
+ * Whether a model takes images and audio. `undefined` when the server did not
+ * say (an older server, or the model is not in the list), so a caller can
+ * allow the attempt rather than refuse it.
+ */
+export function mediaSupport(
+  info: Pick<ModelInfo, "inputModalities"> | undefined,
+): MediaSupport | undefined {
+  const m = info?.inputModalities;
+  if (!m) return undefined;
+  return {
+    image: m.includes("image") || m.includes("vision"),
+    audio: m.includes("audio"),
+  };
 }

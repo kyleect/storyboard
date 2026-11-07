@@ -35,13 +35,13 @@ packages/core/src
 `messages.ts` defines the provider-neutral transcript format. Model adapters
 translate to and from it.
 
-| Role        | Shape                            | Meaning                                                                                                                                                      |
-| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `system`    | `{ content }`                    | System prompt. Added per request by the backend; not stored in the transcript.                                                                               |
-| `user`      | `{ content, source? }`           | What the user typed, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
-| `assistant` | `{ content: ContentBlock[] }`    | What the model produced.                                                                                                                                     |
-| `tool`      | see below                        | The outcome of one tool call.                                                                                                                                |
-| `edit`      | `{ content, entries, dataOps? }` | The user edited session files, notes, schemas or data.                                                                                                       |
+| Role        | Shape                                | Meaning                                                                                                                                                                                               |
+| ----------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system`    | `{ content }`                        | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                        |
+| `user`      | `{ content, attachments?, source? }` | What the user typed, with any images or audio attached to it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
+| `assistant` | `{ content: ContentBlock[] }`        | What the model produced.                                                                                                                                                                              |
+| `tool`      | see below                            | The outcome of one tool call.                                                                                                                                                                         |
+| `edit`      | `{ content, entries, dataOps? }`     | The user edited session files, notes, schemas or data.                                                                                                                                                |
 
 **Content blocks** of an assistant message:
 
@@ -68,6 +68,15 @@ translate to and from it.
 `ModelMessage` is `Message` without `edit`. Before a request is sent, edit
 messages are converted to user text (see below).
 
+**Attachments.** A user message can carry `attachments`: descriptions of
+images and audio (`{ id, kind: "image" | "audio", mediaType, name?, size? }`).
+The message stores only the description. The bytes are kept by the backend, and
+the request that is sent to the model carries a `resolveAttachment(attachment)`
+function that returns an attachment's bytes as base64 (or `undefined` when they
+are gone, in which case the model is told the attachment is no longer
+available). Messages stored before attachments existed have none and still
+parse.
+
 ### Folding edits and notes into user text
 
 Models should not see two user messages in a row because of harness
@@ -80,6 +89,9 @@ bookkeeping. Before sending, the adapter applies two transforms:
 - `foldEdits` (`entries.ts`): a run of consecutive `user` and `edit` messages
   containing at least one edit becomes a single user message. An edit's text is
   a notice such as `[The user changed session file chapter1.md in the app.]`.
+
+Both keep the `attachments` of the user messages they fold, in order, so a
+message that was joined to an edit or to notes does not lose its files.
 
 ## Events
 
@@ -186,6 +198,12 @@ model's chat template. The adapter:
   joined into `content`, its reasoning blocks into `reasoning_content`, its
   tool calls into `tool_calls` with JSON-stringified arguments; a tool result
   becomes a `tool` message with `tool_call_id`;
+- sends a user message that has attachments as typed content parts: each
+  image as `image_url` (a base64 data URI), each audio file as `input_audio`
+  (base64 and a format), then the message's text as a `text` part. Media comes
+  first, which is how Gemma expects audio. A message without attachments is
+  still sent as a plain string. llama-server needs a multimodal projector
+  (`--mmproj`) loaded for the model to accept these parts;
 - sends tool definitions as `function` tools;
 - sends `model` and `reasoning_effort` when set;
 - emits `reasoning` chunks from `reasoning_content` and `text` chunks from
@@ -214,12 +232,12 @@ failure.
 
 Other llama-server helpers in `llama-server/`:
 
-| Module          | Function                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------- |
-| `models.ts`     | `listLlamaServerModels` (router `GET /models`, falling back to `/v1/models`), `loadLlamaServerModel`. |
-| `props.ts`      | `getReasoningLevels` and `getContextSize`, read from `GET /props`.                                    |
-| `embeddings.ts` | `embedTexts` via `POST /v1/embeddings`.                                                               |
-| `sse.ts`        | `readSseData`, an async iterator over `data:` lines.                                                  |
+| Module          | Function                                                                                                                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `models.ts`     | `listLlamaServerModels` (router `GET /models`, falling back to `/v1/models`; each model's `inputModalities` come from `architecture.input_modalities`), `mediaSupport` (whether a model reads images and audio, or `undefined` when the server did not say), `loadLlamaServerModel`. |
+| `props.ts`      | `getReasoningLevels` and `getContextSize`, read from `GET /props`.                                                                                                                                                                                                                   |
+| `embeddings.ts` | `embedTexts` via `POST /v1/embeddings`.                                                                                                                                                                                                                                              |
+| `sse.ts`        | `readSseData`, an async iterator over `data:` lines.                                                                                                                                                                                                                                 |
 
 ### Test doubles
 

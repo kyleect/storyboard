@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ASK_USER,
   DECLINED,
+  mediaSupport,
   readAskUserCall,
   type ApprovalAnswer,
   type ContentBlock,
@@ -39,7 +40,13 @@ import {
   type MessageAgent,
   type SessionDetail,
 } from "../api";
-import { projectKeys, sessionKeys, settingsKeys, toolKeys } from "../queries";
+import {
+  modelKeys,
+  projectKeys,
+  sessionKeys,
+  settingsKeys,
+  toolKeys,
+} from "../queries";
 import {
   liveRuns,
   useLive,
@@ -51,6 +58,13 @@ import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { SchemasAndData } from "./Data";
 import { AskUserForm, type AskUserState } from "./AskUserForm";
+import {
+  AttachButton,
+  DraftAttachments,
+  MessageAttachments,
+  useAttachmentDraft,
+} from "./Attachments";
+import { VoiceButton } from "./VoiceButton";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
@@ -147,6 +161,13 @@ export function Chat() {
   const runs = liveRuns(live);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
   const [draft, setDraft] = useState("");
+  // Images and audio attached to the message being written.
+  const files = useAttachmentDraft(sessionId);
+  // What each model can read, to tell when an attachment cannot be used.
+  const models = useQuery({
+    queryKey: modelKeys.list(),
+    queryFn: api.listModels,
+  });
   // Chat, or the session's files, memory, data or debugging tools (plan U3).
   const [tab, setTab] = useState<string>("chat");
 
@@ -222,10 +243,16 @@ export function Chat() {
     onError,
   });
   const send = useMutation({
-    mutationFn: (content: string) =>
-      api.sendMessage(sessionId, content, choices),
+    mutationFn: (message: { content: string; attachmentIds: string[] }) =>
+      api.sendMessage(
+        sessionId,
+        message.content,
+        choices,
+        message.attachmentIds,
+      ),
     onSuccess: () => {
       setDraft("");
+      files.clear();
       // Shows the stored user message.
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.detail(sessionId),
@@ -456,6 +483,36 @@ export function Chat() {
   const defaults = settings.data?.effective;
   // The model whose levels the reasoning picker shows.
   const levelsModel = detail.data.session.model || defaults?.model || undefined;
+  // Whether the model in use reads images and audio: undefined when
+  // llama-server does not say, and then attaching is allowed.
+  const support = mediaSupport(
+    levelsModel
+      ? models.data?.find((m) => m.id === levelsModel)
+      : models.data?.length === 1
+        ? models.data[0]
+        : undefined,
+  );
+  const unreadable = support
+    ? [
+        ...new Set(
+          files.items
+            .map((i) => i.attachment.kind)
+            .filter((kind) => !support[kind]),
+        ),
+      ]
+    : [];
+  const canSend =
+    (draft.trim() !== "" || files.items.length > 0) &&
+    !busy &&
+    files.uploading === 0 &&
+    unreadable.length === 0;
+  const submit = () => {
+    if (!canSend) return;
+    send.mutate({
+      content: draft.trim() === "" ? "" : draft,
+      attachmentIds: files.items.map((i) => i.attachment.id),
+    });
+  };
   // How full the context is: the running count while a call streams, else
   // the latest stored message's.
   const contextUsage =
@@ -704,9 +761,30 @@ export function Chat() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (draft.trim() && !busy) send.mutate(draft);
+            submit();
+          }}
+          // Files dropped on the composer are attached.
+          onDragOver={(e) => {
+            if (!trashed && e.dataTransfer.types.includes("Files"))
+              e.preventDefault();
+          }}
+          onDrop={(e) => {
+            if (trashed || e.dataTransfer.files.length === 0) return;
+            e.preventDefault();
+            void files.add(Array.from(e.dataTransfer.files));
           }}
         >
+          <DraftAttachments
+            items={files.items}
+            uploading={files.uploading}
+            onRemove={files.remove}
+          />
+          {unreadable.length > 0 && (
+            <Alert color="yellow" mb="xs" p="xs">
+              The model in use cannot read {unreadable.join(" or ")} files.
+              Remove them or pick another model.
+            </Alert>
+          )}
           <Group align="flex-end" gap="xs">
             <Textarea
               style={{ flex: 1 }}
@@ -720,11 +798,32 @@ export function Chat() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
-                  if (draft.trim() && !busy) send.mutate(draft);
+                  submit();
                 }
               }}
+              // A pasted screenshot or file is attached; pasted text is not.
+              onPaste={(e) => {
+                const pasted = Array.from(e.clipboardData.files);
+                if (pasted.length === 0) return;
+                if (e.clipboardData.getData("text") !== "") return;
+                e.preventDefault();
+                void files.add(pasted);
+              }}
             />
-            <Button type="submit" disabled={busy || !draft.trim()}>
+            <AttachButton
+              onFiles={(picked) => void files.add(picked)}
+              disabled={trashed}
+            />
+            <VoiceButton
+              onRecorded={(file) => void files.add([file])}
+              disabled={trashed || support?.audio === false}
+              title={
+                support?.audio === false
+                  ? "The model in use cannot hear audio."
+                  : "Record from the microphone and attach it"
+              }
+            />
+            <Button type="submit" disabled={!canSend}>
               Send
             </Button>
           </Group>
@@ -755,7 +854,10 @@ export function MessageView({
         <Text size="xs" c="dimmed">
           {userLabel}
         </Text>
-        <Markdown>{message.content}</Markdown>
+        {message.attachments && message.attachments.length > 0 && (
+          <MessageAttachments attachments={message.attachments} />
+        )}
+        {message.content !== "" && <Markdown>{message.content}</Markdown>}
       </Paper>
     );
   }

@@ -220,6 +220,37 @@ describe("foldEdits", () => {
     ).toEqual([{ role: "user", content: "[edit]" }]);
   });
 
+  it("keeps the attachments of a user message an edit is joined to", () => {
+    const a = { id: "a1", kind: "image" as const, mediaType: "image/png" };
+    const b = { id: "a2", kind: "audio" as const, mediaType: "audio/wav" };
+    expect(
+      foldEdits([
+        { role: "edit", content: "[edit]", entries: [] },
+        { role: "user", content: "one", attachments: [a] },
+        { role: "user", content: "two", attachments: [b] },
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content: "[edit]\n\none\n\ntwo",
+        attachments: [a, b],
+      },
+    ]);
+  });
+
+  it("keeps the attachments of user messages with no edit", () => {
+    const a = { id: "a1", kind: "image" as const, mediaType: "image/png" };
+    expect(
+      foldEdits([
+        { role: "user", content: "one", attachments: [a] },
+        { role: "user", content: "two" },
+      ]),
+    ).toEqual([
+      { role: "user", content: "one", attachments: [a] },
+      { role: "user", content: "two" },
+    ]);
+  });
+
   it("leaves consecutive user messages without an edit unchanged", () => {
     const messages: Message[] = [
       { role: "user", content: "a" },

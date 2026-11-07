@@ -127,6 +127,109 @@ describe("chat completions", () => {
     expect(server.requests[0]?.body).not.toHaveProperty("model");
   });
 
+  it("sends attachments as typed content parts, media before text", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({
+      kind: "chat",
+      messages: [
+        {
+          role: "user",
+          content: "What is this?",
+          attachments: [
+            { id: "a1", kind: "audio", mediaType: "audio/mpeg" },
+            { id: "a2", kind: "image", mediaType: "image/png" },
+          ],
+        },
+      ],
+      resolveAttachment: (a) => ({ a1: "QVVESU8=", a2: "SU1BR0U=" })[a.id],
+    });
+    expect(
+      (server.requests[0]?.body as { messages: unknown[] }).messages,
+    ).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_audio",
+            input_audio: { data: "QVVESU8=", format: "mp3" },
+          },
+          {
+            type: "image_url",
+            image_url: { url: "data:image/png;base64,SU1BR0U=" },
+          },
+          { type: "text", text: "What is this?" },
+        ],
+      },
+    ]);
+  });
+
+  it("sends only the media when a message has no text", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({
+      kind: "chat",
+      messages: [
+        {
+          role: "user",
+          content: "",
+          attachments: [{ id: "a1", kind: "audio", mediaType: "audio/wav" }],
+        },
+      ],
+      resolveAttachment: () => "AAAA",
+    });
+    expect(
+      (server.requests[0]?.body as { messages: unknown[] }).messages,
+    ).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "input_audio", input_audio: { data: "AAAA", format: "wav" } },
+        ],
+      },
+    ]);
+  });
+
+  it("tells the model when an attachment's bytes are gone", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({
+      kind: "chat",
+      messages: [
+        {
+          role: "user",
+          content: "Look",
+          attachments: [
+            { id: "a1", kind: "image", mediaType: "image/png", name: "x.png" },
+          ],
+        },
+      ],
+      resolveAttachment: () => undefined,
+    });
+    expect(
+      (server.requests[0]?.body as { messages: unknown[] }).messages,
+    ).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: '[The image attachment "x.png" is no longer available.]',
+          },
+          { type: "text", text: "Look" },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps a user message without attachments as a string", async () => {
+    server.reply({ frames: [DONE] });
+    await collect({
+      kind: "chat",
+      messages: [{ role: "user", content: "x", attachments: [] }],
+    });
+    expect(
+      (server.requests[0]?.body as { messages: unknown[] }).messages,
+    ).toEqual([{ role: "user", content: "x" }]);
+  });
+
   it("joins an edit message to the next user message", async () => {
     server.reply({ frames: [DONE] });
     await collect({

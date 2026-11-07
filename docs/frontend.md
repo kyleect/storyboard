@@ -175,6 +175,28 @@ blocks (Markdown text, collapsible reasoning, tool calls), tool results
 never loaded (shown as their alt text), and links open in a new tab and only for
 `http`, `https` and `mailto`.
 
+**Attachments.** The composer's Attach button, pasting a file (a screenshot, for
+example) and dropping files on the composer all upload to the session at once
+(`routes/Attachments.tsx`, `useAttachmentDraft`) and show a chip with a
+thumbnail for images. Only PNG, JPEG, GIF and BMP images and WAV, MP3 and FLAC
+audio are taken (`attachments.ts`, which matches the backend's limits). When
+llama-server says the model in use cannot read a kind of file (the model's
+`inputModalities`), the composer warns and Send is disabled until they are
+removed; when it does not say, attaching is allowed. A sent message shows its
+files above the text. Chosen audio can be played back in the composer before it is sent. The bytes are fetched with the token and shown from object
+URLs, because `<img>` and `<audio>` cannot send the token themselves.
+
+**Voice.** The Record button (`routes/VoiceButton.tsx`, helpers in `audio.ts`)
+records from the microphone and attaches the result like any other file; the
+user then sends it with or without text. Browsers record WebM/Opus or MP4/AAC,
+which llama-server cannot read, so the page decodes the recording, mixes it
+down to mono, resamples it to 16 kHz (what Gemma 4 takes) and writes a 16-bit
+WAV file, which is uploaded as `voice-<date>-<time>.wav`. A recording stops by
+itself at 30 seconds, Gemma 4's audio limit. The button is disabled when the
+model is known not to hear audio. Recording needs the user's permission and a
+secure page: `https` or `localhost` (a plain `http://` address on another host
+cannot use the microphone).
+
 **Composer actions.** Send, Continue, Cancel and "Stop thinking" call the
 corresponding endpoints. Sending includes the session's current model, effort and
 agent choices, which the backend saves.

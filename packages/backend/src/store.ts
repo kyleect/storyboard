@@ -2,6 +2,8 @@ import type { Database } from "better-sqlite3-multiple-ciphers";
 import {
   Message,
   Usage,
+  type Attachment,
+  type AttachmentKind,
   type HarnessEvent,
   type StoredEvent,
   type ToolDefinition,
@@ -398,6 +400,7 @@ export class Store {
       this.db.prepare("DELETE FROM errors WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM runs WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+      this.db.prepare("DELETE FROM attachments WHERE session_id = ?").run(id);
       this.db
         .prepare("DELETE FROM session_tool_approvals WHERE session_id = ?")
         .run(id);
@@ -679,6 +682,78 @@ export class Store {
         .prepare("UPDATE sessions SET reasoning_effort = ? WHERE id = ?")
         .run(choices.reasoningEffort, id);
     }
+  }
+
+  /** Keeps a file the user attached to a session's message (see 0024). */
+  addAttachment(
+    sessionId: string,
+    id: string,
+    file: {
+      kind: AttachmentKind;
+      mediaType: string;
+      name?: string;
+      data: Buffer;
+    },
+    now: string,
+  ): Attachment {
+    this.db
+      .prepare(
+        `INSERT INTO attachments (id, session_id, kind, media_type, name, size, data, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        sessionId,
+        file.kind,
+        file.mediaType,
+        file.name ?? null,
+        file.data.length,
+        file.data,
+        now,
+      );
+    return {
+      id,
+      kind: file.kind,
+      mediaType: file.mediaType,
+      ...(file.name !== undefined ? { name: file.name } : {}),
+      size: file.data.length,
+    };
+  }
+
+  /** The description of a session's attachment, without its bytes. */
+  getSessionAttachment(sessionId: string, id: string): Attachment | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, kind, media_type, name, size FROM attachments
+         WHERE id = ? AND session_id = ?`,
+      )
+      .get(id, sessionId) as
+      | {
+          id: string;
+          kind: AttachmentKind;
+          media_type: string;
+          name: string | null;
+          size: number;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      kind: row.kind,
+      mediaType: row.media_type,
+      ...(row.name !== null ? { name: row.name } : {}),
+      size: row.size,
+    };
+  }
+
+  /** An attachment's media type and bytes. */
+  getAttachmentData(
+    id: string,
+  ): { mediaType: string; data: Buffer } | undefined {
+    const row = this.db
+      .prepare("SELECT media_type, data FROM attachments WHERE id = ?")
+      .get(id) as { media_type: string; data: Buffer } | undefined;
+    return row ? { mediaType: row.media_type, data: row.data } : undefined;
   }
 
   addMessage(

@@ -1,5 +1,11 @@
 import type { RunControl } from "./control.js";
-import type { Message, TokenInfo, ToolDefinition, Usage } from "./messages.js";
+import type {
+  Attachment,
+  Message,
+  TokenInfo,
+  ToolDefinition,
+  Usage,
+} from "./messages.js";
 
 /** Sampling settings passed through to the model server. */
 export interface Sampling {
@@ -26,6 +32,12 @@ export interface ChatRequest {
   reasoningEffort?: string;
   /** Lets the caller end reasoning while the response streams. */
   control?: RunControl;
+  /**
+   * The bytes of an attachment of a user message, as base64, or undefined
+   * when they are no longer available. Without it, or when it returns
+   * undefined, the adapter tells the model the attachment is missing.
+   */
+  resolveAttachment?: (attachment: Attachment) => string | undefined;
 }
 
 /** A raw request: plain text continued with no chat template. */

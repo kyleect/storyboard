@@ -102,21 +102,15 @@ export function Layout() {
         <Stack gap="xs" h="100%">
           <Group justify="space-between">
             <Title order={3}>🤖</Title>
-            <Button
-              size="compact-xs"
-              radius="sm"
-              variant="gradient"
-              onClick={() => create.mutate()}
-              loading={create.isPending}
-            >
-              New session
-            </Button>
           </Group>
           {/* Above the picker; where there is no picker it joins the links below. */}
           {showPicker && sessionsLink}
           {showPicker && (
             <Stack gap={4}>
               <Select
+                size="sm"
+                radius="xs"
+                variant={picked ? "filled" : "default"}
                 aria-label="Project"
                 allowDeselect={false}
                 data={[
@@ -144,6 +138,7 @@ export function Layout() {
               )}
             </Stack>
           )}
+
           {showSessionList && (
             <ScrollArea style={{ flex: 1 }}>
               {sessions.isError && (
@@ -160,7 +155,7 @@ export function Layout() {
                 {sessions.data?.map((s) => (
                   <NavLink
                     p={5}
-                    variant="filled"
+                    variant="subtle"
                     key={s.id}
                     renderRoot={(props) => (
                       <Link
@@ -176,6 +171,14 @@ export function Layout() {
                         <SessionMenu session={s} />
                       </Group>
                     }
+                    styles={{
+                      body: { minWidth: 0 },
+                      label: {
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      },
+                    }}
                   />
                 ))}
               </Stack>
@@ -266,11 +269,22 @@ export function Layout() {
                 onClick={toggleProjectLinks}
                 size="compact-xs"
                 variant="outline"
+                radius="sm"
               >
                 {projectLinksExpanded ? "Close" : "Project Links"}
               </Button>
             </Stack>
           )}
+
+          <Button
+            size="xs"
+            radius="xs"
+            variant="filled"
+            onClick={() => create.mutate()}
+            loading={create.isPending}
+          >
+            New Chat
+          </Button>
 
           <Stack gap={0}>
             {!showPicker && sessionsLink}

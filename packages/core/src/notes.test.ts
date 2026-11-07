@@ -124,6 +124,23 @@ describe("foldNotes", () => {
     ]);
   });
 
+  it("keeps the attachments of the user message the notes are put in", () => {
+    const a = { id: "a1", kind: "image" as const, mediaType: "image/png" };
+    expect(
+      foldNotes([
+        calls("c1", "c2"),
+        n1,
+        n2,
+        { role: "user", content: "go", attachments: [a] },
+      ]),
+    ).toEqual([
+      calls("c1", "c2"),
+      n1,
+      n2,
+      { role: "user", content: `${notes12}\n\ngo`, attachments: [a] },
+    ]);
+  });
+
   it("keeps each turn's notes with that turn", () => {
     expect(foldNotes([calls("c1"), n1, calls("c2"), n2])).toEqual([
       calls("c1"),

@@ -477,7 +477,7 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([22, 23]);
+    expect(migrate(db, all)).toEqual([22, 23, 24]);
 
     const cols = (table: string) =>
       (
@@ -549,6 +549,7 @@ describe("loadMigrations", () => {
     expect(tables()).toEqual([
       "agent_versions",
       "agents",
+      "attachments",
       "chunk_vectors",
       "chunks",
       "chunks_fts",

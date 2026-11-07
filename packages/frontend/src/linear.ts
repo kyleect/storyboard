@@ -1,4 +1,4 @@
-import type { ContentBlock, StoredEvent } from "@harness/core";
+import type { Attachment, ContentBlock, StoredEvent } from "@harness/core";
 import type { DebugMessage, DebugRun, SessionDebug } from "./api";
 import { eventSummary, shortId } from "./debug";
 
@@ -140,6 +140,18 @@ function metaOf(m: DebugMessage): string | undefined {
 const present = (fields: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
 
+/** A user message's text, led by a line for each file sent with it. */
+function withAttachments(
+  text: string,
+  attachments: readonly Attachment[] | undefined,
+): string {
+  if (!attachments || attachments.length === 0) return text;
+  const lines = attachments.map(
+    (a) => `[${a.kind} attached: ${a.name ?? a.mediaType}]`,
+  );
+  return text === "" ? lines.join("\n") : `${lines.join("\n")}\n\n${text}`;
+}
+
 function messageItem(
   m: DebugMessage,
   key: string,
@@ -163,7 +175,7 @@ function messageItem(
               : msg.source === "user"
                 ? "User (sent to the subagent)"
                 : "User",
-        text: msg.content,
+        text: withAttachments(msg.content, msg.attachments),
       };
     case "assistant": {
       const meta = metaOf(m);

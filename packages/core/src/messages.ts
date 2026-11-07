@@ -69,9 +69,31 @@ export const SystemMessage = z.object({
 export const UserMessageSource = z.enum(["task", "reminder", "user"]);
 export type UserMessageSource = z.infer<typeof UserMessageSource>;
 
+/** The kinds of media a user can attach to a message. */
+export const AttachmentKind = z.enum(["image", "audio"]);
+export type AttachmentKind = z.infer<typeof AttachmentKind>;
+
+/**
+ * A file the user attached to a message. Only this description is stored in
+ * the message; the bytes are kept by the backend under `id` and read when a
+ * request is made (see `ChatRequest.resolveAttachment`).
+ */
+export const Attachment = z.object({
+  id: z.string(),
+  kind: AttachmentKind,
+  /** For example `image/png` or `audio/wav`. */
+  mediaType: z.string(),
+  /** The file's name, for labels in the app. Not sent to the model. */
+  name: z.string().optional(),
+  size: z.number().int().optional(),
+});
+export type Attachment = z.infer<typeof Attachment>;
+
 export const UserMessage = z.object({
   role: z.literal("user"),
   content: z.string(),
+  /** Images and audio sent with the text. Left out when there are none. */
+  attachments: z.array(Attachment).optional(),
   source: UserMessageSource.optional(),
 });
 

@@ -1,6 +1,7 @@
 import type {
   ApprovalAnswer,
   ApprovalRequest,
+  Attachment,
   ContentBlock,
   ControlResult,
   DataInfo,
@@ -84,6 +85,27 @@ async function request<T>(
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+  return readJson<T>(res);
+}
+
+/** A request whose body is a file, sent as it is with its media type. */
+async function requestFile<T>(
+  path: string,
+  file: Blob,
+  mediaType: string,
+): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token ?? ""}`,
+      "content-type": mediaType,
+    },
+    body: file,
+  });
+  return readJson<T>(res);
+}
+
+async function readJson<T>(res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (res.status === 401) {
     throw new ApiError(
@@ -369,6 +391,11 @@ export interface ModelInfo {
   status?: string;
   /** Router mode only: the last load attempt failed. */
   failed?: boolean;
+  /**
+   * What the model can read: "text" and each media type it supports, such
+   * as "image" and "audio". Left out when llama-server does not say.
+   */
+  inputModalities?: string[];
 }
 
 /**
@@ -894,11 +921,39 @@ export const api = {
   /** Permanently deletes a project in the trash, with its sessions. */
   deleteProject: (id: string) =>
     request<{ ok: true }>("DELETE", `/api/projects/${id}`),
-  sendMessage: (id: string, content: string, choices: Choices) =>
+  sendMessage: (
+    id: string,
+    content: string,
+    choices: Choices,
+    attachmentIds: readonly string[] = [],
+  ) =>
     request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
       content,
+      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       ...choices,
     }),
+  /** Uploads a file to a session, to send with its next message. */
+  uploadAttachment: (sessionId: string, file: File, mediaType: string) =>
+    requestFile<Attachment>(
+      `/api/sessions/${sessionId}/attachments?name=${encodeURIComponent(file.name)}`,
+      file,
+      mediaType,
+    ),
+  /**
+   * An attachment's bytes as an object URL. The request carries the token,
+   * which an <img> or <audio> element cannot send, so the file is fetched
+   * here and shown from the URL.
+   */
+  attachmentUrl: async (id: string): Promise<string> => {
+    const res = await fetch(`/api/attachments/${id}`, {
+      headers: { authorization: `Bearer ${token ?? ""}` },
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(data.error ?? res.statusText, res.status, data);
+    }
+    return URL.createObjectURL(await res.blob());
+  },
   continueLast: (id: string, choices: Choices) =>
     request<{ runId: string }>("POST", `/api/sessions/${id}/continue`, choices),
   cancelRun: (runId: string) =>

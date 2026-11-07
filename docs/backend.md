@@ -111,6 +111,7 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 | MCP              | `mcp_servers`                                                                              | Servers the backend connects to; see [MCP servers](#mcp-servers).                             |
 | Settings         | `settings`                                                                                 | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.       |
 | Conversation     | `sessions`, `messages`, `projects`                                                         | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session. |
+| Attachments      | `attachments`                                                                              | The bytes of images and audio attached to messages; see [Attachments](#attachments).          |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`                                 | See below.                                                                                    |
 | Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state` | Project and global entries only.                                                              |
 | Agents           | `agents`, `agent_versions`                                                                 |                                                                                               |
@@ -217,6 +218,32 @@ understanding the run system:
   runs, messages and approvals; entry and data versions it authored are kept with
   their session link cleared.
 
+## Attachments
+
+A user can attach images and audio to a message, for a model that reads them
+(see [Multimodal models](./DEVELOPMENT.md#multimodal-models)). The message
+stores only a description of each file; the bytes are in the `attachments`
+table (migration `0024`), so message rows stay small.
+
+| Route                                      | Does                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------- |
+| `POST /api/sessions/:id/attachments?name=` | Uploads one file. The body is the file; `Content-Type` is its media type. |
+| `GET /api/attachments/:id`                 | The file's bytes, with its media type.                                    |
+
+An upload answers 201 with the description (`id`, `kind`, `mediaType`, `name`,
+`size`). Accepted: PNG, JPEG, GIF and BMP images and WAV, MP3 and FLAC audio,
+which are what llama-server can read (WebP, OGG and M4A are not). The media
+type must be one of these and the file's first bytes must agree with it (400
+otherwise); an empty file is 400, a file over 20 MB is 413, a body that is not
+a file (JSON or text) is 415, a missing session 404 and a session in the trash 409. A message takes at most 8 files.
+
+A file is uploaded when it is chosen, before the message is sent, so a file
+that is never sent stays in the table until its session is purged
+(`purgeSession` removes the session's attachments). When a request is made,
+`resolveAttachment` reads the bytes from the table, so they are sent to
+llama-server but never copied into the transcript, events or the run's saved
+request.
+
 ## The RunManager
 
 `runs.ts` is where the backend meets core. It starts, supervises, answers and
@@ -243,14 +270,18 @@ the active run and do not count separately.)
 
 ### Sending a message
 
-`POST /api/sessions/:id/messages` → `sendMessage(sessionId, content, choices)`:
+`POST /api/sessions/:id/messages` → `sendMessage(sessionId, content, choices, attachments)`.
+The body is `content` (which may be empty when there are attachments),
+`attachmentIds` (files uploaded to this session, see [Attachments](#attachments);
+400 for an id that was not) and the choices:
 
 1. Check the session is idle and that any chosen agent is usable in the
    session (404 unknown, 409 deleted or from another project).
 2. Save the choices (model, reasoning effort, agent) onto the session.
 3. Decide whether the session should be auto-renamed (see
    [Titles](#session-titles)).
-4. Append the user message to the transcript.
+4. Append the user message to the transcript, with the descriptions of its
+   attachments. A message with no text does not get the session a title.
 5. `launch(...)` the run, and return `{ runId }` immediately with status 202.
 6. Start the title job in parallel if needed.
 
@@ -592,7 +623,8 @@ used (not resources, prompts or sampling).
   once and otherwise fails with an error the model sees. Saving a server
   reconnects it with the new settings; turning it off closes the connection.
 - **Results.** Text is passed on. Images, audio and binary resources are named
-  and left out (the model is text only). A result the server marks as an error
+  and left out (a tool result is text only, even though a user message can carry
+  images and audio). A result the server marks as an error
   is an error result; one with no content but structured content is that as
   JSON. Results are cut at 60 000 characters, and a call times out after 60 s.
 - **`RunManager.tools`** is the built-in tools followed by `dynamicTools()`, read

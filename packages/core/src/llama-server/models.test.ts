@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeLlamaServer } from "./fake-llama-server.js";
-import { listLlamaServerModels, loadLlamaServerModel } from "./models.js";
+import {
+  listLlamaServerModels,
+  loadLlamaServerModel,
+  mediaSupport,
+} from "./models.js";
 
 let server: FakeLlamaServer;
 let url: string;
@@ -25,6 +29,29 @@ describe("listLlamaServerModels", () => {
     expect(await listLlamaServerModels(url)).toEqual([
       { id: "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M", status: "loaded" },
       { id: "qwen3-8b", status: "unloaded" },
+    ]);
+  });
+
+  it("reads what each model can read from architecture.input_modalities", async () => {
+    server.onGet("/models", {
+      data: [
+        {
+          id: "gemma-4-E4B-it",
+          status: { value: "unloaded" },
+          architecture: { input_modalities: ["text", "image", "audio", 7] },
+        },
+        { id: "qwen3-8b", architecture: { input_modalities: ["text"] } },
+        { id: "old", architecture: {} },
+      ],
+    });
+    expect(await listLlamaServerModels(url)).toEqual([
+      {
+        id: "gemma-4-E4B-it",
+        status: "unloaded",
+        inputModalities: ["text", "image", "audio"],
+      },
+      { id: "qwen3-8b", inputModalities: ["text"] },
+      { id: "old" },
     ]);
   });
 
@@ -123,5 +150,23 @@ describe("loadLlamaServerModel", () => {
   it("throws when llama-server fails", async () => {
     server.reply({ status: 500, errorBody: { error: { message: "boom" } } });
     await expect(loadLlamaServerModel(url, "qwen")).rejects.toThrow("boom");
+  });
+});
+
+describe("mediaSupport", () => {
+  it("says what a model reads, or nothing when the server did not say", () => {
+    expect(
+      mediaSupport({ inputModalities: ["text", "image", "audio"] }),
+    ).toEqual({ image: true, audio: true });
+    expect(mediaSupport({ inputModalities: ["text", "image"] })).toEqual({
+      image: true,
+      audio: false,
+    });
+    expect(mediaSupport({ inputModalities: ["text"] })).toEqual({
+      image: false,
+      audio: false,
+    });
+    expect(mediaSupport({})).toBeUndefined();
+    expect(mediaSupport(undefined)).toBeUndefined();
   });
 });
