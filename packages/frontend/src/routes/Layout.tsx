@@ -17,7 +17,6 @@ import { useEffect } from "react";
 import { api } from "../api";
 import { useAppEvents } from "../live";
 import { usePicked } from "../picked";
-import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
 import { useDisclosure } from "@mantine/hooks";
 
@@ -126,9 +125,11 @@ export function Layout() {
                 No sessions.
               </Text>
             )}
-            <Stack gap="xs">
+            <Stack gap={0}>
               {sessions.data?.map((s) => (
                 <NavLink
+                  p={5}
+                  variant="filled"
                   key={s.id}
                   renderRoot={(props) => (
                     <Link
@@ -138,11 +139,9 @@ export function Layout() {
                     />
                   )}
                   label={s.title}
-                  description={new Date(s.created_at).toLocaleString()}
                   active={params.sessionId === s.id}
                   rightSection={
                     <Group gap={4} wrap="nowrap">
-                      <UsageBadge usage={s.usage} />
                       <SessionMenu session={s} />
                     </Group>
                   }
@@ -241,28 +240,40 @@ export function Layout() {
             </Stack>
           )}
 
-          <Stack gap={0} p={0}>
+          <Stack gap={0}>
             <NavLink
+              p="md"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/agents" />}
               label="Agents"
             />
             <NavLink
+              p="md"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/skills" />}
               label="Skills"
             />
             <NavLink
+              p="md"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/files" />}
-              label="Files & memory"
+              label="Files/Memory"
             />
             <NavLink
+              p="md"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/data" />}
-              label="Schemas & data"
+              label="Structural Data"
             />
             <NavLink
+              p="md"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/errors" />}
               label="Errors"
             />
             <NavLink
+              p="md"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/settings" />}
               label="Settings"
             />
