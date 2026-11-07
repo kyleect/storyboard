@@ -340,9 +340,13 @@ export function agentAccess(deps: AgentAccessDeps): AgentAccess {
     subagent: a.subagent,
     builtin: a.builtin,
   });
+  const list = () =>
+    agents ? agents.pickable(session.project_id).map(summary) : [];
   return {
-    list: () =>
-      agents ? agents.pickable(session.project_id).map(summary) : [],
+    list,
+    // An agent cannot start itself, so the run's own agent is left out.
+    startable: () =>
+      list().filter((a) => a.subagent && a.id !== deps.runAgent?.id),
     current: () =>
       deps.runAgent
         ? {

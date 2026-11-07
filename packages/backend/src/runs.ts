@@ -272,6 +272,8 @@ const CHILD_REMINDER =
 interface ChildStart {
   /** The run and `start_subagent` call that started it. */
   parent: { runId: string; callId: string };
+  /** The agent the parent run uses, which cannot start itself; null: none. */
+  parentAgentId: string | null;
   task: string;
   depth: number;
   /** The parent run's signal. */
@@ -1125,6 +1127,9 @@ export class RunManager {
     if (!agent.subagent) {
       return fail(agent.name, "failed", "That agent is not startable.");
     }
+    if (agent.id === child.parentAgentId) {
+      return fail(agent.name, "failed", "An agent cannot start itself.");
+    }
     const { finished } = this.launch(sessionId, null, { ...child, agent });
     const result: LoopResult | undefined = await finished;
     const text = result?.output?.trim() ?? "";
@@ -1274,9 +1279,14 @@ export class RunManager {
     ];
     // The agents this run can start: only when it is offered `start_subagent`
     // (so not at the depth limit, and not when the agent or the user has it
-    // off), and the ones the session can pick, as `agents_list` shows them.
+    // off), and the ones the session can pick, without the run's own agent,
+    // which cannot start itself, as `agents_list` shows them.
     const agentsText = tools.some((t) => t.name === START_SUBAGENT)
-      ? agentsList(this.options.agents?.pickable(dataOwner.projectId) ?? [])
+      ? agentsList(
+          (this.options.agents?.pickable(dataOwner.projectId) ?? []).filter(
+            (a) => a.id !== agent?.id,
+          ),
+        )
       : "";
     const values = {
       skills: this.options.skillsList?.(skills) ?? "",
@@ -1428,6 +1438,7 @@ export class RunManager {
                 sessionId,
                 {
                   parent: { runId, callId },
+                  parentAgentId: agent?.id ?? null,
                   task,
                   depth: depth + 1,
                   signal: controller.signal,

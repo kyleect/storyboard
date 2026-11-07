@@ -28,6 +28,8 @@ function context(
   agents: AgentSummary[],
   outcome: SubagentOutcome,
   canStart = true,
+  /** The id of the agent the run uses; null: none. */
+  currentId: string | null = null,
 ) {
   const started: { agentId: string; task: string; callId: string }[] = [];
   const ctx: ToolContext = {
@@ -40,7 +42,14 @@ function context(
     projectId: null,
     projectName: null,
     projects: NO_PROJECTS,
-    agents: { ...NO_AGENTS, list: () => agents },
+    agents: {
+      ...NO_AGENTS,
+      list: () => agents,
+      current: () => {
+        const own = agents.find((a) => a.id === currentId);
+        return own ? { ...own, version: 1, prompt: "" } : null;
+      },
+    },
     subagents: {
       depth: 0,
       canStart,
@@ -84,6 +93,29 @@ describe("start_subagent", () => {
     );
     expect(out.isError).toBe(true);
     expect(started).toEqual([]);
+  });
+
+  it("refuses to start the agent the run is using", async () => {
+    const { ctx, started } = context([agent()], ok, true, "a1");
+    const out = await startSubagent.execute(
+      { agentId: "a1", task: "Fix it" },
+      ctx,
+    );
+    expect(out.isError).toBe(true);
+    expect(out.details).toMatchObject({ reason: "rejected" });
+    expect(JSON.stringify(out.data)).toContain("cannot start itself");
+    expect(started).toEqual([]);
+  });
+
+  it("starts another agent when the run has one of its own", async () => {
+    const { ctx, started } = context(
+      [agent(), agent({ id: "a2", name: "Critic" })],
+      ok,
+      true,
+      "a1",
+    );
+    await startSubagent.execute({ agentId: "a2", task: "Review" }, ctx);
+    expect(started).toHaveLength(1);
   });
 
   it("refuses an unknown agent", async () => {

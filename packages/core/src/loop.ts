@@ -246,6 +246,7 @@ export const NO_PROJECTS: ProjectAccess = {
 /** What a tool gets for agents when the run has none. */
 export const NO_AGENTS: AgentAccess = {
   list: unavailable("Agents"),
+  startable: unavailable("Agents"),
   current: unavailable("Agents"),
 };
 

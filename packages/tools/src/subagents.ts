@@ -31,7 +31,7 @@ const failure = (o: Extract<SubagentOutcome, { ok: false }>) => ({
 export const startSubagent = defineTool({
   name: "start_subagent",
   description:
-    "Hands a task to another agent and waits for its result. Pick an agent from agents_list with subagent: true. The agent does not see this conversation, only the task, so include everything it needs: what is wanted, earlier decisions that matter, and the keys of files it should read or write. Its questions and approvals go to the user. Returns what it hands back.",
+    "Hands a task to another agent and waits for its result. Pick an agent from agents_list. The agent does not see this conversation, only the task, so include everything it needs: what is wanted, earlier decisions that matter, and the keys of files it should read or write. Its questions and approvals go to the user. Returns what it hands back.",
   input: z.object({
     agentId: z.string().min(1).describe("The id of an agent from agents_list."),
     task: z
@@ -50,6 +50,13 @@ export const startSubagent = defineTool({
         { agentId },
       );
     }
+    if (agentId === ctx.agents.current()?.id) {
+      return fail(
+        "An agent cannot start itself. Pick another agent from agents_list.",
+        "rejected",
+        { agentId },
+      );
+    }
     const agent = ctx.agents.list().find((a) => a.id === agentId);
     if (!agent) {
       return fail(
@@ -60,7 +67,7 @@ export const startSubagent = defineTool({
     }
     if (!agent.subagent) {
       return fail(
-        `${agent.name} is not marked as startable. Pick an agent with subagent: true from agents_list.`,
+        `${agent.name} is not marked as startable. Pick an agent from agents_list.`,
         "rejected",
         { agentId },
       );

@@ -179,6 +179,12 @@ export interface CurrentAgent extends AgentSummary {
 export interface AgentAccess {
   /** The agents the session can pick: its project's, then global ones. */
   list(): AgentSummary[];
+  /**
+   * The agents this run can hand work to: those of `list()` that are marked
+   * as startable (decision 26), without the run's own agent, which cannot
+   * start itself.
+   */
+  startable(): AgentSummary[];
   /** The agent this run started with; null: none. */
   current(): CurrentAgent | null;
 }

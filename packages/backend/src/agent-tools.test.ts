@@ -225,13 +225,18 @@ const agentContent = (name: string) => ({
 });
 
 describe("agents_list and agent_view", () => {
-  it("lists the agents the session can pick, with their scope", async () => {
+  it("lists the agents that can do work for the run, with their scope", async () => {
     const c = await setup();
     const projectId = await newProject(c.app, "Ashfall");
     const other = await newProject(c.app, "Other");
     c.agents.create(projectId, { ...agentContent("Editor"), subagent: true });
-    c.agents.create(null, agentContent("Critic"));
-    c.agents.create(other, agentContent("Elsewhere"));
+    c.agents.create(null, { ...agentContent("Critic"), subagent: true });
+    // Not startable, and not this session's: neither is listed.
+    c.agents.create(null, agentContent("Muse"));
+    c.agents.create(other, {
+      ...agentContent("Elsewhere"),
+      subagent: true,
+    });
     const id = await newSession(c.app, projectId);
     c.scripts.push([call("a", "agents_list")], done);
 
@@ -246,11 +251,34 @@ describe("agents_list and agent_view", () => {
       description: "Editor agent",
       toolMode: "deny",
       tools: ["web_search"],
+    });
+    expect(agents[1]).toMatchObject({ scope: "global" });
+    expect(agents[1]).not.toHaveProperty("project");
+    // Everything listed is startable, so there is no flag to read.
+    expect(agents[0]).not.toHaveProperty("subagent");
+  });
+
+  it("leaves the run's own agent out of the list, and refuses to start it", async () => {
+    const c = await setup();
+    const editor = c.agents.create(null, {
+      ...agentContent("Editor"),
       subagent: true,
     });
-    // Every agent is listed, with whether it can be started.
-    expect(agents[1]).toMatchObject({ scope: "global", subagent: false });
-    expect(agents[1]).not.toHaveProperty("project");
+    c.agents.create(null, { ...agentContent("Critic"), subagent: true });
+    const id = await newSession(c.app);
+    c.store.setSessionChoices(id, { agentId: editor.id });
+    c.scripts.push(
+      [call("a", "agents_list")],
+      [call("s", "start_subagent", { agentId: editor.id, task: "Again" })],
+      done,
+    );
+
+    await go(c, id);
+    const [list, start] = results(c, id);
+    const agents = (list?.data as { agents: Record<string, unknown>[] }).agents;
+    expect(agents.map((a) => a["name"])).toEqual(["Critic"]);
+    expect(start?.isError).toBe(true);
+    expect(JSON.stringify(start?.data)).toContain("cannot start itself");
   });
 
   it("agent_view says when there is no agent", async () => {
@@ -969,14 +997,14 @@ describe("project_create: structured data and the agent", () => {
       dispatcher.indexOf("You are the user's entry point"),
     );
 
-    // It sees the copy first, marked as startable, and can start it.
+    // It sees the copy first (only startable agents are listed), and can
+    // start it.
     const calls = results(c, inside);
     const list = calls.find((r) => r.name === "agents_list")?.data as {
       agents: {
         name: string;
         scope: string;
         project?: string;
-        subagent: boolean;
       }[];
     };
     expect(list.agents[0]).toEqual(
@@ -984,7 +1012,6 @@ describe("project_create: structured data and the agent", () => {
         name: "Editor",
         scope: "project",
         project: "Ashfall",
-        subagent: true,
       }),
     );
     expect(calls.find((r) => r.name === "start_subagent")).toMatchObject({

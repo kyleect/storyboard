@@ -26,12 +26,19 @@ const shown = (a: AgentSummary) => ({
 export const agentsList = defineTool({
   name: "agents_list",
   description:
-    "Lists the agents this session can pick: the project's agents first, then global ones. Each has an id, name, scope (global, or project with its name), description, the tools it allows or denies, and subagent: true if start_subagent can start it. Use an id with start_subagent.",
+    "Lists the other agents that can do work for you: the ones start_subagent can start, project agents first, then global ones. Each has an id, name, scope (global, or project with its name), description, and the tools it allows or denies. Use an id with start_subagent.",
   input: z.object({}),
   approval: "never",
   group: "agents",
   execute: (_input, ctx) => ({
-    data: { agents: ctx.agents.list().map(shown) },
+    // Every agent listed is startable, so the flag is left out.
+    data: {
+      agents: ctx.agents.startable().map((a) => {
+        const rest: Partial<ReturnType<typeof shown>> = shown(a);
+        delete rest.subagent;
+        return rest;
+      }),
+    },
   }),
 });
 

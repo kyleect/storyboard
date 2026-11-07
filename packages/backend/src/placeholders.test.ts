@@ -389,6 +389,27 @@ describe("placeholders in runs", () => {
       );
     });
 
+    it("leaves out the run's own agent, which cannot start itself", async () => {
+      const s = await setup([answer], WITH_START);
+      writeSettings(s.t.db, { systemPrompt: "A:\n{{agents}}" });
+      const editor = s.agents.create(
+        null,
+        agentContent({
+          name: "Editor",
+          subagent: true,
+          toolGrant: grant("allow", ["start_subagent"]),
+        }),
+      );
+      const critic = s.agents.create(
+        null,
+        agentContent({ name: "Critic", subagent: true }),
+      );
+      await say(s, await newSession(s.app), editor.id);
+      expect(systemOf(s.model.requests[0])).toBe(
+        `A:\n- (${critic.id}) Critic\n\nBASE`,
+      );
+    });
+
     it("is empty when the run is not offered start_subagent", async () => {
       // The default tools have no start_subagent.
       const s = await setup([answer]);
