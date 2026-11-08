@@ -3,6 +3,7 @@ import type { EntryAccess } from "./entries.js";
 import type { Form, InputAnswer } from "./forms.js";
 import type { Review, Selection } from "./review.js";
 import type { MediaSupport } from "./media.js";
+import type { ApprovalSubject, WorkspaceAccess } from "./workspaces.js";
 import type { DataAccess } from "./schemas-data.js";
 import type {
   BlobRef,
@@ -34,6 +35,7 @@ export type ApprovalDefault = "ask" | "never" | "always";
  */
 export const TOOL_GROUPS = [
   { id: "files", label: "Files" },
+  { id: "workspaces", label: "Workspaces" },
   { id: "memory", label: "Memory" },
   { id: "structured-data", label: "Structured Data" },
   { id: "projects", label: "Projects" },
@@ -59,6 +61,8 @@ export interface RunFacts {
   isChild: boolean;
   /** Whether the run may still start a subagent (the depth limit is not reached). */
   canStartSubagent: boolean;
+  /** Whether the session has a workspace attached (directly or through its project). */
+  hasWorkspaces?: boolean;
 }
 
 /** The most the "copy limit" setting can be set to (a call's key list is bounded by it). */
@@ -304,6 +308,11 @@ export interface ToolContext {
   projects: ProjectAccess;
   /** The session's agents: list, view. */
   agents: AgentAccess;
+  /**
+   * The workspaces the session can use (files unification design, D22 to
+   * D36). Left out: none.
+   */
+  workspaces?: WorkspaceAccess;
   /** Starting subagents (agent delegation design). */
   subagents: SubagentAccess;
   /**
@@ -404,6 +413,15 @@ export interface Tool {
    * call's result, and nothing is asked.
    */
   review?: (input: unknown, ctx: ToolContext) => ReviewPlan | ToolOutput;
+  /**
+   * What the call is about, for approval: "Always allow" and "Allow for this
+   * session" then apply to this tool and this subject, such as one workspace
+   * (design, D27). Undefined: the tool's own grant applies.
+   */
+  approvalSubject?: (
+    input: unknown,
+    ctx: ToolContext,
+  ) => ApprovalSubject | undefined;
 }
 
 export interface ToolSpec<S extends z.ZodType> {
@@ -423,6 +441,10 @@ export interface ToolSpec<S extends z.ZodType> {
     ctx: ToolContext,
   ) => Promise<ToolOutput> | ToolOutput;
   review?: (input: z.output<S>, ctx: ToolContext) => ReviewPlan | ToolOutput;
+  approvalSubject?: (
+    input: z.output<S>,
+    ctx: ToolContext,
+  ) => ApprovalSubject | undefined;
 }
 
 /** Options for `ToolError` and `ToolRunError`. */
@@ -541,6 +563,16 @@ export function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): Tool {
         : { ok: false, error: z.prettifyError(result.error) };
     },
     execute: async (input, ctx) => spec.execute(input as z.output<S>, ctx),
+    ...(spec.approvalSubject
+      ? {
+          approvalSubject: (input: unknown, ctx: ToolContext) =>
+            (
+              spec.approvalSubject as NonNullable<
+                ToolSpec<S>["approvalSubject"]
+              >
+            )(input as z.output<S>, ctx),
+        }
+      : {}),
     ...(spec.review
       ? {
           review: (input: unknown, ctx: ToolContext) =>

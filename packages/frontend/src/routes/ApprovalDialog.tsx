@@ -32,6 +32,22 @@ const CHOICES: { choice: ApprovalChoice; label: string; color?: string }[] = [
 ];
 
 /**
+ * A call with a subject, a workspace, is allowed per tool and subject: the
+ * buttons say which workspace they cover (files unification design, D27).
+ */
+const choiceLabel = (
+  choice: { choice: ApprovalChoice; label: string },
+  request: ApprovalRequest,
+): string =>
+  request.subject
+    ? choice.choice === "session"
+      ? `Allow for this session in ${request.subject.label}`
+      : choice.choice === "always"
+        ? `Always allow this tool in ${request.subject.label}`
+        : choice.label
+    : choice.label;
+
+/**
  * Asks whether a tool call may run (tools design 6.5). Closing it leaves the
  * request open; the run keeps waiting until it is answered. A note typed in
  * the box goes with Allow once or Deny; the other two choices are disabled
@@ -139,7 +155,11 @@ function ArgumentsDialog({
       <Stack gap="sm">
         {from && <FromSubagent name={from} />}
         <Text size="sm">
-          The model wants to run <Code>{request.name}</Code> with:
+          The model wants to run <Code>{request.name}</Code>
+          {request.subject
+            ? ` in the workspace ${request.subject.label}`
+            : ""}{" "}
+          with:
         </Text>
         <Code block>{JSON.stringify(request.arguments, null, 2)}</Code>
         {request.agentSetting && (
@@ -173,7 +193,7 @@ function ArgumentsDialog({
                   )
                 }
               >
-                {c.label}
+                {choiceLabel(c, request)}
               </Button>
             );
             return blocked ? (
@@ -332,8 +352,9 @@ function ChangesDialog({
       <Stack gap="sm">
         {from && <FromSubagent name={from} />}
         <Text size="sm">
-          The model wants to run <Code>{request.name}</Code>. Untick a change to
-          leave it out.
+          The model wants to run <Code>{request.name}</Code>
+          {request.subject ? ` in the workspace ${request.subject.label}` : ""}.
+          Untick a change to leave it out.
         </Text>
         {stale && (
           <Alert color="yellow" title="The data changed since this was asked">
@@ -444,7 +465,7 @@ function ChangesDialog({
                   disabled={blocked || text !== ""}
                   onClick={() => onAnswer({ choice: c.choice })}
                 >
-                  {c.label}
+                  {choiceLabel(c, request)}
                 </Button>
               </span>
             </Tooltip>

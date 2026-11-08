@@ -440,6 +440,14 @@ export class Store {
         .prepare("DELETE FROM session_tool_approvals WHERE session_id = ?")
         .run(id);
       this.db.prepare("DELETE FROM media_choices WHERE session_id = ?").run(id);
+      this.db
+        .prepare("DELETE FROM session_subject_approvals WHERE session_id = ?")
+        .run(id);
+      this.db
+        .prepare(
+          "DELETE FROM workspace_attachments WHERE owner_kind = 'session' AND owner_id = ?",
+        )
+        .run(id);
       this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
       // Frees the bytes of the session's own files (Q10).
       sweepBlobs(this.db);
@@ -679,6 +687,11 @@ export class Store {
         .prepare("UPDATE projects SET default_agent_id = NULL WHERE id = ?")
         .run(id);
       this.db.prepare("DELETE FROM agents WHERE project_id = ?").run(id);
+      this.db
+        .prepare(
+          "DELETE FROM workspace_attachments WHERE owner_kind = 'project' AND owner_id = ?",
+        )
+        .run(id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
     })();
   }

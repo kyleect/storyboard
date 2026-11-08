@@ -1,5 +1,6 @@
 export * from "./messages.js";
 export * from "./media.js";
+export * from "./workspaces.js";
 export * from "./events.js";
 export * from "./model.js";
 export * from "./fake-model.js";

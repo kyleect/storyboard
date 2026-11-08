@@ -496,10 +496,18 @@ What a tool's `execute` receives:
 | `agents`                                 | `AgentAccess`: list agents, current agent.                                       |
 | `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                               |
 | `skills`                                 | The skills in scope with their bodies.                                           |
+| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, write, edit, move, delete and folders.  |
 | `copyLimit`                              | Maximum keys per copy or move call.                                              |
 | `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).  |
 | `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                  |
 | `approval`                               | For a tool with `review`: the review the user answered and the chosen selection. |
+
+`Tool.approvalSubject(input, ctx)` lets a tool name what a call is about
+(`{ kind: "workspace", id, label }`). The loop asks it before `needsApproval`, puts
+the subject in `tool.approval_requested` and in the `ApprovalRequest`, and passes
+it to `needsApproval(tool, subject)`. A tool without one behaves as before.
+`WorkspaceAccess` and `WorkspaceError` are in `workspaces.ts`; the error's `code`
+(`outside`, `stale`, `read_only`, …) becomes the tool's error result.
 
 Tools never reach the database directly. They use these interfaces, and the
 backend decides what is behind them.

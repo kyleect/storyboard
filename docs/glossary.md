@@ -243,6 +243,15 @@ cannot see or hear the file is given.
 The built-in agent whose prompt writes derived text. It can also be started as
 a subagent.
 
+**Workspace**
+A named folder on the user's computer that a project or session can attach,
+read-only or writable. Its files are named `workspace://<id>/path`. Agents read
+it with the workspace tools and change it only with approval, per workspace.
+
+**Approval subject**
+What a tool call is about, such as the workspace a path is in. Approvals and
+"Always allow" are remembered per tool and subject.
+
 **Built-in**
 A record shipped with the app and read-only: the Dispatcher and Media Describer
 agents, the Task,

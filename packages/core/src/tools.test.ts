@@ -188,6 +188,7 @@ describe("TOOL_GROUPS", () => {
   it("lists each group once, in display order", () => {
     expect(TOOL_GROUPS.map((g) => g.id)).toEqual([
       "files",
+      "workspaces",
       "memory",
       "structured-data",
       "projects",

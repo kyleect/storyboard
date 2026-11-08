@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 import type { ApprovalAnswer } from "@harness/core";
 import { ApprovalDialog } from "./ApprovalDialog";
 
-function setup(alwaysAsks = false, agentSetting = false, from?: string) {
+function setup(
+  alwaysAsks = false,
+  agentSetting = false,
+  from?: string,
+  subject?: { kind: "workspace"; id: string; label: string },
+) {
   const answers: ApprovalAnswer[] = [];
   render(
     <MantineProvider>
@@ -16,6 +21,7 @@ function setup(alwaysAsks = false, agentSetting = false, from?: string) {
           arguments: { text: "a" },
           ...(alwaysAsks ? { alwaysAsks } : {}),
           ...(agentSetting ? { agentSetting } : {}),
+          ...(subject ? { subject } : {}),
         }}
         opened
         busy={false}
@@ -244,5 +250,23 @@ describe("ApprovalDialog from a subagent", () => {
   it("says nothing extra for the top-level agent", () => {
     setup();
     expect(screen.queryByText(/is asking/)).toBeNull();
+  });
+
+  it("names the workspace for a call that has one, in the text and the choices", () => {
+    const { answers, button } = setup(false, false, undefined, {
+      kind: "workspace",
+      id: "w1",
+      label: "Book",
+    });
+    expect(screen.getByText(/in the workspace Book/)).toBeTruthy();
+    fireEvent.click(button("Allow for this session in Book"));
+    fireEvent.click(button("Always allow this tool in Book"));
+    expect(answers).toEqual([{ choice: "session" }, { choice: "always" }]);
+  });
+
+  it("keeps the plain wording for a call without a subject", () => {
+    const { button } = setup();
+    expect(button("Allow for this session")).toBeTruthy();
+    expect(button("Always allow this tool")).toBeTruthy();
   });
 });

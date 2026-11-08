@@ -35,6 +35,8 @@ import { registerMcpRoutes } from "./mcp-routes.js";
 import type { McpManager } from "./mcp-manager.js";
 import type { McpServerStore } from "./mcp-store.js";
 import { registerSkillRoutes } from "./skill-routes.js";
+import { registerWorkspaceRoutes } from "./workspace-routes.js";
+import { WorkspaceStore, WorkspaceStoreError } from "./workspaces-store.js";
 import { SkillStore } from "./skills-store.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { DEFAULT_TITLE, type Store } from "./store.js";
@@ -69,6 +71,7 @@ export interface ServerOptions {
   describer?: MediaDescriber;
   /** Skills. Default: over `store.db`. */
   skills?: SkillStore;
+  workspaces?: WorkspaceStore;
   /** Global, project and agent schemas and data. Default: over `store.db`. */
   data?: DataStore;
   /**
@@ -177,6 +180,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (err instanceof EntryError) {
       return reply.code(400).send({ error: err.message });
     }
+    if (err instanceof WorkspaceStoreError) {
+      return reply.code(err.statusCode).send({ error: err.message });
+    }
     if (err instanceof FixedApprovalError) {
       return reply.code(409).send({ error: err.message });
     }
@@ -216,6 +222,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     store,
     agents,
     skills: options.skills ?? new SkillStore(store.db, now, newId),
+    events,
+  });
+
+  registerWorkspaceRoutes(app, {
+    store,
+    workspaces: options.workspaces ?? new WorkspaceStore(store.db, now, newId),
     events,
   });
 
@@ -402,6 +414,30 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return store.listMediaChoices(id);
   });
 
+  /**
+   * The bytes of an image or audio file in one of the session's workspaces,
+   * for the chat to show. 404 for anything else.
+   */
+  app.get("/api/sessions/:id/workspace-file", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { ref } = z.object({ ref: z.string() }).parse(req.query);
+    const found = fileLookup(
+      store,
+      entries,
+      id,
+      runs.workspaceMediaFor(id),
+    )(ref);
+    const data = found?.bytes?.();
+    if (!found || !data) {
+      return reply.code(404).send({ error: "File not found." });
+    }
+    return reply
+      .header("content-type", found.mediaType)
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", "private, no-store")
+      .send(data);
+  });
+
   /** Sets one choice; `keep: null` clears it. 400 for a reference that is not an image or audio file. */
   app.put("/api/sessions/:id/media-choices", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
@@ -411,8 +447,13 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (!store.getSession(id)) {
       return reply.code(404).send({ error: "Session not found." });
     }
-    const found = fileLookup(store, entries, id)(ref);
-    if (!found?.blob || mediaKindOf(found.mediaType) === undefined) {
+    const found = fileLookup(
+      store,
+      entries,
+      id,
+      runs.workspaceMediaFor(id),
+    )(ref);
+    if (!found || mediaKindOf(found.mediaType) === undefined) {
       return reply.code(400).send({
         error: `${ref} is not an image or audio file this session can reach.`,
       });
@@ -705,11 +746,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         path: ["content"],
       })
       .parse(req.body);
-    const find = fileLookup(store, entries, id);
+    const find = fileLookup(store, entries, id, runs.workspaceMediaFor(id));
     const refs: string[] = [];
     for (const ref of new Set(files ?? [])) {
       const found = find(ref);
-      if (!found?.blob || mediaKindOf(found.mediaType) === undefined) {
+      if (!found || mediaKindOf(found.mediaType) === undefined) {
         return reply.code(400).send({
           error: `${ref} is not an image or audio file this session can reach.`,
         });

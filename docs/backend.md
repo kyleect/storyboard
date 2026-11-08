@@ -106,19 +106,20 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 
 ### Tables
 
-| Area             | Tables                                                                                     | Notes                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| MCP              | `mcp_servers`                                                                              | Servers the backend connects to; see [MCP servers](#mcp-servers).                                  |
-| Settings         | `settings`                                                                                 | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.            |
-| Conversation     | `sessions`, `messages`, `projects`                                                         | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session.      |
-| Binary files     | `blobs`                                                                                    | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments). |
-| Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`                                 | See below.                                                                                         |
-| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state` | Project and global entries only.                                                                   |
-| Agents           | `agents`, `agent_versions`                                                                 |                                                                                                    |
-| Skills           | `skills`, `skill_versions`                                                                 |                                                                                                    |
-| Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                      | Global, project and agent only.                                                                    |
-| Diagnostics      | `errors`                                                                                   |                                                                                                    |
-| System           | `schema_migrations`                                                                        |                                                                                                    |
+| Area             | Tables                                                                                                         | Notes                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| MCP              | `mcp_servers`                                                                                                  | Servers the backend connects to; see [MCP servers](#mcp-servers).                                  |
+| Settings         | `settings`                                                                                                     | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.            |
+| Conversation     | `sessions`, `messages`, `projects`                                                                             | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session.      |
+| Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments). |
+| Workspaces       | `workspaces`, `workspace_attachments`                                                                          | Folders and what attaches them; see [Workspaces](#workspaces).                                     |
+| Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                         |
+| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`                     | Project and global entries only.                                                                   |
+| Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                    |
+| Skills           | `skills`, `skill_versions`                                                                                     |                                                                                                    |
+| Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                    |
+| Diagnostics      | `errors`                                                                                                       |                                                                                                    |
+| System           | `schema_migrations`                                                                                            |                                                                                                    |
 
 **Sessions** have `title`, `project_id`, `agent_id`, `model`,
 `reasoning_effort`, `trashed_at` and `trashed_with_project`. A `NULL` model or
@@ -178,6 +179,7 @@ and which are overridden by the environment.
 | `keepMediaInline`      | `HARNESS_KEEP_MEDIA_INLINE`      | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.  |
 | `mediaDescriberAgent`  | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off. |
 | `mediaDescriberModel`  | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.      |
+| `workspaceReadCap`     | `HARNESS_WORKSPACE_READ_CAP`     | `10000`                   | The most characters one workspace read returns (100 or more).                 |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.
@@ -327,6 +329,49 @@ Attachments stored before this (table `attachments`, migration `0024`) are moved
 by the data step `attachments-to-files` (`data-steps.ts`): each becomes a
 session file, an edit message that adds the files is put before the message
 that used them, and the message lists references. The table is dropped.
+
+## Workspaces
+
+A workspace (`workspaces`, migration `0029`) is a name, an absolute folder, a
+`writable` flag and a trash state. `WorkspaceStore` (`workspaces-store.ts`)
+checks that the folder exists and the name is unique (a name in the trash is
+still taken). Projects and sessions attach workspaces (`workspace_attachments`),
+each attachment with its own `read_only` choice. A session uses its project's
+workspaces and its own; a workspace is writable in a session only if it is
+writable and no attachment that applies says read-only, so an attachment can
+only make it stricter. Moving a workspace to the trash hides it and keeps its
+attachments (restoring brings it back); nothing on disk is touched, and
+purging a session or project drops its attachments.
+
+`workspace-fs.ts` is the disk side, behind core's `WorkspaceAccess`:
+
+- Every path goes through `resolveIn`: relative to the folder, no `..` out, and
+  the deepest existing part is resolved with `realpath`, so a symlink that leads
+  out is refused (`WorkspaceError("outside")`). The tool may retry one call with
+  `allowOutside` after the user said yes in a form.
+- Names of new files and folders follow the file name rules.
+- A file is text unless it has a NUL byte or is not UTF-8; images and audio are
+  recognised by extension and content (20 MiB cap) and shown to the model through
+  the same media mechanism as other files (`workspaceMediaSource`, read from disk
+  when a request is built).
+- **Stale check:** `write` and `edit` refuse a file that exists unless it was read
+  in this session and its modified time and size are unchanged. The read records
+  are in memory, per session, so a backend restart asks for a new read.
+- Listing is cut at 2,000 entries and does not enter symlinked folders; deleting
+  a folder does not follow links.
+
+`{{workspaces}}` expands to one line per workspace the run has (name, reference,
+"can be changed" or "read-only").
+
+| Route                                                                  | Purpose                                                                         |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `GET/POST /api/workspaces`, `PUT/DELETE /api/workspaces/:id`           | List (`?deleted=true` for the trash), create, save, move to the trash.          |
+| `POST /api/workspaces/:id/restore`                                     | Restore from the trash.                                                         |
+| `GET /api/projects/:id/workspaces`, `GET /api/sessions/:id/workspaces` | What is attached; a session also lists its project's, with `effectiveWritable`. |
+| `PUT/DELETE /api/{projects,sessions}/:id/workspaces/:workspaceId`      | Attach (`{ readOnly }`) or detach.                                              |
+| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`            | "Always allow" grants per tool and workspace; remove one.                       |
+| `GET /api/fs/dirs?path=`                                               | The folders inside a folder, for the folder picker.                             |
+| `GET /api/sessions/:id/workspace-file?ref=`                            | The bytes of a workspace image or audio file, for the chat.                     |
 
 ## The RunManager
 
@@ -489,6 +534,14 @@ _asks_ is decided by the first rule that applies:
 A prompt is shown only if the tool asks **and** (it is always-asks **or** the user
 has not already chosen _Allow for this session_ for it in this session).
 
+A tool can name a **subject** for a call (`approvalSubject`; today the workspace a
+path is in). For such a call the order is: always-asks, the agent's setting, a
+**grant** for that tool and subject (_Always allow_ in that workspace, table
+`tool_subject_grants`), the global setting, the tool's default. A grant does not
+override an agent that asks, and "Allow for this session" is kept per tool and
+subject (`session_subject_approvals`). A call without a subject follows the rules
+above unchanged.
+
 When a prompt is needed the loop emits `tool.approval_requested`; the backend
 stores the open request in the active run and waits. `POST
 /api/runs/:id/approvals/:requestId` answers it. `answerApproval` enforces:
@@ -502,8 +555,10 @@ stores the open request in the active run and waits. `POST
 - For a request with a review, if the underlying data changed since it was shown
   the answer is rejected with 409 (the user must refresh or deny), and a
   selection that cannot be applied is rejected with 400 and the reasons.
-- `session` records the tool in `session_tool_approvals`.
-- `always` writes the global setting so that the tool no longer asks.
+- `session` records the tool in `session_tool_approvals`, or, for a call with a
+  subject, the tool and subject in `session_subject_approvals`.
+- `always` writes the global setting so that the tool no longer asks, or, for a
+  call with a subject, a grant for that tool and subject.
 
 Two more endpoints support reviews: `…/check` validates a selection without
 answering, and `…/refresh` recomputes the changes from current data.
@@ -874,14 +929,15 @@ child) and session events.
 
 Sends `AppEvent`s, not stored and not replayed:
 
-| Event              | Meaning                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `mcp.changed`      | An MCP server was created, saved or deleted, or its connection or tools changed.                             |
-| `agents.changed`   | An agent was created, saved, deleted, restored or imported (includes sessions whose agent pick was cleared). |
-| `skills.changed`   | A skill changed.                                                                                             |
-| `data.changed`     | Global, project or agent schemas or data changed.                                                            |
-| `projects.changed` | A project was created by a tool.                                                                             |
-| `errors.changed`   | An error was recorded, or errors were cleared.                                                               |
+| Event                | Meaning                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `mcp.changed`        | An MCP server was created, saved or deleted, or its connection or tools changed.                             |
+| `workspaces.changed` | A workspace, an attachment or a grant changed.                                                               |
+| `agents.changed`     | An agent was created, saved, deleted, restored or imported (includes sessions whose agent pick was cleared). |
+| `skills.changed`     | A skill changed.                                                                                             |
+| `data.changed`       | Global, project or agent schemas or data changed.                                                            |
+| `projects.changed`   | A project was created by a tool.                                                                             |
+| `errors.changed`     | An error was recorded, or errors were cleared.                                                               |
 
 Because they are not replayed, a client refetches what it shows whenever the
 stream opens or reopens.

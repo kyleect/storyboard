@@ -381,6 +381,8 @@ export interface Settings {
   inlineMediaCap: number;
   /** Keep earlier turns' media in view when nobody chose. */
   keepMediaInline: boolean;
+  /** The most characters one workspace file read returns. */
+  workspaceReadCap: number;
   /** The agent whose prompt writes the text of images and audio. Empty: off. */
   mediaDescriberAgent: string;
   /** The router model that runs it. Empty: off. */
@@ -406,6 +408,50 @@ export interface MediaDescriberInfo {
   /** Those with no text. */
   empty: number;
 }
+
+/** A folder on the computer that sessions can use (files unification design). */
+export interface Workspace {
+  id: string;
+  name: string;
+  path: string;
+  writable: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** In the trash. */
+  deleted: boolean;
+}
+
+export interface WorkspaceInput {
+  name: string;
+  path: string;
+  writable: boolean;
+}
+
+/** A workspace as a project or session has it. */
+export interface WorkspaceAttachment {
+  workspace: Workspace;
+  /** Whose attachment this is: a session also has its project's. */
+  from: "project" | "session";
+  readOnly: boolean;
+  /** Whether it can be changed in this owner, after every attachment. */
+  effectiveWritable: boolean;
+}
+
+/** An "Always allow" the user gave a tool for one workspace. */
+export interface WorkspaceGrant {
+  tool: string;
+  workspaceId: string;
+  workspaceName: string | null;
+}
+
+/** The folders inside a folder, for the folder picker. */
+export interface DirListing {
+  path: string;
+  parent: string | null;
+  dirs: string[];
+}
+
+export type WorkspaceOwner = "projects" | "sessions";
 
 export interface SettingsView {
   effective: Settings;
@@ -1049,6 +1095,69 @@ export const api = {
     request<{ waiting: number }>("POST", `/api/runs/${runId}/messages`, {
       text,
     }),
+  listWorkspaces: (deleted = false) =>
+    request<Workspace[]>("GET", `/api/workspaces?deleted=${deleted}`),
+  createWorkspace: (input: WorkspaceInput) =>
+    request<Workspace>("POST", "/api/workspaces", input),
+  saveWorkspace: (id: string, input: WorkspaceInput) =>
+    request<Workspace>(
+      "PUT",
+      `/api/workspaces/${encodeURIComponent(id)}`,
+      input,
+    ),
+  trashWorkspace: (id: string) =>
+    request<Workspace>("DELETE", `/api/workspaces/${encodeURIComponent(id)}`),
+  restoreWorkspace: (id: string) =>
+    request<Workspace>(
+      "POST",
+      `/api/workspaces/${encodeURIComponent(id)}/restore`,
+    ),
+  listAttachedWorkspaces: (owner: WorkspaceOwner, id: string) =>
+    request<WorkspaceAttachment[]>(
+      "GET",
+      `/api/${owner}/${encodeURIComponent(id)}/workspaces`,
+    ),
+  attachWorkspace: (
+    owner: WorkspaceOwner,
+    id: string,
+    workspaceId: string,
+    readOnly: boolean,
+  ) =>
+    request<unknown>(
+      "PUT",
+      `/api/${owner}/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      { readOnly },
+    ),
+  detachWorkspace: (owner: WorkspaceOwner, id: string, workspaceId: string) =>
+    request<unknown>(
+      "DELETE",
+      `/api/${owner}/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`,
+    ),
+  listWorkspaceGrants: () =>
+    request<WorkspaceGrant[]>("GET", "/api/workspace-grants"),
+  revokeWorkspaceGrant: (tool: string, workspaceId: string) =>
+    request<unknown>("DELETE", "/api/workspace-grants", { tool, workspaceId }),
+  listDirs: (path?: string) =>
+    request<DirListing>(
+      "GET",
+      `/api/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
+  /** A workspace image or audio file's bytes, as an object URL. */
+  workspaceFileUrl: async (
+    sessionId: string,
+    ref: string,
+  ): Promise<{ url: string; mediaType: string }> => {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/workspace-file?ref=${encodeURIComponent(ref)}`,
+      { headers: { authorization: `Bearer ${token ?? ""}` } },
+    );
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(data.error ?? res.statusText, res.status, data);
+    }
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), mediaType: blob.type };
+  },
   listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp/servers"),
   createMcpServer: (input: McpServerInput) =>
     request<McpServerView>("POST", "/api/mcp/servers", input),

@@ -255,7 +255,18 @@ describe("agents_list and agent_view", () => {
       project: "Ashfall",
       description: "Editor agent",
       toolMode: "deny",
-      tools: ["web_search"],
+      // Tools that change something are denied unless the agent lists them
+      // (tool management design), so the workspace ones show here.
+      tools: [
+        "web_search",
+        "workspace_write",
+        "workspace_edit",
+        "workspace_move",
+        "workspace_delete",
+        "workspace_folder_create",
+        "workspace_folder_rename",
+        "workspace_folder_delete",
+      ],
     });
     expect(agents[1]).toMatchObject({ scope: "global" });
     expect(agents[1]).not.toHaveProperty("project");

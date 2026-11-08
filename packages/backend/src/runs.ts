@@ -68,6 +68,12 @@ import {
   setToolAsks,
   toolApproval,
 } from "./tool-settings.js";
+import {
+  createWorkspaceAccess,
+  workspaceMediaSource,
+  type ReadRecord,
+} from "./workspace-fs.js";
+import type { WorkspaceStore } from "./workspaces-store.js";
 import { allowedNames } from "./tool-grants.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
 import {
@@ -76,6 +82,7 @@ import {
   formatDate,
   formatTime,
   toolsList,
+  workspacesList,
   usesPlaceholder,
 } from "./placeholders.js";
 
@@ -189,6 +196,8 @@ export interface RunManagerOptions {
   mediaSupport?: (model: string | null) => Promise<MediaSupport | undefined>;
   /** Describes images and audio that tools save (files unification design, D43). */
   describer?: MediaDescriber;
+  /** Workspaces. Left out: no run has any. */
+  workspaces?: WorkspaceStore;
   /** Agents. Left out: sessions cannot pick one. */
   agents?: AgentStore;
   /** Skills. Left out: no run has any. */
@@ -724,14 +733,29 @@ export class RunManager {
         );
       }
     }
+    const subject = open.request.subject;
+    const workspaces = this.options.workspaces;
     if (choice === "session") {
-      this.store.allowToolForSession(
-        run.sessionId,
-        open.request.name,
-        this.now(),
-      );
+      if (subject && workspaces) {
+        workspaces.allowSubjectForSession(
+          run.sessionId,
+          open.request.name,
+          subject.kind,
+          subject.id,
+        );
+      } else {
+        this.store.allowToolForSession(
+          run.sessionId,
+          open.request.name,
+          this.now(),
+        );
+      }
     } else if (choice === "always" && tool) {
-      setToolAsks(this.store.db, tool, false);
+      if (subject && workspaces) {
+        workspaces.grantSubject(open.request.name, subject.kind, subject.id);
+      } else {
+        setToolAsks(this.store.db, tool, false);
+      }
     }
     run.approvals.delete(requestId);
     open.resolve(answer);
@@ -1102,6 +1126,33 @@ export class RunManager {
    * not available in this run (`available`), is not offered. With an agent,
    * a tool is offered when it is always on or the agent's grant allows it.
    */
+  /** What each session has read in its workspaces, for the stale check (D32). */
+  private readonly workspaceReads = new Map<string, Map<string, ReadRecord>>();
+
+  /** Finds image and audio files in a session's workspaces (D48). */
+  workspaceMediaFor(sessionId: string) {
+    const store = this.options.workspaces;
+    if (!store) return undefined;
+    const projectId = this.store.getSession(sessionId)?.project_id ?? null;
+    return workspaceMediaSource(() => store.forSession(sessionId, projectId));
+  }
+
+  /** Workspace access for a session, or undefined when it has none. */
+  workspaceAccessFor(sessionId: string, projectId: string | null) {
+    const store = this.options.workspaces;
+    if (!store) return undefined;
+    let reads = this.workspaceReads.get(sessionId);
+    if (!reads) {
+      reads = new Map();
+      this.workspaceReads.set(sessionId, reads);
+    }
+    return createWorkspaceAccess({
+      attached: () => store.forSession(sessionId, projectId),
+      readCap: () => this.options.settings().workspaceReadCap,
+      reads,
+    });
+  }
+
   private toolsFor(agent: Agent | null, run: RunFacts): readonly Tool[] {
     const off = offNames(this.store.db);
     const offered = this.tools.filter(
@@ -1280,9 +1331,25 @@ export class RunManager {
       ) ?? [];
     const tools = this.toolsFor(agent, {
       hasSkills: skills.length > 0,
+      hasWorkspaces:
+        (this.options.workspaces?.forSession(
+          sessionId,
+          session?.project_id ?? null,
+        ).length ?? 0) > 0,
       isChild: child !== null,
       canStartSubagent: depth < settings.subagentDepth,
     });
+    // The workspaces the session has now, for `{{workspaces}}` and for image
+    // and audio files in them (files unification design, D39, D48).
+    const attachedWorkspaces = () =>
+      this.options.workspaces?.forSession(
+        sessionId,
+        session?.project_id ?? null,
+      ) ?? [];
+    const workspaceMedia = this.options.workspaces
+      ? workspaceMediaSource(attachedWorkspaces)
+      : undefined;
+    const workspacesText = workspacesList(attachedWorkspaces());
     // The schemas in scope, listed only when the run offers a schema or data
     // tool (schemas and data design, decisions 37, 41): global, project,
     // agent, then the session's own.
@@ -1361,6 +1428,7 @@ export class RunManager {
       schemas: this.options.schemasList?.(schemas) ?? "",
       data: this.options.dataList?.(dataItems) ?? "",
       agents: agentsText,
+      workspaces: workspacesText,
       date: formatDate(startedAt),
       time: formatTime(startedAt),
     };
@@ -1466,7 +1534,12 @@ export class RunManager {
       control,
       // A message names its files by reference; their bytes are read when a
       // request is made.
-      resolveFile: fileResolver(this.store, this.options.entries, sessionId),
+      resolveFile: fileResolver(
+        this.store,
+        this.options.entries,
+        sessionId,
+        workspaceMedia,
+      ),
       ...(generation.model ? { model: generation.model } : {}),
       ...(generation.reasoningEffort
         ? { reasoningEffort: generation.reasoningEffort }
@@ -1485,7 +1558,16 @@ export class RunManager {
         const support = await this.options
           .mediaSupport?.(generation.model)
           .catch(() => undefined);
-        const find = fileLookup(this.store, this.options.entries, sessionId);
+        const workspaceAccess = this.workspaceAccessFor(
+          sessionId,
+          session?.project_id ?? null,
+        );
+        const find = fileLookup(
+          this.store,
+          this.options.entries,
+          sessionId,
+          workspaceMedia,
+        );
         request.media = {
           cap: settings.inlineMediaCap,
           keepDefault: settings.keepMediaInline,
@@ -1495,6 +1577,7 @@ export class RunManager {
           support,
           info: (ref) => {
             const found = find(ref);
+            if (found && !found.blob) return { mediaType: found.mediaType };
             if (!found?.blob) return undefined;
             const text = getDerived(this.store.db, found.blob.hash)?.text;
             return {
@@ -1604,14 +1687,36 @@ export class RunManager {
                 }),
               }
             : {}),
+          ...(workspaceAccess ? { workspaces: workspaceAccess } : {}),
           copyLimit: settings.copyLimit,
           maxIterations: settings.loopLimit,
           // The agent's own setting, then the tool's (agent tool approval
           // design, section 3). The agent is the one this run started with.
-          needsApproval: (tool) =>
-            toolApproval(this.store.db, tool, agent).ask &&
-            (alwaysAsks(tool) ||
-              !this.store.isToolAllowedForSession(sessionId, tool.name)),
+          // For a call with a subject (a workspace), a grant for that tool
+          // and subject skips the question unless the tool always asks or
+          // the agent's setting asks; "for this session" is per subject too
+          // (files unification design, D27, D39).
+          needsApproval: (tool, subject) => {
+            const setting = toolApproval(this.store.db, tool, agent);
+            if (!setting.ask) return false;
+            if (alwaysAsks(tool)) return true;
+            const w = this.options.workspaces;
+            if (subject && w) {
+              if (
+                !setting.byAgent &&
+                w.isSubjectGranted(tool.name, subject.kind, subject.id)
+              ) {
+                return false;
+              }
+              return !w.isSubjectAllowedForSession(
+                sessionId,
+                tool.name,
+                subject.kind,
+                subject.id,
+              );
+            }
+            return !this.store.isToolAllowedForSession(sessionId, tool.name);
+          },
           agentDecides: (tool) =>
             toolApproval(this.store.db, tool, agent).byAgent,
           approve: (req, signal, hooks) =>

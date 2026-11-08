@@ -13,6 +13,7 @@ import {
   skillKeys,
   toolKeys,
   trashKeys,
+  workspaceKeys,
 } from "./index";
 
 type Keys = Record<string, readonly unknown[]>;
@@ -264,6 +265,32 @@ describe("tool, model and error keys", () => {
   it("a model without a name and the default model share a key", () => {
     expect(modelKeys.reasoningLevel(null)).toEqual(
       modelKeys.reasoningLevel(undefined),
+    );
+  });
+
+  it("workspaces: one prefix reaches lists, attachments, grants and files", async () => {
+    const keys: Keys = {
+      list: workspaceKeys.list(false),
+      trash: workspaceKeys.list(true),
+      projectAttached: workspaceKeys.attached("projects", "p1"),
+      sessionAttached: workspaceKeys.attached("sessions", "s1"),
+      grants: workspaceKeys.grants(),
+      dirs: workspaceKeys.dirs("/a"),
+      file: workspaceKeys.file("s1", "workspace://w1/a.png"),
+      agents: agentKeys.all,
+    };
+    expect(await reach(workspaceKeys.lists(), keys)).toEqual(["list", "trash"]);
+    expect(await reach(workspaceKeys.attached("sessions", "s1"), keys)).toEqual(
+      ["sessionAttached"],
+    );
+    expect(await reach(workspaceKeys.attachedAll(), keys)).toEqual([
+      "projectAttached",
+      "sessionAttached",
+    ]);
+    expect(await reach(workspaceKeys.all, keys)).toEqual(
+      Object.keys(keys)
+        .filter((k) => k !== "agents")
+        .sort(),
     );
   });
 });

@@ -74,6 +74,7 @@ Defined in `main.tsx`; every page renders inside `Layout`.
 | `/projects/$projectId`                                      | Project page (name, description, its sessions)                |
 | `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files and notes, agents, skills, schemas and data |
 | `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                 |
+| `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants     |
 | `/errors`                                                   | Errors console across all sessions                            |
 | `/settings`                                                 | Settings                                                      |
 
@@ -140,7 +141,7 @@ update that child's state without touching the parent's.
 
 Mounted once in `Layout`. It subscribes to `/api/events` and invalidates the
 matching query families on `agents.changed`, `skills.changed`, `data.changed`,
-`projects.changed` and `errors.changed`. Since these events are not replayed, it
+`projects.changed`, `workspaces.changed` and `errors.changed`. Since these events are not replayed, it
 also refetches agents, skills, errors, projects and data **every time the stream
 opens**. This is how a change made in one window, or by a tool, appears in every
 other window.
@@ -268,6 +269,20 @@ allow a tool before it is switched off.
 In the session context, edits to session-scoped files, notes and data go through
 `…/sessions/:id/…` routes and become **edit messages** in the transcript. They
 are disabled while a run is active.
+
+## Workspaces
+
+The Workspaces page (`Workspaces.tsx`) lists workspaces with their folder and a
+writable or read-only badge; a form creates or edits one (name, folder, writable)
+and a folder browser (`GET /api/fs/dirs`) picks the folder. _Move to trash_ never
+touches the folder; _Show the trash_ lists them with _Restore_. Below, _Always
+allowed_ lists the grants and removes one. `AttachedWorkspaces` attaches and
+detaches workspaces, with _Read-only here_; it is on the project page and in the
+session's Workspaces tab, where the project's are shown and cannot be detached.
+The approval dialog names the workspace for such a call, and its _Allow for this
+session_ and _Always allow this tool_ buttons say they cover that workspace. A
+workspace image or audio file a tool read is fetched with the token and shown in
+the chat. Settings has the workspace read size.
 
 ## Debugging views
 

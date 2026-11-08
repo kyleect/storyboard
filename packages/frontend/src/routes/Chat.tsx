@@ -71,6 +71,7 @@ import { FilesPanel, NotesPanel } from "./Entries";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
+import { AttachedWorkspaces } from "./Workspaces";
 import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
 import { CopyDebugButton, DebugPanel } from "./DebugPanel";
@@ -610,6 +611,7 @@ export function Chat() {
             <Tabs.Tab value="files">Files</Tabs.Tab>
             <Tabs.Tab value="memory">Memory</Tabs.Tab>
             <Tabs.Tab value="data">Data</Tabs.Tab>
+            <Tabs.Tab value="workspaces">Workspaces</Tabs.Tab>
             <Tabs.Tab value="debug">Debug</Tabs.Tab>
           </Tabs.List>
         </Tabs>
@@ -618,6 +620,12 @@ export function Chat() {
           <ScrollArea style={{ flex: 1 }}>
             {tab === "debug" ? (
               <DebugPanel sessionId={sessionId} />
+            ) : tab === "workspaces" ? (
+              <AttachedWorkspaces
+                owner="sessions"
+                id={sessionId}
+                disabled={trashed}
+              />
             ) : tab === "data" ? (
               <SchemasAndData
                 owner={{ scope: "session", id: sessionId }}

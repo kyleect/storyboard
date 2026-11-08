@@ -54,6 +54,14 @@ export type AppEvent =
     }
   | {
       /**
+       * A workspace, an attachment or a "Always allow" grant for one changed
+       * (files unification design): windows refetch them.
+       */
+      type: "workspaces.changed";
+      data: Record<string, never>;
+    }
+  | {
+      /**
        * An error was recorded, or errors were cleared (error reporting
        * plan, P6).
        */

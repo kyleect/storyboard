@@ -1,17 +1,25 @@
 /*
  * Placeholders in the prompts the user writes (placeholders design). A
  * placeholder is `{{skills}}`, `{{tools}}`, `{{schemas}}`, `{{data}}` or
- * `{{agents}}` (schemas and data design, decision 39); it is replaced, when a
+ * `{{agents}}` (schemas and data design, decision 39) or `{{workspaces}}`
+ * (files unification design, D39); it is replaced, when a
  * run starts, with what the run has access to. `{{date}}` and `{{time}}` are
  * replaced with the date and the time of day the run starts.
  */
 
 export type PlaceholderName =
-  "skills" | "tools" | "schemas" | "data" | "agents" | "date" | "time";
+  | "skills"
+  | "tools"
+  | "schemas"
+  | "data"
+  | "agents"
+  | "workspaces"
+  | "date"
+  | "time";
 
 /** A placeholder, with spaces inside the braces allowed. */
 const PLACEHOLDER =
-  /\{\{\s*(skills|tools|schemas|data|agents|date|time)\s*\}\}/g;
+  /\{\{\s*(skills|tools|schemas|data|agents|workspaces|date|time)\s*\}\}/g;
 
 /**
  * What `{{date}}` expands to: the weekday and the date, such as `Friday,
@@ -109,5 +117,24 @@ export function agentsList(
       const description = a.description.replace(/\s+/g, " ").trim();
       return `- (${a.id}) ${a.name}${description === "" ? "" : `: ${description}`}`;
     })
+    .join("\n");
+}
+
+/**
+ * What `{{workspaces}}` expands to: one line per workspace the run has, with
+ * its reference and whether it can be changed. Empty for none.
+ */
+export function workspacesList(
+  workspaces: readonly {
+    id: string;
+    name: string;
+    effectiveWritable: boolean;
+  }[],
+): string {
+  return workspaces
+    .map(
+      (w) =>
+        `- ${w.name}: workspace://${w.id}/ (${w.effectiveWritable ? "can be changed" : "read-only"})`,
+    )
     .join("\n");
 }

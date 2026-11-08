@@ -17,6 +17,7 @@ import { projectKeys, sessionKeys } from "../queries";
 import { DefaultAgentSelect } from "./Agents";
 import { EditableTitle } from "./EditableTitle";
 import { UsageBadge } from "./ContextMeter";
+import { AttachedWorkspaces } from "./Workspaces";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
 
 /**
@@ -132,12 +133,14 @@ export function ProjectPage() {
       <SavedText
         key={`p:${project.data.system_prompt}`}
         label="System prompt"
-        help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
+        help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}}, {{agents}} or {{workspaces}} to put the list of skills, tools, schemas, data, agents (the ones it can start) or workspaces the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
         what="system prompt"
         initial={project.data.system_prompt}
         disabled={trashed}
         onSave={(systemPrompt) => save({ systemPrompt })}
       />
+
+      <AttachedWorkspaces owner="projects" id={projectId} disabled={trashed} />
 
       <Group justify="space-between">
         <Title order={4}>Sessions</Title>

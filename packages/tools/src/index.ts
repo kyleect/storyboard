@@ -8,6 +8,7 @@ import { projectTools } from "./projects.js";
 import { schemaDataTools } from "./schemas-data.js";
 import { skillTools } from "./skills.js";
 import { subagentTools } from "./subagents.js";
+import { workspaceTools } from "./workspaces.js";
 import { webSearch, readWebpage, readWiki } from "./web.js";
 
 export { askUser, currentDate, currentTime };
@@ -18,6 +19,7 @@ export * from "./agents.js";
 export * from "./skills.js";
 export * from "./subagents.js";
 export * from "./schemas-data.js";
+export * from "./workspaces.js";
 
 /** Every tool. Each session gets all of them for now (tools design 6.11). */
 export const allTools: readonly Tool[] = [
@@ -34,4 +36,5 @@ export const allTools: readonly Tool[] = [
   ...subagentTools,
   ...skillTools,
   ...schemaDataTools,
+  ...workspaceTools,
 ];

@@ -477,7 +477,7 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([22, 23, 24, 25, 26, 27, 28]);
+    expect(migrate(db, all)).toEqual([22, 23, 24, 25, 26, 27, 28, 29]);
 
     const cols = (table: string) =>
       (
@@ -577,11 +577,15 @@ describe("loadMigrations", () => {
       "schema_versions",
       "schemas",
       "search_index_state",
+      "session_subject_approvals",
       "session_tool_approvals",
       "sessions",
       "settings",
       "skill_versions",
       "skills",
+      "tool_subject_grants",
+      "workspace_attachments",
+      "workspaces",
     ]);
     expect(migrate(db, loadMigrations(MIGRATIONS_DIR))).toEqual([]);
   });

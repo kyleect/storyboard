@@ -50,6 +50,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
     schemas: "- S.",
     data: "- S: D.",
     agents: "- (a1) Ed: Edits.",
+    workspaces: "- Notes: workspace://w1/ (read-only)",
     date: "Friday, November 6, 2026",
     time: "14:32 UTC",
   };
@@ -104,6 +105,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
       schemas: "",
       data: "",
       agents: "",
+      workspaces: "",
       date: "",
       time: "",
     });
@@ -118,6 +120,7 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
         schemas: "",
         data: "",
         agents: "",
+        workspaces: "",
         date: "",
         time: "",
       }),

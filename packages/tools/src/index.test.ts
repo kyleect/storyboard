@@ -49,6 +49,16 @@ describe("allTools", () => {
       "data_migrate",
       "data_migrate_many",
       "data_delete",
+      "workspaces_list",
+      "workspace_list",
+      "workspace_read",
+      "workspace_write",
+      "workspace_edit",
+      "workspace_move",
+      "workspace_delete",
+      "workspace_folder_create",
+      "workspace_folder_rename",
+      "workspace_folder_delete",
     ]);
   });
 
@@ -97,6 +107,18 @@ describe("allTools", () => {
         "data_migrate_many",
         "data_delete",
       ],
+      workspaces: [
+        "workspaces_list",
+        "workspace_list",
+        "workspace_read",
+        "workspace_write",
+        "workspace_edit",
+        "workspace_move",
+        "workspace_delete",
+        "workspace_folder_create",
+        "workspace_folder_rename",
+        "workspace_folder_delete",
+      ],
       projects: ["projects_list", "project_view", "project_create"],
       agents: ["agents_list", "agent_view"],
       subagents: ["start_subagent", "subagent_handback"],
@@ -115,8 +137,33 @@ describe("allTools", () => {
     ]);
   });
 
-  it("has no tool that needs review yet", () => {
-    expect(allTools.filter((t) => t.needsReview)).toEqual([]);
+  it("marks the workspace tools that change something as needing review", () => {
+    expect(allTools.filter((t) => t.needsReview).map((t) => t.name)).toEqual([
+      "workspace_write",
+      "workspace_edit",
+      "workspace_move",
+      "workspace_delete",
+      "workspace_folder_create",
+      "workspace_folder_rename",
+      "workspace_folder_delete",
+    ]);
+    // Reading and listing never ask; changes always do, per workspace.
+    for (const t of allTools.filter((t) => t.group === "workspaces")) {
+      expect(t.approval, t.name).toBe(t.needsReview ? "ask" : "never");
+      expect(t.approvalSubject !== undefined, t.name).toBe(t.needsReview);
+    }
+  });
+
+  it("offers the workspace tools only to a run with a workspace", () => {
+    for (const t of allTools.filter((t) => t.group === "workspaces")) {
+      const run = {
+        hasSkills: false,
+        isChild: false,
+        canStartSubagent: false,
+      };
+      expect(t.available?.(run), t.name).toBe(false);
+      expect(t.available?.({ ...run, hasWorkspaces: true }), t.name).toBe(true);
+    }
   });
 
   it("makes the three conditional tools depend on the run", () => {
@@ -136,6 +183,7 @@ describe("allTools", () => {
     );
     const others = allTools.filter(
       (t) =>
+        t.group !== "workspaces" &&
         !["skill_load", "subagent_handback", "start_subagent"].includes(t.name),
     );
     for (const t of others) expect(t.available, t.name).toBeUndefined();

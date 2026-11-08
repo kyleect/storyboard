@@ -888,7 +888,13 @@ describe("with llama-server's wire format", () => {
     expect(first.tools.map((x) => x.function.name)).toEqual(
       allTools
         .map((t) => t.name)
-        .filter((n) => n !== "subagent_handback" && n !== "skill_load"),
+        .filter(
+          (n) =>
+            n !== "subagent_handback" &&
+            n !== "skill_load" &&
+            // Offered only to a session with a workspace attached.
+            !n.startsWith("workspace"),
+        ),
     );
     expect(first.tools[0]?.function.parameters).toEqual({
       type: "object",

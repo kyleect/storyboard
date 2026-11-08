@@ -23,6 +23,7 @@ import {
   projectKeys,
   sessionKeys,
   skillKeys,
+  workspaceKeys,
   toolKeys,
   trashKeys,
 } from "./queries";
@@ -544,6 +545,11 @@ type AppEvent =
       /** Global, project or agent data changed (schemas and data design). */
       type: "data.changed";
       data: Record<string, never>;
+    }
+  | {
+      /** A workspace, attachment or grant changed (files unification design). */
+      type: "workspaces.changed";
+      data: Record<string, never>;
     };
 
 /**
@@ -568,6 +574,8 @@ export function useAppEvents() {
       void queryClient.invalidateQueries({ queryKey: errorKeys.all });
     const refreshProjects = () =>
       void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+    const refreshWorkspaces = () =>
+      void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
     const refreshData = () =>
       void queryClient.invalidateQueries({ queryKey: dataKeys.all });
     // A server's tools come and go with its connection, so the tool lists
@@ -594,6 +602,7 @@ export function useAppEvents() {
         refreshProjects();
         refreshData();
         refreshMcp();
+        refreshWorkspaces();
       };
       source.onmessage = (msg: MessageEvent<string>) => {
         const event = JSON.parse(msg.data) as AppEvent;
@@ -608,6 +617,10 @@ export function useAppEvents() {
         }
         if (event.type === "skills.changed") {
           refreshSkills();
+          return;
+        }
+        if (event.type === "workspaces.changed") {
+          refreshWorkspaces();
           return;
         }
         if (event.type === "data.changed") {

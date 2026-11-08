@@ -92,6 +92,11 @@ export const Settings = z.object({
    */
   keepMediaInline: z.boolean(),
   /**
+   * The most characters one workspace file read returns (files unification
+   * design, D47, D55). The agent reads the rest with offset and limit.
+   */
+  workspaceReadCap: z.number().int().min(100),
+  /**
    * The agent whose prompt writes the text of an image or audio file
    * (files unification design, D43). Empty: nothing is generated.
    */
@@ -161,6 +166,7 @@ These are the agents available to you. If none appear below, then there are no a
   subagentDepth: 2,
   inlineMediaCap: 4,
   keepMediaInline: false,
+  workspaceReadCap: 10_000,
   mediaDescriberAgent: "builtin-media-describer",
   mediaDescriberModel: "",
 };
@@ -186,6 +192,7 @@ const ENV: Record<keyof Settings, string> = {
   subagentDepth: "HARNESS_SUBAGENT_DEPTH",
   inlineMediaCap: "HARNESS_INLINE_MEDIA_CAP",
   keepMediaInline: "HARNESS_KEEP_MEDIA_INLINE",
+  workspaceReadCap: "HARNESS_WORKSPACE_READ_CAP",
   mediaDescriberAgent: "HARNESS_MEDIA_DESCRIBER_AGENT",
   mediaDescriberModel: "HARNESS_MEDIA_DESCRIBER_MODEL",
 };
@@ -198,6 +205,7 @@ const NUMERIC = new Set<keyof Settings>([
   "childReminders",
   "subagentDepth",
   "inlineMediaCap",
+  "workspaceReadCap",
 ]);
 
 const BOOLEAN = new Set<keyof Settings>(["autoRename", "keepMediaInline"]);

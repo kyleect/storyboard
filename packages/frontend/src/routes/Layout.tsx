@@ -320,6 +320,13 @@ export function Layout() {
               px="md"
               py="xs"
               fw="bold"
+              renderRoot={(props) => <Link {...props} to="/workspaces" />}
+              label="Workspaces"
+            />
+            <NavLink
+              px="md"
+              py="xs"
+              fw="bold"
               renderRoot={(props) => <Link {...props} to="/errors" />}
               label="Errors"
             />

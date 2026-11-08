@@ -21,7 +21,7 @@ import {
   attachmentMediaType,
   MAX_ATTACHMENT_BYTES,
 } from "../attachments";
-import { blobKeys, entryKeys, sessionKeys } from "../queries";
+import { blobKeys, entryKeys, sessionKeys, workspaceKeys } from "../queries";
 
 /*
  * Files attached to messages: choosing and uploading them in the composer,
@@ -320,8 +320,73 @@ export function MessageFiles({ files }: { files: readonly string[] }) {
   );
 }
 
+/** An image or audio file in a workspace, fetched from disk by the backend. */
+function WorkspaceFile({
+  sessionId,
+  refText,
+  label,
+}: {
+  sessionId: string;
+  refText: string;
+  label: string;
+}) {
+  const bytes = useQuery({
+    queryKey: workspaceKeys.file(sessionId, refText),
+    queryFn: () => api.workspaceFileUrl(sessionId, refText),
+    // The object URL has to stay valid for as long as the page is open.
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  });
+  if (bytes.isPending)
+    return <Loader size="xs" aria-label={`Loading ${label}`} />;
+  if (bytes.isError) {
+    return (
+      <Text size="xs" c="dimmed">
+        {label} is no longer available.
+      </Text>
+    );
+  }
+  if (mediaKindOf(bytes.data.mediaType) === "image") {
+    return (
+      <Image
+        src={bytes.data.url}
+        alt={label}
+        maw={320}
+        mah={240}
+        fit="contain"
+        radius="sm"
+      />
+    );
+  }
+  return (
+    <Stack gap={2}>
+      <Text size="xs" c="dimmed">
+        {label}
+      </Text>
+      <audio controls src={bytes.data.url} aria-label={label} />
+    </Stack>
+  );
+}
+
 /** A file a message names: shown when it can be found, named otherwise. */
 function StoredFile({ refText }: { refText: string }) {
+  const where = useContext(SessionFilesContext);
+  const parsed = parseRef(refText);
+  if (where && parsed?.location === "workspace") {
+    return (
+      <WorkspaceFile
+        sessionId={where.sessionId}
+        refText={refText}
+        label={parsed.path}
+      />
+    );
+  }
+  return <ScopeFile refText={refText} />;
+}
+
+/** A session, project or global file, found in its scope's list. */
+function ScopeFile({ refText }: { refText: string }) {
   const where = useContext(SessionFilesContext);
   const parsed = parseRef(refText);
   const scope: EntryScope | undefined =

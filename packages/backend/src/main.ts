@@ -27,6 +27,7 @@ import { modelMediaSupport } from "./media-support.js";
 import { McpServerStore } from "./mcp-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
+import { WorkspaceStore } from "./workspaces-store.js";
 import { SkillStore } from "./skills-store.js";
 import { SearchIndex } from "./search-index.js";
 import { sessionSearch } from "./search.js";
@@ -57,6 +58,7 @@ async function main() {
   const entries = new EntryStore(db, undefined, undefined, index);
   const agents = new AgentStore(db);
   const skills = new SkillStore(db);
+  const workspaces = new WorkspaceStore(db);
   const data = new DataStore(db, schemaChecker);
   const settings = () => readSettings(db).effective;
   const embed = (model: string, texts: string[], signal?: AbortSignal) =>
@@ -93,6 +95,7 @@ async function main() {
     dynamicTools: () => mcp.tools,
     agents,
     skills,
+    workspaces,
     skillsPrompt: skillsInstruction,
     skillsList,
     entries,
@@ -134,6 +137,7 @@ async function main() {
     agents,
     describer,
     skills,
+    workspaces,
     data,
     token,
     mcp: { store: mcpStore, manager: mcp },

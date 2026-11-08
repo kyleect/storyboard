@@ -84,6 +84,7 @@ function mainSettings(s: SettingsShape): MainSettings {
     embeddingModel: s.embeddingModel,
     inlineMediaCap: s.inlineMediaCap,
     keepMediaInline: s.keepMediaInline,
+    workspaceReadCap: s.workspaceReadCap,
   };
 }
 
@@ -138,6 +139,7 @@ export function Settings() {
       embeddingModel: "",
       inlineMediaCap: 0,
       keepMediaInline: false,
+      workspaceReadCap: 100,
     },
     validate: {
       llamaServerUrl: (v) =>
@@ -154,6 +156,8 @@ export function Settings() {
         Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
       inlineMediaCap: (v) =>
         Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+      workspaceReadCap: (v) =>
+        Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
     },
   });
 
@@ -290,6 +294,17 @@ export function Settings() {
             disabled={!!env.keepMediaInline}
             {...form.getInputProps("keepMediaInline", { type: "checkbox" })}
           />
+          <NumberInput
+            label="Workspace read size"
+            description={
+              envNote("workspaceReadCap") ??
+              "The most characters of a workspace file one read returns. Longer files come back in parts: the agent reads the rest with an offset."
+            }
+            allowDecimal={false}
+            min={100}
+            disabled={!!env.workspaceReadCap}
+            {...form.getInputProps("workspaceReadCap")}
+          />
           <Text size="xs" c="dimmed">
             Saved to the database. Environment variables, when set, take
             precedence.
@@ -345,7 +360,7 @@ function SystemPrompt({ view }: { view: SettingsView }) {
           label="Global system prompt"
           description={
             envNote("systemPrompt") ??
-            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}} or {{agents}} to put the list of skills, tools, schemas, data or agents (the ones it can start) the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
+            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}}, {{agents}} or {{workspaces}} to put the list of skills, tools, schemas, data, agents (the ones it can start) or workspaces the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
           }
           autosize
           minRows={4}

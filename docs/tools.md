@@ -62,6 +62,7 @@ The groups, in display order, are defined by `TOOL_GROUPS` in core:
 | Group (id)                          | Tools                                                             |
 | ----------------------------------- | ----------------------------------------------------------------- |
 | Files (`files`)                     | `files_*`, including `files_copy` and `files_move`                |
+| Workspaces (`workspaces`)           | `workspaces_list`, `workspace_*`                                  |
 | Memory (`memory`)                   | `memory_*`, including `memory_copy` and `memory_move`             |
 | Structured Data (`structured-data`) | `schemas_list`, `schema_*`, `data_*`                              |
 | Projects (`projects`)               | `projects_list`, `project_view`, `project_create`                 |
@@ -81,9 +82,10 @@ Three more facts are declared on each tool:
   memory tools are in tool groups, so an agent gets them through its grant.
 - **`needsReview`**: the tool is destructive or changes prompts, so a group grant
   does not cover it; an agent has it only when it is listed on its own. An MCP
-  tool sets it unless its server marks it read-only.
-- **`available(run)`**: a function of the run's facts (`hasSkills`, `isChild`,
-  `canStartSubagent`). A tool whose function returns false is not offered in
+  tool sets it unless its server marks it read-only. So do the workspace tools
+  that change something: an agent in deny mode has them off until they are given.
+- **`available(run)`**: a function of the run's facts (`hasSkills`, `hasWorkspaces`,
+  `isChild`, `canStartSubagent`). A tool whose function returns false is not offered in
   that run.
 
 ## The tools
@@ -146,6 +148,31 @@ another project can be read.
 `entriesInstruction(inProject)` produces the fixed system-message paragraph that
 explains files, memory, scopes and the copy tools to the model, ending with
 whether the session is in a project.
+
+### Workspaces
+
+A workspace is a folder on the user's computer, attached to a project or a
+session (see [backend.md](backend.md#workspaces)). Its files are named by a
+reference, `workspace://<id>/path`; when only one workspace is attached a plain
+path works. The tools are offered only to a run whose session has a workspace.
+Reading and listing never ask. Every tool that changes something asks, and asks
+per workspace: the prompt names it, and _Allow for this session_ and _Always
+allow this tool_ cover that tool in that workspace only.
+
+| Tool                                                                              | Approval | What it does                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspaces_list`                                                                 | never    | The workspaces the session has: id, name, whether it can be changed, and its reference.                                                                                                                     |
+| `workspace_list`                                                                  | never    | Files and folders in a folder (size, modified time), optionally `recursive` (cut at 2,000 entries).                                                                                                         |
+| `workspace_read`                                                                  | never    | Reads a text file in parts: `offset` and `limit` in characters, never more than the read-size setting (default 10,000). An image or audio file is shown to the model like `files_read` does (up to 20 MiB). |
+| `workspace_write`                                                                 | ask      | Creates a text file (and the folders on the way) or replaces one. A file that exists must have been read in this session and not changed since.                                                             |
+| `workspace_edit`                                                                  | ask      | Replaces exact text once, or everywhere with `replaceAll`. Same read-first rule.                                                                                                                            |
+| `workspace_move`                                                                  | ask      | Renames or moves a file inside the workspace. Never overwrites.                                                                                                                                             |
+| `workspace_delete`                                                                | ask      | Deletes a file.                                                                                                                                                                                             |
+| `workspace_folder_create` / `workspace_folder_rename` / `workspace_folder_delete` | ask      | Create, rename or delete a folder. Deleting one with files in it needs `recursive`; the workspace's top folder cannot be deleted.                                                                           |
+
+A path that leaves the folder, by `..` or by a symlink, is refused. The tool
+then asks the user, in a form, whether to allow that one path; the answer is not
+remembered, and a change still asks for its own approval.
 
 ### Projects and agents
 
@@ -256,6 +283,8 @@ run (see [backend.md](backend.md#which-tools-a-run-gets)):
 - A tool switched **off** in Settings is dropped.
 - A tool whose `available(run)` returns false is dropped. In the tools package:
   - `skill_load` needs a skill in scope (`hasSkills`).
+  - The workspace tools need a workspace attached to the session or its project
+    (`hasWorkspaces`).
   - `subagent_handback` needs a child run (`isChild`).
   - `start_subagent` needs the subagent depth limit not to be reached
     (`canStartSubagent`).

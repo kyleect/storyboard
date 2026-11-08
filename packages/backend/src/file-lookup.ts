@@ -14,15 +14,23 @@ import type { Store } from "./store.js";
 /*
  * Finds the file a reference names (files unification design, D5, D7), for a
  * session: `session://` in its transcript, `project://` in its project and
- * `global://` in the global scope. Workspace references are not handled
- * here.
+ * `global://` in the global scope. A workspace reference is found through
+ * `workspaces` and is only ever an image or audio file.
  */
 
 export interface FoundFile {
   mediaType: MediaType;
   /** Binary files only. */
   blob?: BlobRef;
+  /** A workspace media file: its bytes are on disk, read when needed. */
+  bytes?: () => Buffer | undefined;
 }
+
+/** Finds a media file in a workspace the session has. */
+export type WorkspaceMedia = (
+  id: string,
+  path: string,
+) => { mediaType: string; bytes: () => Buffer | undefined } | undefined;
 
 /**
  * A lookup for one session. The transcript is read the first time a session
@@ -32,6 +40,7 @@ export function fileLookup(
   store: Store,
   entries: EntryStore | undefined,
   sessionId: string,
+  workspaces?: WorkspaceMedia,
 ): (ref: string) => FoundFile | undefined {
   let state: SessionEntries | undefined;
   let seen = -1;
@@ -40,7 +49,13 @@ export function fileLookup(
   );
   return (ref) => {
     const parsed = parseRef(ref);
-    if (!parsed || parsed.location === "workspace") return undefined;
+    if (!parsed) return undefined;
+    if (parsed.location === "workspace") {
+      const file = workspaces?.(parsed.workspaceId, parsed.path);
+      return file
+        ? { mediaType: file.mediaType as MediaType, bytes: file.bytes }
+        : undefined;
+    }
     if (parsed.location === "session") {
       // Read again when messages were added since: a run adds files.
       const n = (count.get(sessionId) as { n: number }).n;
@@ -82,12 +97,20 @@ export function fileResolver(
   store: Store,
   entries: EntryStore | undefined,
   sessionId: string,
+  workspaces?: WorkspaceMedia,
 ): (ref: string) => ResolvedFile | undefined {
-  const find = fileLookup(store, entries, sessionId);
+  const find = fileLookup(store, entries, sessionId, workspaces);
   return (ref) => {
     const found = find(ref);
     const kind = found && mediaKindOf(found.mediaType);
-    if (!found?.blob || !kind) return undefined;
+    if (!found || !kind) return undefined;
+    if (found.bytes) {
+      const data = found.bytes();
+      return data
+        ? { kind, mediaType: found.mediaType, data: data.toString("base64") }
+        : undefined;
+    }
+    if (!found.blob) return undefined;
     const blob = getBlob(store.db, found.blob.hash);
     return blob
       ? {

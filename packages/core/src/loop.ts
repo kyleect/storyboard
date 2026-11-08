@@ -33,6 +33,7 @@ import type {
   Usage,
 } from "./messages.js";
 import type { MediaSupport } from "./media.js";
+import type { ApprovalSubject, WorkspaceAccess } from "./workspaces.js";
 import type { ChatRequest, ModelAdapter } from "./model.js";
 import { emitter, streamMessage, type RunContext } from "./run.js";
 import {
@@ -71,6 +72,8 @@ export interface ApprovalRequest {
    * Q9).
    */
   agentSetting?: boolean | undefined;
+  /** What the call is about, when the tool says (design, D27). */
+  subject?: ApprovalSubject | undefined;
   /** The call's changes, when the tool describes them (plan P5). */
   review?: Review | undefined;
 }
@@ -117,8 +120,11 @@ export interface LoopContext extends RunContext {
   tools: readonly Tool[];
   /** The most model calls one run makes. */
   maxIterations: number;
-  /** Whether a call to this tool needs approval. Default: the tool's own. */
-  needsApproval?: (tool: Tool) => boolean;
+  /**
+   * Whether a call to this tool needs approval, for its subject when it has
+   * one. Default: the tool's own.
+   */
+  needsApproval?: (tool: Tool, subject?: ApprovalSubject) => boolean;
   /**
    * Whether the agent's own setting for this tool decides that it asks.
    * Only asked for a tool that does not always ask. Default: no.
@@ -187,6 +193,8 @@ export interface LoopContext extends RunContext {
   mediaSupport?: MediaSupport;
   /** Stores bytes as blobs, for tools that make binary files. */
   blobs?: ToolContext["blobs"];
+  /** The workspaces the session can use. Left out: none. */
+  workspaces?: WorkspaceAccess;
   /** Generates memory note ids. Default: 16 random hex digits. */
   newNoteId?: () => string;
   /** Searches files and notes. Left out: the search tools fail. */
@@ -695,6 +703,7 @@ export async function runLoop(
       callId: call.callId,
       ...(ctx.mediaSupport ? { mediaSupport: ctx.mediaSupport } : {}),
       ...(ctx.blobs ? { blobs: ctx.blobs } : {}),
+      ...(ctx.workspaces ? { workspaces: ctx.workspaces } : {}),
       update: (partial) =>
         emit({ type: "tool.update", data: { callId: call.callId, partial } }),
       state: latestToolState(transcript, tool.name),
@@ -745,7 +754,14 @@ export async function runLoop(
       );
     let approval: ToolContext["approval"];
 
-    if (needsApproval(tool)) {
+    let subject: ApprovalSubject | undefined;
+    try {
+      subject = tool.approvalSubject?.(parsed.input, reviewContext());
+    } catch {
+      // A call that cannot name its subject asks like any other.
+      subject = undefined;
+    }
+    if (needsApproval(tool, subject)) {
       const requestId = newId();
       // The call's changes, for the prompt (plan P5).
       let plan: ReviewPlan | undefined;
@@ -802,6 +818,7 @@ export async function runLoop(
           arguments: call.arguments,
           ...(alwaysAsks ? { alwaysAsks } : {}),
           ...(agentSetting ? { agentSetting } : {}),
+          ...(subject ? { subject } : {}),
           ...(plan ? { review: plan.review } : {}),
         },
       });
@@ -816,6 +833,7 @@ export async function runLoop(
               arguments: call.arguments,
               ...(alwaysAsks ? { alwaysAsks } : {}),
               ...(agentSetting ? { agentSetting } : {}),
+              ...(subject ? { subject } : {}),
               ...(plan ? { review: plan.review } : {}),
             },
             ctx.signal,

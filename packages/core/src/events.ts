@@ -174,6 +174,18 @@ export const ToolApprovalRequested = event(
      */
     agentSetting: z.boolean().optional(),
     /**
+     * What the call is about, such as a workspace: "Allow for this session"
+     * and "Always allow" then apply to this tool and this subject only
+     * (files unification design, D27).
+     */
+    subject: z
+      .object({
+        kind: z.literal("workspace"),
+        id: z.string(),
+        label: z.string(),
+      })
+      .optional(),
+    /**
      * The changes the call would make, when the tool describes them: the
      * prompt shows them and the user can approve them one by one (schemas
      * and data design, decisions 31 to 35).
