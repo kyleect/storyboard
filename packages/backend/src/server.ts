@@ -9,6 +9,7 @@ import {
   getReasoningLevels,
   listLlamaServerModels,
   loadLlamaServerModel,
+  mediaKindOf,
   NOTE_CHOICES,
   Selection,
   type ContextSize,
@@ -18,8 +19,8 @@ import {
   type StoredEvent,
 } from "@harness/core";
 import { registerAgentRoutes } from "./agent-routes.js";
-import { registerAttachmentRoutes } from "./attachment-routes.js";
-import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachment-types.js";
+import { fileLookup } from "./file-lookup.js";
+import type { MediaDescriber } from "./media-describer.js";
 import { buildSessionDebug } from "./session-debug.js";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
@@ -64,6 +65,8 @@ export interface ServerOptions {
   entries?: EntryStore;
   /** Agents. Default: over `store.db`. */
   agents?: AgentStore;
+  /** Writes the text of images and audio. Left out: no descriptions. */
+  describer?: MediaDescriber;
   /** Skills. Default: over `store.db`. */
   skills?: SkillStore;
   /** Global, project and agent schemas and data. Default: over `store.db`. */
@@ -189,12 +192,13 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   app.get("/api/health", async () => ({ ok: true }));
 
-  registerAttachmentRoutes(app, { store, newId, now });
-
+  const entries = options.entries ?? new EntryStore(store.db, now, newId);
   registerEntryRoutes(app, {
     store,
     runs,
-    entries: options.entries ?? new EntryStore(store.db, now, newId),
+    entries,
+    now,
+    ...(options.describer ? { describer: options.describer } : {}),
   });
 
   const events = options.events ?? runs.events;
@@ -383,6 +387,38 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const session = store.getSession(id);
     if (!session) return reply.code(404).send({ error: "Session not found." });
     return buildSessionDebug(store, session, now());
+  });
+
+  /**
+   * The user's choices to keep image and audio files in the model's view in
+   * later turns, or to drop them (files unification design, D14, D40).
+   * Files with no choice follow the agent's and the global setting.
+   */
+  app.get("/api/sessions/:id/media-choices", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    if (!store.getSession(id)) {
+      return reply.code(404).send({ error: "Session not found." });
+    }
+    return store.listMediaChoices(id);
+  });
+
+  /** Sets one choice; `keep: null` clears it. 400 for a reference that is not an image or audio file. */
+  app.put("/api/sessions/:id/media-choices", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { ref, keep } = z
+      .object({ ref: z.string().min(1), keep: z.boolean().nullable() })
+      .parse(req.body);
+    if (!store.getSession(id)) {
+      return reply.code(404).send({ error: "Session not found." });
+    }
+    const found = fileLookup(store, entries, id)(ref);
+    if (!found?.blob || mediaKindOf(found.mediaType) === undefined) {
+      return reply.code(400).send({
+        error: `${ref} is not an image or audio file this session can reach.`,
+      });
+    }
+    store.setMediaChoice(id, ref, keep);
+    return { ref, keep };
   });
 
   /**
@@ -653,41 +689,36 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
-   * Sends a message and starts a run that answers it. `attachmentIds` are
-   * files uploaded to this session (POST /api/sessions/:id/attachments); a
-   * message needs text or at least one of them. 400 for an id that was not
-   * uploaded to this session.
+   * Sends a message and starts a run that answers it. `files` are references
+   * to image or audio files the session can reach, such as `session://cat.png`
+   * (uploaded with POST /api/sessions/:id/files); a message needs text or at
+   * least one of them. 400 for a reference that is not such a file.
    */
   app.post("/api/sessions/:id/messages", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const { content, attachmentIds, ...choices } = Choices.extend({
+    const { content, files, ...choices } = Choices.extend({
       content: z.string(),
-      attachmentIds: z
-        .array(z.string())
-        .max(MAX_ATTACHMENTS_PER_MESSAGE)
-        .optional(),
+      files: z.array(z.string()).optional(),
     })
-      .refine(
-        (m) => m.content.length > 0 || (m.attachmentIds?.length ?? 0) > 0,
-        {
-          message: "The message is empty.",
-          path: ["content"],
-        },
-      )
+      .refine((m) => m.content.length > 0 || (m.files?.length ?? 0) > 0, {
+        message: "The message is empty.",
+        path: ["content"],
+      })
       .parse(req.body);
-    const attachments = [];
-    for (const attachmentId of new Set(attachmentIds ?? [])) {
-      const attachment = store.getSessionAttachment(id, attachmentId);
-      if (!attachment) {
+    const find = fileLookup(store, entries, id);
+    const refs: string[] = [];
+    for (const ref of new Set(files ?? [])) {
+      const found = find(ref);
+      if (!found?.blob || mediaKindOf(found.mediaType) === undefined) {
         return reply.code(400).send({
-          error: `Attachment ${attachmentId} was not uploaded to this session.`,
+          error: `${ref} is not an image or audio file this session can reach.`,
         });
       }
-      attachments.push(attachment);
+      refs.push(ref);
     }
     return reply
       .code(202)
-      .send(runs.sendMessage(id, content, defined(choices), attachments));
+      .send(runs.sendMessage(id, content, defined(choices), refs));
   });
 
   app.post("/api/sessions/:id/continue", async (req, reply) => {

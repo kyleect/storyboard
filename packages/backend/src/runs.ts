@@ -17,7 +17,6 @@ import {
   type ChatRequest,
   type ContentBlock,
   type ControlResult,
-  type Attachment,
   type HarnessEvent,
   type Message,
   type RunAgent,
@@ -29,6 +28,7 @@ import {
   type ToolResultMessage,
   type UserMessage,
   type LoopResult,
+  type MediaSupport,
   type SubagentOutcome,
   type Usage,
   dataEditNotice,
@@ -46,6 +46,13 @@ import { ErrorStore, type NewError } from "./errors-store.js";
 import { cleanTitle, requestTitle } from "./auto-title.js";
 import type { Settings } from "./settings.js";
 import type { EntryStore } from "./entries-store.js";
+import { putBlob } from "./blobs.js";
+import {
+  getDerived,
+  indexedText,
+  type MediaDescriber,
+} from "./media-describer.js";
+import { fileLookup, fileResolver } from "./file-lookup.js";
 import type { SearchIndex } from "./search-index.js";
 import {
   DEFAULT_TITLE,
@@ -175,6 +182,13 @@ export interface RunManagerOptions {
    * added after `tools`. A name already in `tools` is not replaced.
    */
   dynamicTools?: () => readonly Tool[];
+  /**
+   * What a model can read: images, audio. Undefined: not known, so media is
+   * sent and the server may refuse it. Left out: not known for any model.
+   */
+  mediaSupport?: (model: string | null) => Promise<MediaSupport | undefined>;
+  /** Describes images and audio that tools save (files unification design, D43). */
+  describer?: MediaDescriber;
   /** Agents. Left out: sessions cannot pick one. */
   agents?: AgentStore;
   /** Skills. Left out: no run has any. */
@@ -278,6 +292,8 @@ interface ChildStart {
   /** The agent the parent run uses, which cannot start itself; null: none. */
   parentAgentId: string | null;
   task: string;
+  /** Image or audio files attached to the task message. */
+  files?: string[];
   depth: number;
   /** The parent run's signal. */
   signal: AbortSignal;
@@ -456,12 +472,12 @@ export class RunManager {
     sessionId: string,
     content: string,
     choices: RunChoices = {},
-    attachments: readonly Attachment[] = [],
+    files: readonly string[] = [],
   ): { runId: string } {
     this.requireIdle(sessionId);
     this.checkAgentChoice(sessionId, choices);
     this.store.setSessionChoices(sessionId, choices);
-    // A message of attachments only has no text to title the session from.
+    // A message of files only has no text to title the session from.
     const rename = this.wantsAutoRename(sessionId) && content.trim() !== "";
     this.store.addMessage(
       sessionId,
@@ -469,7 +485,7 @@ export class RunManager {
       {
         role: "user",
         content,
-        ...(attachments.length > 0 ? { attachments: [...attachments] } : {}),
+        ...(files.length > 0 ? { files: [...files] } : {}),
       },
       this.now(),
     );
@@ -1041,12 +1057,18 @@ export class RunManager {
   /** Keeps the search index in step with session-scoped changes. */
   private indexSessionOps(sessionId: string, ops: readonly EntryOp[]) {
     for (const op of ops) {
+      if (op.op === "folder") continue;
       this.options.index?.indexEntry(
         op.kind,
         "session",
         sessionId,
         op.key,
-        op.op === "put" ? op.value : null,
+        // A binary file is found by its derived text, when it has one.
+        op.op === "put"
+          ? op.blob
+            ? indexedText(getDerived(this.store.db, op.blob.hash))
+            : op.value
+          : null,
       );
     }
   }
@@ -1429,6 +1451,7 @@ export class RunManager {
         role: "user",
         content: child.task,
         source: "task",
+        ...(child.files?.length ? { files: child.files } : {}),
       };
       saveMessage(taskId, task);
     }
@@ -1441,10 +1464,9 @@ export class RunManager {
           .map((m) => m.message),
       ],
       control,
-      // Attachments are kept apart from the messages; their bytes are read
-      // when a request is made.
-      resolveAttachment: (a) =>
-        this.store.getAttachmentData(a.id)?.data.toString("base64"),
+      // A message names its files by reference; their bytes are read when a
+      // request is made.
+      resolveFile: fileResolver(this.store, this.options.entries, sessionId),
       ...(generation.model ? { model: generation.model } : {}),
       ...(generation.reasoningEffort
         ? { reasoningEffort: generation.reasoningEffort }
@@ -1456,8 +1478,46 @@ export class RunManager {
     const execute = async (): Promise<LoopResult | undefined> => {
       let loopResult: LoopResult | undefined;
       try {
+        // Image and audio handling for this run: what the model reads, and
+        // the policy that decides which media is in each request (files
+        // unification design, D14, D40). Choices and files are read for each
+        // request, so a change during a run is seen by the next one.
+        const support = await this.options
+          .mediaSupport?.(generation.model)
+          .catch(() => undefined);
+        const find = fileLookup(this.store, this.options.entries, sessionId);
+        request.media = {
+          cap: settings.inlineMediaCap,
+          keepDefault: settings.keepMediaInline,
+          choices: {
+            get: (ref) => this.store.getMediaChoice(sessionId, ref),
+          },
+          support,
+          info: (ref) => {
+            const found = find(ref);
+            if (!found?.blob) return undefined;
+            const text = getDerived(this.store.db, found.blob.hash)?.text;
+            return {
+              mediaType: found.mediaType,
+              ...(text ? { derivedText: text } : {}),
+            };
+          },
+        };
         const result = await runLoop(this.options.model(settings), request, {
           runId,
+          ...(support ? { mediaSupport: support } : {}),
+          blobs: {
+            put: (mediaType, data) => {
+              const blob = putBlob(
+                this.store.db,
+                mediaType,
+                Buffer.from(data),
+                this.now(),
+              );
+              this.options.describer?.describeNew(blob.hash);
+              return blob;
+            },
+          },
           sessionId,
           emit,
           signal: controller.signal,
@@ -1484,13 +1544,14 @@ export class RunManager {
           subagents: {
             depth,
             canStart: depth < settings.subagentDepth,
-            start: ({ agentId, task, callId }) =>
+            start: ({ agentId, task, files, callId }) =>
               this.startChild(
                 sessionId,
                 {
                   parent: { runId, callId },
                   parentAgentId: agent?.id ?? null,
                   task,
+                  ...(files?.length ? { files } : {}),
                   depth: depth + 1,
                   signal: controller.signal,
                 },

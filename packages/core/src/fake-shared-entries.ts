@@ -4,7 +4,8 @@ import type {
   SharedEntry,
   SharedScope,
 } from "./entries.js";
-import type { EntryKind, FileType } from "./messages.js";
+import { isInFolder } from "./file-names.js";
+import type { BlobRef, EntryKind, MediaType } from "./messages.js";
 
 /** A change recorded by `FakeSharedEntries`. */
 export interface FakeSharedChange {
@@ -42,7 +43,12 @@ export class FakeSharedEntries implements SharedEntries {
   put(
     kind: EntryKind,
     scope: SharedScope,
-    entry: { key: string; value: string; type?: FileType },
+    entry: {
+      key: string;
+      value: string;
+      mediaType?: MediaType;
+      blob?: BlobRef;
+    },
     author: EntryAuthor,
   ) {
     this.rows.set(this.id(kind, scope, entry.key), {
@@ -63,5 +69,51 @@ export class FakeSharedEntries implements SharedEntries {
     this.rows.set(id, null);
     this.changes.push({ kind, scope, key, op: "delete", author });
     return true;
+  }
+
+  private readonly folders = new Map<SharedScope, Set<string>>();
+
+  private folderSet(scope: SharedScope): Set<string> {
+    let set = this.folders.get(scope);
+    if (!set) this.folders.set(scope, (set = new Set()));
+    return set;
+  }
+
+  listFolders(scope: SharedScope): string[] {
+    return [...this.folderSet(scope)];
+  }
+
+  createFolder(scope: SharedScope, path: string) {
+    this.folderSet(scope).add(path);
+  }
+
+  renameFolder(
+    scope: SharedScope,
+    from: string,
+    to: string,
+    author: EntryAuthor,
+  ) {
+    const rename = (path: string) => `${to}${path.slice(from.length)}`;
+    for (const entry of this.list("file", scope)) {
+      if (!isInFolder(entry.key, from)) continue;
+      this.put("file", scope, { ...entry, key: rename(entry.key) }, author);
+      this.delete("file", scope, entry.key, author);
+    }
+    const set = this.folderSet(scope);
+    for (const f of [...set].filter((f) => isInFolder(f, from))) {
+      set.delete(f);
+      set.add(rename(f));
+    }
+    if (!set.has(to)) set.add(to);
+  }
+
+  deleteFolder(scope: SharedScope, path: string, author: EntryAuthor) {
+    for (const entry of this.list("file", scope)) {
+      if (isInFolder(entry.key, path)) {
+        this.delete("file", scope, entry.key, author);
+      }
+    }
+    const set = this.folderSet(scope);
+    for (const f of [...set]) if (isInFolder(f, path)) set.delete(f);
   }
 }

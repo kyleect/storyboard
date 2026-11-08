@@ -83,7 +83,7 @@ describe("SearchIndex", () => {
     entries.put(
       "file",
       "p",
-      { key: "draft", value: long, type: "plain" },
+      { key: "draft", value: long, mediaType: "text/plain" },
       user,
     );
     const chunks = t.db
@@ -124,7 +124,7 @@ describe("SearchIndex", () => {
     new EntryStore(t.db).put(
       "file",
       null,
-      { key: "g", value: "storm", type: "plain" },
+      { key: "g", value: "storm", mediaType: "text/plain" },
       user,
     );
     t.db.prepare("UPDATE search_index_state SET built = 0").run();
@@ -364,7 +364,12 @@ describe("sessionSearch", () => {
   it("returns one hit per file, with its best chunk as the excerpt", async () => {
     const { entries, search } = await seeded("");
     const value = `${"Filler sentence here. ".repeat(80)}\n\nThe storm breaks the lens.`;
-    entries.put("file", null, { key: "draft", value, type: "plain" }, user);
+    entries.put(
+      "file",
+      null,
+      { key: "draft", value, mediaType: "text/plain" },
+      user,
+    );
     const result = await search({
       kind: "file",
       query: "storm lens filler",
@@ -490,7 +495,7 @@ describe("search through the tools", () => {
     const { app, t } = await setup([]);
     const { body } = await api(app, "POST", "/api/sessions", { title: "S" });
     await api(app, "PUT", `/api/sessions/${body.id}/files/a`, {
-      type: "plain",
+      mediaType: "text/plain",
       value: "thunder over the bay",
     });
     const count = () =>

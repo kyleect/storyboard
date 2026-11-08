@@ -1347,7 +1347,7 @@ describe("runLoop with files and memory", () => {
     approval: "never",
     group: "utilities" as const,
     execute: (input, ctx) => {
-      ctx.entries.writeFile("session", "a", "plain", "v");
+      ctx.entries.writeFile("session", "a", "text/plain", "v");
       ctx.entries.addNote("global", "fact");
       return input.fail
         ? { data: "nope", isError: true }
@@ -1389,7 +1389,13 @@ describe("runLoop with files and memory", () => {
     await runLoop(model, request, ctx);
     const [first, second] = results(saved);
     expect(first?.entries).toEqual([
-      { op: "put", kind: "file", key: "a", value: "v", type: "plain" },
+      {
+        op: "put",
+        kind: "file",
+        key: "a",
+        value: "v",
+        mediaType: "text/plain",
+      },
     ]);
     expect(first?.content).toBe('{"ok":"p1"}');
     // The next call sees the change, rebuilt from the transcript.

@@ -6,7 +6,15 @@ import type {
   CallToolResult,
   Tool as McpTool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { ToolError, truncate, type Tool } from "@harness/core";
+import {
+  EntryError,
+  ToolError,
+  truncate,
+  type MediaRef,
+  type Tool,
+  type ToolContext,
+} from "@harness/core";
+import { detectMedia, MAX_UPLOAD_BYTES } from "./media-detect.js";
 import type { AppEvents } from "./app-events.js";
 import type { McpServer, McpServerStore } from "./mcp-store.js";
 
@@ -360,8 +368,15 @@ export class McpManager {
             },
           );
         }
+        // Images and audio are saved as session files, so the model can be
+        // shown them (files unification design, D57).
+        const media: MediaRef[] = [];
         const text = truncate(
-          resultText(result),
+          resultText(result, (mimeType, data) => {
+            const ref = saveMedia(ctx, name, mimeType, data);
+            if (ref) media.push({ ref });
+            return ref;
+          }),
           this.options.maxResultChars ?? MAX_RESULT_CHARS,
         );
         return result.isError === true
@@ -370,7 +385,7 @@ export class McpManager {
               isError: true,
               details: { server: server.name, tool: mcp.name },
             }
-          : { data: text };
+          : { data: text, ...(media.length > 0 ? { media } : {}) };
       },
     };
   }
@@ -442,22 +457,67 @@ export function toolName(
 }
 
 /**
- * A tool result as text for the model. Text is kept; what a text-only
- * model cannot use (images, audio, binary resources) is named and left out.
- * A result with no content but structured content is that, as JSON.
+ * Saves an image or audio result as a session file and returns its
+ * reference, or undefined when it cannot be (no blob store, not a format the
+ * model server reads, too large, or the bytes do not match the type).
  */
-export function resultText(result: CallToolResult): string {
+export function saveMedia(
+  ctx: ToolContext,
+  toolName: string,
+  mimeType: string,
+  base64: string,
+): string | undefined {
+  if (!ctx.blobs) return undefined;
+  const bytes = Buffer.from(base64, "base64");
+  if (bytes.length > MAX_UPLOAD_BYTES) return undefined;
+  const found = detectMedia(mimeType, bytes);
+  if (!found) return undefined;
+  const blob = ctx.blobs.put(found.mediaType, bytes);
+  for (let n = 1; n <= 100; n++) {
+    const key = `${toolName}-${n}.${found.extension}`;
+    // Writing over a live file would replace it, so skip a name in use.
+    if (ctx.entries.readFile("session", key)) continue;
+    try {
+      ctx.entries.putBlob("session", key, found.mediaType, blob);
+      return `session://${key}`;
+    } catch (err) {
+      if (!(err instanceof EntryError)) throw err;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A tool result as text for the model. Text is kept. An image or audio
+ * block is passed to `save`; when that returns a reference the text names
+ * it, otherwise (and for other binary content) the block is named and left
+ * out. A result with no content but structured content is that, as JSON.
+ */
+export function resultText(
+  result: CallToolResult,
+  save?: (mimeType: string, base64: string) => string | undefined,
+): string {
   const parts = (result.content ?? []).map((block): string => {
     switch (block.type) {
       case "text":
         return block.text;
       case "image":
-      case "audio":
-        return `[${block.type} omitted: ${block.mimeType}, about ${Math.round((block.data.length * 3) / 4)} bytes]`;
-      case "resource":
-        return "text" in block.resource
-          ? block.resource.text
+      case "audio": {
+        const ref = save?.(block.mimeType, block.data);
+        return ref
+          ? `[${block.type} saved as <${ref}>]`
+          : `[${block.type} omitted: ${block.mimeType}, about ${Math.round((block.data.length * 3) / 4)} bytes]`;
+      }
+      case "resource": {
+        if ("text" in block.resource) return block.resource.text;
+        const ref =
+          block.resource.mimeType && "blob" in block.resource
+            ? save?.(block.resource.mimeType, block.resource.blob)
+            : undefined;
+        return ref
+          ? `[resource ${block.resource.uri} saved as <${ref}>]`
           : `[binary resource omitted: ${block.resource.uri}]`;
+      }
       case "resource_link":
         return `[resource link: ${block.uri}]`;
       default:

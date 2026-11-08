@@ -1,6 +1,7 @@
 import type { RunControl } from "./control.js";
+import type { MediaPolicy } from "./media.js";
 import type {
-  Attachment,
+  MediaKind,
   Message,
   TokenInfo,
   ToolDefinition,
@@ -33,11 +34,27 @@ export interface ChatRequest {
   /** Lets the caller end reasoning while the response streams. */
   control?: RunControl;
   /**
-   * The bytes of an attachment of a user message, as base64, or undefined
-   * when they are no longer available. Without it, or when it returns
-   * undefined, the adapter tells the model the attachment is missing.
+   * Looks up a file a user message refers to (`files`): its kind, media type
+   * and bytes as base64, or undefined when it is no longer available.
+   * Without it, or when it returns undefined, the adapter tells the model the
+   * file is missing.
    */
-  resolveAttachment?: (attachment: Attachment) => string | undefined;
+  resolveFile?: (ref: string) => ResolvedFile | undefined;
+  /**
+   * How media is shown in this request: which files stay inline and which
+   * become a text reference (see `media.ts`). Without it, every file a user
+   * message names is inline and a tool result's media is not sent.
+   */
+  media?: MediaPolicy;
+}
+
+/** A file read for a request: what the adapter sends to the model. */
+export interface ResolvedFile {
+  kind: MediaKind;
+  /** For example `image/png` or `audio/wav`. */
+  mediaType: string;
+  /** The file's bytes as base64. */
+  data: string;
 }
 
 /** A raw request: plain text continued with no chat template. */

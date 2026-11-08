@@ -115,14 +115,14 @@ describe("global files", () => {
     const { app } = await setup();
     const put = (value: string) =>
       api(app, "PUT", "/api/global/files/style.md", {
-        type: "markdown",
+        mediaType: "text/markdown",
         value,
       });
     expect((await put("v1")).status).toBe(200);
     const second = await put("v2");
     expect(second.body).toMatchObject({
       key: "style.md",
-      type: "markdown",
+      mediaType: "text/markdown",
       value: "v2",
       deleted: false,
     });
@@ -165,8 +165,8 @@ describe("global files", () => {
     const { app } = await setup();
     expect(
       (
-        await api(app, "PUT", "/api/global/files/a:b", {
-          type: "plain",
+        await api(app, "PUT", "/api/global/files/CON", {
+          mediaType: "text/plain",
           value: "",
         })
       ).status,
@@ -174,7 +174,7 @@ describe("global files", () => {
     expect(
       (
         await api(app, "PUT", "/api/global/files/a", {
-          type: "json",
+          mediaType: "application/json",
           value: "{",
         })
       ).status,
@@ -183,7 +183,10 @@ describe("global files", () => {
     expect((await api(app, "DELETE", "/api/global/files/none")).status).toBe(
       404,
     );
-    await api(app, "PUT", "/api/global/files/a", { type: "plain", value: "x" });
+    await api(app, "PUT", "/api/global/files/a", {
+      mediaType: "text/plain",
+      value: "x",
+    });
     await api(app, "DELETE", "/api/global/files/a");
     expect(
       (await api(app, "POST", "/api/global/files/a/restore", { seq: 2 }))
@@ -211,11 +214,11 @@ describe("project files", () => {
     const { app } = await setup();
     const p = await newProject(app);
     await api(app, "PUT", `/api/projects/${p}/files/a`, {
-      type: "plain",
+      mediaType: "text/plain",
       value: "project",
     });
     await api(app, "PUT", "/api/global/files/a", {
-      type: "plain",
+      mediaType: "text/plain",
       value: "global",
     });
     expect(
@@ -236,7 +239,7 @@ describe("project files", () => {
     expect(
       (
         await api(app, "PUT", `/api/projects/${p}/files/a`, {
-          type: "plain",
+          mediaType: "text/plain",
           value: "x",
         })
       ).status,
@@ -254,13 +257,13 @@ describe("the model's tools", () => {
         call("c1", "files_write", {
           scope: "session",
           key: "plan.md",
-          type: "markdown",
+          mediaType: "text/markdown",
           value: "# Plan",
         }),
         call("c2", "files_write", {
           scope: "global",
           key: "style",
-          type: "plain",
+          mediaType: "text/plain",
           value: "terse",
         }),
         call("c3", "memory_add", {
@@ -322,7 +325,10 @@ describe("the model's tools", () => {
     });
 
     const session = await api(app, "GET", `/api/sessions/${id}/files/plan.md`);
-    expect(session.body).toMatchObject({ value: "# Plan", type: "markdown" });
+    expect(session.body).toMatchObject({
+      value: "# Plan",
+      mediaType: "text/markdown",
+    });
     expect(session.body.versions).toMatchObject([
       { seq: 1, by: "model", sessionId: id, runId },
     ]);
@@ -385,7 +391,7 @@ describe("session files and notes", () => {
     await send(app, runs, id, [{ scope: "session", remember: false }]);
 
     const put = await api(app, "PUT", `/api/sessions/${id}/files/a`, {
-      type: "plain",
+      mediaType: "text/plain",
       value: "from user",
     });
     expect(put.body).toMatchObject({ value: "from user" });
@@ -411,7 +417,7 @@ describe("session files and notes", () => {
             kind: "file",
             key: "a",
             value: "from user",
-            type: "plain",
+            mediaType: "text/plain",
           },
         ],
       },
@@ -455,7 +461,7 @@ describe("session files and notes", () => {
     expect(
       (
         await api(app, "PUT", `/api/sessions/${id}/files/a`, {
-          type: "plain",
+          mediaType: "text/plain",
           value: "x",
         })
       ).status,
@@ -465,7 +471,7 @@ describe("session files and notes", () => {
     expect(
       (
         await api(app, "PUT", `/api/sessions/${id}/files/a`, {
-          type: "plain",
+          mediaType: "text/plain",
           value: "x",
         })
       ).status,
@@ -476,7 +482,7 @@ describe("session files and notes", () => {
     const { app } = await setup();
     const id = await newSession(app);
     await api(app, "PUT", `/api/sessions/${id}/files/a`, {
-      type: "plain",
+      mediaType: "text/plain",
       value: "one",
     });
     expect(
@@ -506,7 +512,7 @@ describe("purge", () => {
         call("c1", "files_write", {
           scope: "global",
           key: "g",
-          type: "plain",
+          mediaType: "text/plain",
           value: "x",
         }),
         { type: "finish", reason: "tool_calls" },
@@ -533,10 +539,13 @@ describe("purge", () => {
     const { app, t } = await setup();
     const p = await newProject(app);
     await api(app, "PUT", `/api/projects/${p}/files/a`, {
-      type: "plain",
+      mediaType: "text/plain",
       value: "x",
     });
-    await api(app, "PUT", "/api/global/files/a", { type: "plain", value: "g" });
+    await api(app, "PUT", "/api/global/files/a", {
+      mediaType: "text/plain",
+      value: "g",
+    });
     await api(app, "POST", `/api/projects/${p}/trash`);
     expect((await api(app, "DELETE", `/api/projects/${p}`)).status).toBe(200);
     const count = (table: string) =>
@@ -547,5 +556,196 @@ describe("purge", () => {
       ).n;
     expect(count("entries")).toBe(1);
     expect(count("entry_versions")).toBe(1);
+  });
+});
+
+describe("files with folders in their names (files unification design, D6, D37)", () => {
+  it("saves, reads and deletes a file whose name has folders, spaces and Unicode", async () => {
+    const { app } = await setup();
+    const key = encodeURIComponent("chars/My Alice é.md");
+    const put = await api(app, "PUT", `/api/global/files/${key}`, {
+      mediaType: "text/markdown",
+      value: "A",
+    });
+    expect(put.status).toBe(200);
+    expect(put.body).toMatchObject({
+      key: "chars/My Alice é.md",
+      mediaType: "text/markdown",
+    });
+    expect((await api(app, "GET", `/api/global/files/${key}`)).status).toBe(
+      200,
+    );
+    expect(
+      (await api(app, "GET", "/api/global/files")).body.map(
+        (f: { key: string }) => f.key,
+      ),
+    ).toEqual(["chars/My Alice é.md"]);
+    expect((await api(app, "DELETE", `/api/global/files/${key}`)).status).toBe(
+      204,
+    );
+  });
+
+  it("refuses a name that breaks the rules", async () => {
+    const { app } = await setup();
+    for (const bad of ["a..", "a/../b", "NUL.txt", "a%20", "x//y"]) {
+      const res = await api(
+        app,
+        "PUT",
+        `/api/global/files/${encodeURIComponent(decodeURIComponent(bad))}`,
+        { mediaType: "text/plain", value: "" },
+      );
+      expect(res.status, bad).toBe(400);
+    }
+  });
+});
+
+describe("folders", () => {
+  it("creates, lists, renames and deletes global folders with their files", async () => {
+    const { app, entries } = await setup();
+    expect(
+      (await api(app, "POST", "/api/global/folders", { path: "empty" })).status,
+    ).toBe(201);
+    expect(
+      (await api(app, "POST", "/api/global/folders", { path: "empty" })).status,
+    ).toBe(200);
+    await api(
+      app,
+      "PUT",
+      `/api/global/files/${encodeURIComponent("docs/a.md")}`,
+      { mediaType: "text/markdown", value: "A" },
+    );
+    expect((await api(app, "GET", "/api/global/folders")).body).toEqual([
+      "docs",
+      "empty",
+    ]);
+
+    const renamed = await api(app, "POST", "/api/global/folders/rename", {
+      path: "docs",
+      newPath: "papers",
+    });
+    expect(renamed).toMatchObject({ status: 200, body: { path: "papers" } });
+    expect(entries.get("file", null, "papers/a.md")).toMatchObject({
+      value: "A",
+      media_type: "text/markdown",
+      deleted_at: null,
+    });
+    // The old name is deleted, its history kept.
+    expect(entries.get("file", null, "docs/a.md")?.deleted_at).not.toBeNull();
+
+    expect(
+      (await api(app, "POST", "/api/global/folders/delete", { path: "papers" }))
+        .status,
+    ).toBe(204);
+    expect((await api(app, "GET", "/api/global/files")).body).toEqual([]);
+    expect(entries.get("file", null, "papers/a.md")?.deleted_at).not.toBeNull();
+    expect((await api(app, "GET", "/api/global/folders")).body).toEqual([
+      "empty",
+    ]);
+  });
+
+  it("answers 404 for a missing folder and 400 for a bad or clashing name", async () => {
+    const { app } = await setup();
+    expect(
+      (
+        await api(app, "POST", "/api/global/folders/rename", {
+          path: "nope",
+          newPath: "x",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await api(app, "POST", "/api/global/folders/delete", { path: "nope" }))
+        .status,
+    ).toBe(404);
+    expect(
+      (await api(app, "POST", "/api/global/folders", { path: "a/../b" }))
+        .status,
+    ).toBe(400);
+    await api(app, "POST", "/api/global/folders", { path: "a" });
+    await api(app, "POST", "/api/global/folders", { path: "b" });
+    expect(
+      (
+        await api(app, "POST", "/api/global/folders/rename", {
+          path: "a",
+          newPath: "b",
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("keeps a project's folders apart from global ones, and purging the project removes them", async () => {
+    const { app, t } = await setup();
+    const p = await newProject(app);
+    await api(app, "POST", `/api/projects/${p}/folders`, { path: "mine" });
+    await api(app, "POST", "/api/global/folders", { path: "shared" });
+    expect((await api(app, "GET", `/api/projects/${p}/folders`)).body).toEqual([
+      "mine",
+    ]);
+    expect((await api(app, "GET", "/api/global/folders")).body).toEqual([
+      "shared",
+    ]);
+    await api(app, "POST", `/api/projects/${p}/trash`);
+    expect((await api(app, "DELETE", `/api/projects/${p}`)).status).toBe(200);
+    expect(t.db.prepare("SELECT path FROM folders").all()).toEqual([
+      { path: "shared" },
+    ]);
+  });
+
+  it("keeps a session's folders in the transcript as edit messages", async () => {
+    const { app, store } = await setup();
+    const id = await newSession(app);
+    await api(app, "POST", `/api/sessions/${id}/folders`, { path: "drafts" });
+    await api(
+      app,
+      "PUT",
+      `/api/sessions/${id}/files/${encodeURIComponent("drafts/one.md")}`,
+      { mediaType: "text/markdown", value: "1" },
+    );
+    expect((await api(app, "GET", `/api/sessions/${id}/folders`)).body).toEqual(
+      ["drafts"],
+    );
+    await api(app, "POST", `/api/sessions/${id}/folders/rename`, {
+      path: "drafts",
+      newPath: "final",
+    });
+    expect(
+      (await api(app, "GET", `/api/sessions/${id}/files`)).body.map(
+        (f: { key: string }) => f.key,
+      ),
+    ).toEqual(["final/one.md"]);
+    expect((await api(app, "GET", `/api/sessions/${id}/folders`)).body).toEqual(
+      ["final"],
+    );
+    const edits = store
+      .listMessages(id)
+      .filter((m) => m.message.role === "edit");
+    expect(edits.length).toBeGreaterThanOrEqual(3);
+    await api(app, "POST", `/api/sessions/${id}/folders/delete`, {
+      path: "final",
+    });
+    expect((await api(app, "GET", `/api/sessions/${id}/files`)).body).toEqual(
+      [],
+    );
+    expect((await api(app, "GET", `/api/sessions/${id}/folders`)).body).toEqual(
+      [],
+    );
+  });
+
+  it("lets the model create a folder and list it", async () => {
+    const { app, runs } = await setup([
+      [
+        call("c1", "files_folder_create", { path: "chars", scope: "global" }),
+        { type: "finish", reason: "tool_calls" },
+      ],
+      [
+        { type: "text", text: "Done" },
+        { type: "finish", reason: "stop" },
+      ],
+    ]);
+    const id = await newSession(app);
+    await send(app, runs, id, [{ scope: "global" }]);
+    expect((await api(app, "GET", "/api/global/folders")).body).toEqual([
+      "chars",
+    ]);
   });
 });

@@ -125,19 +125,19 @@ describe("foldNotes", () => {
   });
 
   it("keeps the attachments of the user message the notes are put in", () => {
-    const a = { id: "a1", kind: "image" as const, mediaType: "image/png" };
+    const a = "session://photo.png";
     expect(
       foldNotes([
         calls("c1", "c2"),
         n1,
         n2,
-        { role: "user", content: "go", attachments: [a] },
+        { role: "user", content: "go", files: [a] },
       ]),
     ).toEqual([
       calls("c1", "c2"),
       n1,
       n2,
-      { role: "user", content: `${notes12}\n\ngo`, attachments: [a] },
+      { role: "user", content: `${notes12}\n\ngo`, files: [a] },
     ]);
   });
 

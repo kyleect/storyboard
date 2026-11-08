@@ -233,8 +233,19 @@ A tool switched off in Settings for the whole harness. No run is offered it.
 The built-in agent that greets the user and hands work to a specialist
 subagent. It is the default agent when nothing else is chosen.
 
+**Derived text**
+The description or transcript of an image or audio file, kept with its bytes.
+The Media Describer writes it when the file is added (if a model is chosen in
+Settings), or the user types it. It is searched, and it is what a model that
+cannot see or hear the file is given.
+
+**Media Describer**
+The built-in agent whose prompt writes derived text. It can also be started as
+a subagent.
+
 **Built-in**
-A record shipped with the app and read-only: the Dispatcher agent, the Task,
+A record shipped with the app and read-only: the Dispatcher and Media Describer
+agents, the Task,
 Goal and Decision schemas, and four skills. Built-ins form a scope of their
 own, so a user can create a record with the same name.
 

@@ -6,38 +6,54 @@ import {
   Image,
   Loader,
   Paper,
+  SegmentedControl,
   Stack,
   Text,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import type { Attachment } from "@harness/core";
-import { api } from "../api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { mediaKindOf, parseRef, type MediaKind } from "@harness/core";
+import { api, type EntryScope, type UploadedFile } from "../api";
 import {
   ACCEPT,
   ACCEPTED_DESCRIPTION,
   attachmentMediaType,
   MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
 } from "../attachments";
-import { attachmentKeys } from "../queries";
+import { blobKeys, entryKeys, sessionKeys } from "../queries";
 
 /*
  * Files attached to messages: choosing and uploading them in the composer,
  * and showing them in the transcript.
  *
- * A file is uploaded as soon as it is chosen, pasted or dropped, and the
- * message then sends only its id. The bytes are fetched again to show them
- * in the transcript, with the token, and shown from an object URL.
+ * A file is uploaded to the session's scope as soon as it is chosen, pasted
+ * or dropped, so it is a session file like any other, and the message then
+ * sends only its reference (files unification design, D9, D10). The bytes
+ * are fetched again to show them in the transcript, with the token, and
+ * shown from an object URL.
  */
 
 /** A file uploaded for the message being written. */
 export interface DraftAttachment {
-  attachment: Attachment;
+  /** Where the file is, such as `session://cat.png`. */
+  ref: string;
+  /** The file's name in the session. */
+  name: string;
+  mediaType: string;
+  kind: MediaKind;
   /** An object URL of the local file, for a thumbnail or to play it back. */
   previewUrl: string | undefined;
 }
+
+/** What a message needs to find the files it names. */
+export interface SessionFiles {
+  sessionId: string;
+  projectId: string | null;
+}
+
+/** The session being shown, for the references in its messages. */
+export const SessionFilesContext = createContext<SessionFiles | null>(null);
 
 const warn = (message: string) =>
   notifications.show({
@@ -51,6 +67,7 @@ const warn = (message: string) =>
  * to the session: another session starts with none.
  */
 export function useAttachmentDraft(sessionId: string) {
+  const queryClient = useQueryClient();
   const [state, setState] = useState<{
     sessionId: string;
     items: DraftAttachment[];
@@ -77,9 +94,8 @@ export function useAttachmentDraft(sessionId: string) {
     }));
 
   /** Uploads files; returns the ones that were uploaded. */
-  const add = async (files: readonly File[]): Promise<Attachment[]> => {
-    const uploaded: Attachment[] = [];
-    let room = MAX_ATTACHMENTS - items.length - uploading;
+  const add = async (files: readonly File[]): Promise<DraftAttachment[]> => {
+    const uploaded: DraftAttachment[] = [];
     for (const file of files) {
       const label = file.name || "That file";
       const mediaType = attachmentMediaType(file.name, file.type);
@@ -93,21 +109,26 @@ export function useAttachmentDraft(sessionId: string) {
         );
         continue;
       }
-      if (room <= 0) {
-        warn(`A message takes at most ${MAX_ATTACHMENTS} files.`);
-        break;
-      }
-      room--;
       setUploading((n) => n + 1);
       try {
-        const attachment = await api.uploadAttachment(
-          sessionId,
+        const made: UploadedFile = await api.uploadFile(
+          { scope: "session", id: sessionId },
           file,
           mediaType,
         );
-        const previewUrl = URL.createObjectURL(file);
-        update((prev) => [...prev, { attachment, previewUrl }]);
-        uploaded.push(attachment);
+        // The session's files changed; refresh any list of them.
+        void queryClient.invalidateQueries({
+          queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
+        });
+        const item: DraftAttachment = {
+          ref: made.ref,
+          name: made.key,
+          mediaType: made.mediaType,
+          kind: kindOfMedia(made.mediaType),
+          previewUrl: URL.createObjectURL(file),
+        };
+        update((prev) => [...prev, item]);
+        uploaded.push(item);
       } catch (err) {
         warn(`${label}: ${(err as Error).message}`);
       } finally {
@@ -122,10 +143,11 @@ export function useAttachmentDraft(sessionId: string) {
     /** How many uploads are in progress. */
     uploading,
     add,
-    remove: (id: string) =>
+    /** Takes a file off the message. It stays among the session's files. */
+    remove: (ref: string) =>
       update((prev) => {
-        for (const i of prev) if (i.attachment.id === id) revoke(i);
-        return prev.filter((i) => i.attachment.id !== id);
+        for (const i of prev) if (i.ref === ref) revoke(i);
+        return prev.filter((i) => i.ref !== ref);
       }),
     clear: () =>
       update((prev) => {
@@ -183,17 +205,17 @@ export function DraftAttachments({
 }: {
   items: readonly DraftAttachment[];
   uploading: number;
-  onRemove: (id: string) => void;
+  onRemove: (ref: string) => void;
 }) {
   if (items.length === 0 && uploading === 0) return null;
   return (
     <Group gap="xs" mb="xs">
-      {items.map(({ attachment, previewUrl }) => {
-        const label = attachment.name ?? attachment.mediaType;
+      {items.map(({ ref, name, kind, previewUrl }) => {
+        const label = name;
         return (
-          <Paper key={attachment.id} withBorder p={4}>
+          <Paper key={ref} withBorder p={4}>
             <Group gap="xs" wrap="nowrap">
-              {previewUrl && attachment.kind === "image" ? (
+              {previewUrl && kind === "image" ? (
                 <Image
                   src={previewUrl}
                   alt={label}
@@ -204,14 +226,14 @@ export function DraftAttachments({
                 />
               ) : (
                 <Badge variant="light" tt="none">
-                  {attachment.kind}
+                  {kind}
                 </Badge>
               )}
               <Text size="xs" maw={160} truncate="end">
                 {label}
               </Text>
               {/* Lets a recording be played back before it is sent. */}
-              {previewUrl && attachment.kind === "audio" && (
+              {previewUrl && kind === "audio" && (
                 <audio
                   controls
                   src={previewUrl}
@@ -222,7 +244,7 @@ export function DraftAttachments({
               <CloseButton
                 size="xs"
                 aria-label={`Remove ${label}`}
-                onClick={() => onRemove(attachment.id)}
+                onClick={() => onRemove(ref)}
               />
             </Group>
           </Paper>
@@ -233,45 +255,130 @@ export function DraftAttachments({
   );
 }
 
-/** The files a stored message was sent with. */
-export function MessageAttachments({
-  attachments,
-}: {
-  attachments: readonly Attachment[];
-}) {
+const kindOfMedia = (mediaType: string): MediaKind =>
+  mediaKindOf(mediaType) ?? "image";
+
+/**
+ * The files a stored message was sent with, or a tool read. Each one has a
+ * choice whether the model keeps seeing it in later turns (files unification
+ * design, D14, D40): the default follows the agent and the settings.
+ */
+export function MessageFiles({ files }: { files: readonly string[] }) {
+  const where = useContext(SessionFilesContext);
+  const choices = useQuery({
+    queryKey: sessionKeys.mediaChoices(where?.sessionId ?? ""),
+    queryFn: () => api.getMediaChoices(where?.sessionId as string),
+    enabled: where !== null,
+  });
+  const queryClient = useQueryClient();
+  const set = useMutation({
+    mutationFn: ({ ref, keep }: { ref: string; keep: boolean | null }) =>
+      api.setMediaChoice(where?.sessionId as string, ref, keep),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: sessionKeys.mediaChoices(where?.sessionId ?? ""),
+      }),
+    onError: (err) =>
+      notifications.show({
+        color: "red",
+        title: "Could not save the choice",
+        message: (err as Error).message,
+      }),
+  });
   return (
     <Stack gap="xs" my="xs">
-      {attachments.map((a) => (
-        <StoredAttachment key={a.id} attachment={a} />
-      ))}
+      {files.map((ref) => {
+        const choice = choices.data?.find((c) => c.ref === ref)?.keep;
+        return (
+          <Stack key={ref} gap={4}>
+            <StoredFile refText={ref} />
+            {where && (
+              <SegmentedControl
+                size="xs"
+                w="fit-content"
+                aria-label={`Keep ${ref} in view`}
+                value={
+                  choice === undefined ? "default" : choice ? "keep" : "drop"
+                }
+                onChange={(v) =>
+                  set.mutate({
+                    ref,
+                    keep: v === "default" ? null : v === "keep",
+                  })
+                }
+                data={[
+                  { value: "default", label: "Default" },
+                  { value: "keep", label: "Keep in view" },
+                  { value: "drop", label: "Drop later" },
+                ]}
+              />
+            )}
+          </Stack>
+        );
+      })}
     </Stack>
   );
 }
 
-function StoredAttachment({ attachment }: { attachment: Attachment }) {
-  const label = attachment.name ?? attachment.mediaType;
-  const file = useQuery({
-    queryKey: attachmentKeys.file(attachment.id),
-    queryFn: () => api.attachmentUrl(attachment.id),
-    // The bytes under an id never change, and the object URL has to stay
+/** A file a message names: shown when it can be found, named otherwise. */
+function StoredFile({ refText }: { refText: string }) {
+  const where = useContext(SessionFilesContext);
+  const parsed = parseRef(refText);
+  const scope: EntryScope | undefined =
+    !where || !parsed || parsed.location === "workspace"
+      ? undefined
+      : parsed.location === "session"
+        ? { scope: "session", id: where.sessionId }
+        : parsed.location === "project"
+          ? where.projectId
+            ? { scope: "project", id: where.projectId }
+            : undefined
+          : { scope: "global" };
+  const label = parsed && "path" in parsed ? parsed.path : refText;
+  const list = useQuery({
+    queryKey: scope ? entryKeys.list(scope, "file", false) : ["no-scope"],
+    queryFn: () => api.listEntries(scope as EntryScope, "file", false),
+    enabled: scope !== undefined,
+  });
+  const file =
+    parsed && "path" in parsed
+      ? list.data?.find((f) => f.key === parsed.path)
+      : undefined;
+  const hash = file?.blob?.hash;
+  const mediaType = file?.mediaType;
+  const bytes = useQuery({
+    queryKey: blobKeys.file(hash ?? ""),
+    queryFn: () => api.blobUrl(hash as string),
+    enabled: hash !== undefined,
+    // The bytes under a hash never change, and the object URL has to stay
     // valid for as long as the page is open.
     staleTime: Infinity,
     gcTime: Infinity,
   });
-  if (file.isPending)
+  if (list.isPending && scope)
     return <Loader size="xs" aria-label={`Loading ${label}`} />;
-  if (file.isError) {
+  if (!file || !hash || !mediaType) {
+    return (
+      <Text size="xs" c="dimmed">
+        {label} is no longer available.
+      </Text>
+    );
+  }
+  if (bytes.isPending)
+    return <Loader size="xs" aria-label={`Loading ${label}`} />;
+  if (bytes.isError) {
     return (
       <Text size="xs" c="red">
         Could not load {label}.
       </Text>
     );
   }
-  if (attachment.kind === "image") {
+  if (mediaKindOf(mediaType) === "image") {
     return (
       <Image
-        src={file.data}
+        src={bytes.data}
         alt={label}
+        title={refText}
         maw={320}
         mah={240}
         fit="contain"
@@ -284,7 +391,7 @@ function StoredAttachment({ attachment }: { attachment: Attachment }) {
       <Text size="xs" c="dimmed">
         {label}
       </Text>
-      <audio controls src={file.data} aria-label={label} />
+      <audio controls src={bytes.data} aria-label={label} />
     </Stack>
   );
 }

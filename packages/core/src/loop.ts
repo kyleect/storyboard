@@ -26,11 +26,13 @@ import type {
   ContentBlock,
   DataOp,
   EntryOp,
+  MediaRef,
   Message,
   ToolResultMessage,
   UserMessage,
   Usage,
 } from "./messages.js";
+import type { MediaSupport } from "./media.js";
 import type { ChatRequest, ModelAdapter } from "./model.js";
 import { emitter, streamMessage, type RunContext } from "./run.js";
 import {
@@ -181,6 +183,10 @@ export interface LoopContext extends RunContext {
    * only.
    */
   sharedEntries?: SharedEntries;
+  /** What the model can read; left out when not known (attempts allowed). */
+  mediaSupport?: MediaSupport;
+  /** Stores bytes as blobs, for tools that make binary files. */
+  blobs?: ToolContext["blobs"];
   /** Generates memory note ids. Default: 16 random hex digits. */
   newNoteId?: () => string;
   /** Searches files and notes. Left out: the search tools fail. */
@@ -350,6 +356,7 @@ export async function runLoop(
       state?: unknown;
       entries?: EntryOp[];
       dataOps?: DataOp[];
+      media?: MediaRef[];
       note?: ToolResultMessage["note"];
       prompt?: PromptRecord | undefined;
       error?: string;
@@ -367,6 +374,7 @@ export async function runLoop(
       ...(result.state !== undefined ? { state: result.state } : {}),
       ...(result.entries?.length ? { entries: result.entries } : {}),
       ...(result.dataOps?.length ? { dataOps: result.dataOps } : {}),
+      ...(result.media?.length ? { media: result.media } : {}),
       ...(result.note ? { note: result.note } : {}),
       ...(result.prompt ? { prompt: result.prompt } : {}),
     };
@@ -685,6 +693,8 @@ export async function runLoop(
       sessionId: ctx.sessionId,
       runId: ctx.runId,
       callId: call.callId,
+      ...(ctx.mediaSupport ? { mediaSupport: ctx.mediaSupport } : {}),
+      ...(ctx.blobs ? { blobs: ctx.blobs } : {}),
       update: (partial) =>
         emit({ type: "tool.update", data: { callId: call.callId, partial } }),
       state: latestToolState(transcript, tool.name),
@@ -881,6 +891,9 @@ export async function runLoop(
         ...(output.state !== undefined ? { state: output.state } : {}),
         // Session-scoped changes count only when the tool succeeded.
         ...(output.isError ? {} : { entries: sessionOps, dataOps }),
+        ...(!output.isError && output.media?.length
+          ? { media: output.media }
+          : {}),
         ...(content !== text ? { error: text } : {}),
         ...(note ? { note } : {}),
         prompt,

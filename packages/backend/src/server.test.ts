@@ -216,7 +216,8 @@ describe("a chat turn", () => {
       kind: "chat",
       messages: [{ role: "user", content: "Hi" }],
       control: expect.any(RunControl),
-      resolveAttachment: expect.any(Function),
+      resolveFile: expect.any(Function),
+      media: expect.objectContaining({ cap: 4, keepDefault: false }),
       tools: [],
     });
   });
@@ -385,7 +386,8 @@ describe("continue", () => {
         { role: "assistant", content: [{ type: "text", text: "Once upon" }] },
       ],
       control: expect.any(RunControl),
-      resolveAttachment: expect.any(Function),
+      resolveFile: expect.any(Function),
+      media: expect.objectContaining({ cap: 4, keepDefault: false }),
       tools: [],
     });
     expect(got[2]?.event).toMatchObject({

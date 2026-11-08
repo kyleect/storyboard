@@ -1,9 +1,8 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
+import { sweepBlobs } from "./blobs.js";
 import {
   Message,
   Usage,
-  type Attachment,
-  type AttachmentKind,
   type HarnessEvent,
   type StoredEvent,
   type ToolDefinition,
@@ -369,6 +368,43 @@ export class Store {
       .run(trashedAt, id);
   }
 
+  /** The user's keep or drop choices for a session's media, by reference. */
+  listMediaChoices(sessionId: string): { ref: string; keep: boolean }[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT ref, keep FROM media_choices WHERE session_id = ? ORDER BY ref",
+        )
+        .all(sessionId) as { ref: string; keep: number }[]
+    ).map((r) => ({ ref: r.ref, keep: r.keep === 1 }));
+  }
+
+  getMediaChoice(sessionId: string, ref: string): boolean | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT keep FROM media_choices WHERE session_id = ? AND ref = ?",
+      )
+      .get(sessionId, ref) as { keep: number } | undefined;
+    return row ? row.keep === 1 : undefined;
+  }
+
+  /** Sets the choice; `null` clears it, so the defaults decide again. */
+  setMediaChoice(sessionId: string, ref: string, keep: boolean | null) {
+    if (keep === null) {
+      this.db
+        .prepare("DELETE FROM media_choices WHERE session_id = ? AND ref = ?")
+        .run(sessionId, ref);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO media_choices (session_id, ref, keep, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(session_id, ref) DO UPDATE SET keep = excluded.keep, updated_at = excluded.updated_at`,
+      )
+      .run(sessionId, ref, keep ? 1 : 0, new Date().toISOString());
+  }
+
   /**
    * Permanently deletes a session and every row that belongs to it, in one
    * transaction (design Q6). A new table that references a session, or a
@@ -400,11 +436,13 @@ export class Store {
       this.db.prepare("DELETE FROM errors WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM runs WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
-      this.db.prepare("DELETE FROM attachments WHERE session_id = ?").run(id);
       this.db
         .prepare("DELETE FROM session_tool_approvals WHERE session_id = ?")
         .run(id);
+      this.db.prepare("DELETE FROM media_choices WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+      // Frees the bytes of the session's own files (Q10).
+      sweepBlobs(this.db);
     })();
   }
 
@@ -583,9 +621,11 @@ export class Store {
         )
         .run(id);
       this.db.prepare("DELETE FROM entries WHERE project_id = ?").run(id);
+      this.db.prepare("DELETE FROM folders WHERE project_id = ?").run(id);
       this.db
         .prepare("DELETE FROM chunks WHERE scope = 'project' AND owner_id = ?")
         .run(id);
+      sweepBlobs(this.db);
       // Only the project's sessions can use its agents (agents design 16),
       // and they are purged above (decision 25).
       this.db
@@ -682,78 +722,6 @@ export class Store {
         .prepare("UPDATE sessions SET reasoning_effort = ? WHERE id = ?")
         .run(choices.reasoningEffort, id);
     }
-  }
-
-  /** Keeps a file the user attached to a session's message (see 0024). */
-  addAttachment(
-    sessionId: string,
-    id: string,
-    file: {
-      kind: AttachmentKind;
-      mediaType: string;
-      name?: string;
-      data: Buffer;
-    },
-    now: string,
-  ): Attachment {
-    this.db
-      .prepare(
-        `INSERT INTO attachments (id, session_id, kind, media_type, name, size, data, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        sessionId,
-        file.kind,
-        file.mediaType,
-        file.name ?? null,
-        file.data.length,
-        file.data,
-        now,
-      );
-    return {
-      id,
-      kind: file.kind,
-      mediaType: file.mediaType,
-      ...(file.name !== undefined ? { name: file.name } : {}),
-      size: file.data.length,
-    };
-  }
-
-  /** The description of a session's attachment, without its bytes. */
-  getSessionAttachment(sessionId: string, id: string): Attachment | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT id, kind, media_type, name, size FROM attachments
-         WHERE id = ? AND session_id = ?`,
-      )
-      .get(id, sessionId) as
-      | {
-          id: string;
-          kind: AttachmentKind;
-          media_type: string;
-          name: string | null;
-          size: number;
-        }
-      | undefined;
-    if (!row) return undefined;
-    return {
-      id: row.id,
-      kind: row.kind,
-      mediaType: row.media_type,
-      ...(row.name !== null ? { name: row.name } : {}),
-      size: row.size,
-    };
-  }
-
-  /** An attachment's media type and bytes. */
-  getAttachmentData(
-    id: string,
-  ): { mediaType: string; data: Buffer } | undefined {
-    const row = this.db
-      .prepare("SELECT media_type, data FROM attachments WHERE id = ?")
-      .get(id) as { media_type: string; data: Buffer } | undefined;
-    return row ? { mediaType: row.media_type, data: row.data } : undefined;
   }
 
   addMessage(

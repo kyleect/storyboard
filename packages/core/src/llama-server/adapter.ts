@@ -1,7 +1,9 @@
 import type { ControlResult } from "../control.js";
 import { foldEdits } from "../entries.js";
+import { foldMedia } from "../media.js";
 import { foldNotes } from "../notes.js";
-import type { Attachment, ModelMessage, TokenInfo } from "../messages.js";
+import type { ModelMessage, TokenInfo } from "../messages.js";
+import type { ResolvedFile } from "../model.js";
 import type {
   ChatRequest,
   ModelAdapter,
@@ -68,9 +70,9 @@ export class LlamaServerAdapter implements ModelAdapter {
     signal: AbortSignal,
   ): AsyncGenerator<ModelChunk> {
     const body: Record<string, unknown> = {
-      messages: foldEdits(foldNotes(request.messages)).map((m) =>
-        toOpenAiMessage(m, request.resolveAttachment),
-      ),
+      messages: foldEdits(
+        foldNotes(foldMedia(request.messages, request.media)),
+      ).map((m) => toOpenAiMessage(m, request.resolveFile)),
       stream: true,
       stream_options: { include_usage: true },
       // Timings on every chunk give a live token count.
@@ -322,22 +324,22 @@ function sampling(
 
 /**
  * Converts a harness message to the OpenAI-style shape llama-server reads.
- * A user message with attachments gets typed content parts, the media first
- * and then the text; `resolve` gives each attachment's bytes as base64.
+ * A user message with files gets typed content parts, the media first and
+ * then the text; `resolve` gives each file's bytes as base64.
  */
 export function toOpenAiMessage(
   m: ModelMessage,
-  resolve?: (attachment: Attachment) => string | undefined,
+  resolve?: (ref: string) => ResolvedFile | undefined,
 ): Record<string, unknown> {
   switch (m.role) {
     case "system":
       return { role: m.role, content: m.content };
     case "user": {
-      if (!m.attachments || m.attachments.length === 0) {
+      if (!m.files || m.files.length === 0) {
         return { role: m.role, content: m.content };
       }
-      const parts: unknown[] = m.attachments.map((a) =>
-        attachmentPart(a, resolve?.(a)),
+      const parts: unknown[] = m.files.map((ref) =>
+        filePart(ref, resolve?.(ref)),
       );
       if (m.content !== "") parts.push({ type: "text", text: m.content });
       return { role: m.role, content: parts };
@@ -370,33 +372,35 @@ export function toOpenAiMessage(
 }
 
 /**
- * One content part for an attachment. llama-server reads images as data
- * URIs and audio as base64 (it works out the audio format itself, but the
- * OpenAI shape asks for one). Without bytes, the model is told instead.
+ * One content part for a file. llama-server reads images as data URIs and
+ * audio as base64 (it works out the audio format itself, but the OpenAI shape
+ * asks for one). Without the file, the model is told instead.
  */
-function attachmentPart(
-  a: Attachment,
-  data: string | undefined,
+function filePart(
+  ref: string,
+  file: ResolvedFile | undefined,
 ): Record<string, unknown> {
-  if (data === undefined) {
-    const name = a.name ? ` "${a.name}"` : "";
+  if (file === undefined) {
     return {
       type: "text",
-      text: `[The ${a.kind} attachment${name} is no longer available.]`,
+      text: `[The file <${ref}> is no longer available.]`,
     };
   }
-  if (a.kind === "image") {
+  if (file.kind === "image") {
     return {
       type: "image_url",
-      image_url: { url: `data:${a.mediaType};base64,${data}` },
+      image_url: { url: `data:${file.mediaType};base64,${file.data}` },
     };
   }
-  return { type: "input_audio", input_audio: { data, format: audioFormat(a) } };
+  return {
+    type: "input_audio",
+    input_audio: { data: file.data, format: audioFormat(file.mediaType) },
+  };
 }
 
-function audioFormat(a: Attachment): "mp3" | "flac" | "wav" {
-  if (/mpeg|mp3/i.test(a.mediaType)) return "mp3";
-  if (/flac/i.test(a.mediaType)) return "flac";
+function audioFormat(mediaType: string): "mp3" | "flac" | "wav" {
+  if (/mpeg|mp3/i.test(mediaType)) return "mp3";
+  if (/flac/i.test(mediaType)) return "flac";
   return "wav";
 }
 

@@ -1,11 +1,13 @@
+import { isBinaryMediaType } from "./messages.js";
 import type {
-  Attachment,
+  BlobRef,
   EntryKind,
   EntryOp,
-  FileType,
+  MediaType,
   Message,
   ModelMessage,
 } from "./messages.js";
+import { fileNameProblem, isInFolder, parentFolders } from "./file-names.js";
 
 /*
  * Files and memory notes (files and memory design, section 3).
@@ -31,7 +33,9 @@ export interface SharedEntry {
   key: string;
   value: string;
   /** Files only. */
-  type?: FileType;
+  mediaType?: MediaType;
+  /** Binary files only: the bytes. `value` is empty then. */
+  blob?: BlobRef;
   updatedAt: string;
 }
 
@@ -51,7 +55,12 @@ export interface SharedEntries {
   put(
     kind: EntryKind,
     scope: SharedScope,
-    entry: { key: string; value: string; type?: FileType },
+    entry: {
+      key: string;
+      value: string;
+      mediaType?: MediaType;
+      blob?: BlobRef;
+    },
     author: EntryAuthor,
   ): void;
   /** False when there was no such entry. */
@@ -61,6 +70,18 @@ export interface SharedEntries {
     key: string,
     author: EntryAuthor,
   ): boolean;
+  /** The explicit folders; folders that only hold files are not listed. */
+  listFolders(scope: SharedScope): string[];
+  createFolder(scope: SharedScope, path: string): void;
+  /** Moves the folder, its explicit subfolders and the files inside it. */
+  renameFolder(
+    scope: SharedScope,
+    from: string,
+    to: string,
+    author: EntryAuthor,
+  ): void;
+  /** Deletes the folder, its explicit subfolders and the files inside it. */
+  deleteFolder(scope: SharedScope, path: string, author: EntryAuthor): void;
 }
 
 /** Thrown for a bad key, an unavailable scope or an invalid value. */
@@ -69,24 +90,26 @@ export class EntryError extends Error {
 }
 
 /**
- * The file key rule as a pattern, for forms that ask for a key (tool
- * prompts Q20).
+ * The file name rule as a pattern, for forms that ask for a name (tool
+ * prompts Q20). A pattern cannot say it all, so this only refuses control
+ * characters; `checkFileName` has the full rules (D50).
  */
-export const FILE_KEY_PATTERN = "^[A-Za-z0-9._-]+$";
-const FILE_KEY = new RegExp(FILE_KEY_PATTERN);
+export const FILE_KEY_PATTERN = "^[^\\u0000-\\u001f\\u007f]+$";
 
-/** Letters, digits, "-", "_" and "."; case-sensitive (decision 6). */
-export function checkFileKey(key: string): void {
-  if (!FILE_KEY.test(key)) {
-    throw new EntryError(
-      `Invalid file key "${key}": use only letters, digits, "-", "_" and ".".`,
-    );
+/**
+ * A file or folder path: names separated by "/", each following the rules of
+ * `file-names.ts` (D50). Case-sensitive and exact (D51).
+ */
+export function checkFileName(path: string): void {
+  const problem = fileNameProblem(path);
+  if (problem) {
+    throw new EntryError(`Invalid file name "${path}": ${problem}.`);
   }
 }
 
 /** A value tagged JSON must parse (decision 5). */
-export function checkFileValue(type: FileType, value: string): void {
-  if (type !== "json") return;
+export function checkFileValue(mediaType: MediaType, value: string): void {
+  if (mediaType !== "application/json") return;
   try {
     JSON.parse(value);
   } catch (err) {
@@ -99,13 +122,21 @@ export function checkFileValue(type: FileType, value: string): void {
 export interface FileInfo {
   scope: Scope;
   key: string;
-  type: FileType;
-  /** Length of the value in characters. */
+  mediaType: MediaType;
+  /** Length of a text value in characters, or of a binary file in bytes. */
   size: number;
 }
 
 export interface FileEntry extends FileInfo {
+  /** Empty for a binary file. */
   value: string;
+  /** Binary files only: where the bytes are kept. */
+  blob?: BlobRef;
+}
+
+export interface FolderInfo {
+  scope: Scope;
+  path: string;
 }
 
 export interface NoteEntry {
@@ -158,9 +189,39 @@ export interface EntryAccess {
   /** Every scope's files when `scope` is left out (decision 9). */
   listFiles(scope?: ScopeFilter): FileInfo[];
   readFile(scope: Scope, key: string): FileEntry | undefined;
-  /** Creates or replaces. Returns true when the file is new. */
-  writeFile(scope: Scope, key: string, type: FileType, value: string): boolean;
+  /**
+   * Creates or replaces a text file. Returns true when the file is new. A
+   * binary file is added with `putBlob`.
+   */
+  writeFile(
+    scope: Scope,
+    key: string,
+    mediaType: MediaType,
+    value: string,
+  ): boolean;
+  /**
+   * Creates or replaces a binary file whose bytes are already stored.
+   * Returns true when the file is new.
+   */
+  putBlob(
+    scope: Scope,
+    key: string,
+    mediaType: MediaType,
+    blob: BlobRef,
+  ): boolean;
   deleteFile(scope: Scope, key: string): boolean;
+  /** Every folder, explicit or holding files, with the scope it is in. */
+  listFolders(scope?: ScopeFilter): FolderInfo[];
+  /** False when the folder already exists. */
+  createFolder(scope: Scope, path: string): boolean;
+  /** Undefined when there is no such folder. */
+  renameFolder(
+    scope: Scope,
+    from: string,
+    to: string,
+  ): { files: number } | undefined;
+  /** Undefined when there is no such folder. */
+  deleteFolder(scope: Scope, path: string): { files: number } | undefined;
   listNotes(scope?: ScopeFilter): NoteEntry[];
   /** Returns the new note's id. */
   addNote(scope: Scope, text: string): string;
@@ -178,13 +239,16 @@ export interface EntryAccess {
 
 interface Current {
   value: string;
-  type?: FileType;
+  mediaType?: MediaType;
+  blob?: BlobRef;
 }
 
 /** Current session-scoped entries, by kind and key. */
 export interface SessionEntries {
   file: Map<string, Current>;
   note: Map<string, Current>;
+  /** Explicit folders (D6); folders that only hold files are not here. */
+  folders: Set<string>;
   /** Every key ever used, including deleted ones (ids are not reused). */
   used: { file: Set<string>; note: Set<string> };
 }
@@ -197,11 +261,17 @@ export function messageEntryOps(message: Message): readonly EntryOp[] {
 }
 
 export function applyEntryOp(state: SessionEntries, op: EntryOp): void {
+  if (op.op === "folder") {
+    if (op.action === "create") state.folders.add(op.path);
+    else state.folders.delete(op.path);
+    return;
+  }
   state.used[op.kind].add(op.key);
   if (op.op === "put") {
     state[op.kind].set(op.key, {
       value: op.value,
-      ...(op.type ? { type: op.type } : {}),
+      ...(op.mediaType ? { mediaType: op.mediaType } : {}),
+      ...(op.blob ? { blob: op.blob } : {}),
     });
   } else {
     state[op.kind].delete(op.key);
@@ -215,6 +285,7 @@ export function replaySessionEntries(
   const state: SessionEntries = {
     file: new Map(),
     note: new Map(),
+    folders: new Set(),
     used: { file: new Set(), note: new Set() },
   };
   for (const m of messages) {
@@ -229,7 +300,7 @@ export interface SessionEntryVersion {
   messageId: string;
   /** "user" for an edit message, "model" for a tool result. */
   by: "user" | "model";
-  op: EntryOp;
+  op: Exclude<EntryOp, { op: "folder" }>;
 }
 
 /** Every change to one session-scoped entry, oldest first. */
@@ -241,7 +312,7 @@ export function sessionEntryVersions(
   const out: SessionEntryVersion[] = [];
   for (const { id, message } of messages) {
     for (const op of messageEntryOps(message)) {
-      if (op.kind === kind && op.key === key) {
+      if (op.op !== "folder" && op.kind === kind && op.key === key) {
         out.push({
           messageId: id,
           by: message.role === "edit" ? "user" : "model",
@@ -310,7 +381,12 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
   const put = (
     kind: EntryKind,
     scope: Scope,
-    entry: { key: string; value: string; type?: FileType },
+    entry: {
+      key: string;
+      value: string;
+      mediaType?: MediaType;
+      blob?: BlobRef;
+    },
   ) => {
     if (scope === "session") sessionOp({ op: "put", kind, ...entry });
     else shared?.put(kind, scope, entry, author);
@@ -321,6 +397,40 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
     if (!session[kind].has(key)) return false;
     sessionOp({ op: "delete", kind, key });
     return true;
+  };
+  const fileKeys = (scope: Scope): string[] =>
+    list("file", scope).map((e) => e.key);
+  /** Explicit folders, plus the folders above every file and folder. */
+  const allFolders = (scope: Scope): string[] => {
+    const explicit =
+      scope === "session"
+        ? [...session.folders]
+        : (shared?.listFolders(scope) ?? []);
+    return [
+      ...new Set([
+        ...explicit,
+        ...explicit.flatMap(parentFolders),
+        ...fileKeys(scope).flatMap(parentFolders),
+      ]),
+    ].sort();
+  };
+  /** True when the file is new; refuses a name that is a folder (D6). */
+  const checkNewFile = (scope: Scope, key: string): boolean => {
+    const existing = get("file", scope, key);
+    if (existing === undefined) {
+      if (allFolders(scope).includes(key)) {
+        throw new EntryError(`"${key}" is a folder, so it cannot be a file.`);
+      }
+      const blocking = parentFolders(key).find((p) =>
+        fileKeys(scope).includes(p),
+      );
+      if (blocking !== undefined) {
+        throw new EntryError(
+          `"${blocking}" is a file, so it cannot also be a folder for "${key}".`,
+        );
+      }
+    }
+    return existing === undefined;
   };
   const list = (kind: EntryKind, scope: Scope) =>
     scope === "session"
@@ -334,36 +444,143 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
         list("file", s).map((e) => ({
           scope: s,
           key: e.key,
-          type: e.type ?? "plain",
-          size: e.value.length,
+          mediaType: e.mediaType ?? "text/plain",
+          size: e.blob?.size ?? e.value.length,
         })),
       ),
     readFile: (scope, key) => {
       requireScope(scope);
-      checkFileKey(key);
+      checkFileName(key);
       const e = get("file", scope, key);
       return e
         ? {
             scope,
             key,
-            type: e.type ?? "plain",
-            size: e.value.length,
+            mediaType: e.mediaType ?? "text/plain",
+            size: e.blob?.size ?? e.value.length,
             value: e.value,
+            ...(e.blob ? { blob: e.blob } : {}),
           }
         : undefined;
     },
-    writeFile: (scope, key, type, value) => {
+    writeFile: (scope, key, mediaType, value) => {
       requireScope(scope);
-      checkFileKey(key);
-      checkFileValue(type, value);
-      const created = get("file", scope, key) === undefined;
-      put("file", scope, { key, value, type });
-      return created;
+      checkFileName(key);
+      if (isBinaryMediaType(mediaType)) {
+        throw new EntryError(
+          `${mediaType} is a binary type. Binary files are added by upload, not written as text.`,
+        );
+      }
+      checkFileValue(mediaType, value);
+      const isNew = checkNewFile(scope, key);
+      put("file", scope, { key, value, mediaType });
+      return isNew;
+    },
+    putBlob: (scope, key, mediaType, blob) => {
+      requireScope(scope);
+      checkFileName(key);
+      if (!isBinaryMediaType(mediaType)) {
+        throw new EntryError(`${mediaType} is not a binary type.`);
+      }
+      const isNew = checkNewFile(scope, key);
+      put("file", scope, { key, value: "", mediaType, blob });
+      return isNew;
     },
     deleteFile: (scope, key) => {
       requireScope(scope);
-      checkFileKey(key);
+      checkFileName(key);
       return remove("file", scope, key);
+    },
+    listFolders: (scope) =>
+      listScopes(scope).flatMap((s) =>
+        allFolders(s).map((path) => ({ scope: s, path })),
+      ),
+    createFolder: (scope, path) => {
+      requireScope(scope);
+      checkFileName(path);
+      if (fileKeys(scope).includes(path)) {
+        throw new EntryError(`"${path}" is a file, so it cannot be a folder.`);
+      }
+      const blocking = parentFolders(path).find((p) =>
+        fileKeys(scope).includes(p),
+      );
+      if (blocking !== undefined) {
+        throw new EntryError(
+          `"${blocking}" is a file, so it cannot also be a folder for "${path}".`,
+        );
+      }
+      if (allFolders(scope).includes(path)) return false;
+      if (scope === "session")
+        sessionOp({ op: "folder", action: "create", path });
+      else shared?.createFolder(scope, path);
+      return true;
+    },
+    renameFolder: (scope, from, to) => {
+      requireScope(scope);
+      checkFileName(from);
+      checkFileName(to);
+      if (!allFolders(scope).includes(from)) return undefined;
+      if (isInFolder(to, from)) {
+        throw new EntryError(`A folder cannot be moved into itself.`);
+      }
+      if (allFolders(scope).includes(to) || fileKeys(scope).includes(to)) {
+        throw new EntryError(`"${to}" already exists.`);
+      }
+      const blocking = parentFolders(to).find((p) =>
+        fileKeys(scope).includes(p),
+      );
+      if (blocking !== undefined) {
+        throw new EntryError(
+          `"${blocking}" is a file, so it cannot also be a folder for "${to}".`,
+        );
+      }
+      const moved = fileKeys(scope).filter((k) => isInFolder(k, from));
+      const rename = (path: string) => `${to}${path.slice(from.length)}`;
+      if (scope !== "session") {
+        shared?.renameFolder(scope, from, to, author);
+        return { files: moved.length };
+      }
+      for (const key of moved) {
+        const e = session.file.get(key);
+        if (!e) continue;
+        sessionOp({
+          op: "put",
+          kind: "file",
+          key: rename(key),
+          value: e.value,
+          ...(e.mediaType ? { mediaType: e.mediaType } : {}),
+          ...(e.blob ? { blob: e.blob } : {}),
+        });
+        sessionOp({ op: "delete", kind: "file", key });
+      }
+      for (const path of [...session.folders].filter((f) =>
+        isInFolder(f, from),
+      )) {
+        sessionOp({ op: "folder", action: "create", path: rename(path) });
+        sessionOp({ op: "folder", action: "delete", path });
+      }
+      // A folder that only held files has no record; keep it as one when empty.
+      if (moved.length === 0 && !session.folders.has(to)) {
+        sessionOp({ op: "folder", action: "create", path: to });
+      }
+      return { files: moved.length };
+    },
+    deleteFolder: (scope, path) => {
+      requireScope(scope);
+      checkFileName(path);
+      if (!allFolders(scope).includes(path)) return undefined;
+      const gone = fileKeys(scope).filter((k) => isInFolder(k, path));
+      if (scope !== "session") {
+        shared?.deleteFolder(scope, path, author);
+        return { files: gone.length };
+      }
+      for (const key of gone) {
+        sessionOp({ op: "delete", kind: "file", key });
+      }
+      for (const f of [...session.folders].filter((f) => isInFolder(f, path))) {
+        sessionOp({ op: "folder", action: "delete", path: f });
+      }
+      return { files: gone.length };
     },
     listNotes: (scope) =>
       listScopes(scope).flatMap((s) =>
@@ -404,11 +621,15 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
 /** The notice the model reads for an edit message (plan P4). */
 export function editNotice(ops: readonly EntryOp[]): string {
   const parts = ops.map((op) => {
+    if (op.op === "folder") {
+      return `${op.action === "create" ? "created" : "deleted"} session folder ${op.path}`;
+    }
     const what =
       op.kind === "file" ? `file ${op.key}` : `memory note ${op.key}`;
-    return op.op === "put"
-      ? `changed session ${what}`
-      : `deleted session ${what}`;
+    if (op.op === "put") {
+      return `${op.blob ? "added" : "changed"} session ${what}`;
+    }
+    return `deleted session ${what}`;
   });
   return `[The user ${parts.join("; ")} in the app.]`;
 }
@@ -422,22 +643,22 @@ export function editNotice(ops: readonly EntryOp[]): string {
 export function foldEdits(messages: readonly Message[]): ModelMessage[] {
   const out: ModelMessage[] = [];
   let run: {
-    items: { content: string; attachments?: readonly Attachment[] }[];
+    items: { content: string; files?: readonly string[] }[];
     hasEdit: boolean;
   } | null = null;
   const flush = () => {
     if (!run) return;
     if (run.hasEdit) {
-      // Folded into one message, which keeps every attachment in order.
+      // Folded into one message, which keeps every file in order.
       out.push(
         userMessage(
           run.items.map((i) => i.content).join("\n\n"),
-          run.items.flatMap((i) => i.attachments ?? []),
+          run.items.flatMap((i) => i.files ?? []),
         ),
       );
     } else {
       for (const i of run.items) {
-        out.push(userMessage(i.content, i.attachments));
+        out.push(userMessage(i.content, i.files));
       }
     }
     run = null;
@@ -446,8 +667,8 @@ export function foldEdits(messages: readonly Message[]): ModelMessage[] {
     if (m.role === "user" || m.role === "edit") {
       run ??= { items: [], hasEdit: false };
       run.items.push(
-        m.role === "user" && m.attachments
-          ? { content: m.content, attachments: m.attachments }
+        m.role === "user" && m.files
+          ? { content: m.content, files: m.files }
           : { content: m.content },
       );
       if (m.role === "edit") run.hasEdit = true;
@@ -460,12 +681,12 @@ export function foldEdits(messages: readonly Message[]): ModelMessage[] {
   return out;
 }
 
-/** A user message for a model; `attachments` is left out when there are none. */
+/** A user message for a model; `files` is left out when there are none. */
 function userMessage(
   content: string,
-  attachments: readonly Attachment[] | undefined,
+  files: readonly string[] | undefined,
 ): ModelMessage {
-  return attachments && attachments.length > 0
-    ? { role: "user", content, attachments: [...attachments] }
+  return files && files.length > 0
+    ? { role: "user", content, files: [...files] }
     : { role: "user", content };
 }

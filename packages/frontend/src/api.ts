@@ -1,13 +1,13 @@
 import type {
   ApprovalAnswer,
+  BlobRef,
   ApprovalRequest,
-  Attachment,
   ContentBlock,
   ControlResult,
   DataInfo,
   DataView,
   EntryKind,
-  FileType,
+  MediaType,
   InputAnswer,
   InputRequest,
   Message,
@@ -377,6 +377,34 @@ export interface Settings {
   subagentMessageLabel: string;
   /** How deep subagents can nest; 0: subagents are off. */
   subagentDepth: number;
+  /** The most kept images and audio files from earlier turns sent to the model. */
+  inlineMediaCap: number;
+  /** Keep earlier turns' media in view when nobody chose. */
+  keepMediaInline: boolean;
+  /** The agent whose prompt writes the text of images and audio. Empty: off. */
+  mediaDescriberAgent: string;
+  /** The router model that runs it. Empty: off. */
+  mediaDescriberModel: string;
+}
+
+/** Where a file's text came from. */
+export type DerivedState =
+  "none" | "pending" | "generated" | "edited" | "failed";
+
+/** The description or transcript of an image or audio file. */
+export interface DerivedText {
+  text: string;
+  state: DerivedState;
+}
+
+/** What a change of the describer settings would touch. */
+export interface MediaDescriberInfo {
+  /** A model and an agent are set, so files are described. */
+  enabled: boolean;
+  /** Image and audio files. */
+  files: number;
+  /** Those with no text. */
+  empty: number;
 }
 
 export interface SettingsView {
@@ -415,22 +443,38 @@ const entriesBase = (s: EntryScope, kind: EntryKind) =>
         : `/api/sessions/${s.id}`
   }/${kind === "file" ? "files" : "notes"}`;
 
+/** What an upload made (`POST …/files`). */
+export interface UploadedFile {
+  key: string;
+  /** For example `session://cat.png`. */
+  ref: string;
+  mediaType: MediaType;
+  size: number;
+  blob: BlobRef;
+  /** True when it replaced a file of the same name. */
+  replaced: boolean;
+}
+
 /** A file or note. For a note, `key` is its id. */
 export interface Entry {
   key: string;
   /** Files only. */
-  type?: FileType;
-  /** For a deleted entry, its last value. */
+  mediaType?: MediaType;
+  /** For a deleted entry, its last value. Empty for a binary file. */
   value: string;
+  /** Binary files: where the bytes are (`blobUrl`). */
+  blob?: BlobRef;
   updatedAt: string;
   deleted: boolean;
 }
 
 export interface EntryVersion {
   seq: number;
-  type?: FileType;
+  mediaType?: MediaType;
   /** For a deletion, the value at the time. */
   value: string;
+  /** Binary files: the bytes of this version. */
+  blob?: BlobRef;
   deleted: boolean;
   by: "user" | "model";
   sessionId: string | null;
@@ -925,27 +969,43 @@ export const api = {
     id: string,
     content: string,
     choices: Choices,
-    attachmentIds: readonly string[] = [],
+    /** References to image or audio files, such as `session://cat.png`. */
+    files: readonly string[] = [],
   ) =>
     request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
       content,
-      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+      ...(files.length > 0 ? { files } : {}),
       ...choices,
     }),
-  /** Uploads a file to a session, to send with its next message. */
-  uploadAttachment: (sessionId: string, file: File, mediaType: string) =>
-    requestFile<Attachment>(
-      `/api/sessions/${sessionId}/attachments?name=${encodeURIComponent(file.name)}`,
+  /**
+   * Uploads an image or audio file to a scope as a binary file. A name in
+   * use gets a suffix unless `replace` is set; the result names the file
+   * that was made.
+   */
+  uploadFile: (
+    s: EntryScope,
+    file: File,
+    mediaType: string,
+    options: { name?: string; replace?: boolean } = {},
+  ) => {
+    const name = options.name ?? file.name;
+    const query = [
+      ...(name ? [`name=${encodeURIComponent(name)}`] : []),
+      ...(options.replace ? ["replace=true"] : []),
+    ].join("&");
+    return requestFile<UploadedFile>(
+      `${entriesBase(s, "file")}${query ? `?${query}` : ""}`,
       file,
       mediaType,
-    ),
+    );
+  },
   /**
-   * An attachment's bytes as an object URL. The request carries the token,
+   * A binary file's bytes as an object URL. The request carries the token,
    * which an <img> or <audio> element cannot send, so the file is fetched
    * here and shown from the URL.
    */
-  attachmentUrl: async (id: string): Promise<string> => {
-    const res = await fetch(`/api/attachments/${id}`, {
+  blobUrl: async (hash: string): Promise<string> => {
+    const res = await fetch(`/api/blobs/${hash}`, {
       headers: { authorization: `Bearer ${token ?? ""}` },
     });
     if (!res.ok) {
@@ -1041,11 +1101,40 @@ export const api = {
       `${entriesBase(s, kind)}/${encodeURIComponent(key)}`,
     ),
   /** Creates or replaces a file. */
-  writeFile: (s: EntryScope, key: string, type: FileType, value: string) =>
+  writeFile: (
+    s: EntryScope,
+    key: string,
+    mediaType: MediaType,
+    value: string,
+  ) =>
     request<EntryDetail>(
       "PUT",
       `${entriesBase(s, "file")}/${encodeURIComponent(key)}`,
-      { type, value },
+      { mediaType, value },
+    ),
+  /** Every folder of a scope, explicit or holding files. */
+  listFolders: (s: EntryScope) =>
+    request<string[]>(
+      "GET",
+      `${entriesBase(s, "file").replace(/files$/, "folders")}`,
+    ),
+  createFolder: (s: EntryScope, path: string) =>
+    request<{ path: string; created: boolean }>(
+      "POST",
+      entriesBase(s, "file").replace(/files$/, "folders"),
+      { path },
+    ),
+  renameFolder: (s: EntryScope, path: string, newPath: string) =>
+    request<{ path: string }>(
+      "POST",
+      `${entriesBase(s, "file").replace(/files$/, "folders")}/rename`,
+      { path, newPath },
+    ),
+  deleteFolder: (s: EntryScope, path: string) =>
+    request<unknown>(
+      "POST",
+      `${entriesBase(s, "file").replace(/files$/, "folders")}/delete`,
+      { path },
     ),
   /** Changes a note's text; the user cannot create notes. */
   editNote: (s: EntryScope, id: string, text: string) =>
@@ -1187,6 +1276,34 @@ export const api = {
   /** The session's composed prompts, transcript and every event. */
   getSessionDebug: (id: string) =>
     request<SessionDebug>("GET", `/api/sessions/${id}/debug`),
+  getDerivedText: (hash: string) =>
+    request<DerivedText>("GET", `/api/blobs/${hash}/derived-text`),
+  /** Empty text clears it. */
+  setDerivedText: (hash: string, text: string) =>
+    request<DerivedText>("PUT", `/api/blobs/${hash}/derived-text`, { text }),
+  /** Writes the text again with the Media Describer. */
+  describeFile: (hash: string) =>
+    request<DerivedText>("POST", `/api/blobs/${hash}/describe`),
+  getMediaDescriber: () =>
+    request<MediaDescriberInfo>("GET", "/api/media-describer"),
+  /** The answer to "Generate descriptions for N files?". */
+  regenerateDescriptions: (mode: "empty" | "all") =>
+    request<{ queued: number }>("POST", "/api/media-describer/regenerate", {
+      mode,
+    }),
+  /** The user's keep or drop choices for the session's images and audio. */
+  getMediaChoices: (id: string) =>
+    request<{ ref: string; keep: boolean }[]>(
+      "GET",
+      `/api/sessions/${id}/media-choices`,
+    ),
+  /** `keep: null` clears the choice, so the defaults decide again. */
+  setMediaChoice: (id: string, ref: string, keep: boolean | null) =>
+    request<{ ref: string; keep: boolean | null }>(
+      "PUT",
+      `/api/sessions/${id}/media-choices`,
+      { ref, keep },
+    ),
   getSettings: () => request<SettingsView>("GET", "/api/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<SettingsView>("PUT", "/api/settings", patch),

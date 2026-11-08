@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  checkFileKey,
+  checkFileName,
   createEntryAccess,
   editNotice,
   EntryError,
@@ -39,13 +39,28 @@ const tool = (entries: EntryOp[]): Message => ({
   entries,
 });
 
-describe("checkFileKey", () => {
-  it("allows letters, digits, -, _ and .", () => {
-    expect(() => checkFileKey("Alice_2.notes-v1.md")).not.toThrow();
+describe("checkFileName", () => {
+  it("allows letters, digits, spaces, Unicode, folders and dots inside", () => {
+    expect(() => checkFileName("Alice_2.notes-v1.md")).not.toThrow();
+    expect(() => checkFileName("My Photo é.png")).not.toThrow();
+    expect(() => checkFileName("characters/minor/alice.md")).not.toThrow();
   });
 
-  it.each(["", "a/b", "a b", "é", "a:b"])("rejects %j", (key) => {
-    expect(() => checkFileKey(key)).toThrow(EntryError);
+  it.each([
+    "",
+    "a//b",
+    "/a",
+    "a/",
+    ".",
+    "..",
+    "a/../b",
+    "a.",
+    "a ",
+    "CON",
+    "nul.txt",
+    "a\u0001b",
+  ])("rejects %j", (key) => {
+    expect(() => checkFileName(key)).toThrow(EntryError);
   });
 });
 
@@ -54,19 +69,33 @@ describe("replaySessionEntries", () => {
     const state = replaySessionEntries([
       { role: "user", content: "hi" },
       tool([
-        { op: "put", kind: "file", key: "a", value: "1", type: "plain" },
+        {
+          op: "put",
+          kind: "file",
+          key: "a",
+          value: "1",
+          mediaType: "text/plain",
+        },
         { op: "put", kind: "note", key: "n1", value: "fact" },
       ]),
       {
         role: "edit",
         content: "",
         entries: [
-          { op: "put", kind: "file", key: "a", value: "2", type: "markdown" },
+          {
+            op: "put",
+            kind: "file",
+            key: "a",
+            value: "2",
+            mediaType: "text/markdown",
+          },
           { op: "delete", kind: "note", key: "n1" },
         ],
       },
     ]);
-    expect([...state.file]).toEqual([["a", { value: "2", type: "markdown" }]]);
+    expect([...state.file]).toEqual([
+      ["a", { value: "2", mediaType: "text/markdown" }],
+    ]);
     expect(state.note.size).toBe(0);
     expect(state.used.note.has("n1")).toBe(true);
   });
@@ -106,31 +135,47 @@ describe("sessionEntryVersions", () => {
 describe("createEntryAccess", () => {
   it("records session-scoped writes as ops and sees them at once", () => {
     const { entries, sessionOps } = access();
-    expect(entries.writeFile("session", "a.md", "markdown", "# A")).toBe(true);
-    expect(entries.writeFile("session", "a.md", "markdown", "# B")).toBe(false);
+    expect(entries.writeFile("session", "a.md", "text/markdown", "# A")).toBe(
+      true,
+    );
+    expect(entries.writeFile("session", "a.md", "text/markdown", "# B")).toBe(
+      false,
+    );
     expect(entries.readFile("session", "a.md")).toEqual({
       scope: "session",
       key: "a.md",
-      type: "markdown",
+      mediaType: "text/markdown",
       size: 3,
       value: "# B",
     });
     expect(entries.deleteFile("session", "a.md")).toBe(true);
     expect(entries.deleteFile("session", "a.md")).toBe(false);
     expect(sessionOps).toEqual([
-      { op: "put", kind: "file", key: "a.md", value: "# A", type: "markdown" },
-      { op: "put", kind: "file", key: "a.md", value: "# B", type: "markdown" },
+      {
+        op: "put",
+        kind: "file",
+        key: "a.md",
+        value: "# A",
+        mediaType: "text/markdown",
+      },
+      {
+        op: "put",
+        kind: "file",
+        key: "a.md",
+        value: "# B",
+        mediaType: "text/markdown",
+      },
       { op: "delete", kind: "file", key: "a.md" },
     ]);
   });
 
   it("writes project and global entries through SharedEntries, as the model", () => {
     const { entries, sessionOps, shared } = access();
-    entries.writeFile("global", "style", "plain", "terse");
-    entries.writeFile("project", "style", "plain", "lush");
+    entries.writeFile("global", "style", "text/plain", "terse");
+    entries.writeFile("project", "style", "text/plain", "lush");
     expect(entries.listFiles()).toEqual([
-      { scope: "project", key: "style", type: "plain", size: 4 },
-      { scope: "global", key: "style", type: "plain", size: 5 },
+      { scope: "project", key: "style", mediaType: "text/plain", size: 4 },
+      { scope: "global", key: "style", mediaType: "text/plain", size: 5 },
     ]);
     // Several scopes: in the usual order, once each (tool prompts D7).
     expect(
@@ -150,7 +195,7 @@ describe("createEntryAccess", () => {
     const { entries } = access({ inProject: false });
     expect(entries.scopes).toEqual(["session", "global"]);
     expect(() => entries.listFiles("project")).toThrow(/not in a project/);
-    expect(() => entries.writeFile("project", "a", "plain", "")).toThrow(
+    expect(() => entries.writeFile("project", "a", "text/plain", "")).toThrow(
       EntryError,
     );
   });
@@ -167,13 +212,15 @@ describe("createEntryAccess", () => {
 
   it("rejects bad keys and invalid JSON", () => {
     const { entries } = access();
-    expect(() => entries.writeFile("session", "a/b", "plain", "")).toThrow(
-      /Invalid file key/,
-    );
-    expect(() => entries.writeFile("session", "a", "json", "{nope")).toThrow(
-      /not valid JSON/,
-    );
-    expect(entries.writeFile("session", "a", "json", '{"ok":1}')).toBe(true);
+    expect(() =>
+      entries.writeFile("session", "a/../b", "text/plain", ""),
+    ).toThrow(/Invalid file name/);
+    expect(() =>
+      entries.writeFile("session", "a", "application/json", "{nope"),
+    ).toThrow(/not valid JSON/);
+    expect(
+      entries.writeFile("session", "a", "application/json", '{"ok":1}'),
+    ).toBe(true);
   });
 
   it("gives notes new ids, never reusing a deleted note's id", () => {
@@ -220,33 +267,33 @@ describe("foldEdits", () => {
     ).toEqual([{ role: "user", content: "[edit]" }]);
   });
 
-  it("keeps the attachments of a user message an edit is joined to", () => {
-    const a = { id: "a1", kind: "image" as const, mediaType: "image/png" };
-    const b = { id: "a2", kind: "audio" as const, mediaType: "audio/wav" };
+  it("keeps the files of a user message an edit is joined to", () => {
+    const a = "session://photo.png";
+    const b = "session://note.wav";
     expect(
       foldEdits([
         { role: "edit", content: "[edit]", entries: [] },
-        { role: "user", content: "one", attachments: [a] },
-        { role: "user", content: "two", attachments: [b] },
+        { role: "user", content: "one", files: [a] },
+        { role: "user", content: "two", files: [b] },
       ]),
     ).toEqual([
       {
         role: "user",
         content: "[edit]\n\none\n\ntwo",
-        attachments: [a, b],
+        files: [a, b],
       },
     ]);
   });
 
-  it("keeps the attachments of user messages with no edit", () => {
-    const a = { id: "a1", kind: "image" as const, mediaType: "image/png" };
+  it("keeps the files of user messages with no edit", () => {
+    const a = "session://photo.png";
     expect(
       foldEdits([
-        { role: "user", content: "one", attachments: [a] },
+        { role: "user", content: "one", files: [a] },
         { role: "user", content: "two" },
       ]),
     ).toEqual([
-      { role: "user", content: "one", attachments: [a] },
+      { role: "user", content: "one", files: [a] },
       { role: "user", content: "two" },
     ]);
   });
@@ -302,6 +349,226 @@ describe("EntryAccess.search", () => {
     const { entries } = access();
     await expect(entries.search("file", "x", undefined, 5)).rejects.toThrow(
       "Search is not available.",
+    );
+  });
+});
+
+describe("folders", () => {
+  it("lists explicit folders and the folders above files, in a session", () => {
+    const { entries, sessionOps } = access();
+    expect(entries.createFolder("session", "notes/old")).toBe(true);
+    expect(entries.createFolder("session", "notes/old")).toBe(false);
+    entries.writeFile("session", "chars/alice.md", "text/markdown", "A");
+    expect(entries.listFolders("session").map((f) => f.path)).toEqual([
+      "chars",
+      "notes",
+      "notes/old",
+    ]);
+    expect(sessionOps.filter((o) => o.op === "folder")).toEqual([
+      { op: "folder", action: "create", path: "notes/old" },
+    ]);
+  });
+
+  it("rebuilds folders from the transcript", () => {
+    const state = replaySessionEntries([
+      tool([{ op: "folder", action: "create", path: "a" }]),
+      tool([{ op: "folder", action: "create", path: "b" }]),
+      tool([{ op: "folder", action: "delete", path: "a" }]),
+    ]);
+    expect([...state.folders]).toEqual(["b"]);
+  });
+
+  it("refuses a name that is both a file and a folder", () => {
+    const { entries } = access();
+    entries.writeFile("session", "a", "text/plain", "x");
+    expect(() => entries.createFolder("session", "a")).toThrow(/is a file/);
+    expect(() =>
+      entries.writeFile("session", "a/b.md", "text/plain", "x"),
+    ).toThrow(/is a file/);
+    entries.createFolder("session", "dir");
+    expect(() =>
+      entries.writeFile("session", "dir", "text/plain", "x"),
+    ).toThrow(/is a folder/);
+  });
+
+  it("renames a session folder with its files and explicit subfolders", () => {
+    const { entries } = access();
+    entries.writeFile("session", "a/one.md", "text/markdown", "1");
+    entries.writeFile("session", "a/b/two.md", "text/plain", "2");
+    entries.createFolder("session", "a/empty");
+    expect(entries.renameFolder("session", "a", "z")).toEqual({ files: 2 });
+    expect(entries.listFiles("session").map((f) => f.key)).toEqual([
+      "z/one.md",
+      "z/b/two.md",
+    ]);
+    expect(entries.readFile("session", "z/b/two.md")?.mediaType).toBe(
+      "text/plain",
+    );
+    expect(entries.listFolders("session").map((f) => f.path)).toEqual([
+      "z",
+      "z/b",
+      "z/empty",
+    ]);
+    expect(entries.renameFolder("session", "missing", "x")).toBeUndefined();
+  });
+
+  it("refuses to rename a folder onto something or into itself", () => {
+    const { entries } = access();
+    entries.createFolder("session", "a");
+    entries.createFolder("session", "b");
+    entries.writeFile("session", "f", "text/plain", "x");
+    expect(() => entries.renameFolder("session", "a", "b")).toThrow(/exists/);
+    expect(() => entries.renameFolder("session", "a", "f")).toThrow(/exists/);
+    expect(() => entries.renameFolder("session", "a", "a/c")).toThrow(/itself/);
+  });
+
+  it("deletes a session folder with the files inside it", () => {
+    const { entries } = access();
+    entries.writeFile("session", "a/one.md", "text/markdown", "1");
+    entries.writeFile("session", "keep.md", "text/markdown", "k");
+    entries.createFolder("session", "a/sub");
+    expect(entries.deleteFolder("session", "a")).toEqual({ files: 1 });
+    expect(entries.listFiles("session").map((f) => f.key)).toEqual(["keep.md"]);
+    expect(entries.listFolders("session")).toEqual([]);
+    expect(entries.deleteFolder("session", "a")).toBeUndefined();
+  });
+
+  it("works in shared scopes through SharedEntries", () => {
+    const { entries } = access();
+    entries.writeFile("project", "docs/a.md", "text/markdown", "A");
+    expect(entries.createFolder("project", "empty")).toBe(true);
+    expect(entries.renameFolder("project", "docs", "papers")).toEqual({
+      files: 1,
+    });
+    expect(entries.listFiles("project").map((f) => f.key)).toEqual([
+      "papers/a.md",
+    ]);
+    expect(entries.deleteFolder("project", "papers")).toEqual({ files: 1 });
+    expect(entries.listFiles("project")).toEqual([]);
+  });
+
+  it("describes folder edits in the notice for the model", () => {
+    expect(
+      editNotice([
+        { op: "folder", action: "create", path: "a" },
+        { op: "folder", action: "delete", path: "b" },
+      ]),
+    ).toBe(
+      "[The user created session folder a; deleted session folder b in the app.]",
+    );
+  });
+});
+
+describe("binary files", () => {
+  const blob = { hash: "b".repeat(64), size: 1234 };
+  const make = () => {
+    const sessionOps: EntryOp[] = [];
+    const access = createEntryAccess({
+      session: replaySessionEntries([]),
+      sessionOps,
+      shared: new FakeSharedEntries(),
+      inProject: true,
+      author: { by: "user" },
+    });
+    return { access, sessionOps };
+  };
+
+  it("putBlob records an operation that names the bytes, and reads back", () => {
+    const { access, sessionOps } = make();
+    expect(access.putBlob("session", "a/cat.png", "image/png", blob)).toBe(
+      true,
+    );
+    expect(sessionOps).toEqual([
+      {
+        op: "put",
+        kind: "file",
+        key: "a/cat.png",
+        value: "",
+        mediaType: "image/png",
+        blob,
+      },
+    ]);
+    expect(access.readFile("session", "a/cat.png")).toEqual({
+      scope: "session",
+      key: "a/cat.png",
+      mediaType: "image/png",
+      size: 1234,
+      value: "",
+      blob,
+    });
+    expect(access.listFiles("session")).toEqual([
+      {
+        scope: "session",
+        key: "a/cat.png",
+        mediaType: "image/png",
+        size: 1234,
+      },
+    ]);
+    expect(access.putBlob("session", "a/cat.png", "image/jpeg", blob)).toBe(
+      false,
+    );
+  });
+
+  it("works in the shared scopes", () => {
+    const { access } = make();
+    access.putBlob("global", "cat.png", "image/png", blob);
+    expect(access.readFile("global", "cat.png")).toMatchObject({ blob });
+  });
+
+  it("refuses text as a binary type and bytes as a text type", () => {
+    const { access } = make();
+    expect(() =>
+      access.writeFile("session", "x.png", "image/png", "hi"),
+    ).toThrow(/binary type/);
+    expect(() =>
+      access.putBlob("session", "x.md", "text/markdown", blob),
+    ).toThrow(/not a binary type/);
+  });
+
+  it("keeps the folder rules for a binary file's name", () => {
+    const { access } = make();
+    access.createFolder("session", "pics");
+    expect(() => access.putBlob("session", "pics", "image/png", blob)).toThrow(
+      /folder/,
+    );
+    access.putBlob("session", "cat.png", "image/png", blob);
+    expect(() =>
+      access.putBlob("session", "cat.png/x.png", "image/png", blob),
+    ).toThrow(/is a file/);
+  });
+
+  it("moves a binary file with its bytes when a folder is renamed", () => {
+    const { access, sessionOps } = make();
+    access.putBlob("session", "a/cat.png", "image/png", blob);
+    access.renameFolder("session", "a", "b");
+    expect(
+      sessionOps.find((o) => o.op === "put" && o.key === "b/cat.png"),
+    ).toMatchObject({ blob });
+    expect(access.readFile("session", "b/cat.png")).toMatchObject({ blob });
+    expect(access.readFile("session", "a/cat.png")).toBeUndefined();
+  });
+
+  it("says a binary file was added, in the notice the model reads", () => {
+    expect(
+      editNotice([
+        {
+          op: "put",
+          kind: "file",
+          key: "cat.png",
+          value: "",
+          mediaType: "image/png",
+          blob,
+        },
+        {
+          op: "put",
+          kind: "file",
+          key: "a.md",
+          value: "x",
+          mediaType: "text/markdown",
+        },
+      ]),
+    ).toBe(
+      "[The user added session file cat.png; changed session file a.md in the app.]",
     );
   });
 });

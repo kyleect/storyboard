@@ -1,11 +1,15 @@
 import { z } from "zod";
 import {
-  checkFileKey,
+  checkFileName,
   checkFileValue,
   defineTool,
   FILE_KEY_PATTERN,
   EntryError,
-  FileType,
+  isInFolder,
+  mediaKindOf,
+  parseRef,
+  plainRef,
+  TEXT_MEDIA_TYPES,
   type Form,
   type FormField,
   type Scope,
@@ -85,8 +89,32 @@ const guarded = async (
 const notDone = (text: string): ToolOutput => ({ data: text, isError: true });
 
 const KEY_RULE =
-  'Letters, digits, "-", "_" and "." only; case-sensitive (for example characters.alice.md).';
-const FILE_KEY = new RegExp(FILE_KEY_PATTERN);
+  'A name, or folders and a name separated by "/" (for example characters/alice.md). Case-sensitive. Spaces and any letters are fine; no control characters, no "." or ".." as a name, no name ending in a dot or a space, no Windows device names such as CON or NUL, at most 255 characters per name. You can also give a reference such as <session://notes.md> to name the scope and the file together.';
+
+/**
+ * A file named by a reference (`<session://notes.md>` or plain) gives its
+ * scope and path; any other text is a path with no scope (D7, D34, D52).
+ */
+function resolveName(
+  ctx: ToolContext,
+  text: string,
+): { key: string; scope?: Scope } {
+  const ref = parseRef(text.trim());
+  if (!ref) return { key: text };
+  if (ref.location === "workspace") {
+    throw new EntryError(
+      "A workspace file cannot be reached with the files tools.",
+    );
+  }
+  if (!ctx.entries.scopes.includes(ref.location)) {
+    throw new EntryError(
+      ref.location === "project"
+        ? "This conversation is not in a project, so there is no project scope."
+        : `The ${ref.location} scope is not available.`,
+    );
+  }
+  return { key: ref.path, scope: ref.location };
+}
 
 // ---- Forms ---------------------------------------------------------------
 
@@ -325,13 +353,19 @@ const several = "It is in more than one scope; pick the copy.";
 export const filesList = defineTool({
   name: "files_list",
   description:
-    "Lists files (keys, types and sizes) with the scope each is in. Covers every scope unless you name some in scopes. The same key can exist in several scopes.",
-  input: z.object({ scopes: Scopes.optional() }),
+    "Lists files (keys, media types and sizes) and folders with the scope each is in. Covers every scope unless you name some in scopes. The same key can exist in several scopes. Give folder to list only what is inside one folder.",
+  input: z.object({
+    scopes: Scopes.optional(),
+    folder: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("A folder path; leave out to list everything."),
+  }),
   approval: "never",
   group: "files",
-  alwaysOn: true,
-  execute: ({ scopes }, ctx) =>
-    guarded({ scopes: scopes?.join(",") }, async () => {
+  execute: ({ scopes, folder }, ctx) =>
+    guarded({ scopes: scopes?.join(","), folder }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
         title: "List files in which scopes?",
         question: "Scopes",
@@ -339,9 +373,16 @@ export const filesList = defineTool({
         skipLabel: "Don't list",
       });
       if (!covered) return notDone("Not listed: the user chose not to list.");
+      const inside = (path: string) =>
+        folder === undefined || (path !== folder && isInFolder(path, folder));
       return {
         data: {
-          files: ctx.entries.listFiles(covered.scopes),
+          files: ctx.entries
+            .listFiles(covered.scopes)
+            .filter((f) => inside(f.key)),
+          folders: ctx.entries
+            .listFolders(covered.scopes)
+            .filter((f) => inside(f.path)),
           ...(covered.note ? { note: covered.note } : {}),
         },
         ...(covered.state ? { state: covered.state } : {}),
@@ -352,27 +393,69 @@ export const filesList = defineTool({
 export const filesRead = defineTool({
   name: "files_read",
   description:
-    "Reads one file's full value, by key. If the key is in more than one scope, the user picks the copy.",
-  input: z.object({ key: z.string().describe(KEY_RULE) }),
+    "Reads one file's full value, by key or by reference. If the key is in more than one scope, the user picks the copy. An image or audio file is shown or played to you instead of returned as text, if the model in use can take it.",
+  input: z.object({
+    key: z.string().describe(KEY_RULE),
+    keep: z
+      .boolean()
+      .optional()
+      .describe(
+        "For an image or audio file: true to keep it in view in later turns, not only this one. Leave out unless you will need to look at it again.",
+      ),
+  }),
   approval: "never",
   group: "files",
-  alwaysOn: true,
-  execute: ({ key }, ctx) =>
-    guarded({ key }, async () => {
-      checkFileKey(key);
-      const scope = await pickCopy(ctx, fileCopies(ctx, key), {
-        title: `Read which "${key}"?`,
-        description: several,
-        submitLabel: "Read",
-        skipLabel: "Don't read",
-      });
+  execute: ({ key: given, keep }, ctx) =>
+    guarded({ key: given }, async () => {
+      const { key, scope: named } = resolveName(ctx, given);
+      checkFileName(key);
+      const scope = await pickCopy(
+        ctx,
+        named ? [named] : fileCopies(ctx, key),
+        {
+          title: `Read which "${key}"?`,
+          description: several,
+          submitLabel: "Read",
+          skipLabel: "Don't read",
+        },
+      );
       if (scope === "skipped")
         return notDone("Not read: the user chose not to pick a copy.");
       const file =
         scope === "none" ? undefined : ctx.entries.readFile(scope, key);
-      if (!file)
+      if (!file || scope === "none")
         return fail(`There is no file "${key}".`, "not_found", { key });
-      return { data: { scope, key, type: file.type, value: file.value } };
+      if (file.blob) {
+        const kind = file.mediaType ? mediaKindOf(file.mediaType) : undefined;
+        const ref = plainRef({ location: scope, path: key });
+        const base = { scope, key, mediaType: file.mediaType, size: file.size };
+        if (!kind) {
+          return {
+            data: {
+              ...base,
+              note: "This is a binary file, so there is no text to read.",
+            },
+          };
+        }
+        if (ctx.mediaSupport && !ctx.mediaSupport[kind]) {
+          return {
+            data: {
+              ...base,
+              note: `The model in use cannot take ${kind} files, so it cannot be read.`,
+            },
+          };
+        }
+        return {
+          data: {
+            ...base,
+            note: `This is ${kind === "image" ? "an image" : "an audio file"}. It follows this result.`,
+          },
+          media: [{ ref, ...(keep !== undefined ? { keep } : {}) }],
+        };
+      }
+      return {
+        data: { scope, key, mediaType: file.mediaType, value: file.value },
+      };
     }),
 });
 
@@ -385,33 +468,51 @@ const nameField = (suggested: string | undefined): FormField => ({
   kind: "text",
   multiline: false,
   pattern: FILE_KEY_PATTERN,
-  patternMessage: 'Use only letters, digits, "-", "_" and ".".',
+  patternMessage: "Control characters are not allowed.",
   ...(suggested ? { default: suggested } : {}),
 });
 
 export const filesWrite = defineTool({
   name: "files_write",
   description:
-    "Creates a file, or replaces its whole value. Call it as soon as you have the value, and leave out key or scope when you don't know them: for a new file the user is shown a form to name it and pick its scope, with your suggestions filled in. Don't ask the user for these in your reply. A file that already exists in one scope is saved there without asking. The result says the name and scope used. The user can see and edit files too. type is how the value is shown: plain, markdown (the default) or json (json must be valid JSON).",
+    "Creates a file, or replaces its whole value. Call it as soon as you have the value, and leave out key or scope when you don't know them: for a new file the user is shown a form to name it and pick its scope, with your suggestions filled in. Don't ask the user for these in your reply. A file that already exists in one scope is saved there without asking. The result says the name and scope used. The user can see and edit files too. mediaType is what the value is: text/plain, text/markdown (the default) or application/json (it must be valid JSON). A name may include folders, such as characters/alice.md.",
   input: z.object({
     key: z
       .string()
       .optional()
       .describe(`The file's name, if you have one to suggest. ${KEY_RULE}`),
-    type: FileType.optional(),
+    mediaType: z.enum(TEXT_MEDIA_TYPES).optional(),
     value: z.string(),
     scope: SuggestedScope.optional(),
   }),
   approval: "never",
   group: "files",
-  alwaysOn: true,
-  execute: ({ key, type = "markdown", value, scope }, ctx) =>
-    guarded({ key, type, scope }, async () => {
+  execute: (
+    { key: given, mediaType = "text/markdown", value, scope: asked },
+    ctx,
+  ) =>
+    guarded({ key: given, mediaType, scope: asked }, async () => {
       // A bad value fails before the user is asked. A bad suggested name is
       // shown in the form for the user to fix (Q18).
-      checkFileValue(type, value);
-      const named = key !== undefined && FILE_KEY.test(key) ? key : undefined;
-      const copies = named ? fileCopies(ctx, named) : [];
+      checkFileValue(mediaType, value);
+      const resolved =
+        given === undefined ? undefined : resolveName(ctx, given);
+      const key = resolved?.key;
+      const scope = resolved?.scope ?? asked;
+      const valid = (name: string) => {
+        try {
+          checkFileName(name);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const named = key !== undefined && valid(key) ? key : undefined;
+      const copies = named
+        ? resolved?.scope
+          ? fileCopies(ctx, named).filter((s) => s === resolved.scope)
+          : fileCopies(ctx, named)
+        : [];
       const [only] = copies;
       const notes: string[] = [];
       let target: Scope;
@@ -444,7 +545,7 @@ export const filesWrite = defineTool({
         const marked = scope && choices.includes(scope) ? [scope] : [];
         const answer = await ctx.requestInput({
           title: "Save a new file",
-          description: `${type} file, ${value.length} characters: ${excerpt(value)}`,
+          description: `${mediaType} file, ${value.length} characters: ${excerpt(value)}`,
           fields: [
             nameField(key),
             {
@@ -465,7 +566,7 @@ export const filesWrite = defineTool({
           return notDone("Not saved: the user chose not to save this file.");
         name = String(answer.answers["name"]);
         target = answer.answers["scope"] as Scope;
-        checkFileKey(name);
+        checkFileName(name);
         if (key !== undefined && name !== key)
           notes.push(
             `The user named the file "${name}" instead of your suggestion ("${key}").`,
@@ -473,7 +574,7 @@ export const filesWrite = defineTool({
         const n = overrideNote(scope, target);
         if (n) notes.push(n);
       }
-      const created = ctx.entries.writeFile(target, name, type, value);
+      const created = ctx.entries.writeFile(target, name, mediaType, value);
       // A name the user typed can already exist in the scope picked (Q21).
       if (!created && !(named && copies.length > 0))
         notes.push(
@@ -483,7 +584,7 @@ export const filesWrite = defineTool({
         data: {
           scope: target,
           key: name,
-          type,
+          mediaType,
           created,
           ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
         },
@@ -494,25 +595,149 @@ export const filesWrite = defineTool({
 export const filesDelete = defineTool({
   name: "files_delete",
   description:
-    "Deletes a file, by key. If the key is in more than one scope, the user picks the copy. Its history is kept, and the user can restore it.",
+    "Deletes a file, by key or by reference. If the key is in more than one scope, the user picks the copy. Its history is kept, and the user can restore it.",
   input: z.object({ key: z.string().describe(KEY_RULE) }),
   approval: "never",
   group: "files",
-  alwaysOn: true,
-  execute: ({ key }, ctx) =>
-    guarded({ key }, async () => {
-      checkFileKey(key);
-      const scope = await pickCopy(ctx, fileCopies(ctx, key), {
-        title: `Delete which "${key}"?`,
-        description: several,
-        submitLabel: "Delete",
-        skipLabel: "Don't delete",
-      });
+  execute: ({ key: given }, ctx) =>
+    guarded({ key: given }, async () => {
+      const { key, scope: named } = resolveName(ctx, given);
+      checkFileName(key);
+      const scope = await pickCopy(
+        ctx,
+        named ? [named] : fileCopies(ctx, key),
+        {
+          title: `Delete which "${key}"?`,
+          description: several,
+          submitLabel: "Delete",
+          skipLabel: "Don't delete",
+        },
+      );
       if (scope === "skipped")
         return notDone("Not deleted: the user chose not to pick a copy.");
       if (scope === "none" || !ctx.entries.deleteFile(scope, key))
         return fail(`There is no file "${key}".`, "not_found", { key });
       return { data: { scope, key, deleted: true } };
+    }),
+});
+
+// ---- Folders (D6) -------------------------------------------------------
+
+const folderCopies = (ctx: ToolContext, path: string): Scope[] =>
+  ctx.entries
+    .listFolders()
+    .filter((f) => f.path === path)
+    .map((f) => f.scope);
+
+const FOLDER_RULE =
+  'A folder path: names separated by "/" (for example characters/minor). The same rules as file names. You can also give a reference such as <project://characters>.';
+
+export const filesFolderCreate = defineTool({
+  name: "files_folder_create",
+  description:
+    "Creates an empty folder. A folder is also made by writing a file with folders in its name (characters/alice.md). Leave out scope when you don't know it; the user picks it in a form, with your suggestion filled in.",
+  input: z.object({
+    path: z.string().describe(FOLDER_RULE),
+    scope: SuggestedScope.optional(),
+  }),
+  approval: "never",
+  group: "files",
+  execute: ({ path: given, scope: asked }, ctx) =>
+    guarded({ path: given, scope: asked }, async () => {
+      const { key: path, scope: named } = resolveName(ctx, given);
+      checkFileName(path);
+      let target: Scope;
+      if (named) {
+        target = named;
+      } else {
+        const picked = await askScope(ctx, ctx.entries.scopes, asked, {
+          title: `Create the folder "${path}" where?`,
+          question: "Create in",
+          submitLabel: "Create",
+          skipLabel: "Don't create",
+        });
+        if (!picked)
+          return notDone("Not created: the user chose not to create it.");
+        target = picked.scope;
+      }
+      const created = ctx.entries.createFolder(target, path);
+      const note = overrideNote(asked, target);
+      return {
+        data: { scope: target, path, created, ...(note ? { note } : {}) },
+      };
+    }),
+});
+
+export const filesFolderRename = defineTool({
+  name: "files_folder_rename",
+  description:
+    "Renames or moves a folder, with everything inside it, within its scope. If the folder is in more than one scope, the user picks the copy. The new path must not exist.",
+  input: z.object({
+    path: z.string().describe(FOLDER_RULE),
+    newPath: z.string().describe("The folder's new path. " + FOLDER_RULE),
+  }),
+  approval: "never",
+  group: "files",
+  execute: ({ path: given, newPath }, ctx) =>
+    guarded({ path: given, newPath }, async () => {
+      const { key: path, scope: named } = resolveName(ctx, given);
+      checkFileName(path);
+      const scope = await pickCopy(
+        ctx,
+        named ? [named] : folderCopies(ctx, path),
+        {
+          title: `Rename which folder "${path}"?`,
+          description: several,
+          submitLabel: "Rename",
+          skipLabel: "Don't rename",
+        },
+      );
+      if (scope === "skipped")
+        return notDone("Not renamed: the user chose not to pick a copy.");
+      const moved =
+        scope === "none"
+          ? undefined
+          : ctx.entries.renameFolder(
+              scope,
+              path,
+              resolveName(ctx, newPath).key,
+            );
+      if (!moved)
+        return fail(`There is no folder "${path}".`, "not_found", { path });
+      return {
+        data: { scope, path, newPath, renamed: true, files: moved.files },
+      };
+    }),
+});
+
+export const filesFolderDelete = defineTool({
+  name: "files_folder_delete",
+  description:
+    "Deletes a folder and every file and folder inside it. If the folder is in more than one scope, the user picks the copy. Each deleted file keeps its history, and the user can restore it.",
+  input: z.object({ path: z.string().describe(FOLDER_RULE) }),
+  approval: "never",
+  group: "files",
+  execute: ({ path: given }, ctx) =>
+    guarded({ path: given }, async () => {
+      const { key: path, scope: named } = resolveName(ctx, given);
+      checkFileName(path);
+      const scope = await pickCopy(
+        ctx,
+        named ? [named] : folderCopies(ctx, path),
+        {
+          title: `Delete which folder "${path}"?`,
+          description: several,
+          submitLabel: "Delete",
+          skipLabel: "Don't delete",
+        },
+      );
+      if (scope === "skipped")
+        return notDone("Not deleted: the user chose not to pick a copy.");
+      const gone =
+        scope === "none" ? undefined : ctx.entries.deleteFolder(scope, path);
+      if (!gone)
+        return fail(`There is no folder "${path}".`, "not_found", { path });
+      return { data: { scope, path, deleted: true, files: gone.files } };
     }),
 });
 
@@ -525,7 +750,6 @@ export const memoryList = defineTool({
   input: z.object({ scopes: Scopes.optional() }),
   approval: "never",
   group: "memory",
-  alwaysOn: true,
   execute: ({ scopes }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
@@ -555,7 +779,6 @@ export const memoryAdd = defineTool({
   }),
   approval: "never",
   group: "memory",
-  alwaysOn: true,
   execute: ({ text, scope }, ctx) =>
     guarded({ scope }, async () => {
       // The scope the user chose to keep using for notes (D15).
@@ -596,7 +819,6 @@ export const memoryUpdate = defineTool({
   input: z.object({ id: z.string(), text: z.string().min(1) }),
   approval: "never",
   group: "memory",
-  alwaysOn: true,
   execute: ({ id, text }, ctx) =>
     guarded({ id }, async () => {
       const scope = await pickCopy(ctx, noteCopies(ctx, id), {
@@ -619,7 +841,6 @@ export const memoryDelete = defineTool({
   input: z.object({ id: z.string() }),
   approval: "never",
   group: "memory",
-  alwaysOn: true,
   execute: ({ id }, ctx) =>
     guarded({ id }, async () => {
       const scope = await pickCopy(ctx, noteCopies(ctx, id), {
@@ -666,7 +887,6 @@ export const filesSearch = defineTool({
   input: z.object({ query: Query, scopes: Scopes.optional(), limit: Limit }),
   approval: "never",
   group: "files",
-  alwaysOn: true,
   execute: ({ query, scopes, limit }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
@@ -709,7 +929,6 @@ export const memorySearch = defineTool({
   }),
   approval: "never",
   group: "memory",
-  alwaysOn: true,
   execute: ({ query, scopes, limit }, ctx) =>
     guarded({ scopes: scopes?.join(",") }, async () => {
       const covered = await coveredScopes(ctx, scopes, {
@@ -746,6 +965,9 @@ export const entryTools = [
   filesRead,
   filesWrite,
   filesDelete,
+  filesFolderCreate,
+  filesFolderRename,
+  filesFolderDelete,
   filesSearch,
   memoryList,
   memoryAdd,
@@ -762,7 +984,7 @@ export function entriesInstruction(inProject: boolean): string {
   return [
     "You can keep information across conversations with two sets of tools.",
     "",
-    "Files: named text documents (plain, Markdown or JSON). The user and you can both write them. Use files_list and files_search to find files and files_read to read them.",
+    "Files: named text documents (plain text, Markdown or JSON), kept in folders. The user and you can both write them. Use files_list and files_search to find files and files_read to read them. A file is named by its path in a scope, and written in text as a reference in angle brackets, such as <session://notes.md> or <project://characters/alice.md>; the tools accept a reference or a plain name.",
     "",
     "Memory: short notes you write for yourself. Search memory with memory_search when earlier knowledge could help, and save what is worth remembering with memory_add.",
     "",

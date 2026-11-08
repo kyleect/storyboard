@@ -127,7 +127,7 @@ describe("chat completions", () => {
     expect(server.requests[0]?.body).not.toHaveProperty("model");
   });
 
-  it("sends attachments as typed content parts, media before text", async () => {
+  it("sends files as typed content parts, media before text", async () => {
     server.reply({ frames: [DONE] });
     await collect({
       kind: "chat",
@@ -135,13 +135,22 @@ describe("chat completions", () => {
         {
           role: "user",
           content: "What is this?",
-          attachments: [
-            { id: "a1", kind: "audio", mediaType: "audio/mpeg" },
-            { id: "a2", kind: "image", mediaType: "image/png" },
-          ],
+          files: ["session://a.mp3", "session://b.png"],
         },
       ],
-      resolveAttachment: (a) => ({ a1: "QVVESU8=", a2: "SU1BR0U=" })[a.id],
+      resolveFile: (ref) =>
+        ({
+          "session://a.mp3": {
+            kind: "audio" as const,
+            mediaType: "audio/mpeg",
+            data: "QVVESU8=",
+          },
+          "session://b.png": {
+            kind: "image" as const,
+            mediaType: "image/png",
+            data: "SU1BR0U=",
+          },
+        })[ref],
     });
     expect(
       (server.requests[0]?.body as { messages: unknown[] }).messages,
@@ -171,10 +180,14 @@ describe("chat completions", () => {
         {
           role: "user",
           content: "",
-          attachments: [{ id: "a1", kind: "audio", mediaType: "audio/wav" }],
+          files: ["session://a.wav"],
         },
       ],
-      resolveAttachment: () => "AAAA",
+      resolveFile: () => ({
+        kind: "audio" as const,
+        mediaType: "audio/wav",
+        data: "AAAA",
+      }),
     });
     expect(
       (server.requests[0]?.body as { messages: unknown[] }).messages,
@@ -188,7 +201,7 @@ describe("chat completions", () => {
     ]);
   });
 
-  it("tells the model when an attachment's bytes are gone", async () => {
+  it("tells the model when a file is gone", async () => {
     server.reply({ frames: [DONE] });
     await collect({
       kind: "chat",
@@ -196,12 +209,10 @@ describe("chat completions", () => {
         {
           role: "user",
           content: "Look",
-          attachments: [
-            { id: "a1", kind: "image", mediaType: "image/png", name: "x.png" },
-          ],
+          files: ["session://x.png"],
         },
       ],
-      resolveAttachment: () => undefined,
+      resolveFile: () => undefined,
     });
     expect(
       (server.requests[0]?.body as { messages: unknown[] }).messages,
@@ -211,7 +222,7 @@ describe("chat completions", () => {
         content: [
           {
             type: "text",
-            text: '[The image attachment "x.png" is no longer available.]',
+            text: "[The file <session://x.png> is no longer available.]",
           },
           { type: "text", text: "Look" },
         ],
@@ -219,11 +230,11 @@ describe("chat completions", () => {
     ]);
   });
 
-  it("keeps a user message without attachments as a string", async () => {
+  it("keeps a user message without files as a string", async () => {
     server.reply({ frames: [DONE] });
     await collect({
       kind: "chat",
-      messages: [{ role: "user", content: "x", attachments: [] }],
+      messages: [{ role: "user", content: "x", files: [] }],
     });
     expect(
       (server.requests[0]?.body as { messages: unknown[] }).messages,

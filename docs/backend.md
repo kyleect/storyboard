@@ -106,19 +106,19 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 
 ### Tables
 
-| Area             | Tables                                                                                     | Notes                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| MCP              | `mcp_servers`                                                                              | Servers the backend connects to; see [MCP servers](#mcp-servers).                             |
-| Settings         | `settings`                                                                                 | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.       |
-| Conversation     | `sessions`, `messages`, `projects`                                                         | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session. |
-| Attachments      | `attachments`                                                                              | The bytes of images and audio attached to messages; see [Attachments](#attachments).          |
-| Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`                                 | See below.                                                                                    |
-| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state` | Project and global entries only.                                                              |
-| Agents           | `agents`, `agent_versions`                                                                 |                                                                                               |
-| Skills           | `skills`, `skill_versions`                                                                 |                                                                                               |
-| Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                      | Global, project and agent only.                                                               |
-| Diagnostics      | `errors`                                                                                   |                                                                                               |
-| System           | `schema_migrations`                                                                        |                                                                                               |
+| Area             | Tables                                                                                     | Notes                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| MCP              | `mcp_servers`                                                                              | Servers the backend connects to; see [MCP servers](#mcp-servers).                                  |
+| Settings         | `settings`                                                                                 | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.            |
+| Conversation     | `sessions`, `messages`, `projects`                                                         | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session.      |
+| Binary files     | `blobs`                                                                                    | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments). |
+| Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`                                 | See below.                                                                                         |
+| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state` | Project and global entries only.                                                                   |
+| Agents           | `agents`, `agent_versions`                                                                 |                                                                                                    |
+| Skills           | `skills`, `skill_versions`                                                                 |                                                                                                    |
+| Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                      | Global, project and agent only.                                                                    |
+| Diagnostics      | `errors`                                                                                   |                                                                                                    |
+| System           | `schema_migrations`                                                                        |                                                                                                    |
 
 **Sessions** have `title`, `project_id`, `agent_id`, `model`,
 `reasoning_effort`, `trashed_at` and `trashed_with_project`. A `NULL` model or
@@ -154,26 +154,30 @@ resolved by precedence: **environment variable, then stored value, then
 default.** `GET /api/settings` returns the effective values, the stored values,
 and which are overridden by the environment.
 
-| Setting                | Env variable                     | Default                 | Meaning                                                                      |
-| ---------------------- | -------------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
-| `llamaServerUrl`       | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080` | Address of llama-server.                                                     |
-| `model`                | `HARNESS_MODEL`                  | empty (not sent)        | Default model (router mode).                                                 |
-| `reasoningEffort`      | `HARNESS_REASONING_EFFORT`       | empty (not sent)        | Default effort; `none` turns reasoning off.                                  |
-| `port`                 | `HARNESS_PORT`                   | `4317`                  | Backend port.                                                                |
-| `loopLimit`            | `HARNESS_LOOP_LIMIT`             | `20`                    | Most model calls per run.                                                    |
-| `copyLimit`            | `HARNESS_COPY_LIMIT`             | `20` (max 200)          | Most keys per copy/move call.                                                |
-| `trashRetentionDays`   | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                    | Days in trash before purge at startup; `0` never.                            |
-| `embeddingModel`       | `HARNESS_EMBEDDING_MODEL`        | empty                   | Router model for embeddings; empty means keyword search only.                |
-| `autoRename`           | `HARNESS_AUTO_RENAME`            | `true`                  | Title a new session from its first message.                                  |
-| `autoRenameSource`     | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                 | `model` or `message`.                                                        |
-| `titleModel`           | `HARNESS_TITLE_MODEL`            | empty                   | Model that writes titles; empty uses the session's model.                    |
-| `titlePrompt`          | `HARNESS_TITLE_PROMPT`           | built-in text           | System prompt of the title call.                                             |
-| `systemPrompt`         | `HARNESS_SYSTEM_PROMPT`          | built-in text           | Global system prompt (see below).                                            |
-| `defaultAgentId`       | `HARNESS_DEFAULT_AGENT_ID`       | empty                   | Global default agent.                                                        |
-| `childReminders`       | `HARNESS_CHILD_REMINDERS`        | `2`                     | Reminders a subagent gets before its last text is taken as output.           |
-| `childPrompt`          | `HARNESS_CHILD_PROMPT`           | built-in text           | Line appended to a subagent's system message.                                |
-| `subagentMessageLabel` | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text           | Line put before a message the user sends to a running subagent. Empty: none. |
-| `subagentDepth`        | `HARNESS_SUBAGENT_DEPTH`         | `2`                     | How deep subagents nest; `0` turns subagents off.                            |
+| Setting                | Env variable                     | Default                   | Meaning                                                                       |
+| ---------------------- | -------------------------------- | ------------------------- | ----------------------------------------------------------------------------- |
+| `llamaServerUrl`       | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080`   | Address of llama-server.                                                      |
+| `model`                | `HARNESS_MODEL`                  | empty (not sent)          | Default model (router mode).                                                  |
+| `reasoningEffort`      | `HARNESS_REASONING_EFFORT`       | empty (not sent)          | Default effort; `none` turns reasoning off.                                   |
+| `port`                 | `HARNESS_PORT`                   | `4317`                    | Backend port.                                                                 |
+| `loopLimit`            | `HARNESS_LOOP_LIMIT`             | `20`                      | Most model calls per run.                                                     |
+| `copyLimit`            | `HARNESS_COPY_LIMIT`             | `20` (max 200)            | Most keys per copy/move call.                                                 |
+| `trashRetentionDays`   | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                      | Days in trash before purge at startup; `0` never.                             |
+| `embeddingModel`       | `HARNESS_EMBEDDING_MODEL`        | empty                     | Router model for embeddings; empty means keyword search only.                 |
+| `autoRename`           | `HARNESS_AUTO_RENAME`            | `true`                    | Title a new session from its first message.                                   |
+| `autoRenameSource`     | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                   | `model` or `message`.                                                         |
+| `titleModel`           | `HARNESS_TITLE_MODEL`            | empty                     | Model that writes titles; empty uses the session's model.                     |
+| `titlePrompt`          | `HARNESS_TITLE_PROMPT`           | built-in text             | System prompt of the title call.                                              |
+| `systemPrompt`         | `HARNESS_SYSTEM_PROMPT`          | built-in text             | Global system prompt (see below).                                             |
+| `defaultAgentId`       | `HARNESS_DEFAULT_AGENT_ID`       | empty                     | Global default agent.                                                         |
+| `childReminders`       | `HARNESS_CHILD_REMINDERS`        | `2`                       | Reminders a subagent gets before its last text is taken as output.            |
+| `childPrompt`          | `HARNESS_CHILD_PROMPT`           | built-in text             | Line appended to a subagent's system message.                                 |
+| `subagentMessageLabel` | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.  |
+| `subagentDepth`        | `HARNESS_SUBAGENT_DEPTH`         | `2`                       | How deep subagents nest; `0` turns subagents off.                             |
+| `inlineMediaCap`       | `HARNESS_INLINE_MEDIA_CAP`       | `4`                       | The most kept images and audio files from earlier turns sent with a request.  |
+| `keepMediaInline`      | `HARNESS_KEEP_MEDIA_INLINE`      | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.  |
+| `mediaDescriberAgent`  | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off. |
+| `mediaDescriberModel`  | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.      |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.
@@ -218,31 +222,111 @@ understanding the run system:
   runs, messages and approvals; entry and data versions it authored are kept with
   their session link cleared.
 
-## Attachments
+## Binary files and attachments
 
-A user can attach images and audio to a message, for a model that reads them
-(see [Multimodal models](./DEVELOPMENT.md#multimodal-models)). The message
-stores only a description of each file; the bytes are in the `attachments`
-table (migration `0024`), so message rows stay small.
+An image or audio file is a **binary file**: a file like any other, with a media
+type (`image/png`, `audio/wav`, …), in the session, project or global scope.
+Attaching a file to a message uploads it to the session scope and the message
+names it by reference (`files: ["session://cat.png"]`). See
+[Multimodal models](./DEVELOPMENT.md#multimodal-models).
 
-| Route                                      | Does                                                                      |
-| ------------------------------------------ | ------------------------------------------------------------------------- |
-| `POST /api/sessions/:id/attachments?name=` | Uploads one file. The body is the file; `Content-Type` is its media type. |
-| `GET /api/attachments/:id`                 | The file's bytes, with its media type.                                    |
+The bytes are in the `blobs` table (migration `0026`), once each, by the SHA-256
+of their content (`blobs.ts`). A project or global file's record and each of
+its versions point at a blob (`blob_hash`, `size`); a session file's
+`put` operation in the transcript names the hash, so a rewind keeps the right
+bytes. A **sweep** (`sweepBlobs`) deletes blobs nothing points at: no record, no
+version and no stored message. It runs after versions are pruned and after a
+session or project is purged. Project and global binary files keep their last 3
+versions.
 
-An upload answers 201 with the description (`id`, `kind`, `mediaType`, `name`,
-`size`). Accepted: PNG, JPEG, GIF and BMP images and WAV, MP3 and FLAC audio,
-which are what llama-server can read (WebP, OGG and M4A are not). The media
-type must be one of these and the file's first bytes must agree with it (400
-otherwise); an empty file is 400, a file over 20 MB is 413, a body that is not
-a file (JSON or text) is 415, a missing session 404 and a session in the trash 409. A message takes at most 8 files.
+| Route                              | Does                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| `POST <base>/files?name=&replace=` | Uploads one file. The body is the file; `Content-Type` is its media type. |
+| `GET /api/blobs/:hash`             | The bytes under a hash, with their media type. Cached for good.           |
 
-A file is uploaded when it is chosen, before the message is sent, so a file
-that is never sent stays in the table until its session is purged
-(`purgeSession` removes the session's attachments). When a request is made,
-`resolveAttachment` reads the bytes from the table, so they are sent to
-llama-server but never copied into the transcript, events or the run's saved
-request.
+`<base>` is `/api/sessions/:id`, `/api/projects/:id` or `/api/global`. An upload
+answers 201 with `key`, `ref`, `mediaType`, `size`, `blob` and `replaced`. `name`
+is the file's path in the scope; without it the app names the file
+(`image-2026-11-07-1432.png`, `recording-…wav`). A name in use gets a suffix
+(`cat (2).png`) unless `replace=true`. Accepted: PNG, JPEG, GIF and BMP images
+and WAV, MP3 and FLAC audio, which are what llama-server can read (WebP, OGG and
+M4A are not). The media type must be one of these and the file's first bytes
+must agree with it (400 otherwise); a bad name or an empty file is 400, a file
+over 20 MB is 413, a body that is not a file (JSON or text) is 415, a missing
+session or project 404 and one in the trash 409. There is no limit on how many
+files a message names. Text files are saved with `PUT` and a value; a binary
+media type there is 400.
+
+A session upload is an edit message in the transcript, so it is refused while a
+run is in progress. When a request is made, `fileResolver` (`file-lookup.ts`)
+reads each referenced file's bytes from `blobs`, so they are sent to llama-server
+but never copied into the transcript, events or the run's saved request. A
+reference that cannot be found tells the model the file is no longer available.
+
+### Media in requests
+
+At the start of a run `launch` builds the `MediaPolicy` that goes in
+`ChatRequest.media` (see core's `media.ts`): `cap` and `keepDefault` from the
+settings above, `support` from `RunManagerOptions.mediaSupport(model)` (built in
+`media-support.ts` from the model list's `input_modalities`, cached for 30
+seconds; undefined when the server does not say), the user's choices from table
+`media_choices` (migration `0027`, one row per session and reference, removed
+with the session), and `info(ref)` from `fileLookup`. Choices and files are read
+for every request, so a change during a run applies to the next call. The tool
+context gets `mediaSupport` and `blobs.put`.
+
+| Method and path                       | Purpose                                                                                                    |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GET /api/sessions/:id/media-choices` | The user's keep or drop choices: `[{ ref, keep }]`.                                                        |
+| `PUT /api/sessions/:id/media-choices` | `{ ref, keep }`; `keep: null` clears it. 400 if the ref is not an image or audio file the session reaches. |
+
+MCP tools: an image or audio block of a result is saved as a session file
+`mcp_<server>_<tool>-<n>.<ext>` (when the bytes match a type llama-server reads
+and are under 20 MB), the result text names it (`[image saved as <session://…>]`)
+and the tool returns it as `media`. Anything else is still named and left out.
+
+`start_subagent` takes `files` (references to images or audio); they are sent
+with the child's task message.
+
+### Derived text and the Media Describer
+
+An image or audio file has a _derived text_: a description, or a transcript for
+audio. It is kept with the bytes in `blobs` (`derived_text`, `derived_state`:
+`none`, `pending`, `generated`, `edited`, `failed`; migration `0028`), so it
+serves a file in any scope and survives version pruning. Identical bytes share
+one text, so editing it changes every file with those bytes.
+
+`MediaDescriber` (`media-describer.ts`) writes it with the built-in Media
+Describer agent (`builtin-media-describer`, inserted by `0028`: read-only, no
+tools, startable as a subagent). It is one plain request, not a run: the
+agent's prompt is the system message and the file is the user message, sent to
+`mediaDescriberModel`. Generations run one at a time. A generation that takes
+longer than 120 seconds, throws, or returns nothing marks the file `failed` and
+keeps any earlier text; nothing retries by itself. A file is described when it
+is uploaded (and when a tool saves one, such as an MCP image) unless it already
+has text, and only while a model and an agent are set. A generation that was
+running when the backend stopped is marked `failed` at the next start.
+
+The text is indexed like a text file: its first 4,000 characters become the
+file's chunks, for session, project and global files, and are re-made when the
+text changes (`reindexBlob`). The rest is kept but not searched. A model that
+cannot take a file is given its text in the `[Attached: …]` line.
+
+| Method and path                        | Purpose                                                                                              |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET /api/blobs/:hash/derived-text`    | `{ text, state }`.                                                                                   |
+| `PUT /api/blobs/:hash/derived-text`    | `{ text }`: the user's text (`edited`); empty clears it (`none`).                                    |
+| `POST /api/blobs/:hash/describe`       | Retry: write it again. 202; 409 when descriptions are off or one is running.                         |
+| `GET /api/media-describer`             | `{ enabled, files, empty }`: what a change of the settings would touch.                              |
+| `POST /api/media-describer/regenerate` | `{ mode: "empty" \| "all" }`: queues the files with no text, or all except text the user wrote. 202. |
+
+Changing either describer setting writes nothing by itself: the app asks first
+(`GET /api/media-describer`, then the user's answer to `regenerate`).
+
+Attachments stored before this (table `attachments`, migration `0024`) are moved
+by the data step `attachments-to-files` (`data-steps.ts`): each becomes a
+session file, an edit message that adds the files is put before the message
+that used them, and the message lists references. The table is dropped.
 
 ## The RunManager
 
@@ -270,18 +354,18 @@ the active run and do not count separately.)
 
 ### Sending a message
 
-`POST /api/sessions/:id/messages` → `sendMessage(sessionId, content, choices, attachments)`.
-The body is `content` (which may be empty when there are attachments),
-`attachmentIds` (files uploaded to this session, see [Attachments](#attachments);
-400 for an id that was not) and the choices:
+`POST /api/sessions/:id/messages` → `sendMessage(sessionId, content, choices, files)`.
+The body is `content` (which may be empty when there are files),
+`files` (references to image or audio files the session can reach, see
+[Binary files](#binary-files-and-attachments); 400 for one that is not) and the choices:
 
 1. Check the session is idle and that any chosen agent is usable in the
    session (404 unknown, 409 deleted or from another project).
 2. Save the choices (model, reasoning effort, agent) onto the session.
 3. Decide whether the session should be auto-renamed (see
    [Titles](#session-titles)).
-4. Append the user message to the transcript, with the descriptions of its
-   attachments. A message with no text does not get the session a title.
+4. Append the user message to the transcript, with the references of its
+   files. A message with no text does not get the session a title.
 5. `launch(...)` the run, and return `{ runId }` immediately with status 202.
 6. Start the title job in parallel if needed.
 

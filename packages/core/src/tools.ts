@@ -2,8 +2,15 @@ import { z } from "zod";
 import type { EntryAccess } from "./entries.js";
 import type { Form, InputAnswer } from "./forms.js";
 import type { Review, Selection } from "./review.js";
+import type { MediaSupport } from "./media.js";
 import type { DataAccess } from "./schemas-data.js";
-import type { FileType, Message, ToolDefinition } from "./messages.js";
+import type {
+  BlobRef,
+  MediaRef,
+  MediaType,
+  Message,
+  ToolDefinition,
+} from "./messages.js";
 
 /*
  * Tools (tools design, section 6). A tool declares its input with Zod,
@@ -81,7 +88,13 @@ export interface ProjectPush {
   /** Whether the project has a live file with this key. */
   hasFile(key: string): boolean;
   /** Creates or replaces a file. */
-  putFile(key: string, type: FileType, value: string): void;
+  putFile(
+    key: string,
+    mediaType: MediaType,
+    value: string,
+    /** Binary files: the bytes, already stored. `value` is empty then. */
+    blob?: BlobRef,
+  ): void;
   /** Adds a note with a new id; returns the id. */
   addNote(text: string): string;
   /**
@@ -223,6 +236,8 @@ export interface SubagentAccess {
   start(input: {
     agentId: string;
     task: string;
+    /** Image or audio files (references) attached to the task message. */
+    files?: string[];
     /** The `start_subagent` call, so the child run can be tied to it. */
     callId: string;
   }): Promise<SubagentOutcome>;
@@ -249,6 +264,16 @@ export interface RunSkill {
 export interface ToolContext {
   /** Fires when the run is cancelled. */
   signal: AbortSignal;
+  /**
+   * What the run's model can read, or undefined when it is not known (then
+   * attempts are allowed).
+   */
+  mediaSupport?: MediaSupport | undefined;
+  /**
+   * Stores bytes as a blob, for a tool that produces binary files (an MCP
+   * server's image). Left out when the backend has no blob storage.
+   */
+  blobs?: { put(mediaType: string, data: Uint8Array): BlobRef } | undefined;
   sessionId: string;
   runId: string;
   callId: string;
@@ -327,6 +352,12 @@ export interface ToolOutput {
   handback?: string;
   /** The structured result. The harness serializes it for the model. */
   data: unknown;
+  /**
+   * Images and audio the result refers to, by reference. The harness shows
+   * them to the model in a user message after the turn's tool results. Left
+   * out when the model cannot read them: the result's text says so.
+   */
+  media?: MediaRef[];
   /** Replaces this tool's state. Left out: the state is unchanged. */
   state?: unknown;
   /** Marks the result as an error; the run continues. */

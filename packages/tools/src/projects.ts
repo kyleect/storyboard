@@ -205,7 +205,7 @@ export const projectCreate = defineTool({
           for (const info of files) {
             const file = ctx.entries.readFile("session", info.key);
             if (!file) continue;
-            push.putFile(file.key, file.type, file.value);
+            push.putFile(file.key, file.mediaType, file.value, file.blob);
             filesCopied++;
           }
         }

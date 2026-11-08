@@ -35,13 +35,13 @@ packages/core/src
 `messages.ts` defines the provider-neutral transcript format. Model adapters
 translate to and from it.
 
-| Role        | Shape                                | Meaning                                                                                                                                                                                               |
-| ----------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system`    | `{ content }`                        | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                        |
-| `user`      | `{ content, attachments?, source? }` | What the user typed, with any images or audio attached to it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
-| `assistant` | `{ content: ContentBlock[] }`        | What the model produced.                                                                                                                                                                              |
-| `tool`      | see below                            | The outcome of one tool call.                                                                                                                                                                         |
-| `edit`      | `{ content, entries, dataOps? }`     | The user edited session files, notes, schemas or data.                                                                                                                                                |
+| Role        | Shape                            | Meaning                                                                                                                                                                                                           |
+| ----------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system`    | `{ content }`                    | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                                    |
+| `user`      | `{ content, files?, source? }`   | What the user typed, with references to any images or audio sent with it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
+| `assistant` | `{ content: ContentBlock[] }`    | What the model produced.                                                                                                                                                                                          |
+| `tool`      | see below                        | The outcome of one tool call.                                                                                                                                                                                     |
+| `edit`      | `{ content, entries, dataOps? }` | The user edited session files, notes, schemas or data.                                                                                                                                                            |
 
 **Content blocks** of an assistant message:
 
@@ -68,14 +68,38 @@ translate to and from it.
 `ModelMessage` is `Message` without `edit`. Before a request is sent, edit
 messages are converted to user text (see below).
 
-**Attachments.** A user message can carry `attachments`: descriptions of
-images and audio (`{ id, kind: "image" | "audio", mediaType, name?, size? }`).
-The message stores only the description. The bytes are kept by the backend, and
-the request that is sent to the model carries a `resolveAttachment(attachment)`
-function that returns an attachment's bytes as base64 (or `undefined` when they
-are gone, in which case the model is told the attachment is no longer
-available). Messages stored before attachments existed have none and still
-parse.
+**Files.** A user message can carry `files`: references to images and audio
+(`session://cat.png`, `project://…`, `global://…`). The message stores only the
+reference; kind, type and size are looked up from the file. The bytes are kept by
+the backend, and the request that is sent to the model carries a
+`resolveFile(ref)` function that returns the file's kind, media type and bytes
+as base64 (or `undefined` when it is gone, in which case the model is told the
+file is no longer available). A binary file is a file with a binary media type
+and a `blob` (`{ hash, size }`) in place of a value; session files record it in a
+`put` operation.
+
+### Media in a request (`media.ts`)
+
+A message names images and audio by reference; `foldMedia(messages, policy)`
+(first in the adapter's pipeline) decides what is inline in each request. A
+_turn_ is a user message and everything the agent does until the next one
+(a `reminder` user message does not start one).
+
+- Media of the current turn is always inline: the last user message's `files`,
+  and the `media` of tool results after it (`ToolResultMessage.media`, set when
+  a tool returns `ToolOutput.media`).
+- Older media is a text line, `[Attached: <ref> (type)]`, unless it is kept.
+  Keeping goes by the user's choice for that file, else the agent's `keep` when
+  it read the file, else `keepDefault`. At most `cap` kept items from earlier
+  turns are inline (the newest); the rest are text.
+- A file that is gone is named `(no longer available)`; a kind the model cannot
+  read (`MediaSupport`, from `inputModalities`) is named as one it cannot view
+  and never sent.
+- A tool message can only hold text, so a turn's tool media goes in a user
+  message after the turn's results, headed "Media from the tool results above:"
+  (or at the start of the user message that follows them).
+
+`ChatRequest.media` carries the policy; without it messages are unchanged.
 
 ### Folding edits and notes into user text
 
@@ -90,7 +114,7 @@ bookkeeping. Before sending, the adapter applies two transforms:
   containing at least one edit becomes a single user message. An edit's text is
   a notice such as `[The user changed session file chapter1.md in the app.]`.
 
-Both keep the `attachments` of the user messages they fold, in order, so a
+Both keep the `files` of the user messages they fold, in order, so a
 message that was joined to an edit or to notes does not lose its files.
 
 ## Events
@@ -198,10 +222,10 @@ model's chat template. The adapter:
   joined into `content`, its reasoning blocks into `reasoning_content`, its
   tool calls into `tool_calls` with JSON-stringified arguments; a tool result
   becomes a `tool` message with `tool_call_id`;
-- sends a user message that has attachments as typed content parts: each
+- sends a user message that has files as typed content parts: each
   image as `image_url` (a base64 data URI), each audio file as `input_audio`
   (base64 and a format), then the message's text as a `text` part. Media comes
-  first, which is how Gemma expects audio. A message without attachments is
+  first, which is how Gemma expects audio. A message without files is
   still sent as a plain string. llama-server needs a multimodal projector
   (`--mmproj`) loaded for the model to accept these parts;
 - sends tool definitions as `function` tools;
@@ -473,6 +497,7 @@ What a tool's `execute` receives:
 | `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                               |
 | `skills`                                 | The skills in scope with their bodies.                                           |
 | `copyLimit`                              | Maximum keys per copy or move call.                                              |
+| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).  |
 | `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                  |
 | `approval`                               | For a tool with `review`: the review the user answered and the chosen selection. |
 

@@ -176,14 +176,18 @@ never loaded (shown as their alt text), and links open in a new tab and only for
 `http`, `https` and `mailto`.
 
 **Attachments.** The composer's Attach button, pasting a file (a screenshot, for
-example) and dropping files on the composer all upload to the session at once
-(`routes/Attachments.tsx`, `useAttachmentDraft`) and show a chip with a
+example) and dropping files on the composer all upload to the session's files
+at once (`routes/Attachments.tsx`, `useAttachmentDraft`); the message then sends
+the files' references. Each shows a chip with a
 thumbnail for images. Only PNG, JPEG, GIF and BMP images and WAV, MP3 and FLAC
 audio are taken (`attachments.ts`, which matches the backend's limits). When
 llama-server says the model in use cannot read a kind of file (the model's
 `inputModalities`), the composer warns and Send is disabled until they are
 removed; when it does not say, attaching is allowed. A sent message shows its
-files above the text. Chosen audio can be played back in the composer before it is sent. The bytes are fetched with the token and shown from object
+files above the text, found by reference (a file that has since been deleted is
+named as no longer available). The Files views have an Upload button and take
+dropped files for any scope, preview a binary file as an image or audio player,
+and show no text editor for it. Chosen audio can be played back in the composer before it is sent. Each file in a message, and each file a tool read, has a _Default / Keep in view / Drop later_ choice that says whether the model keeps seeing it in later turns (saved per session; Default follows the agent and the Settings page). Settings has the number of kept files and the keep-by-default switch, and a section for the Media describer model and agent. After either changes, a dialog asks "Generate descriptions for N files?" with _Fill the ones with no text_, _Write all again_ and _Not now_; nothing is written before the answer. In the Files views an image or audio file shows its text under the preview, with its source ("Written by the Media Describer", "Edited by you", "Not generated" after a failure), Save text, and Retry or Generate (disabled while descriptions are off). The bytes are fetched by hash with the token and shown from object
 URLs, because `<img>` and `<audio>` cannot send the token themselves.
 
 **Voice.** Two buttons record from the microphone (`routes/VoiceButtons.tsx`,

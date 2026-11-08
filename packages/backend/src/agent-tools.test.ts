@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   replaySessionData,
+  replaySessionEntries,
   ScriptedModel,
   type ChatRequest,
   type DataOp,
@@ -11,6 +12,7 @@ import {
 } from "@harness/core";
 import { allTools, entriesInstruction } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
+import { putBlob } from "./blobs.js";
 import type { AppEvent } from "./app-events.js";
 import { DataStore } from "./data-store.js";
 import { BUILTIN_DISPATCHER } from "./default-agent.js";
@@ -209,7 +211,7 @@ const file = (key: string, value: string): EntryOp => ({
   op: "put",
   kind: "file",
   key,
-  type: "markdown",
+  mediaType: "text/markdown",
   value,
 });
 const note = (key: string, value: string): EntryOp => ({
@@ -1078,13 +1080,73 @@ describe("files_copy and files_move", () => {
     expect(ops).toEqual([]);
   });
 
+  it("copies and moves a binary file with its bytes, to a scope and to another project", async () => {
+    const c = await setup();
+    const target = await newProject(c.app, "Target");
+    const id = await newSession(c.app);
+    const blob = putBlob(
+      c.t.db,
+      "image/png",
+      Buffer.from("89504e470d0a1a0a", "hex"),
+      "T",
+    );
+    seedSession(c, id, [
+      {
+        op: "put",
+        kind: "file",
+        key: "cat.png",
+        value: "",
+        mediaType: "image/png",
+        blob,
+      },
+    ]);
+    c.scripts.push(
+      [
+        call("a", "files_copy", {
+          keys: ["cat.png"],
+          from: "session",
+          to: "global",
+        }),
+      ],
+      [
+        call("b", "files_move", {
+          keys: ["cat.png"],
+          from: "session",
+          toProject: target,
+        }),
+      ],
+      done,
+    );
+    await go(c, id, {
+      forms: [
+        { from: "session", to: "global" },
+        { from: "session", to: `project:${target}` },
+      ],
+    });
+    expect(c.entries.get("file", null, "cat.png")).toMatchObject({
+      media_type: "image/png",
+      value: "",
+      blob_hash: blob.hash,
+      size: blob.size,
+    });
+    expect(c.entries.get("file", target, "cat.png")).toMatchObject({
+      media_type: "image/png",
+      blob_hash: blob.hash,
+    });
+    // The move deleted the session's file.
+    const state = replaySessionEntries(
+      c.store.listMessages(id).map((m) => m.message),
+    );
+    expect(state.file.has("cat.png")).toBe(false);
+  });
+
   it("sends to another project, skipping keys it already has", async () => {
     const c = await setup();
     const target = await newProject(c.app, "Target");
     c.entries.put(
       "file",
       target,
-      { key: "a.md", value: "old", type: "markdown" },
+      { key: "a.md", value: "old", mediaType: "text/markdown" },
       {
         by: "user",
       },
@@ -1123,7 +1185,7 @@ describe("files_copy and files_move", () => {
     });
     expect(c.entries.get("file", target, "b.md")).toMatchObject({
       value: "B",
-      type: "markdown",
+      media_type: "text/markdown",
     });
     // The write is recorded as the model's, in the version history.
     expect(c.entries.versions("file", target, "b.md")[0]).toMatchObject({
@@ -1138,7 +1200,7 @@ describe("files_copy and files_move", () => {
     c.entries.put(
       "file",
       target,
-      { key: "a.md", value: "old", type: "plain" },
+      { key: "a.md", value: "old", mediaType: "text/plain" },
       {
         by: "user",
       },
@@ -1169,7 +1231,7 @@ describe("files_copy and files_move", () => {
     c.entries.put(
       "file",
       null,
-      { key: "g.md", value: "G", type: "markdown" },
+      { key: "g.md", value: "G", mediaType: "text/markdown" },
       {
         by: "user",
       },

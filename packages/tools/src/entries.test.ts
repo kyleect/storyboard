@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createEntryAccess,
+  FILE_KEY_PATTERN,
   replaySessionEntries,
   type EntryOp,
   type EntrySearch,
@@ -17,6 +18,9 @@ import { FakeSharedEntries } from "@harness/core/testing";
 import {
   entriesInstruction,
   filesDelete,
+  filesFolderCreate,
+  filesFolderDelete,
+  filesFolderRename,
   filesList,
   filesRead,
   filesSearch,
@@ -90,7 +94,7 @@ function context(
 }
 
 describe("files_write", () => {
-  const NAME_RULE = 'Use only letters, digits, "-", "_" and ".".';
+  const NAME_RULE = "Control characters are not allowed.";
 
   it("asks for a new file's name and scope, with the suggestions filled in", async () => {
     const { ctx, forms, sessionOps } = context({
@@ -98,25 +102,35 @@ describe("files_write", () => {
     });
     expect(
       await filesWrite.execute(
-        { key: "a.md", type: "markdown", value: "# A", scope: "project" },
+        {
+          key: "a.md",
+          mediaType: "text/markdown",
+          value: "# A",
+          scope: "project",
+        },
         ctx,
       ),
     ).toEqual({
-      data: { scope: "project", key: "a.md", type: "markdown", created: true },
+      data: {
+        scope: "project",
+        key: "a.md",
+        mediaType: "text/markdown",
+        created: true,
+      },
     });
     expect(forms).toEqual([
       {
         title: "Save a new file",
-        description: "markdown file, 3 characters: # A",
+        description: "text/markdown file, 3 characters: # A",
         fields: [
           {
             name: "name",
             label: "Name",
-            help: 'Letters, digits, "-", "_" and "." only; case-sensitive (for example characters.alice.md).',
+            help: expect.stringContaining("Case-sensitive"),
             required: true,
             kind: "text",
             multiline: false,
-            pattern: "^[A-Za-z0-9._-]+$",
+            pattern: FILE_KEY_PATTERN,
             patternMessage: NAME_RULE,
             default: "a.md",
           },
@@ -151,7 +165,7 @@ describe("files_write", () => {
       data: {
         scope: "session",
         key: "hello.md",
-        type: "markdown",
+        mediaType: "text/markdown",
         created: true,
       },
     });
@@ -168,14 +182,14 @@ describe("files_write", () => {
     });
     expect(
       await filesWrite.execute(
-        { key: "a.md", type: "plain", value: "x", scope: "global" },
+        { key: "a.md", mediaType: "text/plain", value: "x", scope: "global" },
         ctx,
       ),
     ).toEqual({
       data: {
         scope: "session",
         key: "b.md",
-        type: "plain",
+        mediaType: "text/plain",
         created: true,
         note: 'The user named the file "b.md" instead of your suggestion ("a.md"). The user chose the session scope instead of your suggestion (global).',
       },
@@ -186,17 +200,17 @@ describe("files_write", () => {
     const { ctx } = context({
       answers: [answer({ name: "old", scope: "global" })],
     });
-    ctx.entries.writeFile("global", "old", "plain", "before");
+    ctx.entries.writeFile("global", "old", "text/plain", "before");
     expect(
       await filesWrite.execute(
-        { key: "new", type: "plain", value: "after" },
+        { key: "new", mediaType: "text/plain", value: "after" },
         ctx,
       ),
     ).toEqual({
       data: {
         scope: "global",
         key: "old",
-        type: "plain",
+        mediaType: "text/plain",
         created: false,
         note: 'The user named the file "old" instead of your suggestion ("new"). This replaced the existing "old" in the global scope.',
       },
@@ -206,17 +220,17 @@ describe("files_write", () => {
 
   it("saves a file that exists in one scope there, without asking", async () => {
     const { ctx, forms } = context();
-    ctx.entries.writeFile("global", "a", "plain", "1");
+    ctx.entries.writeFile("global", "a", "text/plain", "1");
     expect(
       await filesWrite.execute(
-        { key: "a", type: "plain", value: "2", scope: "session" },
+        { key: "a", mediaType: "text/plain", value: "2", scope: "session" },
         ctx,
       ),
     ).toEqual({
       data: {
         scope: "global",
         key: "a",
-        type: "plain",
+        mediaType: "text/plain",
         created: false,
         note: '"a" already exists in the global scope, so it was saved there.',
       },
@@ -227,10 +241,10 @@ describe("files_write", () => {
 
   it("asks which copy when the key is in several scopes", async () => {
     const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    ctx.entries.writeFile("session", "a", "plain", "s");
-    ctx.entries.writeFile("global", "a", "plain", "g");
+    ctx.entries.writeFile("session", "a", "text/plain", "s");
+    ctx.entries.writeFile("global", "a", "text/plain", "g");
     await filesWrite.execute(
-      { key: "a", type: "plain", value: "new", scope: "global" },
+      { key: "a", mediaType: "text/plain", value: "new", scope: "global" },
       ctx,
     );
     expect(forms[0]).toMatchObject({
@@ -250,7 +264,10 @@ describe("files_write", () => {
   it("writes nothing when the user does not save", async () => {
     const { ctx } = context({ answers: [SKIP] });
     expect(
-      await filesWrite.execute({ key: "a", type: "plain", value: "x" }, ctx),
+      await filesWrite.execute(
+        { key: "a", mediaType: "text/plain", value: "x" },
+        ctx,
+      ),
     ).toEqual({
       data: "Not saved: the user chose not to save this file.",
       isError: true,
@@ -263,14 +280,20 @@ describe("files_write", () => {
       answers: [answer({ name: "a-b", scope: "session" })],
     });
     expect(
-      await filesWrite.execute({ key: "a/b", type: "plain", value: "" }, ctx),
+      await filesWrite.execute(
+        { key: "a/b", mediaType: "text/plain", value: "" },
+        ctx,
+      ),
     ).toMatchObject({ data: { key: "a-b" } });
     expect(forms[0]?.fields[0]).toMatchObject({ default: "a/b" });
     expect(
-      await filesWrite.execute({ key: "a", type: "json", value: "{" }, ctx),
+      await filesWrite.execute(
+        { key: "a", mediaType: "application/json", value: "{" },
+        ctx,
+      ),
     ).toMatchObject({
       isError: true,
-      details: { reason: "rejected", key: "a", type: "json" },
+      details: { reason: "rejected", key: "a", mediaType: "application/json" },
     });
     expect(forms).toHaveLength(1);
   });
@@ -281,7 +304,7 @@ describe("files_write", () => {
       answers: [answer({ name: "a", scope: "global" })],
     });
     await filesWrite.execute(
-      { key: "a", type: "plain", value: "x", scope: "project" },
+      { key: "a", mediaType: "text/plain", value: "x", scope: "project" },
       ctx,
     );
     expect(forms[0]?.fields[1]).toMatchObject({
@@ -292,24 +315,34 @@ describe("files_write", () => {
 
   it("takes only a value, and rejects an unknown type", () => {
     expect(filesWrite.parse({ value: "" }).ok).toBe(true);
-    expect(filesWrite.parse({ key: "a", type: "html", value: "" }).ok).toBe(
-      false,
-    );
+    expect(
+      filesWrite.parse({ key: "a", mediaType: "html", value: "" }).ok,
+    ).toBe(false);
   });
 });
 
 describe("files_read and files_delete", () => {
   it("find a file by key, asking only when it is in several scopes", async () => {
     const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    ctx.entries.writeFile("project", "one", "plain", "p");
-    ctx.entries.writeFile("session", "two", "plain", "s");
-    ctx.entries.writeFile("global", "two", "markdown", "g");
+    ctx.entries.writeFile("project", "one", "text/plain", "p");
+    ctx.entries.writeFile("session", "two", "text/plain", "s");
+    ctx.entries.writeFile("global", "two", "text/markdown", "g");
     expect(await filesRead.execute({ key: "one" }, ctx)).toEqual({
-      data: { scope: "project", key: "one", type: "plain", value: "p" },
+      data: {
+        scope: "project",
+        key: "one",
+        mediaType: "text/plain",
+        value: "p",
+      },
     });
     expect(forms).toEqual([]);
     expect(await filesRead.execute({ key: "two" }, ctx)).toEqual({
-      data: { scope: "global", key: "two", type: "markdown", value: "g" },
+      data: {
+        scope: "global",
+        key: "two",
+        mediaType: "text/markdown",
+        value: "g",
+      },
     });
     expect(forms[0]).toMatchObject({
       title: 'Read which "two"?',
@@ -329,12 +362,12 @@ describe("files_read and files_delete", () => {
       isError: true,
       details: { reason: "not_found", key: "nope" },
     });
-    expect(await filesDelete.execute({ key: "a/b" }, ctx)).toMatchObject({
+    expect(await filesDelete.execute({ key: "a/../b" }, ctx)).toMatchObject({
       isError: true,
-      details: { reason: "rejected", key: "a/b" },
+      details: { reason: "rejected", key: "a/../b" },
     });
-    ctx.entries.writeFile("session", "two", "plain", "s");
-    ctx.entries.writeFile("global", "two", "plain", "g");
+    ctx.entries.writeFile("session", "two", "text/plain", "s");
+    ctx.entries.writeFile("global", "two", "text/plain", "g");
     expect(await filesDelete.execute({ key: "two" }, ctx)).toEqual({
       data: "Not deleted: the user chose not to pick a copy.",
       isError: true,
@@ -461,14 +494,15 @@ describe("memory_update and memory_delete", () => {
 describe("files_list and memory_list", () => {
   it("cover every scope without asking when no scopes are named", async () => {
     const { ctx, forms } = context();
-    ctx.entries.writeFile("session", "a", "markdown", "# A");
-    ctx.entries.writeFile("global", "a", "plain", "g");
+    ctx.entries.writeFile("session", "a", "text/markdown", "# A");
+    ctx.entries.writeFile("global", "a", "text/plain", "g");
     expect(await filesList.execute({}, ctx)).toEqual({
       data: {
         files: [
-          { scope: "session", key: "a", type: "markdown", size: 3 },
-          { scope: "global", key: "a", type: "plain", size: 1 },
+          { scope: "session", key: "a", mediaType: "text/markdown", size: 3 },
+          { scope: "global", key: "a", mediaType: "text/plain", size: 1 },
         ],
+        folders: [],
       },
     });
     // Naming every scope does not narrow anything.
@@ -648,5 +682,259 @@ describe("entriesInstruction", () => {
     expect(entriesInstruction(true)).toMatch(
       /leave out what you don't know, such as a file's name or scope/,
     );
+  });
+});
+
+describe("references and folders in the files tools", () => {
+  it("files_read takes a reference in angle brackets or plain, and skips the scope question", async () => {
+    const { ctx, forms } = context();
+    ctx.entries.writeFile("session", "My Notes.md", "text/markdown", "s");
+    ctx.entries.writeFile("global", "My Notes.md", "text/markdown", "g");
+    expect(
+      await filesRead.execute({ key: "<global://My Notes.md>" }, ctx),
+    ).toEqual({
+      data: {
+        scope: "global",
+        key: "My Notes.md",
+        mediaType: "text/markdown",
+        value: "g",
+      },
+    });
+    expect(
+      await filesRead.execute({ key: "session://My Notes.md" }, ctx),
+    ).toMatchObject({ data: { scope: "session", value: "s" } });
+    expect(forms).toEqual([]);
+  });
+
+  it("files_read refuses a workspace reference and a scope the session does not have", async () => {
+    const { ctx } = context({ inProject: false });
+    expect(
+      await filesRead.execute({ key: "<workspace://w1/a.md>" }, ctx),
+    ).toMatchObject({ isError: true, details: { reason: "rejected" } });
+    expect(
+      await filesRead.execute({ key: "<project://a.md>" }, ctx),
+    ).toMatchObject({ isError: true, details: { reason: "rejected" } });
+  });
+
+  it("files_write and files_delete take a reference naming the scope", async () => {
+    const { ctx, forms } = context({
+      answers: [answer({ name: "chars/alice.md", scope: "project" })],
+    });
+    expect(
+      await filesWrite.execute(
+        { key: "<project://chars/alice.md>", value: "A" },
+        ctx,
+      ),
+    ).toMatchObject({
+      data: { scope: "project", key: "chars/alice.md", created: true },
+    });
+    // A new file is still named and placed by the user in the form, with the
+    // reference's name and scope as the suggestions (D1, D2).
+    expect(forms).toHaveLength(1);
+    expect(forms[0]?.fields[0]).toMatchObject({ default: "chars/alice.md" });
+    expect(forms[0]?.fields[1]).toMatchObject({ default: "project" });
+    expect(
+      await filesDelete.execute({ key: "project://chars/alice.md" }, ctx),
+    ).toEqual({
+      data: { scope: "project", key: "chars/alice.md", deleted: true },
+    });
+  });
+
+  it("files_list shows folders and can list one folder", async () => {
+    const { ctx } = context();
+    ctx.entries.writeFile("session", "a/one.md", "text/markdown", "1");
+    ctx.entries.writeFile("session", "a/b/two.md", "text/markdown", "2");
+    ctx.entries.writeFile("session", "top.md", "text/markdown", "3");
+    ctx.entries.createFolder("session", "empty");
+    expect(await filesList.execute({ folder: "a" }, ctx)).toEqual({
+      data: {
+        files: [
+          {
+            scope: "session",
+            key: "a/one.md",
+            mediaType: "text/markdown",
+            size: 1,
+          },
+          {
+            scope: "session",
+            key: "a/b/two.md",
+            mediaType: "text/markdown",
+            size: 1,
+          },
+        ],
+        folders: [{ scope: "session", path: "a/b" }],
+      },
+    });
+    expect(await filesList.execute({}, ctx)).toMatchObject({
+      data: {
+        folders: [
+          { scope: "session", path: "a" },
+          { scope: "session", path: "a/b" },
+          { scope: "session", path: "empty" },
+        ],
+      },
+    });
+  });
+
+  it("files_folder_create asks for the scope and creates the folder", async () => {
+    const { ctx, forms } = context({ answers: [answer({ scope: "project" })] });
+    expect(
+      await filesFolderCreate.execute({ path: "chars", scope: "global" }, ctx),
+    ).toEqual({
+      data: {
+        scope: "project",
+        path: "chars",
+        created: true,
+        note: "The user chose the project scope instead of your suggestion (global).",
+      },
+    });
+    expect(forms[0]).toMatchObject({
+      title: 'Create the folder "chars" where?',
+    });
+    expect(ctx.entries.listFolders("project")).toEqual([
+      { scope: "project", path: "chars" },
+    ]);
+    // A reference names the scope, so there is no form.
+    expect(
+      await filesFolderCreate.execute({ path: "<session://drafts>" }, ctx),
+    ).toMatchObject({
+      data: { scope: "session", path: "drafts", created: true },
+    });
+    expect(forms).toHaveLength(1);
+  });
+
+  it("files_folder_create rejects a bad name and a skipped form is not an error to report", async () => {
+    const { ctx } = context({ answers: [SKIP] });
+    expect(
+      await filesFolderCreate.execute({ path: "a/../b" }, ctx),
+    ).toMatchObject({ isError: true, details: { reason: "rejected" } });
+    expect(await filesFolderCreate.execute({ path: "ok" }, ctx)).toEqual({
+      data: "Not created: the user chose not to create it.",
+      isError: true,
+    });
+  });
+
+  it("files_folder_rename moves a folder and what is inside it", async () => {
+    const { ctx } = context();
+    ctx.entries.writeFile("session", "a/one.md", "text/markdown", "1");
+    expect(
+      await filesFolderRename.execute({ path: "a", newPath: "z" }, ctx),
+    ).toEqual({
+      data: {
+        scope: "session",
+        path: "a",
+        newPath: "z",
+        renamed: true,
+        files: 1,
+      },
+    });
+    expect(ctx.entries.readFile("session", "z/one.md")?.value).toBe("1");
+    expect(
+      await filesFolderRename.execute({ path: "nope", newPath: "x" }, ctx),
+    ).toMatchObject({ isError: true, details: { reason: "not_found" } });
+    expect(
+      await filesFolderRename.execute({ path: "z", newPath: "z/inside" }, ctx),
+    ).toMatchObject({ isError: true, details: { reason: "rejected" } });
+  });
+
+  it("files_folder_delete asks which copy when a folder is in two scopes", async () => {
+    const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
+    ctx.entries.writeFile("session", "d/x.md", "text/markdown", "s");
+    ctx.entries.writeFile("global", "d/y.md", "text/markdown", "g");
+    expect(await filesFolderDelete.execute({ path: "d" }, ctx)).toEqual({
+      data: { scope: "global", path: "d", deleted: true, files: 1 },
+    });
+    expect(forms[0]).toMatchObject({ title: 'Delete which folder "d"?' });
+    expect(ctx.entries.listFiles("session")).toHaveLength(1);
+    expect(ctx.entries.listFiles("global")).toEqual([]);
+    expect(
+      await filesFolderDelete.execute({ path: "<global://d>" }, ctx),
+    ).toMatchObject({ isError: true, details: { reason: "not_found" } });
+  });
+
+  it("the folder tools never ask for approval and are in the files group", () => {
+    for (const tool of [
+      filesFolderCreate,
+      filesFolderRename,
+      filesFolderDelete,
+    ]) {
+      expect(tool.approval).toBe("never");
+      expect(tool.group).toBe("files");
+      expect(tool.alwaysOn).toBe(false);
+    }
+  });
+});
+
+describe("binary files in the files tools", () => {
+  const blob = { hash: "a".repeat(64), size: 84_000 };
+
+  it("files_list shows a binary file's media type and size in bytes", async () => {
+    const { ctx } = context();
+    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    expect(await filesList.execute({}, ctx)).toMatchObject({
+      data: {
+        files: [
+          {
+            scope: "session",
+            key: "cat.png",
+            mediaType: "image/png",
+            size: 84_000,
+          },
+        ],
+      },
+    });
+  });
+
+  it("files_read hands an image to the model as media, with keep when asked", async () => {
+    const { ctx } = context();
+    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    const result = await filesRead.execute({ key: "session://cat.png" }, ctx);
+    expect(result).toEqual({
+      data: {
+        scope: "session",
+        key: "cat.png",
+        mediaType: "image/png",
+        size: 84_000,
+        note: "This is an image. It follows this result.",
+      },
+      media: [{ ref: "session://cat.png" }],
+    });
+    const kept = await filesRead.execute(
+      { key: "session://cat.png", keep: true },
+      ctx,
+    );
+    expect(kept.media).toEqual([{ ref: "session://cat.png", keep: true }]);
+  });
+
+  it("files_read says so when the model cannot take that kind of media", async () => {
+    const { ctx } = context();
+    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    const result = await filesRead.execute(
+      { key: "session://cat.png" },
+      { ...ctx, mediaSupport: { image: false, audio: true } },
+    );
+    expect(result.media).toBeUndefined();
+    expect(result.data).toMatchObject({
+      note: "The model in use cannot take image files, so it cannot be read.",
+    });
+  });
+
+  it("files_write takes text media types only", () => {
+    expect(filesWrite.parse({ mediaType: "image/png", value: "x" }).ok).toBe(
+      false,
+    );
+    expect(filesWrite.parse({ mediaType: "text/plain", value: "x" }).ok).toBe(
+      true,
+    );
+  });
+
+  it("files_delete removes a binary file like any other", async () => {
+    const { ctx } = context();
+    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    expect(
+      await filesDelete.execute({ key: "session://cat.png" }, ctx),
+    ).toEqual({
+      data: { scope: "session", key: "cat.png", deleted: true },
+    });
   });
 });

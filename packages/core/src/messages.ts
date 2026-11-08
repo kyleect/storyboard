@@ -69,31 +69,20 @@ export const SystemMessage = z.object({
 export const UserMessageSource = z.enum(["task", "reminder", "user"]);
 export type UserMessageSource = z.infer<typeof UserMessageSource>;
 
-/** The kinds of media a user can attach to a message. */
-export const AttachmentKind = z.enum(["image", "audio"]);
-export type AttachmentKind = z.infer<typeof AttachmentKind>;
-
-/**
- * A file the user attached to a message. Only this description is stored in
- * the message; the bytes are kept by the backend under `id` and read when a
- * request is made (see `ChatRequest.resolveAttachment`).
- */
-export const Attachment = z.object({
-  id: z.string(),
-  kind: AttachmentKind,
-  /** For example `image/png` or `audio/wav`. */
-  mediaType: z.string(),
-  /** The file's name, for labels in the app. Not sent to the model. */
-  name: z.string().optional(),
-  size: z.number().int().optional(),
-});
-export type Attachment = z.infer<typeof Attachment>;
+/** The kinds of media a model can be given. */
+export const MediaKind = z.enum(["image", "audio"]);
+export type MediaKind = z.infer<typeof MediaKind>;
 
 export const UserMessage = z.object({
   role: z.literal("user"),
   content: z.string(),
-  /** Images and audio sent with the text. Left out when there are none. */
-  attachments: z.array(Attachment).optional(),
+  /**
+   * References to the files sent with the text (files unification design,
+   * D10), such as `session://photo.png`. Kind, type and size are looked up
+   * from each file when a request is made (see `ChatRequest.resolveFile`).
+   * Left out when there are none.
+   */
+  files: z.array(z.string()).optional(),
   source: UserMessageSource.optional(),
 });
 
@@ -102,9 +91,54 @@ export const AssistantMessage = z.object({
   content: z.array(ContentBlock),
 });
 
-/** How a file's value is shown (files and memory design, decision 5). */
-export const FileType = z.enum(["plain", "markdown", "json"]);
-export type FileType = z.infer<typeof FileType>;
+/** The media types of text files; their value is the text itself. */
+export const TEXT_MEDIA_TYPES = [
+  "text/plain",
+  "text/markdown",
+  "application/json",
+] as const;
+
+/**
+ * The media types of binary files: the formats llama-server reads (files
+ * unification design, D4). The bytes are kept by content hash, apart from
+ * the file's record.
+ */
+export const BINARY_MEDIA_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/bmp",
+  "audio/wav",
+  "audio/mpeg",
+  "audio/flac",
+] as const;
+
+/**
+ * What a file holds, as a media type (files unification design, D3). It also
+ * says how a text value is shown.
+ */
+export const MediaType = z.enum([...TEXT_MEDIA_TYPES, ...BINARY_MEDIA_TYPES]);
+export type MediaType = z.infer<typeof MediaType>;
+export type TextMediaType = (typeof TEXT_MEDIA_TYPES)[number];
+export type BinaryMediaType = (typeof BINARY_MEDIA_TYPES)[number];
+
+export const isBinaryMediaType = (t: string): t is BinaryMediaType =>
+  (BINARY_MEDIA_TYPES as readonly string[]).includes(t);
+
+/** `image` or `audio` for a binary media type; undefined for text. */
+export const mediaKindOf = (t: string): MediaKind | undefined =>
+  t.startsWith("image/") && isBinaryMediaType(t)
+    ? "image"
+    : t.startsWith("audio/") && isBinaryMediaType(t)
+      ? "audio"
+      : undefined;
+
+/** Where a binary file's bytes are kept: their SHA-256 and length. */
+export const BlobRef = z.object({
+  hash: z.string(),
+  size: z.number().int().nonnegative(),
+});
+export type BlobRef = z.infer<typeof BlobRef>;
 
 /** A file, or a memory note (whose key is its generated id). */
 export const EntryKind = z.enum(["file", "note"]);
@@ -118,9 +152,17 @@ export const EntryOp = z.discriminatedUnion("op", [
     key: z.string(),
     value: z.string(),
     /** Files only. */
-    type: FileType.optional(),
+    mediaType: MediaType.optional(),
+    /** Binary files only: the bytes. `value` is empty then. */
+    blob: BlobRef.optional(),
   }),
   z.object({ op: z.literal("delete"), kind: EntryKind, key: z.string() }),
+  /** An explicit folder (files unification design, D6). */
+  z.object({
+    op: z.literal("folder"),
+    action: z.enum(["create", "delete"]),
+    path: z.string(),
+  }),
 ]);
 export type EntryOp = z.infer<typeof EntryOp>;
 
@@ -158,6 +200,15 @@ export const DataOp = z.discriminatedUnion("op", [
 ]);
 export type DataOp = z.infer<typeof DataOp>;
 
+/** A file a tool result refers to; the model is shown it (see `media.ts`). */
+export const MediaRef = z.object({
+  /** A reference such as `session://cat.png`. */
+  ref: z.string(),
+  /** The agent asked to keep it in later requests (D40). */
+  keep: z.boolean().optional(),
+});
+export type MediaRef = z.infer<typeof MediaRef>;
+
 export const ToolResultMessage = z.object({
   role: z.literal("tool"),
   callId: z.string(),
@@ -168,6 +219,11 @@ export const ToolResultMessage = z.object({
   isError: z.boolean(),
   /** The tool's structured result. Not sent to the model as is. */
   data: z.unknown().optional(),
+  /**
+   * Images and audio the result refers to. The model gets them in a user
+   * message after the turn's tool results (files unification design, D15).
+   */
+  media: z.array(MediaRef).optional(),
   /**
    * State the tool saved with this result (tools design 6.8). Not sent to
    * the model. The tool's latest saved state is rebuilt from the transcript.

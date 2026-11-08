@@ -7,6 +7,7 @@ import type { SessionPageQuery } from "../api";
  *   ["sessions", "list", "page", { projectId, direction, page, pageSize }]
  *   ["sessions", "detail", id]
  *   ["sessions", "debug", id]
+ *   ["sessions", "media-choices", id]
  *   ["sessions", "agents", id]
  *
  * Invalidate `lists()` for every session list, `details()` for every open
@@ -25,6 +26,9 @@ export const sessionKeys = {
   details: () => [...sessionKeys.all, "detail"] as const,
   detail: (id: string) => [...sessionKeys.details(), id] as const,
   debug: (id: string) => [...sessionKeys.all, "debug", id] as const,
+  /** The user's keep or drop choices for a session's media. */
+  mediaChoices: (id: string) =>
+    [...sessionKeys.all, "media-choices", id] as const,
   /** Every session's list of agents it can pick. */
   pickableAgents: () => [...sessionKeys.all, "agents"] as const,
   pickableAgentsFor: (id: string) =>

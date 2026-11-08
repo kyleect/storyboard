@@ -61,7 +61,8 @@ import { AskUserForm, type AskUserState } from "./AskUserForm";
 import {
   AttachButton,
   DraftAttachments,
-  MessageAttachments,
+  MessageFiles,
+  SessionFilesContext,
   useAttachmentDraft,
 } from "./Attachments";
 import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
@@ -248,13 +249,8 @@ export function Chat() {
     onError,
   });
   const send = useMutation({
-    mutationFn: (message: { content: string; attachmentIds: string[] }) =>
-      api.sendMessage(
-        sessionId,
-        message.content,
-        choices,
-        message.attachmentIds,
-      ),
+    mutationFn: (message: { content: string; files: string[] }) =>
+      api.sendMessage(sessionId, message.content, choices, message.files),
     onSuccess: () => {
       setDraft("");
       files.clear();
@@ -500,9 +496,7 @@ export function Chat() {
   const unreadable = support
     ? [
         ...new Set(
-          files.items
-            .map((i) => i.attachment.kind)
-            .filter((kind) => !support[kind]),
+          files.items.map((i) => i.kind).filter((kind) => !support[kind]),
         ),
       ]
     : [];
@@ -515,7 +509,7 @@ export function Chat() {
     if (!canSend) return;
     send.mutate({
       content: draft.trim() === "" ? "" : draft,
-      attachmentIds: files.items.map((i) => i.attachment.id),
+      files: files.items.map((i) => i.ref),
     });
   };
   // A finished recording is attached; from "Record & send" it is also sent,
@@ -538,10 +532,10 @@ export function Chat() {
     const latest = composer.current;
     send.mutate({
       content: latest.draft.trim() === "" ? "" : latest.draft,
-      attachmentIds: [
+      files: [
         ...new Set([
-          ...latest.items.map((i) => i.attachment.id),
-          ...uploaded.map((a) => a.id),
+          ...latest.items.map((i) => i.ref),
+          ...uploaded.map((a) => a.ref),
         ]),
       ],
     });
@@ -560,308 +554,312 @@ export function Chat() {
       : undefined;
 
   return (
-    <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between" wrap="nowrap">
-        <EditableTitle
-          title={detail.data.session.title}
-          disabled={trashed}
-          label="Session title"
-          onSave={(title) => actions.rename(sessionId, title)}
-        />
-        <Group gap="sm" wrap="nowrap">
-          <CopyDebugButton sessionId={sessionId} />
-          <ContextMeter
-            usage={contextUsage}
-            model={levelsModel}
-            subagentUsage={detail.data.subagentUsage}
+    <SessionFilesContext.Provider
+      value={{ sessionId, projectId: detail.data.session.project_id }}
+    >
+      <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
+        <Group justify="space-between" wrap="nowrap">
+          <EditableTitle
+            title={detail.data.session.title}
+            disabled={trashed}
+            label="Session title"
+            onSave={(title) => actions.rename(sessionId, title)}
           />
-          <Badge color={connected ? "green" : "gray"} variant="light">
-            {connected ? "live" : "offline"}
-          </Badge>
-        </Group>
-      </Group>
-
-      {trashed && (
-        <Alert color="yellow" title="This session is in the trash">
-          <Group justify="space-between">
-            <Text size="sm">It can be read but not changed.</Text>
-            <Button
-              size="xs"
-              variant="light"
-              loading={restoring}
-              onClick={() => {
-                setRestoring(true);
-                const { project } = detail.data;
-                actions
-                  .restore(
-                    detail.data.session,
-                    project?.trashed_at ? project : null,
-                  )
-                  .catch(showError("Could not restore"))
-                  .finally(() => setRestoring(false));
-              }}
-            >
-              Restore
-            </Button>
-          </Group>
-        </Alert>
-      )}
-
-      <Tabs value={tab} onChange={(v) => v && setTab(v)}>
-        <Tabs.List>
-          <Tabs.Tab value="chat">Chat</Tabs.Tab>
-          <Tabs.Tab value="files">Files</Tabs.Tab>
-          <Tabs.Tab value="memory">Memory</Tabs.Tab>
-          <Tabs.Tab value="data">Data</Tabs.Tab>
-          <Tabs.Tab value="debug">Debug</Tabs.Tab>
-        </Tabs.List>
-      </Tabs>
-
-      {tab !== "chat" && (
-        <ScrollArea style={{ flex: 1 }}>
-          {tab === "debug" ? (
-            <DebugPanel sessionId={sessionId} />
-          ) : tab === "data" ? (
-            <SchemasAndData
-              owner={{ scope: "session", id: sessionId }}
-              readOnly={entriesReadOnly}
-            />
-          ) : tab === "files" ? (
-            <FilesPanel
-              scope={{ scope: "session", id: sessionId }}
-              readOnly={entriesReadOnly}
-            />
-          ) : (
-            <NotesPanel
-              scope={{ scope: "session", id: sessionId }}
-              readOnly={entriesReadOnly}
-            />
-          )}
-        </ScrollArea>
-      )}
-
-      {tab === "chat" && (
-        <TranscriptScroll>
-          <Stack gap="sm" pr="md">
-            {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
-            {shown.map((m) => (
-              <div key={m.id} id={messageAnchor(m.id)}>
-                <MessageView {...m} notes={notes} asks={asks} />
-              </div>
-            ))}
-            {toolRunning && (
-              <Group gap="xs">
-                <Loader size="xs" />
-                <Text size="sm" c="dimmed">
-                  Running a tool…
-                </Text>
-              </Group>
-            )}
-          </Stack>
-        </TranscriptScroll>
-      )}
-
-      {/* Errors of a session in the trash are not shown (Q6). */}
-      {tab === "chat" && !trashed && (
-        <SessionErrorsPanel
-          sessionId={sessionId}
-          onShowInTranscript={showInTranscript}
-        />
-      )}
-
-      {tab === "chat" && (
-        <Group gap="xs" justify="space-between" align="flex-start">
-          <Group gap="xs" align="flex-start">
-            <ModelPicker
-              value={detail.data.session.model}
-              onChange={(model) => setChoices.mutate({ model })}
-              loadOnSelect
-              defaultModel={defaults?.model || undefined}
-              placeholder={
-                defaults?.model
-                  ? `Default (${defaults.model})`
-                  : "Default (none set; the server decides)"
-              }
-              disabled={trashed || setChoices.isPending}
-            />
-            <ReasoningPicker
+          <Group gap="sm" wrap="nowrap">
+            <CopyDebugButton sessionId={sessionId} />
+            <ContextMeter
+              usage={contextUsage}
               model={levelsModel}
-              value={detail.data.session.reasoning_effort}
-              onChange={(reasoningEffort) =>
-                setChoices.mutate({ reasoningEffort })
-              }
-              placeholder={
-                defaults?.reasoningEffort
-                  ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
-                  : "Reasoning: default (server decides)"
-              }
-              disabled={trashed || setChoices.isPending}
+              subagentUsage={detail.data.subagentUsage}
             />
-            <AgentPicker
-              sessionId={sessionId}
-              value={detail.data.session.agent_id}
-              onChange={(agentId) => setChoices.mutate({ agentId })}
-              disabled={trashed || setChoices.isPending}
-            />
+            <Badge color={connected ? "green" : "gray"} variant="light">
+              {connected ? "live" : "offline"}
+            </Badge>
           </Group>
-          {live ? (
-            <Group gap="xs">
-              {openInput && (
-                <Button
-                  variant="light"
-                  onClick={() =>
-                    document
-                      .querySelector(
-                        `[data-request-id="${CSS.escape(openInput.requestId)}"]`,
-                      )
-                      ?.scrollIntoView({ block: "nearest" })
-                  }
-                >
-                  Answer needed
-                </Button>
-              )}
-              {pending && dismissed === pending.requestId && (
-                <Button variant="light" onClick={() => setDismissed(null)}>
-                  Approval needed
-                </Button>
-              )}
-              {reasoningRun && (
-                <Button
-                  variant="light"
-                  onClick={() => stopThinking.mutate(reasoningRun.runId)}
-                  loading={stopThinking.isPending}
-                >
-                  Stop thinking
-                </Button>
-              )}
+        </Group>
+
+        {trashed && (
+          <Alert color="yellow" title="This session is in the trash">
+            <Group justify="space-between">
+              <Text size="sm">It can be read but not changed.</Text>
               <Button
-                color="red"
+                size="xs"
                 variant="light"
-                onClick={() => cancel.mutate(live.runId)}
-                loading={cancel.isPending}
+                loading={restoring}
+                onClick={() => {
+                  setRestoring(true);
+                  const { project } = detail.data;
+                  actions
+                    .restore(
+                      detail.data.session,
+                      project?.trashed_at ? project : null,
+                    )
+                    .catch(showError("Could not restore"))
+                    .finally(() => setRestoring(false));
+                }}
               >
-                Cancel
+                Restore
               </Button>
             </Group>
-          ) : (
-            <Button
-              variant="light"
-              disabled={busy || last?.message.role !== "assistant"}
-              onClick={() => cont.mutate()}
-            >
-              Continue
-            </Button>
-          )}
-        </Group>
-      )}
+          </Alert>
+        )}
 
-      {pendingEntry && pending && (
-        <ApprovalDialog
-          key={pending.requestId}
-          request={pending}
-          {...(pendingEntry.run.runId !== live?.runId
-            ? { from: pendingEntry.run.agent?.name ?? "a subagent" }
-            : {})}
-          opened={dismissed !== pending.requestId}
-          busy={answer.isPending}
-          onClose={() => setDismissed(pending.requestId)}
-          onAnswer={(a) =>
-            answer.mutate({
-              runId: pendingEntry.run.runId,
-              requestId: pending.requestId,
-              answer: a,
-            })
-          }
-          {...(pending.review
-            ? {
-                onCheck: (selection: Selection) =>
-                  api.checkApproval(
-                    pendingEntry.run.runId,
-                    pending.requestId,
-                    selection,
-                  ),
-                onRefresh: () =>
-                  api.refreshApproval(
-                    pendingEntry.run.runId,
-                    pending.requestId,
-                  ),
-              }
-            : {})}
-        />
-      )}
+        <Tabs value={tab} onChange={(v) => v && setTab(v)}>
+          <Tabs.List>
+            <Tabs.Tab value="chat">Chat</Tabs.Tab>
+            <Tabs.Tab value="files">Files</Tabs.Tab>
+            <Tabs.Tab value="memory">Memory</Tabs.Tab>
+            <Tabs.Tab value="data">Data</Tabs.Tab>
+            <Tabs.Tab value="debug">Debug</Tabs.Tab>
+          </Tabs.List>
+        </Tabs>
 
-      {tab === "chat" && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-          // Files dropped on the composer are attached.
-          onDragOver={(e) => {
-            if (!trashed && e.dataTransfer.types.includes("Files"))
-              e.preventDefault();
-          }}
-          onDrop={(e) => {
-            if (trashed || e.dataTransfer.files.length === 0) return;
-            e.preventDefault();
-            void files.add(Array.from(e.dataTransfer.files));
-          }}
-        >
-          <DraftAttachments
-            items={files.items}
-            uploading={files.uploading}
-            onRemove={files.remove}
+        {tab !== "chat" && (
+          <ScrollArea style={{ flex: 1 }}>
+            {tab === "debug" ? (
+              <DebugPanel sessionId={sessionId} />
+            ) : tab === "data" ? (
+              <SchemasAndData
+                owner={{ scope: "session", id: sessionId }}
+                readOnly={entriesReadOnly}
+              />
+            ) : tab === "files" ? (
+              <FilesPanel
+                scope={{ scope: "session", id: sessionId }}
+                readOnly={entriesReadOnly}
+              />
+            ) : (
+              <NotesPanel
+                scope={{ scope: "session", id: sessionId }}
+                readOnly={entriesReadOnly}
+              />
+            )}
+          </ScrollArea>
+        )}
+
+        {tab === "chat" && (
+          <TranscriptScroll>
+            <Stack gap="sm" pr="md">
+              {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
+              {shown.map((m) => (
+                <div key={m.id} id={messageAnchor(m.id)}>
+                  <MessageView {...m} notes={notes} asks={asks} />
+                </div>
+              ))}
+              {toolRunning && (
+                <Group gap="xs">
+                  <Loader size="xs" />
+                  <Text size="sm" c="dimmed">
+                    Running a tool…
+                  </Text>
+                </Group>
+              )}
+            </Stack>
+          </TranscriptScroll>
+        )}
+
+        {/* Errors of a session in the trash are not shown (Q6). */}
+        {tab === "chat" && !trashed && (
+          <SessionErrorsPanel
+            sessionId={sessionId}
+            onShowInTranscript={showInTranscript}
           />
-          {unreadable.length > 0 && (
-            <Alert color="yellow" mb="xs" p="xs">
-              The model in use cannot read {unreadable.join(" or ")} files.
-              Remove them or pick another model.
-            </Alert>
-          )}
-          <Group align="flex-end" gap="xs">
-            <Textarea
-              style={{ flex: 1 }}
-              autosize
-              minRows={2}
-              maxRows={8}
-              placeholder="Write a message (Ctrl+Enter to send)"
-              disabled={trashed}
-              value={draft}
-              onChange={(e) => setDraft(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  submit();
+        )}
+
+        {tab === "chat" && (
+          <Group gap="xs" justify="space-between" align="flex-start">
+            <Group gap="xs" align="flex-start">
+              <ModelPicker
+                value={detail.data.session.model}
+                onChange={(model) => setChoices.mutate({ model })}
+                loadOnSelect
+                defaultModel={defaults?.model || undefined}
+                placeholder={
+                  defaults?.model
+                    ? `Default (${defaults.model})`
+                    : "Default (none set; the server decides)"
                 }
-              }}
-              // A pasted screenshot or file is attached; pasted text is not.
-              onPaste={(e) => {
-                const pasted = Array.from(e.clipboardData.files);
-                if (pasted.length === 0) return;
-                if (e.clipboardData.getData("text") !== "") return;
-                e.preventDefault();
-                void files.add(pasted);
-              }}
-            />
-            <AttachButton
-              onFiles={(picked) => void files.add(picked)}
-              disabled={trashed}
-            />
-            <VoiceButtons
-              onRecorded={(file, mode) => void recorded(file, mode)}
-              disabled={trashed || support?.audio === false}
-              sendDisabled={busy}
-              {...(support?.audio === false
-                ? { title: "The model in use cannot hear audio." }
-                : {})}
-            />
-            <Button type="submit" disabled={!canSend}>
-              Send
-            </Button>
+                disabled={trashed || setChoices.isPending}
+              />
+              <ReasoningPicker
+                model={levelsModel}
+                value={detail.data.session.reasoning_effort}
+                onChange={(reasoningEffort) =>
+                  setChoices.mutate({ reasoningEffort })
+                }
+                placeholder={
+                  defaults?.reasoningEffort
+                    ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
+                    : "Reasoning: default (server decides)"
+                }
+                disabled={trashed || setChoices.isPending}
+              />
+              <AgentPicker
+                sessionId={sessionId}
+                value={detail.data.session.agent_id}
+                onChange={(agentId) => setChoices.mutate({ agentId })}
+                disabled={trashed || setChoices.isPending}
+              />
+            </Group>
+            {live ? (
+              <Group gap="xs">
+                {openInput && (
+                  <Button
+                    variant="light"
+                    onClick={() =>
+                      document
+                        .querySelector(
+                          `[data-request-id="${CSS.escape(openInput.requestId)}"]`,
+                        )
+                        ?.scrollIntoView({ block: "nearest" })
+                    }
+                  >
+                    Answer needed
+                  </Button>
+                )}
+                {pending && dismissed === pending.requestId && (
+                  <Button variant="light" onClick={() => setDismissed(null)}>
+                    Approval needed
+                  </Button>
+                )}
+                {reasoningRun && (
+                  <Button
+                    variant="light"
+                    onClick={() => stopThinking.mutate(reasoningRun.runId)}
+                    loading={stopThinking.isPending}
+                  >
+                    Stop thinking
+                  </Button>
+                )}
+                <Button
+                  color="red"
+                  variant="light"
+                  onClick={() => cancel.mutate(live.runId)}
+                  loading={cancel.isPending}
+                >
+                  Cancel
+                </Button>
+              </Group>
+            ) : (
+              <Button
+                variant="light"
+                disabled={busy || last?.message.role !== "assistant"}
+                onClick={() => cont.mutate()}
+              >
+                Continue
+              </Button>
+            )}
           </Group>
-        </form>
-      )}
-    </Stack>
+        )}
+
+        {pendingEntry && pending && (
+          <ApprovalDialog
+            key={pending.requestId}
+            request={pending}
+            {...(pendingEntry.run.runId !== live?.runId
+              ? { from: pendingEntry.run.agent?.name ?? "a subagent" }
+              : {})}
+            opened={dismissed !== pending.requestId}
+            busy={answer.isPending}
+            onClose={() => setDismissed(pending.requestId)}
+            onAnswer={(a) =>
+              answer.mutate({
+                runId: pendingEntry.run.runId,
+                requestId: pending.requestId,
+                answer: a,
+              })
+            }
+            {...(pending.review
+              ? {
+                  onCheck: (selection: Selection) =>
+                    api.checkApproval(
+                      pendingEntry.run.runId,
+                      pending.requestId,
+                      selection,
+                    ),
+                  onRefresh: () =>
+                    api.refreshApproval(
+                      pendingEntry.run.runId,
+                      pending.requestId,
+                    ),
+                }
+              : {})}
+          />
+        )}
+
+        {tab === "chat" && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+            // Files dropped on the composer are attached.
+            onDragOver={(e) => {
+              if (!trashed && e.dataTransfer.types.includes("Files"))
+                e.preventDefault();
+            }}
+            onDrop={(e) => {
+              if (trashed || e.dataTransfer.files.length === 0) return;
+              e.preventDefault();
+              void files.add(Array.from(e.dataTransfer.files));
+            }}
+          >
+            <DraftAttachments
+              items={files.items}
+              uploading={files.uploading}
+              onRemove={files.remove}
+            />
+            {unreadable.length > 0 && (
+              <Alert color="yellow" mb="xs" p="xs">
+                The model in use cannot read {unreadable.join(" or ")} files.
+                Remove them or pick another model.
+              </Alert>
+            )}
+            <Group align="flex-end" gap="xs">
+              <Textarea
+                style={{ flex: 1 }}
+                autosize
+                minRows={2}
+                maxRows={8}
+                placeholder="Write a message (Ctrl+Enter to send)"
+                disabled={trashed}
+                value={draft}
+                onChange={(e) => setDraft(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                // A pasted screenshot or file is attached; pasted text is not.
+                onPaste={(e) => {
+                  const pasted = Array.from(e.clipboardData.files);
+                  if (pasted.length === 0) return;
+                  if (e.clipboardData.getData("text") !== "") return;
+                  e.preventDefault();
+                  void files.add(pasted);
+                }}
+              />
+              <AttachButton
+                onFiles={(picked) => void files.add(picked)}
+                disabled={trashed}
+              />
+              <VoiceButtons
+                onRecorded={(file, mode) => void recorded(file, mode)}
+                disabled={trashed || support?.audio === false}
+                sendDisabled={busy}
+                {...(support?.audio === false
+                  ? { title: "The model in use cannot hear audio." }
+                  : {})}
+              />
+              <Button type="submit" disabled={!canSend}>
+                Send
+              </Button>
+            </Group>
+          </form>
+        )}
+      </Stack>
+    </SessionFilesContext.Provider>
   );
 }
 
@@ -886,8 +884,8 @@ export function MessageView({
         <Text size="xs" c="dimmed">
           {userLabel}
         </Text>
-        {message.attachments && message.attachments.length > 0 && (
-          <MessageAttachments attachments={message.attachments} />
+        {message.files && message.files.length > 0 && (
+          <MessageFiles files={message.files} />
         )}
         {message.content !== "" && <Markdown>{message.content}</Markdown>}
       </Paper>
@@ -916,6 +914,9 @@ export function MessageView({
           )}
         </Group>
         <Code block>{showResult(message.content)}</Code>
+        {message.media && message.media.length > 0 && (
+          <MessageFiles files={message.media.map((m) => m.ref)} />
+        )}
       </Paper>
     );
   }

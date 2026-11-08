@@ -39,7 +39,7 @@ describe("encodeWav", () => {
 
   it("is accepted by the backend's check for a WAV file", () => {
     const wav = encodeWav(new Float32Array(1), 16000);
-    // "RIFF", four size bytes, "WAVE" (backend/src/attachment-types.ts).
+    // "RIFF", four size bytes, "WAVE" (backend/src/media-detect.ts).
     expect(ascii(wav, 0, 4)).toBe("RIFF");
     expect(ascii(wav, 8, 12)).toBe("WAVE");
   });

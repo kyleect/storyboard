@@ -2,7 +2,8 @@ import { z } from "zod";
 import {
   COPY_LIMIT_MAX,
   defineTool,
-  type FileType,
+  type BlobRef,
+  type MediaType,
   type Form,
   type ProjectPush,
   type ProjectSummary,
@@ -41,6 +42,13 @@ type Destination =
   | { kind: "scope"; scope: Scope }
   | { kind: "project"; project: ProjectSummary };
 
+/** What a file or note holds; a binary file has `blob` and no value. */
+interface Item {
+  mediaType?: MediaType;
+  value: string;
+  blob?: BlobRef;
+}
+
 /** What differs between files and notes. */
 interface Adapter {
   noun: "file" | "note";
@@ -48,24 +56,11 @@ interface Adapter {
   /** Keys or ids in a scope. */
   list(ctx: ToolContext, scope: Scope): string[];
   /** The item, undefined when it is not there. */
-  read(
-    ctx: ToolContext,
-    scope: Scope,
-    name: string,
-  ): { type?: FileType; value: string } | undefined;
+  read(ctx: ToolContext, scope: Scope, name: string): Item | undefined;
   /** Writes into one of the session's scopes; returns the name it has there. */
-  writeScope(
-    ctx: ToolContext,
-    scope: Scope,
-    name: string,
-    item: { type?: FileType; value: string },
-  ): string;
+  writeScope(ctx: ToolContext, scope: Scope, name: string, item: Item): string;
   /** Sends to another project; returns the name it has there. */
-  writeProject(
-    push: ProjectPush,
-    name: string,
-    item: { type?: FileType; value: string },
-  ): string;
+  writeProject(push: ProjectPush, name: string, item: Item): string;
   /** Whether the destination already has the name (files only). */
   hasScope(ctx: ToolContext, scope: Scope, name: string): boolean;
   hasProject(push: ProjectPush, name: string): boolean;
@@ -78,14 +73,39 @@ const fileAdapter: Adapter = {
   list: (ctx, scope) => ctx.entries.listFiles(scope).map((f) => f.key),
   read: (ctx, scope, name) => {
     const file = ctx.entries.readFile(scope, name);
-    return file ? { type: file.type, value: file.value } : undefined;
+    return file
+      ? {
+          mediaType: file.mediaType,
+          value: file.value,
+          ...(file.blob ? { blob: file.blob } : {}),
+        }
+      : undefined;
   },
   writeScope: (ctx, scope, name, item) => {
-    ctx.entries.writeFile(scope, name, item.type ?? "markdown", item.value);
+    if (item.blob) {
+      ctx.entries.putBlob(
+        scope,
+        name,
+        item.mediaType ?? "text/markdown",
+        item.blob,
+      );
+    } else {
+      ctx.entries.writeFile(
+        scope,
+        name,
+        item.mediaType ?? "text/markdown",
+        item.value,
+      );
+    }
     return name;
   },
   writeProject: (push, name, item) => {
-    push.putFile(name, item.type ?? "markdown", item.value);
+    push.putFile(
+      name,
+      item.mediaType ?? "text/markdown",
+      item.value,
+      item.blob,
+    );
     return name;
   },
   hasScope: (ctx, scope, name) =>

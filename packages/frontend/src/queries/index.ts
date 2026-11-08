@@ -6,7 +6,7 @@
  * never write a key inline.
  */
 export { agentKeys } from "./agents";
-export { attachmentKeys } from "./attachments";
+export { blobKeys } from "./blobs";
 export { dataKeys, schemaKeys } from "./data";
 export { entryKeys } from "./entries";
 export { errorKeys } from "./errors";

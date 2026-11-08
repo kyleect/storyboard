@@ -1,9 +1,14 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "../api";
-import { DraftAttachments, MessageAttachments } from "./Attachments";
+import { api, type Entry } from "../api";
+import type { MediaType } from "@harness/core";
+import {
+  DraftAttachments,
+  MessageFiles,
+  SessionFilesContext,
+} from "./Attachments";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -18,20 +23,81 @@ function show(ui: React.ReactElement) {
   );
 }
 
-describe("MessageAttachments", () => {
+const where = { sessionId: "s1", projectId: "p1" };
+
+function showFiles(files: string[]) {
+  return show(
+    <SessionFilesContext.Provider value={where}>
+      <MessageFiles files={files} />
+    </SessionFilesContext.Provider>,
+  );
+}
+
+const entry = (key: string, mediaType: MediaType, hash: string): Entry => ({
+  key,
+  mediaType,
+  value: "",
+  blob: { hash, size: 1 },
+  updatedAt: "t",
+  deleted: false,
+});
+
+describe("MessageFiles keep choice", () => {
+  const setup = (choices: { ref: string; keep: boolean }[]) => {
+    vi.spyOn(api, "listEntries").mockResolvedValue([
+      entry("cat.png", "image/png", "h1"),
+    ]);
+    vi.spyOn(api, "blobUrl").mockResolvedValue("blob:image");
+    // The server keeps what is set, so the next read shows it.
+    let saved = choices;
+    vi.spyOn(api, "getMediaChoices").mockImplementation(async () => saved);
+    return vi
+      .spyOn(api, "setMediaChoice")
+      .mockImplementation(async (_id, ref, keep) => {
+        saved = keep === null ? [] : [{ ref, keep }];
+        return { ref, keep };
+      });
+  };
+  const radio = (name: string) =>
+    screen.getByRole("radio", { name }) as HTMLInputElement;
+
+  it("shows the saved choice and defaults to the default", async () => {
+    setup([{ ref: "session://cat.png", keep: false }]);
+    showFiles(["session://cat.png"]);
+    await waitFor(() => expect(radio("Drop later").checked).toBe(true));
+    expect(radio("Default").checked).toBe(false);
+  });
+
+  it("saves keep, drop and a return to the default", async () => {
+    const set = setup([]);
+    showFiles(["session://cat.png"]);
+    await waitFor(() => expect(radio("Default").checked).toBe(true));
+    fireEvent.click(radio("Keep in view"));
+    await waitFor(() =>
+      expect(set).toHaveBeenLastCalledWith("s1", "session://cat.png", true),
+    );
+    fireEvent.click(radio("Drop later"));
+    await waitFor(() =>
+      expect(set).toHaveBeenLastCalledWith("s1", "session://cat.png", false),
+    );
+    fireEvent.click(radio("Default"));
+    await waitFor(() =>
+      expect(set).toHaveBeenLastCalledWith("s1", "session://cat.png", null),
+    );
+  });
+});
+
+describe("MessageFiles", () => {
   it("shows an image and an audio player from the fetched bytes", async () => {
-    const urls: Record<string, string> = { i1: "blob:image", a1: "blob:audio" };
-    vi.spyOn(api, "attachmentUrl").mockImplementation(
-      async (id) => urls[id] ?? "",
-    );
-    const { container } = show(
-      <MessageAttachments
-        attachments={[
-          { id: "i1", kind: "image", mediaType: "image/png", name: "cat.png" },
-          { id: "a1", kind: "audio", mediaType: "audio/wav", name: "hi.wav" },
-        ]}
-      />,
-    );
+    const list = vi
+      .spyOn(api, "listEntries")
+      .mockResolvedValue([
+        entry("cat.png", "image/png", "h1"),
+        entry("hi.wav", "audio/wav", "h2"),
+      ]);
+    const urls: Record<string, string> = { h1: "blob:image", h2: "blob:audio" };
+    vi.spyOn(api, "blobUrl").mockImplementation(async (h) => urls[h] ?? "");
+    const { container } = showFiles(["session://cat.png", "session://hi.wav"]);
     const img = await screen.findByAltText("cat.png");
     expect(img.getAttribute("src")).toBe("blob:image");
     await waitFor(() =>
@@ -40,17 +106,52 @@ describe("MessageAttachments", () => {
       ),
     );
     expect(screen.getByText("hi.wav")).toBeTruthy();
+    expect(list).toHaveBeenCalledWith(
+      { scope: "session", id: "s1" },
+      "file",
+      false,
+    );
   });
 
-  it("says when a file cannot be loaded", async () => {
-    vi.spyOn(api, "attachmentUrl").mockRejectedValue(new Error("gone"));
-    show(
-      <MessageAttachments
-        attachments={[
-          { id: "i1", kind: "image", mediaType: "image/png", name: "cat.png" },
-        ]}
-      />,
+  it("finds a project or global file in its own scope", async () => {
+    const list = vi
+      .spyOn(api, "listEntries")
+      .mockImplementation(async (s) =>
+        s.scope === "project"
+          ? [entry("p.png", "image/png", "hp")]
+          : [entry("g.png", "image/png", "hg")],
+      );
+    vi.spyOn(api, "blobUrl").mockImplementation(async (h) => `blob:${h}`);
+    showFiles(["project://p.png", "global://g.png"]);
+    expect((await screen.findByAltText("p.png")).getAttribute("src")).toBe(
+      "blob:hp",
     );
+    expect((await screen.findByAltText("g.png")).getAttribute("src")).toBe(
+      "blob:hg",
+    );
+    expect(list).toHaveBeenCalledWith(
+      { scope: "project", id: "p1" },
+      "file",
+      false,
+    );
+    expect(list).toHaveBeenCalledWith({ scope: "global" }, "file", false);
+  });
+
+  it("says when a file is no longer there", async () => {
+    vi.spyOn(api, "listEntries").mockResolvedValue([]);
+    showFiles(["session://gone.png", "workspace://w/x.png"]);
+    expect(
+      await screen.findByText("gone.png is no longer available."),
+    ).toBeTruthy();
+    expect(screen.getByText("x.png is no longer available.")).toBeTruthy();
+  });
+
+  it("says when the bytes cannot be loaded", async () => {
+    vi.spyOn(api, "listEntries").mockResolvedValue([
+      entry("cat.png", "image/png", "h1"),
+    ]);
+    vi.spyOn(api, "blobUrl").mockRejectedValue(new Error("gone"));
+    showFiles(["session://cat.png"]);
     expect(await screen.findByText("Could not load cat.png.")).toBeTruthy();
   });
 });
@@ -62,26 +163,22 @@ describe("DraftAttachments", () => {
       <DraftAttachments
         items={[
           {
-            attachment: {
-              id: "i1",
-              kind: "image",
-              mediaType: "image/png",
-              name: "cat.png",
-            },
+            ref: "session://cat.png",
+            name: "cat.png",
+            kind: "image",
+            mediaType: "image/png",
             previewUrl: "blob:thumb",
           },
           {
-            attachment: {
-              id: "a1",
-              kind: "audio",
-              mediaType: "audio/wav",
-              name: "hi.wav",
-            },
+            ref: "session://hi.wav",
+            name: "hi.wav",
+            kind: "audio",
+            mediaType: "audio/wav",
             previewUrl: undefined,
           },
         ]}
         uploading={0}
-        onRemove={(id) => removed.push(id)}
+        onRemove={(ref) => removed.push(ref)}
       />,
     );
     expect(screen.getByAltText("cat.png").getAttribute("src")).toBe(
@@ -89,7 +186,7 @@ describe("DraftAttachments", () => {
     );
     expect(screen.getByText("audio")).toBeTruthy();
     screen.getByRole("button", { name: "Remove hi.wav" }).click();
-    expect(removed).toEqual(["a1"]);
+    expect(removed).toEqual(["session://hi.wav"]);
   });
 
   it("lets a recording be played back before it is sent", () => {
@@ -97,12 +194,10 @@ describe("DraftAttachments", () => {
       <DraftAttachments
         items={[
           {
-            attachment: {
-              id: "a1",
-              kind: "audio",
-              mediaType: "audio/wav",
-              name: "voice.wav",
-            },
+            ref: "session://voice.wav",
+            name: "voice.wav",
+            kind: "audio",
+            mediaType: "audio/wav",
             previewUrl: "blob:voice",
           },
         ]}

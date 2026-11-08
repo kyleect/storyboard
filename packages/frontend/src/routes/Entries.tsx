@@ -6,6 +6,7 @@ import {
   Card,
   Code,
   Group,
+  Image,
   Loader,
   Modal,
   NavLink,
@@ -22,18 +23,32 @@ import {
   Title,
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
+import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { useState } from "react";
-import type { EntryKind, FileType } from "@harness/core";
+import { useRef, useState } from "react";
+import {
+  fileNameProblem,
+  mediaKindOf,
+  type BlobRef,
+  type EntryKind,
+  type MediaType,
+} from "@harness/core";
 import {
   api,
+  type DerivedText,
   type Entry,
   type EntryDetail,
   type EntryScope,
   type EntryVersion,
 } from "../api";
-import { entryKeys, projectKeys } from "../queries";
+import {
+  ACCEPT,
+  ACCEPTED_DESCRIPTION,
+  attachmentMediaType,
+  MAX_ATTACHMENT_BYTES,
+} from "../attachments";
+import { blobKeys, entryKeys, projectKeys } from "../queries";
 import { Markdown } from "./Markdown";
 import { showError } from "./SessionActions";
 
@@ -44,22 +59,41 @@ import { showError } from "./SessionActions";
  * open in a dialog, where one can be made current again.
  */
 
-const FILE_TYPES: { value: FileType; label: string }[] = [
-  { value: "plain", label: "Plain" },
-  { value: "markdown", label: "Markdown" },
-  { value: "json", label: "JSON" },
+const FILE_TYPES: { value: MediaType; label: string }[] = [
+  { value: "text/plain", label: "Plain" },
+  { value: "text/markdown", label: "Markdown" },
+  { value: "application/json", label: "JSON" },
 ];
 
-const KEY_RULE = 'Letters, digits, "-", "_" and "." only. Case-sensitive.';
-const FILE_KEY = /^[A-Za-z0-9._-]+$/;
+const KEY_RULE =
+  'A name, or folders and a name separated by "/" (characters/alice.md). Case-sensitive; spaces are fine.';
+
+/** What is wrong with a name or path, or undefined when it is fine (D50). */
+const nameError = (name: string): string | undefined => {
+  if (name === "") return undefined;
+  const problem = fileNameProblem(name);
+  return problem ? `Not a valid name: ${problem}.` : undefined;
+};
 
 /**
  * Plain as text; JSON pretty-printed (plan U1); Markdown rendered, with a
  * switch to its source (markdown rendering plan M2, M3). Exported for tests.
  */
-export function ValueView({ type, value }: { type?: FileType; value: string }) {
+export function ValueView({
+  mediaType,
+  value,
+  blob,
+}: {
+  mediaType?: MediaType;
+  value: string;
+  /** Binary files: the bytes to show. */
+  blob?: BlobRef | undefined;
+}) {
   const [showSource, setShowSource] = useState(false);
-  if (type === "markdown" && value !== "") {
+  if (mediaType && mediaKindOf(mediaType) && blob) {
+    return <BinaryPreview mediaType={mediaType} blob={blob} />;
+  }
+  if (mediaType === "text/markdown" && value !== "") {
     return (
       <Stack gap="xs">
         <SegmentedControl
@@ -82,7 +116,7 @@ export function ValueView({ type, value }: { type?: FileType; value: string }) {
       </Stack>
     );
   }
-  if (type === "json") {
+  if (mediaType === "application/json") {
     let pretty = value;
     try {
       pretty = JSON.stringify(JSON.parse(value), null, 2);
@@ -92,6 +126,153 @@ export function ValueView({ type, value }: { type?: FileType; value: string }) {
     return <Code block>{pretty}</Code>;
   }
   return <SourceView value={value} />;
+}
+
+/** An image viewer or audio player for a binary file; no text editor. */
+function BinaryPreview({
+  mediaType,
+  blob,
+}: {
+  mediaType: MediaType;
+  blob: BlobRef;
+}) {
+  const bytes = useQuery({
+    queryKey: blobKeys.file(blob.hash),
+    queryFn: () => api.blobUrl(blob.hash),
+    // The bytes under a hash never change, and the object URL has to stay
+    // valid for as long as the page is open.
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  const size =
+    blob.size < 1024 * 1024
+      ? `${Math.max(1, Math.round(blob.size / 1024))} KB`
+      : `${(blob.size / (1024 * 1024)).toFixed(1)} MB`;
+  return (
+    <Stack gap="xs">
+      <Text size="xs" c="dimmed">
+        {mediaType}, {size}
+      </Text>
+      {bytes.isPending && <Loader size="sm" aria-label="Loading the file" />}
+      {bytes.isError && (
+        <Alert color="red">
+          Could not load the file: {bytes.error.message}
+        </Alert>
+      )}
+      {bytes.data && mediaKindOf(mediaType) === "image" && (
+        <Image
+          src={bytes.data}
+          alt="Preview"
+          maw="100%"
+          mah="60vh"
+          fit="contain"
+          radius="sm"
+        />
+      )}
+      {bytes.data && mediaKindOf(mediaType) === "audio" && (
+        <audio controls src={bytes.data} aria-label="Play the file" />
+      )}
+      <DerivedTextField hash={blob.hash} />
+    </Stack>
+  );
+}
+
+/**
+ * The text that stands for an image or audio file (files unification design,
+ * D18, D43, D44): a description or transcript, written by the Media
+ * Describer or by the user. It is searched, and given to a model that cannot
+ * take the file. A failed generation shows "Not generated" and a Retry.
+ */
+export function DerivedTextField({ hash }: { hash: string }) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: blobKeys.text(hash),
+    queryFn: () => api.getDerivedText(hash),
+    // While it is being written, look again.
+    refetchInterval: (q) => (q.state.data?.state === "pending" ? 2000 : false),
+  });
+  const describer = useQuery({
+    queryKey: blobKeys.describer(),
+    queryFn: api.getMediaDescriber,
+  });
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const refresh = (value: DerivedText) => {
+    queryClient.setQueryData(blobKeys.text(hash), value);
+    setDraft(undefined);
+  };
+  const save = useMutation({
+    mutationFn: (text: string) => api.setDerivedText(hash, text),
+    onSuccess: refresh,
+    onError: showError("Could not save the text"),
+  });
+  const retry = useMutation({
+    mutationFn: () => api.describeFile(hash),
+    onSuccess: refresh,
+    onError: showError("Could not start the description"),
+  });
+  if (query.isPending)
+    return <Loader size="xs" aria-label="Loading the text" />;
+  if (query.isError) {
+    return <Alert color="red">{query.error.message}</Alert>;
+  }
+  const { text, state } = query.data;
+  const shown = draft ?? text;
+  const on = describer.data?.enabled ?? false;
+  const status: Record<string, string> = {
+    none: "No text yet.",
+    pending: "Writing a description…",
+    generated: "Written by the Media Describer.",
+    edited: "Edited by you.",
+    failed: text === "" ? "Not generated." : "The last attempt failed.",
+  };
+  return (
+    <Stack gap={4}>
+      <Textarea
+        label="Text for search and for models that cannot see or hear this file"
+        autosize
+        minRows={2}
+        maxRows={10}
+        value={shown}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        disabled={state === "pending"}
+      />
+      <Group gap="xs">
+        <Text size="xs" c={state === "failed" ? "red" : "dimmed"}>
+          {status[state]}
+        </Text>
+        {state === "pending" && <Loader size="xs" />}
+        {draft !== undefined && draft !== text && (
+          <Button
+            size="xs"
+            loading={save.isPending}
+            onClick={() => save.mutate(draft)}
+          >
+            Save text
+          </Button>
+        )}
+        {state !== "pending" && (
+          <Button
+            size="xs"
+            variant="default"
+            disabled={!on}
+            loading={retry.isPending}
+            onClick={() => retry.mutate()}
+          >
+            {state === "failed"
+              ? "Retry"
+              : text === ""
+                ? "Generate"
+                : "Write again"}
+          </Button>
+        )}
+        {!on && state !== "pending" && (
+          <Text size="xs" c="dimmed">
+            Choose a Media describer model in Settings to generate it.
+          </Text>
+        )}
+      </Group>
+    </Stack>
+  );
 }
 
 /** A value as stored, in monospace. */
@@ -111,11 +292,11 @@ function SourceView({ value }: { value: string }) {
   );
 }
 
-function TypeBadge({ type }: { type?: FileType }) {
-  if (!type) return null;
+function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
+  if (!mediaType) return null;
   return (
     <Badge size="xs" variant="light" color="gray">
-      {FILE_TYPES.find((t) => t.value === type)?.label ?? type}
+      {FILE_TYPES.find((t) => t.value === mediaType)?.label ?? mediaType}
     </Badge>
   );
 }
@@ -198,7 +379,9 @@ function VersionsModal({
           <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
             <Group justify="space-between">
               <Group gap="xs">
-                <TypeBadge {...(picked.type ? { type: picked.type } : {})} />
+                <TypeBadge
+                  {...(picked.mediaType ? { mediaType: picked.mediaType } : {})}
+                />
                 {picked.deleted && (
                   <Text size="sm" c="dimmed">
                     Deleted here; the value it had is shown.
@@ -218,8 +401,9 @@ function VersionsModal({
             </Group>
             <ScrollArea.Autosize mah="55vh">
               <ValueView
-                {...(picked.type ? { type: picked.type } : {})}
+                {...(picked.mediaType ? { mediaType: picked.mediaType } : {})}
                 value={picked.value}
+                blob={picked.blob}
               />
             </ScrollArea.Autosize>
           </Stack>
@@ -259,6 +443,240 @@ type FileMode = { mode: "view" } | { mode: "edit" } | { mode: "new" };
  * A scope's files: list on the left, the selected file on the right
  * (plan U6). `readOnly` with a reason when changes are not allowed.
  */
+/** Folders of a scope: create, rename and delete (D6). */
+function FoldersSection({
+  scope,
+  readOnly,
+}: {
+  scope: EntryScope;
+  readOnly: boolean;
+}) {
+  const refresh = useRefresh(scope);
+  const folders = useQuery({
+    queryKey: entryKeys.folders(scope),
+    queryFn: () => api.listFolders(scope),
+  });
+  const [path, setPath] = useState("");
+  const [renaming, setRenaming] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  const create = useMutation({
+    mutationFn: () => api.createFolder(scope, path),
+    onSuccess: async () => {
+      setPath("");
+      await refresh();
+    },
+    onError: showError("Could not create the folder"),
+  });
+  const rename = useMutation({
+    mutationFn: (r: { from: string; to: string }) =>
+      api.renameFolder(scope, r.from, r.to),
+    onSuccess: async () => {
+      setRenaming(null);
+      await refresh();
+    },
+    onError: showError("Could not rename the folder"),
+  });
+  const remove = useMutation({
+    mutationFn: (p: string) => api.deleteFolder(scope, p),
+    onSuccess: refresh,
+    onError: showError("Could not delete the folder"),
+  });
+  const error = nameError(path);
+  const renameError = renaming ? nameError(renaming.to) : undefined;
+
+  return (
+    <Stack gap={4}>
+      <Text size="xs" fw={600} c="dimmed">
+        Folders
+      </Text>
+      {folders.data?.length === 0 && (
+        <Text size="xs" c="dimmed">
+          No folders.
+        </Text>
+      )}
+      {folders.data?.map((f) =>
+        renaming?.from === f ? (
+          <Group key={f} gap={4} wrap="nowrap">
+            <TextInput
+              size="xs"
+              aria-label={`New path for ${f}`}
+              style={{ flex: 1 }}
+              value={renaming.to}
+              error={renameError}
+              onChange={(e) =>
+                setRenaming({ from: f, to: e.currentTarget.value })
+              }
+            />
+            <Button
+              size="compact-xs"
+              disabled={
+                renaming.to === "" ||
+                renaming.to === f ||
+                renameError !== undefined
+              }
+              loading={rename.isPending}
+              onClick={() => rename.mutate(renaming)}
+            >
+              Rename
+            </Button>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => setRenaming(null)}
+            >
+              Cancel
+            </Button>
+          </Group>
+        ) : (
+          <Group key={f} gap={4} wrap="nowrap" justify="space-between">
+            <Text size="xs" truncate>
+              {f}/
+            </Text>
+            {!readOnly && (
+              <Group gap={2} wrap="nowrap">
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  aria-label={`Rename folder ${f}`}
+                  onClick={() => setRenaming({ from: f, to: f })}
+                >
+                  Rename
+                </Button>
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="red"
+                  aria-label={`Delete folder ${f}`}
+                  onClick={() =>
+                    modals.openConfirmModal({
+                      title: `Delete the folder "${f}"?`,
+                      children: (
+                        <Text size="sm">
+                          Every file inside it is deleted too. Each file keeps
+                          its earlier versions and can be restored.
+                        </Text>
+                      ),
+                      labels: { confirm: "Delete", cancel: "Cancel" },
+                      confirmProps: { color: "red" },
+                      onConfirm: () => remove.mutate(f),
+                    })
+                  }
+                >
+                  Delete
+                </Button>
+              </Group>
+            )}
+          </Group>
+        ),
+      )}
+      {!readOnly && (
+        <Group gap={4} wrap="nowrap" align="flex-start">
+          <TextInput
+            size="xs"
+            aria-label="New folder path"
+            placeholder="New folder (a/b)"
+            style={{ flex: 1 }}
+            value={path}
+            error={error}
+            onChange={(e) => setPath(e.currentTarget.value)}
+          />
+          <Button
+            size="xs"
+            variant="light"
+            disabled={path === "" || error !== undefined}
+            loading={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Add
+          </Button>
+        </Group>
+      )}
+    </Stack>
+  );
+}
+
+/**
+ * Uploads image and audio files to a scope as binary files (files
+ * unification design, D20, D21). A name in use gets a suffix. Returns the
+ * names made, in order.
+ */
+function useUploadFiles(scope: EntryScope, onUploaded: (key: string) => void) {
+  const refresh = useRefresh(scope);
+  const [busy, setBusy] = useState(0);
+  const warn = (message: string) =>
+    notifications.show({
+      color: "yellow",
+      title: "Could not upload the file",
+      message,
+    });
+  const upload = async (files: readonly File[]) => {
+    for (const file of files) {
+      const label = file.name || "That file";
+      const mediaType = attachmentMediaType(file.name, file.type);
+      if (!mediaType) {
+        warn(`${label} cannot be uploaded. Use ${ACCEPTED_DESCRIPTION}.`);
+        continue;
+      }
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        warn(
+          `${label} is larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB.`,
+        );
+        continue;
+      }
+      setBusy((n) => n + 1);
+      try {
+        const made = await api.uploadFile(scope, file, mediaType);
+        await refresh();
+        onUploaded(made.key);
+      } catch (err) {
+        warn(`${label}: ${(err as Error).message}`);
+      } finally {
+        setBusy((n) => n - 1);
+      }
+    }
+  };
+  return { upload, busy: busy > 0 };
+}
+
+/** The button that opens the file picker for an upload. */
+function UploadButton({
+  onFiles,
+  busy,
+}: {
+  onFiles: (files: File[]) => void;
+  busy: boolean;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept={ACCEPT}
+        hidden
+        aria-label="Choose files to upload"
+        onChange={(e) => {
+          const files = Array.from(e.currentTarget.files ?? []);
+          // So choosing the same file again is noticed.
+          e.currentTarget.value = "";
+          if (files.length > 0) onFiles(files);
+        }}
+      />
+      <Button
+        size="xs"
+        variant="light"
+        loading={busy}
+        onClick={() => input.current?.click()}
+      >
+        Upload
+      </Button>
+    </>
+  );
+}
+
 export function FilesPanel({
   scope,
   readOnly,
@@ -273,9 +691,27 @@ export function FilesPanel({
     queryKey: entryKeys.list(scope, "file", showDeleted),
     queryFn: () => api.listEntries(scope, "file", showDeleted),
   });
+  const uploads = useUploadFiles(scope, (key) => {
+    setSelected(key);
+    setMode({ mode: "view" });
+  });
 
   return (
-    <Group align="flex-start" wrap="nowrap" gap="md" h="100%">
+    <Group
+      align="flex-start"
+      wrap="nowrap"
+      gap="md"
+      h="100%"
+      onDragOver={(e) => {
+        if (!readOnly && e.dataTransfer.types.includes("Files"))
+          e.preventDefault();
+      }}
+      onDrop={(e) => {
+        if (readOnly || e.dataTransfer.files.length === 0) return;
+        e.preventDefault();
+        void uploads.upload(Array.from(e.dataTransfer.files));
+      }}
+    >
       <Stack gap="xs" w={260} style={{ flexShrink: 0 }}>
         <ReadOnlyNote reason={readOnly} />
         <Group justify="space-between">
@@ -286,18 +722,22 @@ export function FilesPanel({
             onChange={(e) => setShowDeleted(e.currentTarget.checked)}
           />
           {!readOnly && (
-            <Button
-              size="xs"
-              variant="light"
-              onClick={() => {
-                setSelected(null);
-                setMode({ mode: "new" });
-              }}
-            >
-              New file
-            </Button>
+            <Group gap={4} wrap="nowrap">
+              <UploadButton onFiles={uploads.upload} busy={uploads.busy} />
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => {
+                  setSelected(null);
+                  setMode({ mode: "new" });
+                }}
+              >
+                New file
+              </Button>
+            </Group>
           )}
         </Group>
+        <FoldersSection scope={scope} readOnly={!!readOnly} />
         {list.isPending && <Loader size="sm" />}
         {list.isError && <Alert color="red">{list.error.message}</Alert>}
         {list.data?.length === 0 && (
@@ -326,7 +766,9 @@ export function FilesPanel({
               description={when(f.updatedAt)}
               rightSection={
                 <Group gap={4} wrap="nowrap">
-                  <TypeBadge {...(f.type ? { type: f.type } : {})} />
+                  <TypeBadge
+                    {...(f.mediaType ? { mediaType: f.mediaType } : {})}
+                  />
                   {f.deleted && (
                     <Badge size="xs" variant="light" color="red">
                       deleted
@@ -428,7 +870,7 @@ function FileView({
           <Title order={5} style={{ wordBreak: "break-all" }}>
             {f.key}
           </Title>
-          <TypeBadge {...(f.type ? { type: f.type } : {})} />
+          <TypeBadge {...(f.mediaType ? { mediaType: f.mediaType } : {})} />
           {f.deleted && (
             <Badge size="xs" variant="light" color="red">
               deleted
@@ -441,9 +883,11 @@ function FileView({
           </Button>
           {!readOnly && !f.deleted && (
             <>
-              <Button size="xs" variant="light" onClick={onEdit}>
-                Edit
-              </Button>
+              {!f.blob && (
+                <Button size="xs" variant="light" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
               <Button
                 size="xs"
                 variant="light"
@@ -463,7 +907,11 @@ function FileView({
         {f.deleted ? "Deleted" : "Changed"} {when(f.updatedAt)}
         {f.deleted && ". Open Versions to restore it."}
       </Text>
-      <ValueView {...(f.type ? { type: f.type } : {})} value={f.value} />
+      <ValueView
+        {...(f.mediaType ? { mediaType: f.mediaType } : {})}
+        value={f.value}
+        blob={f.blob}
+      />
       {versions && (
         <VersionsModal
           scope={scope}
@@ -491,9 +939,11 @@ function FileEditor({
 }) {
   const refresh = useRefresh(scope);
   const [key, setKey] = useState(existing?.key ?? "");
-  const [type, setType] = useState<FileType>(existing?.type ?? "plain");
+  const [type, setType] = useState<MediaType>(
+    existing?.mediaType ?? "text/plain",
+  );
   const [value, setValue] = useState(existing?.value ?? "");
-  const keyError = key !== "" && !FILE_KEY.test(key) ? KEY_RULE : undefined;
+  const keyError = nameError(key);
   const save = useMutation({
     mutationFn: () => api.writeFile(scope, key, type, value),
     onSuccess: async () => {
@@ -507,7 +957,7 @@ function FileEditor({
     <Stack gap="xs">
       <Group align="flex-end" gap="xs">
         <TextInput
-          label="Key"
+          label="Name"
           description={existing ? undefined : KEY_RULE}
           style={{ flex: 1 }}
           value={key}
@@ -521,7 +971,7 @@ function FileEditor({
           allowDeselect={false}
           data={FILE_TYPES}
           value={type}
-          onChange={(v) => v && setType(v as FileType)}
+          onChange={(v) => v && setType(v as MediaType)}
         />
       </Group>
       <Textarea

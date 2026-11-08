@@ -31,7 +31,12 @@ function context(
   /** The id of the agent the run uses; null: none. */
   currentId: string | null = null,
 ) {
-  const started: { agentId: string; task: string; callId: string }[] = [];
+  const started: {
+    agentId: string;
+    task: string;
+    files?: string[];
+    callId: string;
+  }[] = [];
   const ctx: ToolContext = {
     signal: new AbortController().signal,
     sessionId: "s",
@@ -83,6 +88,36 @@ describe("start_subagent", () => {
     );
     expect(started).toEqual([{ agentId: "a1", task: "Fix it", callId: "c" }]);
     expect(out).toEqual({ data: { agent: "Editor", output: "Fixed." } });
+  });
+
+  it("attaches image and audio files to the task, and refuses others", async () => {
+    const { ctx, started } = context([agent()], ok);
+    ctx.entries.putBlob("session", "cat.png", "image/png", {
+      hash: "h",
+      size: 3,
+    });
+    ctx.entries.writeFile("session", "notes.md", "text/markdown", "hi");
+    const out = await startSubagent.execute(
+      { agentId: "a1", task: "Look", files: ["<session://cat.png>"] },
+      ctx,
+    );
+    expect(out.isError).toBeUndefined();
+    expect(started).toEqual([
+      {
+        agentId: "a1",
+        task: "Look",
+        files: ["session://cat.png"],
+        callId: "c",
+      },
+    ]);
+    for (const files of [["session://gone.png"], ["session://notes.md"]]) {
+      const refused = await startSubagent.execute(
+        { agentId: "a1", task: "Look", files },
+        ctx,
+      );
+      expect(refused.isError).toBe(true);
+    }
+    expect(started).toHaveLength(1);
   });
 
   it("refuses an agent that is not marked startable", async () => {

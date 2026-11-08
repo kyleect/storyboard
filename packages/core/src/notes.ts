@@ -52,7 +52,7 @@ export function foldNotes(messages: readonly Message[]): Message[] {
       out.push({
         role: "user",
         content: `${notes}\n\n${m.content}`,
-        ...(m.attachments ? { attachments: m.attachments } : {}),
+        ...(m.files ? { files: m.files } : {}),
       });
       continue;
     }

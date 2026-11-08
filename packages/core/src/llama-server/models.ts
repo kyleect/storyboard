@@ -1,3 +1,4 @@
+import type { MediaSupport } from "../media.js";
 /*
  * Lists the models llama-server can serve.
  *
@@ -110,12 +111,6 @@ export async function loadLlamaServerModel(
   }
   if (res.status >= 400 && res.status < 500) return { ok: false, message };
   throw new Error(message);
-}
-
-/** What a model can read as attachments, from its `inputModalities`. */
-export interface MediaSupport {
-  image: boolean;
-  audio: boolean;
 }
 
 /**

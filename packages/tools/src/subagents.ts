@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { defineTool, type SubagentOutcome } from "@harness/core";
+import {
+  defineTool,
+  mediaKindOf,
+  parseRef,
+  plainRef,
+  type SubagentOutcome,
+} from "@harness/core";
 import { fail } from "./results.js";
 
 /*
@@ -38,11 +44,18 @@ export const startSubagent = defineTool({
       .string()
       .min(1)
       .describe("The full instructions for the agent: its only context."),
+    files: z
+      .array(z.string().min(1))
+      .max(8)
+      .optional()
+      .describe(
+        "Images or audio files the agent should look at, as references such as <session://cat.png>. It sees them with the task.",
+      ),
   }),
   approval: "ask",
   group: "subagents",
   available: (run) => run.canStartSubagent,
-  execute: async ({ agentId, task }, ctx) => {
+  execute: async ({ agentId, task, files }, ctx) => {
     if (!ctx.subagents.canStart) {
       return fail(
         "No more subagents can be started from here: the depth limit is reached.",
@@ -72,9 +85,34 @@ export const startSubagent = defineTool({
         { agentId },
       );
     }
+    const refs: string[] = [];
+    for (const given of files ?? []) {
+      const ref = parseRef(given.trim());
+      const found =
+        ref &&
+        ref.location !== "workspace" &&
+        ctx.entries.scopes.includes(ref.location)
+          ? ctx.entries.readFile(ref.location, ref.path)
+          : undefined;
+      if (!ref || ref.location === "workspace" || !found) {
+        return fail(`There is no file ${given} to attach.`, "not_found", {
+          agentId,
+          file: given,
+        });
+      }
+      if (!found.blob || !found.mediaType || !mediaKindOf(found.mediaType)) {
+        return fail(
+          `${given} is not an image or audio file, so it cannot be attached. Name text files in the task instead.`,
+          "rejected",
+          { agentId, file: given },
+        );
+      }
+      refs.push(plainRef(ref));
+    }
     const outcome = await ctx.subagents.start({
       agentId,
       task,
+      ...(refs.length > 0 ? { files: refs } : {}),
       callId: ctx.callId,
     });
     if (!outcome.ok) return failure(outcome);

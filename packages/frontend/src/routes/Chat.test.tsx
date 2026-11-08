@@ -98,12 +98,13 @@ const detail = {
   childRuns: [],
 } as unknown as SessionDetail;
 
-const uploaded = (id: string, kind: "image" | "audio", name: string) => ({
-  id,
-  kind,
-  mediaType: kind === "image" ? "image/png" : "audio/wav",
-  name,
+const uploaded = (kind: "image" | "audio", name: string) => ({
+  key: name,
+  ref: `session://${name}`,
+  mediaType: kind === "image" ? ("image/png" as const) : ("audio/wav" as const),
   size: 1,
+  blob: { hash: `hash-${name}`, size: 1 },
+  replaced: false,
 });
 
 let send: ReturnType<typeof vi.spyOn>;
@@ -117,10 +118,10 @@ beforeEach(() => {
   vi.spyOn(api, "listModels").mockResolvedValue([
     { id: "gemma-4-E4B-it", inputModalities: ["text", "image", "audio"] },
   ]);
-  vi.spyOn(api, "uploadAttachment").mockImplementation(async (_s, file) =>
+  vi.spyOn(api, "uploadFile").mockImplementation(async (_s, file) =>
     file.name === "cat.png"
-      ? uploaded("img1", "image", "cat.png")
-      : uploaded("rec1", "audio", file.name),
+      ? uploaded("image", "cat.png")
+      : uploaded("audio", file.name),
   );
   send = vi.spyOn(api, "sendMessage").mockResolvedValue({ runId: "r1" });
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:x");
@@ -157,7 +158,7 @@ describe("recording in the composer", () => {
       "s1",
       "Summarize this",
       expect.objectContaining({ model: "gemma-4-E4B-it" }),
-      ["rec1"],
+      ["session://voice.wav"],
     );
   });
 
@@ -175,8 +176,8 @@ describe("recording in the composer", () => {
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     // No text: the audio and the image are the message.
     expect(send).toHaveBeenCalledWith("s1", "", expect.anything(), [
-      "img1",
-      "rec1",
+      "session://cat.png",
+      "session://voice.wav",
     ]);
   });
 
@@ -203,7 +204,7 @@ describe("recording in the composer", () => {
   });
 
   it("does not send when the upload fails", async () => {
-    vi.spyOn(api, "uploadAttachment").mockRejectedValue(new Error("too big"));
+    vi.spyOn(api, "uploadFile").mockRejectedValue(new Error("too big"));
     vi.spyOn(notifications, "show").mockReturnValue("id");
     await show();
     await act(async () => voice.onRecorded(recording(), "send"));

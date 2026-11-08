@@ -81,7 +81,7 @@ describe("Markdown in the chat", () => {
 describe("Markdown in files", () => {
   it("renders a markdown file and switches to its source", () => {
     const { container } = wrap(
-      <ValueView type="markdown" value={"# Outline\n\n- one"} />,
+      <ValueView mediaType="text/markdown" value={"# Outline\n\n- one"} />,
     );
     expect(screen.getByRole("heading", { name: "Outline" })).toBeTruthy();
     fireEvent.click(screen.getByText("Source"));
@@ -92,19 +92,21 @@ describe("Markdown in files", () => {
   });
 
   it("shows an empty markdown file as (empty)", () => {
-    wrap(<ValueView type="markdown" value="" />);
+    wrap(<ValueView mediaType="text/markdown" value="" />);
     expect(screen.getByText("(empty)")).toBeTruthy();
   });
 
   it("leaves plain and json files as they were", () => {
     const { container, unmount } = wrap(
-      <ValueView type="plain" value={"# not a heading"} />,
+      <ValueView mediaType="text/plain" value={"# not a heading"} />,
     );
     expect(screen.queryByRole("heading")).toBeNull();
     expect(screen.queryByText("Rendered")).toBeNull();
     expect(container.textContent).toContain("# not a heading");
     unmount();
-    const json = wrap(<ValueView type="json" value={'{"a":1}'} />);
+    const json = wrap(
+      <ValueView mediaType="application/json" value={'{"a":1}'} />,
+    );
     expect(screen.queryByText("Rendered")).toBeNull();
     expect(json.container.textContent).toContain('"a": 1');
   });

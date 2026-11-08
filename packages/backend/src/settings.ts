@@ -80,6 +80,27 @@ export const Settings = z.object({
    * are off.
    */
   subagentDepth: z.number().int().min(0),
+  /**
+   * The most images and audio files from earlier turns that stay in a
+   * request when they are kept (files unification design, D14, D40). The
+   * media of the current turn is always sent. 0: only the current turn's.
+   */
+  inlineMediaCap: z.number().int().min(0),
+  /**
+   * Keep media from earlier turns in the request when neither the user nor
+   * the agent chose (D14). Off: older media is a text reference only.
+   */
+  keepMediaInline: z.boolean(),
+  /**
+   * The agent whose prompt writes the text of an image or audio file
+   * (files unification design, D43). Empty: nothing is generated.
+   */
+  mediaDescriberAgent: z.string(),
+  /**
+   * The router model that runs it. Empty: nothing is generated, though the
+   * user can still type the text.
+   */
+  mediaDescriberModel: z.string(),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -138,6 +159,10 @@ These are the agents available to you. If none appear below, then there are no a
   subagentMessageLabel:
     "Message from the user (not from the agent that gave you your task):",
   subagentDepth: 2,
+  inlineMediaCap: 4,
+  keepMediaInline: false,
+  mediaDescriberAgent: "builtin-media-describer",
+  mediaDescriberModel: "",
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -159,6 +184,10 @@ const ENV: Record<keyof Settings, string> = {
   childPrompt: "HARNESS_CHILD_PROMPT",
   subagentMessageLabel: "HARNESS_SUBAGENT_MESSAGE_LABEL",
   subagentDepth: "HARNESS_SUBAGENT_DEPTH",
+  inlineMediaCap: "HARNESS_INLINE_MEDIA_CAP",
+  keepMediaInline: "HARNESS_KEEP_MEDIA_INLINE",
+  mediaDescriberAgent: "HARNESS_MEDIA_DESCRIBER_AGENT",
+  mediaDescriberModel: "HARNESS_MEDIA_DESCRIBER_MODEL",
 };
 
 const NUMERIC = new Set<keyof Settings>([
@@ -168,9 +197,10 @@ const NUMERIC = new Set<keyof Settings>([
   "trashRetentionDays",
   "childReminders",
   "subagentDepth",
+  "inlineMediaCap",
 ]);
 
-const BOOLEAN = new Set<keyof Settings>(["autoRename"]);
+const BOOLEAN = new Set<keyof Settings>(["autoRename", "keepMediaInline"]);
 
 /** "true" and "false" only; anything else is left for the schema to refuse. */
 function parseBoolean(raw: string): unknown {

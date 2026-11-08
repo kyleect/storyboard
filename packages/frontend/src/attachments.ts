@@ -1,16 +1,13 @@
-import type { AttachmentKind } from "@harness/core";
+import type { MediaKind } from "@harness/core";
 
 /*
- * What can be attached to a message. These match the backend's
- * `attachment-types.ts`: llama-server reads PNG, JPEG, GIF and BMP images
+ * What can be uploaded as a binary file or attached to a message. These
+ * match the backend's `media-detect.ts`: llama-server reads PNG, JPEG, GIF and BMP images
  * and WAV, MP3 and FLAC audio (not WebP, not OGG or M4A).
  */
 
 /** The largest file the backend accepts, in bytes. */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-
-/** The most files one message takes. */
-export const MAX_ATTACHMENTS = 8;
 
 const BY_EXTENSION: Record<string, string> = {
   png: "image/png",
@@ -63,5 +60,5 @@ export function attachmentMediaType(
   return extension ? BY_EXTENSION[extension] : undefined;
 }
 
-export const kindOf = (mediaType: string): AttachmentKind =>
+export const kindOf = (mediaType: string): MediaKind =>
   mediaType.startsWith("image/") ? "image" : "audio";

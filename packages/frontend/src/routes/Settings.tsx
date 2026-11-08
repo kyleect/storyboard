@@ -9,6 +9,7 @@ import {
   NumberInput,
   Paper,
   SegmentedControl,
+  Select,
   Stack,
   Switch,
   Text,
@@ -29,7 +30,7 @@ import {
   type Settings as SettingsShape,
   type SettingsView,
 } from "../api";
-import { projectKeys, settingsKeys, trashKeys } from "../queries";
+import { blobKeys, projectKeys, settingsKeys, trashKeys } from "../queries";
 import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
@@ -45,6 +46,7 @@ type MainSettings = Omit<
   | keyof TitleSettings
   | keyof PromptSettings
   | keyof SubagentSettings
+  | keyof DescriberSettings
   | "defaultAgentId"
 >;
 
@@ -80,6 +82,8 @@ function mainSettings(s: SettingsShape): MainSettings {
     copyLimit: s.copyLimit,
     trashRetentionDays: s.trashRetentionDays,
     embeddingModel: s.embeddingModel,
+    inlineMediaCap: s.inlineMediaCap,
+    keepMediaInline: s.keepMediaInline,
   };
 }
 
@@ -132,6 +136,8 @@ export function Settings() {
       copyLimit: 1,
       trashRetentionDays: 0,
       embeddingModel: "",
+      inlineMediaCap: 0,
+      keepMediaInline: false,
     },
     validate: {
       llamaServerUrl: (v) =>
@@ -145,6 +151,8 @@ export function Settings() {
           ? null
           : `A whole number, 1 to ${COPY_LIMIT_MAX}`,
       trashRetentionDays: (v) =>
+        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+      inlineMediaCap: (v) =>
         Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
     },
   });
@@ -262,6 +270,26 @@ export function Settings() {
             disabled={!!env.trashRetentionDays}
             {...form.getInputProps("trashRetentionDays")}
           />
+          <NumberInput
+            label="Images and audio kept in view"
+            description={
+              envNote("inlineMediaCap") ??
+              "The most images and audio files from earlier turns that are sent again with each request, when they are kept. The newest are sent; older ones become a text reference. Files from the current turn are always sent. 0: only the current turn's."
+            }
+            allowDecimal={false}
+            min={0}
+            disabled={!!env.inlineMediaCap}
+            {...form.getInputProps("inlineMediaCap")}
+          />
+          <Switch
+            label="Keep images and audio in view in later turns"
+            description={
+              envNote("keepMediaInline") ??
+              "Off: a file from an earlier turn becomes a text reference unless you or the agent chose to keep it. You can choose per file in the conversation."
+            }
+            disabled={!!env.keepMediaInline}
+            {...form.getInputProps("keepMediaInline", { type: "checkbox" })}
+          />
           <Text size="xs" c="dimmed">
             Saved to the database. Environment variables, when set, take
             precedence.
@@ -273,6 +301,8 @@ export function Settings() {
       </form>
       <Divider />
       <SystemPrompt view={query.data} />
+      <Divider />
+      <MediaDescriptions view={query.data} />
       <Divider />
       <Subagents view={query.data} />
       <Divider />
@@ -329,6 +359,147 @@ function SystemPrompt({ view }: { view: SettingsView }) {
       </Stack>
     </form>
   );
+}
+
+type DescriberSettings = Pick<
+  SettingsShape,
+  "mediaDescriberAgent" | "mediaDescriberModel"
+>;
+
+/**
+ * Who writes the text of images and audio (files unification design, D43,
+ * D56), with its own Save. With no model nothing is generated. When the
+ * agent or the model changes and files could be described, it asks before
+ * writing anything.
+ */
+export function MediaDescriptions({ view }: { view: SettingsView }) {
+  const queryClient = useQueryClient();
+  const describerOf = (s: SettingsShape): DescriberSettings => ({
+    mediaDescriberAgent: s.mediaDescriberAgent,
+    mediaDescriberModel: s.mediaDescriberModel,
+  });
+  const form = useForm<DescriberSettings>({
+    initialValues: describerOf(view.effective),
+  });
+  const agents = useQuery({
+    queryKey: ["agents", "describer-choices"],
+    queryFn: () => api.listAgents({ scope: "global" }, false),
+  });
+
+  useEffect(() => {
+    const values = describerOf(view.effective);
+    form.setValues(values);
+    form.resetDirty(values);
+    // Only when fresh data arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  const save = useMutation({
+    mutationFn: api.saveSettings,
+    onSuccess: async (saved: SettingsView) => {
+      queryClient.setQueryData(settingsKeys.all, saved);
+      notifications.show({ color: "green", message: "Settings saved" });
+      void queryClient.invalidateQueries({ queryKey: blobKeys.describer() });
+      // Only a change of who writes the text asks. The text of existing
+      // files is not touched until the user says so.
+      const changed =
+        saved.effective.mediaDescriberAgent !==
+          view.effective.mediaDescriberAgent ||
+        saved.effective.mediaDescriberModel !==
+          view.effective.mediaDescriberModel;
+      if (!changed) return;
+      const info = await api.getMediaDescriber();
+      if (info.enabled && info.files > 0) askToRegenerate(info);
+    },
+    onError: (err: Error) =>
+      notifications.show({
+        color: "red",
+        title: "Could not save",
+        message: err.message,
+      }),
+  });
+
+  const env = view.overriddenByEnv;
+  const envNote = envNoteFor(view);
+  const choices = (agents.data ?? []).filter((a) => !a.deleted);
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack>
+        <Title order={4}>Descriptions of images and audio</Title>
+        <ModelPicker
+          label="Media describer model"
+          description={
+            envNote("mediaDescriberModel") ??
+            "The model that writes a description or transcript when a file is added. It must take images or audio. Clear it to write none; you can still type the text yourself."
+          }
+          placeholder="None (no descriptions are written)"
+          value={form.values.mediaDescriberModel || null}
+          onChange={(m) => form.setFieldValue("mediaDescriberModel", m ?? "")}
+          disabled={!!env.mediaDescriberModel}
+          size="sm"
+          w={444}
+        />
+        <Select
+          label="Media describer agent"
+          description={
+            envNote("mediaDescriberAgent") ??
+            "Its prompt tells the model what to write. The built-in Media Describer cannot be changed; copy it to make your own. Clear it to write none."
+          }
+          placeholder="None (no descriptions are written)"
+          clearable
+          data={choices.map((a) => ({
+            value: a.id,
+            label: a.builtin ? `${a.name} (built in)` : a.name,
+          }))}
+          value={form.values.mediaDescriberAgent || null}
+          onChange={(v) => form.setFieldValue("mediaDescriberAgent", v ?? "")}
+          disabled={!!env.mediaDescriberAgent}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/** Asks whether to write descriptions for the files already there (D56). */
+function askToRegenerate(info: { files: number; empty: number }) {
+  const run = (mode: "empty" | "all") => {
+    modals.closeAll();
+    api
+      .regenerateDescriptions(mode)
+      .then(({ queued }) =>
+        notifications.show({
+          color: "green",
+          message: `Writing descriptions for ${queued} ${queued === 1 ? "file" : "files"}.`,
+        }),
+      )
+      .catch(showError("Could not start the descriptions"));
+  };
+  modals.open({
+    title: `Generate descriptions for ${info.files} ${info.files === 1 ? "file" : "files"}?`,
+    children: (
+      <Stack>
+        <Text size="sm">
+          {info.empty} of {info.files} have no text. Text you wrote yourself is
+          never replaced.
+        </Text>
+        <Group>
+          <Button disabled={info.empty === 0} onClick={() => run("empty")}>
+            Fill the {info.empty} with no text
+          </Button>
+          <Button variant="default" onClick={() => run("all")}>
+            Write all again
+          </Button>
+          <Button variant="subtle" onClick={() => modals.closeAll()}>
+            Not now
+          </Button>
+        </Group>
+      </Stack>
+    ),
+  });
 }
 
 /**

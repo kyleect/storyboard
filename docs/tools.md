@@ -66,7 +66,7 @@ The groups, in display order, are defined by `TOOL_GROUPS` in core:
 | Structured Data (`structured-data`) | `schemas_list`, `schema_*`, `data_*`                              |
 | Projects (`projects`)               | `projects_list`, `project_view`, `project_create`                 |
 | Agents (`agents`)                   | `agents_list`, `agent_view`                                       |
-| Subagents (`subagents`)             | `start_subagent`, `subagent_handback`                             |
+| Subagents (`subagents`)             | `start_subagent` (optional `files`), `subagent_handback`          |
 | Sessions (`sessions`)               | none yet                                                          |
 | Skills (`skills`)                   | `skill_load`                                                      |
 | Web (`web`)                         | `web_search`, `read_webpage`, `read_wiki`                         |
@@ -77,8 +77,8 @@ Three more facts are declared on each tool:
 
 - **`alwaysOn`**: the tool is offered to every agent whatever its tool grant says.
   The tool's own value is a default; Settings can change it. In the tools package
-  the always-on tools are the file and memory tools (`files_*` and `memory_*`
-  except the copy and move tools), `skill_load` and `subagent_handback`.
+  the always-on tools are `skill_load` and `subagent_handback`. The file and
+  memory tools are in tool groups, so an agent gets them through its grant.
 - **`needsReview`**: the tool is destructive or changes prompts, so a group grant
   does not cover it; an agent has it only when it is listed on its own. An MCP
   tool sets it unless its server marks it read-only.
@@ -111,18 +111,19 @@ itself. Both live in the **session**, **project** or **global** scope. One tool
 exists per operation. None asks for approval by default, but several show a
 form, because _the model suggests and the user decides_ where things go.
 
-| Tool            | Approval | What it does                                                                                                               |
-| --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `files_list`    | never    | Lists files (key, type, size, scope). Covers every scope unless narrowed; when the model narrows scopes the user confirms. |
-| `files_read`    | never    | Reads one file by key. If the key exists in several scopes, the user picks.                                                |
-| `files_write`   | never    | Creates or replaces a file. For a new file, a form asks for the name and scope with the model's suggestions filled in.     |
-| `files_delete`  | never    | Deletes a file by key. History is kept and the user can restore it.                                                        |
-| `files_search`  | never    | Keyword and meaning search over files; returns the best matches with excerpts.                                             |
-| `memory_list`   | never    | Lists notes (id, text, scope).                                                                                             |
-| `memory_add`    | never    | Saves a note; the user chooses where. Returns the id and scope.                                                            |
-| `memory_update` | never    | Replaces a note's text by id.                                                                                              |
-| `memory_delete` | never    | Deletes a note by id.                                                                                                      |
-| `memory_search` | never    | Keyword and meaning search over notes.                                                                                     |
+| Tool                                                                  | Approval | What it does                                                                                                                                                       |
+| --------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `files_list`                                                          | never    | Lists files (name, media type, size, scope) and folders. Covers every scope unless narrowed; can list one folder.                                                  |
+| `files_read`                                                          | never    | Reads one file by key. If the key exists in several scopes, the user picks. An image or audio file is shown to the model (optional `keep`: keep it in view later). |
+| `files_write`                                                         | never    | Creates or replaces a file. For a new file, a form asks for the name and scope with the model's suggestions filled in.                                             |
+| `files_delete`                                                        | never    | Deletes a file by key. History is kept and the user can restore it.                                                                                                |
+| `files_folder_create` / `files_folder_rename` / `files_folder_delete` | never    | Create, rename (moves the files inside) or delete a folder (soft-deletes the files inside).                                                                        |
+| `files_search`                                                        | never    | Keyword and meaning search over files; returns the best matches with excerpts.                                                                                     |
+| `memory_list`                                                         | never    | Lists notes (id, text, scope).                                                                                                                                     |
+| `memory_add`                                                          | never    | Saves a note; the user chooses where. Returns the id and scope.                                                                                                    |
+| `memory_update`                                                       | never    | Replaces a note's text by id.                                                                                                                                      |
+| `memory_delete`                                                       | never    | Deletes a note by id.                                                                                                                                              |
+| `memory_search`                                                       | never    | Keyword and meaning search over notes.                                                                                                                             |
 
 Key rules: letters, digits, `.`, `_` and `-` only; case-sensitive. File types
 are `plain`, `markdown` and `json` (a `json` file must parse).

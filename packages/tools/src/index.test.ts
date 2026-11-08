@@ -15,6 +15,9 @@ describe("allTools", () => {
       "files_read",
       "files_write",
       "files_delete",
+      "files_folder_create",
+      "files_folder_rename",
+      "files_folder_delete",
       "files_search",
       "memory_list",
       "memory_add",
@@ -63,6 +66,9 @@ describe("allTools", () => {
         "files_read",
         "files_write",
         "files_delete",
+        "files_folder_create",
+        "files_folder_rename",
+        "files_folder_delete",
         "files_search",
         "files_copy",
         "files_move",
@@ -100,18 +106,10 @@ describe("allTools", () => {
     });
   });
 
-  it("is always on for the tools that are today (design, decision 13)", () => {
+  it("is always on only for the two run-dependent tools (files unification design, D23, D49)", () => {
+    // The files and memory tools are no longer always on (files unification
+    // design, D23 and D49).
     expect(allTools.filter((t) => t.alwaysOn).map((t) => t.name)).toEqual([
-      "files_list",
-      "files_read",
-      "files_write",
-      "files_delete",
-      "files_search",
-      "memory_list",
-      "memory_add",
-      "memory_update",
-      "memory_delete",
-      "memory_search",
       "subagent_handback",
       "skill_load",
     ]);

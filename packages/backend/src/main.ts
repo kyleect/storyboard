@@ -1,3 +1,4 @@
+import { runDataSteps } from "./data-steps.js";
 import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,8 @@ import { loadOrCreateKey, openDatabase } from "./db.js";
 import { Embedder } from "./embedder.js";
 import { EntryStore } from "./entries-store.js";
 import { McpManager } from "./mcp-manager.js";
+import { MediaDescriber } from "./media-describer.js";
+import { modelMediaSupport } from "./media-support.js";
 import { McpServerStore } from "./mcp-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
@@ -48,6 +51,7 @@ async function main() {
   const db = openDatabase(boot.dbPath, key);
 
   const applied = migrate(db, loadMigrations(MIGRATIONS_DIR));
+  runDataSteps(db);
   const store = new Store(db);
   const index = new SearchIndex(db);
   const entries = new EntryStore(db, undefined, undefined, index);
@@ -70,12 +74,22 @@ async function main() {
       app.log.warn({ err: err instanceof Error ? err.message : err }, message),
   });
 
+  const describer = new MediaDescriber({
+    db,
+    settings,
+    agents,
+    model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
+    index,
+  });
+  describer.recover();
   const runs = new RunManager({
     store,
+    describer,
     events,
     settings,
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
+    mediaSupport: modelMediaSupport(() => settings().llamaServerUrl),
     dynamicTools: () => mcp.tools,
     agents,
     skills,
@@ -118,6 +132,7 @@ async function main() {
     runs,
     entries,
     agents,
+    describer,
     skills,
     data,
     token,
@@ -164,6 +179,7 @@ async function main() {
     stopping = true;
     app.log.info("stopping");
     await runs.shutdown();
+    describer.stop();
     await mcp.shutdown();
     await embedder.stop();
     await app.close();

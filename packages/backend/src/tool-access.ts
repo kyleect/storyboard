@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  checkFileKey,
+  checkFileName,
   checkFileValue,
   EntryError,
   type AgentAccess,
@@ -200,10 +200,15 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
           const row = entries.get("file", projectId, key);
           return row !== undefined && row.deleted_at === null;
         },
-        putFile: (key, type, value) => {
-          checkFileKey(key);
-          checkFileValue(type, value);
-          entries.put("file", projectId, { key, value, type }, deps.author);
+        putFile: (key, mediaType, value, blob) => {
+          checkFileName(key);
+          checkFileValue(mediaType, value);
+          entries.put(
+            "file",
+            projectId,
+            { key, value, mediaType, ...(blob ? { blob } : {}) },
+            deps.author,
+          );
         },
         addNote: (text) => {
           let id = newNoteId();

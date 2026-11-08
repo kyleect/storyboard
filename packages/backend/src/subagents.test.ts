@@ -5,7 +5,7 @@ import {
   type ChatRequest,
   type ScriptStep,
 } from "@harness/core";
-import { allTools, entriesInstruction, entryTools } from "@harness/tools";
+import { allTools, entriesInstruction } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { EntryStore } from "./entries-store.js";
 import {
@@ -263,6 +263,63 @@ describe("a subagent's run", () => {
     // Both were expanded (no braces left), each at its own start.
     expect(systemOf(request(c, 1))).not.toContain("{{");
     expect(child).not.toBe(parent);
+  });
+
+  it("gives the child the files named on start_subagent with its task", async () => {
+    const c = await setup([
+      [],
+      [call("k1", "subagent_handback", { output: "A grey cat." })],
+      text("All done"),
+    ]);
+    const boss = c.agents.create(
+      null,
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
+    );
+    const describer = startable(c, "Image Describer");
+    const id = await newSession(c, boss.id);
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+    await c.app.inject({
+      method: "POST",
+      url: `/api/sessions/${id}/files?name=screenshot-1.png`,
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        "content-type": "image/png",
+      },
+      payload: png,
+    });
+    c.scripts[0] = [
+      call("p1", "start_subagent", {
+        agentId: describer.id,
+        task: "Describe the attached image.",
+        files: ["<session://screenshot-1.png>"],
+      }),
+    ];
+    await go(c, id);
+
+    // The child's first message is its task, with the file attached.
+    const task = c.store
+      .listMessages(id)
+      .map((m) => m.message)
+      .find((m) => m.role === "user" && m.source === "task");
+    expect(task).toMatchObject({
+      content: "Describe the attached image.",
+      files: ["session://screenshot-1.png"],
+    });
+    // And its request can read the bytes.
+    const childRequest = request(c, 1);
+    const sent = childRequest.messages.find(
+      (m) => m.role === "user" && m.files,
+    ) as { files: string[] };
+    expect(sent.files).toEqual(["session://screenshot-1.png"]);
+    expect(childRequest.resolveFile?.("session://screenshot-1.png")).toEqual({
+      kind: "image",
+      mediaType: "image/png",
+      data: png.toString("base64"),
+    });
+    // The parent got the child's output.
+    expect(results(c, id)[0]).toMatchObject({
+      data: { agent: "Image Describer", output: "A grey cat." },
+    });
   });
 
   it("runs as a run of its own and hands its output to the parent", async () => {
@@ -731,7 +788,7 @@ describe("a subagent and files", () => {
         call("k1", "files_write", {
           scope: "session",
           key: "plan.md",
-          type: "markdown",
+          mediaType: "text/markdown",
           value: "# Plan",
         }),
       ],
@@ -932,6 +989,7 @@ describe("the built-in Dispatcher", () => {
     expect(picker.map((a) => [a.id, a.builtin, a.isDefault])).toEqual([
       [mine.id, false, false],
       ["builtin-dispatcher", true, true],
+      ["builtin-media-describer", true, false],
     ]);
   });
 
@@ -1004,10 +1062,11 @@ describe("the built-in Dispatcher", () => {
     );
     const { body } = await api(c.app, "POST", "/api/sessions", { title: "T" });
     await go(c, body.id as string);
+    // The files and memory tools are no longer always on, so the Dispatcher,
+    // whose grant names neither group, has only its three tools (files
+    // unification plan, Q11: no migration).
     expect(toolNames(request(c, 0)).sort()).toEqual(
-      ["agents_list", "ask_user", "start_subagent"]
-        .concat(entryTools.map((t) => t.name))
-        .sort(),
+      ["agents_list", "ask_user", "start_subagent"].sort(),
     );
     expect(results(c, body.id as string)[0]?.data).toMatchObject({
       output: "Edited.",

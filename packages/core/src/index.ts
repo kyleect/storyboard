@@ -1,4 +1,5 @@
 export * from "./messages.js";
+export * from "./media.js";
 export * from "./events.js";
 export * from "./model.js";
 export * from "./fake-model.js";
@@ -7,6 +8,8 @@ export * from "./loop.js";
 export * from "./tools.js";
 export * from "./forms.js";
 export * from "./entries.js";
+export * from "./file-names.js";
+export * from "./file-refs.js";
 export * from "./schemas-data.js";
 export * from "./schema-features.js";
 export * from "./changes.js";

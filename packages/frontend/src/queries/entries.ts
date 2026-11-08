@@ -21,6 +21,8 @@ export const entryKeys = {
     [...entryKeys.ofKind(scope, kind), "list"] as const,
   list: (scope: EntryScope, kind: EntryKind, showDeleted: boolean) =>
     [...entryKeys.lists(scope, kind), { showDeleted }] as const,
+  folders: (scope: EntryScope) =>
+    [...entryKeys.inScope(scope), "folders"] as const,
   details: (scope: EntryScope, kind: EntryKind) =>
     [...entryKeys.ofKind(scope, kind), "detail"] as const,
   detail: (scope: EntryScope, kind: EntryKind, key: string) =>

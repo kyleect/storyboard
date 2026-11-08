@@ -477,7 +477,7 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([22, 23, 24]);
+    expect(migrate(db, all)).toEqual([22, 23, 24, 25, 26, 27, 28]);
 
     const cols = (table: string) =>
       (
@@ -536,10 +536,11 @@ describe("loadMigrations", () => {
       groups: [],
       extras: ["ask_user", "agents_list", "start_subagent"],
     });
-    // Nothing else changed: the agent rows and their versions are still there.
+    // Nothing else changed: the agent rows and their versions are still there
+    // (and the Media Describer's, added by 0028).
     expect(
       db.prepare("SELECT count(*) AS n FROM agent_versions").get(),
-    ).toEqual({ n: 5 });
+    ).toEqual({ n: 6 });
   });
 
   it("applies the project's migrations to an encrypted database", () => {
@@ -550,6 +551,7 @@ describe("loadMigrations", () => {
       "agent_versions",
       "agents",
       "attachments",
+      "blobs",
       "chunk_vectors",
       "chunks",
       "chunks_fts",
@@ -558,12 +560,15 @@ describe("loadMigrations", () => {
       "chunks_fts_docsize",
       "chunks_fts_idx",
       "data",
+      "data_steps",
       "data_versions",
       "entries",
       "entry_versions",
       "errors",
       "events",
+      "folders",
       "mcp_servers",
+      "media_choices",
       "messages",
       "projects",
       "run_messages",
@@ -579,5 +584,45 @@ describe("loadMigrations", () => {
       "skills",
     ]);
     expect(migrate(db, loadMigrations(MIGRATIONS_DIR))).toEqual([]);
+  });
+});
+
+describe("migration 0025 (files get media types and folders)", () => {
+  it("converts old file types in entries and versions and keeps history", () => {
+    db = new Database(":memory:");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version < 25),
+    );
+    const insert = db.prepare(
+      "INSERT INTO entries (id, kind, project_id, key, type, value, created_at, updated_at) VALUES (?, 'file', NULL, ?, ?, ?, 't', 't')",
+    );
+    insert.run("e1", "a.txt", "plain", "A");
+    insert.run("e2", "b.md", "markdown", "# B");
+    insert.run("e3", "c.json", "json", "{}");
+    db.prepare(
+      "INSERT INTO entry_versions (entry_id, seq, type, value, deleted, author, created_at) VALUES ('e2', 1, 'markdown', 'old', 0, 'user', 't')",
+    ).run();
+
+    migrate(db, all);
+
+    expect(
+      db.prepare("SELECT key, media_type FROM entries ORDER BY key").all(),
+    ).toEqual([
+      { key: "a.txt", media_type: "text/plain" },
+      { key: "b.md", media_type: "text/markdown" },
+      { key: "c.json", media_type: "application/json" },
+    ]);
+    expect(
+      db
+        .prepare("SELECT entry_id, seq, media_type, value FROM entry_versions")
+        .all(),
+    ).toEqual([
+      { entry_id: "e2", seq: 1, media_type: "text/markdown", value: "old" },
+    ]);
+    expect(tables()).toEqual(expect.arrayContaining(["folders", "data_steps"]));
+    // The new unique index still holds.
+    expect(() => insert.run("e9", "a.txt", "plain", "x")).toThrow();
   });
 });
