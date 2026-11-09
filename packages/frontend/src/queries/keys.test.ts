@@ -276,6 +276,9 @@ describe("tool, model and error keys", () => {
       sessionAttached: workspaceKeys.attached("sessions", "s1"),
       grants: workspaceKeys.grants(),
       dirs: workspaceKeys.dirs("/a"),
+      tree: workspaceKeys.tree("w1", "notes"),
+      otherTree: workspaceKeys.tree("w2", ""),
+      index: workspaceKeys.index("w1"),
       file: workspaceKeys.file("s1", "workspace://w1/a.png"),
       agents: agentKeys.all,
     };
@@ -287,6 +290,8 @@ describe("tool, model and error keys", () => {
       "projectAttached",
       "sessionAttached",
     ]);
+    expect(await reach(workspaceKeys.trees("w1"), keys)).toEqual(["tree"]);
+    expect(await reach(workspaceKeys.index("w1"), keys)).toEqual(["index"]);
     expect(await reach(workspaceKeys.all, keys)).toEqual(
       Object.keys(keys)
         .filter((k) => k !== "agents")

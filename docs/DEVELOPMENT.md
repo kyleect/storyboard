@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node 22.12 or later, pnpm 10.
+- Node 22.22 or later (chokidar, which watches workspace folders, needs it), pnpm 10.
 - A running `llama-server`, started with `--jinja` so tool calls work. In router mode, pick a model in each session's
   model picker, or set a default model in Settings. Picking a model in a session
   asks the router to load it. Reasoning effort works the same way.

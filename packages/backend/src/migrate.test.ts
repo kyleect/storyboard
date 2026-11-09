@@ -477,7 +477,7 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([22, 23, 24, 25, 26, 27, 28, 29]);
+    expect(migrate(db, all)).toEqual([22, 23, 24, 25, 26, 27, 28, 29, 30]);
 
     const cols = (table: string) =>
       (
@@ -585,6 +585,7 @@ describe("loadMigrations", () => {
       "skills",
       "tool_subject_grants",
       "workspace_attachments",
+      "workspace_index_files",
       "workspaces",
     ]);
     expect(migrate(db, loadMigrations(MIGRATIONS_DIR))).toEqual([]);
@@ -628,5 +629,120 @@ describe("migration 0025 (files get media types and folders)", () => {
     expect(tables()).toEqual(expect.arrayContaining(["folders", "data_steps"]));
     // The new unique index still holds.
     expect(() => insert.run("e9", "a.txt", "plain", "x")).toThrow();
+  });
+});
+
+describe("migration 0030 (workspace indexing)", () => {
+  const chunk = (
+    scope: string,
+    owner: string | null,
+    key: string,
+    text: string,
+  ) =>
+    db
+      .prepare(
+        "INSERT INTO chunks (kind, scope, owner_id, key, seq, text) VALUES ('file', ?, ?, ?, 0, ?)",
+      )
+      .run(scope, owner, key, text).lastInsertRowid as number;
+
+  it("keeps every chunk with its id, its vector and its place in the full-text index", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version < 30),
+    );
+    const a = chunk(
+      "global",
+      null,
+      "a.md",
+      "the lighthouse keeper wrote letters",
+    );
+    const b = chunk("project", "p1", "b.md", "a quiet harbour at dawn");
+    const c = chunk("session", "s1", "c.md", "storm over the lighthouse");
+    // A gap in the ids, as deletions leave.
+    db.prepare("DELETE FROM chunks WHERE id = ?").run(b);
+    const d = chunk("project", "p1", "d.md", "harbour bells");
+    const vec = db.prepare(
+      "INSERT INTO chunk_vectors (chunk_id, model, embedding) VALUES (?, 'm', ?)",
+    );
+    vec.run(a, Buffer.from([1, 2, 3, 4]));
+    vec.run(d, Buffer.from([5, 6, 7, 8]));
+    const before = db
+      .prepare(
+        "SELECT id, kind, scope, owner_id, key, seq, text FROM chunks ORDER BY id",
+      )
+      .all();
+
+    migrate(db, all);
+
+    expect(
+      db
+        .prepare(
+          "SELECT id, kind, scope, owner_id, key, seq, text FROM chunks ORDER BY id",
+        )
+        .all(),
+    ).toEqual(before);
+    expect(
+      db
+        .prepare(
+          "SELECT chunk_id, model, hex(embedding) AS e FROM chunk_vectors ORDER BY chunk_id",
+        )
+        .all(),
+    ).toEqual([
+      { chunk_id: a, model: "m", e: "01020304" },
+      { chunk_id: d, model: "m", e: "05060708" },
+    ]);
+    // The full-text index finds the copied rows, by their old ids.
+    const found = (q: string) =>
+      db
+        .prepare(
+          "SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rowid",
+        )
+        .all(q)
+        .map((r) => (r as { rowid: number }).rowid);
+    expect(found("lighthouse")).toEqual([a, c]);
+    expect(found("harbour")).toEqual([d]);
+    // And it stays in step: a new chunk is found, a deleted one is not.
+    const e = chunk("workspace", "w1", "notes/e.md", "an old lighthouse log");
+    expect(e).toBeGreaterThan(d);
+    expect(found("lighthouse")).toEqual([a, c, e]);
+    db.prepare("DELETE FROM chunks WHERE id = ?").run(a);
+    expect(found("lighthouse")).toEqual([c, e]);
+    // A deleted chunk takes its vector with it.
+    expect(
+      db
+        .prepare("SELECT count(*) AS n FROM chunk_vectors WHERE chunk_id = ?")
+        .get(a),
+    ).toEqual({ n: 0 });
+  });
+
+  it("accepts the workspace scope and still refuses an owner on global or none elsewhere", () => {
+    db = new Database(":memory:");
+    migrate(db, loadMigrations(MIGRATIONS_DIR));
+    expect(chunk("workspace", "w1", "a.md", "x")).toBeGreaterThan(0);
+    expect(() => chunk("workspace", null, "a.md", "x")).toThrow(/CHECK/);
+    expect(() => chunk("global", "w1", "a.md", "x")).toThrow(/CHECK/);
+    expect(() => chunk("elsewhere", "w1", "a.md", "x")).toThrow(/CHECK/);
+  });
+
+  it("gives workspaces ticks, empty at first, and a table of indexed files", () => {
+    db = new Database(":memory:");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version < 30),
+    );
+    db.prepare(
+      "INSERT INTO workspaces (id, name, path, writable, created_at, updated_at) VALUES ('w1', 'Book', '/b', 0, 't', 't')",
+    ).run();
+    migrate(db, all);
+    expect(db.prepare("SELECT index_ticks FROM workspaces").get()).toEqual({
+      index_ticks: "[]",
+    });
+    db.prepare(
+      "INSERT INTO workspace_index_files (workspace_id, path, mtime_ms, size) VALUES ('w1', 'a.md', 1.5, 3)",
+    ).run();
   });
 });

@@ -279,6 +279,10 @@ touches the folder; _Show the trash_ lists them with _Restore_. Below, _Always
 allowed_ lists the grants and removes one. `AttachedWorkspaces` attaches and
 detaches workspaces, with _Read-only here_; it is on the project page and in the
 session's Workspaces tab, where the project's are shown and cannot be detached.
+Each workspace also has a _Searched parts_ section: a lazily loaded folder tree with
+tri-state tick boxes (a ticked folder covers what is below it), a _The whole folder_
+check box, the index status, and _Rescan_.
+
 The approval dialog names the workspace for such a call, and its _Allow for this
 session_ and _Always allow this tool_ buttons say they cover that workspace. A
 workspace image or audio file a tool read is fetched with the token and shown in

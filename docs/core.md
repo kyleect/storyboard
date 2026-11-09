@@ -484,23 +484,23 @@ failed.
 
 What a tool's `execute` receives:
 
-| Field                                    | Description                                                                      |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| `signal`, `sessionId`, `runId`, `callId` | Identity and cancellation.                                                       |
-| `update(partial)`                        | Emits a `tool.update` event.                                                     |
-| `state`                                  | The latest state this tool saved in the transcript.                              |
-| `projectId`, `projectName`               | The session's project.                                                           |
-| `entries`                                | `EntryAccess`: files and notes across scopes.                                    |
-| `data`                                   | `DataAccess`: schemas and data across scopes.                                    |
-| `projects`                               | `ProjectAccess`: list, current, create, push.                                    |
-| `agents`                                 | `AgentAccess`: list agents, current agent.                                       |
-| `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                               |
-| `skills`                                 | The skills in scope with their bodies.                                           |
-| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, write, edit, move, delete and folders.  |
-| `copyLimit`                              | Maximum keys per copy or move call.                                              |
-| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).  |
-| `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                  |
-| `approval`                               | For a tool with `review`: the review the user answered and the chosen selection. |
+| Field                                    | Description                                                                               |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `signal`, `sessionId`, `runId`, `callId` | Identity and cancellation.                                                                |
+| `update(partial)`                        | Emits a `tool.update` event.                                                              |
+| `state`                                  | The latest state this tool saved in the transcript.                                       |
+| `projectId`, `projectName`               | The session's project.                                                                    |
+| `entries`                                | `EntryAccess`: files and notes across scopes.                                             |
+| `data`                                   | `DataAccess`: schemas and data across scopes.                                             |
+| `projects`                               | `ProjectAccess`: list, current, create, push.                                             |
+| `agents`                                 | `AgentAccess`: list agents, current agent.                                                |
+| `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                                        |
+| `skills`                                 | The skills in scope with their bodies.                                                    |
+| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, `search`, write, edit, move, delete and folders. |
+| `copyLimit`                              | Maximum keys per copy or move call.                                                       |
+| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).           |
+| `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                           |
+| `approval`                               | For a tool with `review`: the review the user answered and the chosen selection.          |
 
 `Tool.approvalSubject(input, ctx)` lets a tool name what a call is about
 (`{ kind: "workspace", id, label }`). The loop asks it before `needsApproval`, puts

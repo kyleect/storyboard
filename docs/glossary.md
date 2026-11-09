@@ -248,6 +248,11 @@ A named folder on the user's computer that a project or session can attach,
 read-only or writable. Its files are named `workspace://<id>/path`. Agents read
 it with the workspace tools and change it only with approval, per workspace.
 
+**Ticks**
+The parts of a workspace the user chose to search: paths inside the folder, where a
+ticked folder covers what is below it. Ticked text files are indexed; the rest of
+the workspace is still reachable by listing and reading.
+
 **Approval subject**
 What a tool call is about, such as the workspace a path is in. Approvals and
 "Always allow" are remembered per tool and subject.

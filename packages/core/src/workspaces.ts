@@ -83,6 +83,25 @@ export interface WorkspaceOptions {
   allowOutside?: boolean;
 }
 
+/** A match in a workspace's indexed files (D45). */
+export interface WorkspaceHit {
+  workspace: WorkspaceInfo;
+  /** The path inside the workspace. */
+  path: string;
+  /** The best matching part of the file. */
+  excerpt: string;
+  matched: "keyword" | "meaning" | "both";
+}
+
+export interface WorkspaceSearchResult {
+  hits: WorkspaceHit[];
+  /** "keyword" when meaning search was not possible; see `notice`. */
+  mode: "keyword+meaning" | "keyword";
+  notice?: string;
+  /** How many files of each workspace are searchable now. */
+  indexed: { workspace: WorkspaceInfo; files: number }[];
+}
+
 export interface WorkspaceAccess {
   /** The workspaces this session can use. */
   list(): WorkspaceInfo[];
@@ -143,6 +162,15 @@ export interface WorkspaceAccess {
     to: string,
     options?: WorkspaceOptions,
   ): Promise<void>;
+  /**
+   * Searches the parts of the session's workspaces the user chose to index,
+   * by keyword and by meaning (D45).
+   */
+  search(
+    query: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceSearchResult>;
   /** A folder with files in it needs `recursive`. Returns the files removed. */
   deleteFolder(
     id: string,
@@ -165,6 +193,7 @@ export const NO_WORKSPACES: WorkspaceAccess = {
   createFolder: () => Promise.reject(new WorkspaceError("unavailable", "none")),
   moveFolder: () => Promise.reject(new WorkspaceError("unavailable", "none")),
   deleteFolder: () => Promise.reject(new WorkspaceError("unavailable", "none")),
+  search: () => Promise.reject(new WorkspaceError("unavailable", "none")),
 };
 
 /** The most characters one workspace read returns, by default (D55). */

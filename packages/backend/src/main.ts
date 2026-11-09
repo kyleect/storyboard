@@ -27,10 +27,11 @@ import { modelMediaSupport } from "./media-support.js";
 import { McpServerStore } from "./mcp-store.js";
 import { loadMigrations, migrate } from "./migrate.js";
 import { RunManager } from "./runs.js";
+import { WorkspaceIndexer } from "./workspace-index.js";
 import { WorkspaceStore } from "./workspaces-store.js";
 import { SkillStore } from "./skills-store.js";
 import { SearchIndex } from "./search-index.js";
-import { sessionSearch } from "./search.js";
+import { searchWorkspaces, sessionSearch } from "./search.js";
 import { buildServer } from "./server.js";
 import { readSettings } from "./settings.js";
 import { Store } from "./store.js";
@@ -59,6 +60,13 @@ async function main() {
   const agents = new AgentStore(db);
   const skills = new SkillStore(db);
   const workspaces = new WorkspaceStore(db);
+  const workspaceIndexer = new WorkspaceIndexer({
+    store: workspaces,
+    index,
+    // Only called after `app` exists: scanning starts below.
+    onError: (err, workspaceId) =>
+      app.log.warn({ err: err.message, workspaceId }, "workspace index failed"),
+  });
   const data = new DataStore(db, schemaChecker);
   const settings = () => readSettings(db).effective;
   const embed = (model: string, texts: string[], signal?: AbortSignal) =>
@@ -96,6 +104,19 @@ async function main() {
     agents,
     skills,
     workspaces,
+    workspaceIndex: {
+      scanAll: (ids) => workspaceIndexer.scanAll(ids),
+      files: (id) => workspaceIndexer.fileCount(id),
+      search: (q) =>
+        searchWorkspaces(
+          {
+            index,
+            embeddingModel: () => settings().embeddingModel,
+            embed,
+          },
+          q,
+        ),
+    },
     skillsPrompt: skillsInstruction,
     skillsList,
     entries,
@@ -138,6 +159,7 @@ async function main() {
     describer,
     skills,
     workspaces,
+    workspaceIndexer,
     data,
     token,
     mcp: { store: mcpStore, manager: mcp },
@@ -146,6 +168,11 @@ async function main() {
   });
   index.onChunksAdded = () => embedder.kick();
   embedder.kick();
+  // Workspaces with ticks are rescanned and watched in the background: the
+  // backend does not wait for them.
+  void workspaceIndexer.start().catch((err: Error) => {
+    app.log.warn({ err: err.message }, "workspace index failed to start");
+  });
   // Servers connect in the background; the backend does not wait for them.
   mcp.start();
   const { port } = settings();
@@ -184,6 +211,7 @@ async function main() {
     app.log.info("stopping");
     await runs.shutdown();
     describer.stop();
+    await workspaceIndexer.stop();
     await mcp.shutdown();
     await embedder.stop();
     await app.close();

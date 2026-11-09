@@ -136,14 +136,15 @@ Today is {{date}}. The time is {{time}}.
 {{tools}}
 </tools>
 
+<schemas>
 Schemas are named shapes for structured state, such as tasks or decisions. Data is made from a schema. Check the lists below, and use the schema and data tools to read or change them, before creating something that may already exist.
 
-<schemas>
 {{schemas}}
 </schemas>
 
 <data>
 Each line is the name of a schema, then the name and description of a piece of data made from it.
+
 {{data}}
 </data>
 
@@ -152,6 +153,18 @@ These are the agents available to you. If none appear below, then there are no a
 
 {{agents}}
 </agents>
+
+<workspaces>
+These workspaces are available to you. Search in workspaces to find information.
+
+{{workspaces}}
+</workspaces>
+
+<files>
+These files are available to you. Search in files to find information.
+
+{{files}}
+</files>
 
 <rules>
 - Be concise in your responses

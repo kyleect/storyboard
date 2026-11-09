@@ -112,9 +112,9 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 | Settings         | `settings`                                                                                                     | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.            |
 | Conversation     | `sessions`, `messages`, `projects`                                                                             | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session.      |
 | Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments). |
-| Workspaces       | `workspaces`, `workspace_attachments`                                                                          | Folders and what attaches them; see [Workspaces](#workspaces).                                     |
+| Workspaces       | `workspaces`, `workspace_attachments`, `workspace_index_files`                                                 | Folders and what attaches them; see [Workspaces](#workspaces).                                     |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                         |
-| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`                     | Project and global entries only.                                                                   |
+| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`                     | Project and global entries, and indexed workspace files (scope `workspace`).                       |
 | Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                    |
 | Skills           | `skills`, `skill_versions`                                                                                     |                                                                                                    |
 | Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                    |
@@ -363,15 +363,50 @@ purging a session or project drops its attachments.
 `{{workspaces}}` expands to one line per workspace the run has (name, reference,
 "can be changed" or "read-only").
 
-| Route                                                                  | Purpose                                                                         |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `GET/POST /api/workspaces`, `PUT/DELETE /api/workspaces/:id`           | List (`?deleted=true` for the trash), create, save, move to the trash.          |
-| `POST /api/workspaces/:id/restore`                                     | Restore from the trash.                                                         |
-| `GET /api/projects/:id/workspaces`, `GET /api/sessions/:id/workspaces` | What is attached; a session also lists its project's, with `effectiveWritable`. |
-| `PUT/DELETE /api/{projects,sessions}/:id/workspaces/:workspaceId`      | Attach (`{ readOnly }`) or detach.                                              |
-| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`            | "Always allow" grants per tool and workspace; remove one.                       |
-| `GET /api/fs/dirs?path=`                                               | The folders inside a folder, for the folder picker.                             |
-| `GET /api/sessions/:id/workspace-file?ref=`                            | The bytes of a workspace image or audio file, for the chat.                     |
+| Route                                                                    | Purpose                                                                           |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `GET/POST /api/workspaces`, `PUT/DELETE /api/workspaces/:id`             | List (`?deleted=true` for the trash), create, save, move to the trash.            |
+| `POST /api/workspaces/:id/restore`                                       | Restore from the trash.                                                           |
+| `GET /api/projects/:id/workspaces`, `GET /api/sessions/:id/workspaces`   | What is attached; a session also lists its project's, with `effectiveWritable`.   |
+| `PUT/DELETE /api/{projects,sessions}/:id/workspaces/:workspaceId`        | Attach (`{ readOnly }`) or detach.                                                |
+| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`              | "Always allow" grants per tool and workspace; remove one.                         |
+| `GET /api/fs/dirs?path=`                                                 | The folders inside a folder, for the folder picker.                               |
+| `GET /api/sessions/:id/workspace-file?ref=`                              | The bytes of a workspace image or audio file, for the chat.                       |
+| `GET /api/workspaces/:id/tree?path=`                                     | One folder of the tree, each entry with its tick state (`all`, `some`, `none`).   |
+| `GET /api/workspaces/:id/index`                                          | The ticks and the index status (files, chunks, scanning, truncated, unavailable). |
+| `PUT /api/workspaces/:id/ticks`, `POST /api/workspaces/:id/ticks/toggle` | Set the ticks (`{ ticks }`) or tick or untick one path (`{ path, on }`).          |
+| `POST /api/workspaces/:id/rescan`                                        | Rescan now.                                                                       |
+
+### Searching a workspace
+
+The user ticks what is searched; the ticks are a JSON array of paths relative to
+the folder on the workspace row (`index_ticks`). A ticked folder covers everything
+below it, and `""` means the whole folder. Unticking one entry inside a ticked
+folder ticks the folder's other entries instead (`workspace-ticks.ts`). Paths are
+checked with `resolveIn`, so a tick cannot leave the folder.
+
+`WorkspaceIndexer` (`workspace-index.ts`) keeps the index current. Text files in
+the ticked parts are chunked and stored in `chunks` with scope `workspace`, owner
+the workspace id, key the path, so keyword search (FTS) and meaning search (the
+embedder queue) work as for other chunks. `workspace_index_files` records each
+file's modified time and size, so a rescan reads only what changed.
+
+- **When:** at backend start (live workspaces with ticks), when a top-level run
+  starts (its attached workspaces, waiting at most 5 seconds), when ticks, folder
+  or trash state change, and on a chokidar watcher over the ticked paths. The
+  watcher only schedules a debounced (300 ms) rescan; a rename shows as a delete
+  and an add. A workspace in the trash has no chunks and no watcher; restoring
+  indexes it again.
+- **What:** text files up to 2 MiB, at most 5,000 files per workspace (the status
+  says `truncated`). Images, audio, binary files and links that leave the folder
+  are not indexed, and links to folders are not entered.
+- **A folder that is gone** (an unplugged drive) keeps its index and is marked
+  `unavailable`.
+
+Migration `0030` adds the ticks, the fingerprint table and the `workspace` scope
+of `chunks`. SQLite cannot change a CHECK, so it rebuilds `chunks`: it keeps the
+ids, and saves and restores `chunk_vectors` and rebuilds `chunks_fts`, so no
+embedding is computed again.
 
 ## The RunManager
 

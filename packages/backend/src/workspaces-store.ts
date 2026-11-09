@@ -26,6 +26,8 @@ export interface WorkspaceRow {
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
+  /** What is searched: paths inside the folder; "" is all of it (D45, D53). */
+  ticks: string[];
 }
 
 export interface WorkspaceContent {
@@ -57,6 +59,7 @@ interface Row {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  index_ticks: string;
 }
 
 const toRow = (r: Row): WorkspaceRow => ({
@@ -67,9 +70,11 @@ const toRow = (r: Row): WorkspaceRow => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   deleted: r.deleted_at !== null,
+  ticks: JSON.parse(r.index_ticks) as string[],
 });
 
-const COLUMNS = "id, name, path, writable, created_at, updated_at, deleted_at";
+const COLUMNS =
+  "id, name, path, writable, created_at, updated_at, deleted_at, index_ticks";
 
 export class WorkspaceStore {
   constructor(
@@ -167,6 +172,17 @@ export class WorkspaceStore {
          WHERE id = ?`,
       )
       .run(name, path, content.writable ? 1 : 0, this.now(), id);
+    return this.require(id);
+  }
+
+  /** Saves what is searched. The paths are checked by the caller. */
+  setTicks(id: string, ticks: readonly string[]): WorkspaceRow {
+    this.require(id);
+    this.db
+      .prepare(
+        "UPDATE workspaces SET index_ticks = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(JSON.stringify(ticks), this.now(), id);
     return this.require(id);
   }
 

@@ -283,6 +283,52 @@ export const workspaceRead = defineTool({
   },
 });
 
+export const workspaceSearch = defineTool({
+  name: "workspace_search",
+  description:
+    "Searches the files in the workspaces by keywords and by meaning, and returns the best matches with a reference and an excerpt. Only the parts the user chose to index are searched; workspace_list and workspace_read reach every file.",
+  input: z.object({
+    query: z.string().min(1).describe("What to look for."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe("The most files to return. Default 8."),
+  }),
+  approval: "never",
+  group: "workspaces",
+  available: hasWorkspaces,
+  execute: async ({ query, limit }, ctx) => {
+    const access = ctx.workspaces;
+    if (!access) return fail("This session has no workspaces.", "rejected", {});
+    const found = await access.search(query, limit ?? 8, ctx.signal);
+    const files = found.indexed.reduce((n, w) => n + w.files, 0);
+    return {
+      data: {
+        hits: found.hits.map((h) => ({
+          reference: plainRef({
+            location: "workspace",
+            workspaceId: h.workspace.id,
+            path: h.path,
+          }),
+          workspace: h.workspace.name,
+          excerpt: h.excerpt,
+          matched: h.matched,
+        })),
+        mode: found.mode,
+        ...(found.notice ? { notice: found.notice } : {}),
+        ...(files === 0
+          ? {
+              note: "Nothing in these workspaces is indexed: the user chooses what to search on the Workspaces page. workspace_list and workspace_read still reach every file.",
+            }
+          : {}),
+      },
+    };
+  },
+});
+
 export const workspaceWrite = defineTool({
   name: "workspace_write",
   description:
@@ -485,6 +531,7 @@ export const workspaceTools = [
   workspacesList,
   workspaceList,
   workspaceRead,
+  workspaceSearch,
   workspaceWrite,
   workspaceEdit,
   workspaceMove,

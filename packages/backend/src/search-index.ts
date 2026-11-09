@@ -14,9 +14,18 @@ import {
  * waiting to be embedded.
  */
 
+/**
+ * Where a chunk comes from: a scope, or a workspace (files unification
+ * design, D45). A workspace chunk's owner is the workspace id and its key is
+ * the path inside it.
+ */
+export type ChunkScope = Scope | "workspace";
+
 export interface ChunkRow {
   id: number;
-  scope: Scope;
+  scope: ChunkScope;
+  /** The session, project or workspace; null for global. */
+  ownerId: string | null;
   key: string;
   text: string;
 }
@@ -26,6 +35,8 @@ export interface ScopeFilter {
   sessionId: string | null;
   projectId: string | null;
   global: boolean;
+  /** The workspaces to search; left out: none. */
+  workspaceIds?: readonly string[];
 }
 
 /** Float32 little-endian bytes, as sqlite-vec reads them. */
@@ -53,6 +64,12 @@ function scopeSql(filter: ScopeFilter): { sql: string; params: string[] } {
     params.push(filter.projectId);
   }
   if (filter.global) parts.push("c.scope = 'global'");
+  if (filter.workspaceIds && filter.workspaceIds.length > 0) {
+    parts.push(
+      `(c.scope = 'workspace' AND c.owner_id IN (${filter.workspaceIds.map(() => "?").join(", ")}))`,
+    );
+    params.push(...filter.workspaceIds);
+  }
   return { sql: parts.length ? `(${parts.join(" OR ")})` : "0", params };
 }
 
@@ -68,7 +85,7 @@ export class SearchIndex {
    */
   indexEntry(
     kind: EntryKind,
-    scope: Scope,
+    scope: ChunkScope,
     ownerId: string | null,
     key: string,
     value: string | null,
@@ -95,6 +112,24 @@ export class SearchIndex {
       );
     })();
     if (chunks.length > 0) this.onChunksAdded();
+  }
+
+  /** Removes the chunks of some files of a workspace, or all with no paths. */
+  dropWorkspaceFiles(workspaceId: string, paths?: readonly string[]) {
+    const del = this.db.prepare(
+      "DELETE FROM chunks WHERE scope = 'workspace' AND owner_id = ? AND key = ?",
+    );
+    this.db.transaction(() => {
+      if (paths === undefined) {
+        this.db
+          .prepare(
+            "DELETE FROM chunks WHERE scope = 'workspace' AND owner_id = ?",
+          )
+          .run(workspaceId);
+      } else {
+        for (const p of paths) del.run(workspaceId, p);
+      }
+    })();
   }
 
   /**
@@ -166,7 +201,7 @@ export class SearchIndex {
   pending(model: string, limit: number): ChunkRow[] {
     return this.db
       .prepare(
-        `SELECT c.id, c.scope, c.key, c.text FROM chunks c
+        `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text FROM chunks c
          LEFT JOIN chunk_vectors v ON v.chunk_id = c.id AND v.model = ?
          WHERE v.chunk_id IS NULL ORDER BY c.id LIMIT ?`,
       )
@@ -205,7 +240,7 @@ export class SearchIndex {
     const scope = scopeSql(filter);
     return this.db
       .prepare(
-        `SELECT c.id, c.scope, c.key, c.text
+        `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text
          FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid
          WHERE chunks_fts MATCH ? AND c.kind = ? AND ${scope.sql}
          ORDER BY bm25(chunks_fts) LIMIT ?`,
@@ -224,7 +259,7 @@ export class SearchIndex {
     const scope = scopeSql(filter);
     return this.db
       .prepare(
-        `SELECT c.id, c.scope, c.key, c.text
+        `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text
          FROM chunks c JOIN chunk_vectors v ON v.chunk_id = c.id
          WHERE v.model = ? AND c.kind = ? AND ${scope.sql}
          ORDER BY vec_distance_cosine(v.embedding, ?) LIMIT ?`,

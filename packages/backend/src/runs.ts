@@ -72,6 +72,7 @@ import {
   createWorkspaceAccess,
   workspaceMediaSource,
   type ReadRecord,
+  type WorkspaceFsOptions,
 } from "./workspace-fs.js";
 import type { WorkspaceStore } from "./workspaces-store.js";
 import { allowedNames } from "./tool-grants.js";
@@ -198,6 +199,16 @@ export interface RunManagerOptions {
   describer?: MediaDescriber;
   /** Workspaces. Left out: no run has any. */
   workspaces?: WorkspaceStore;
+  /**
+   * The search index of workspaces (D45). A top-level run rescans its
+   * workspaces before it starts, and `workspace_search` uses `search`. Left
+   * out: nothing is indexed.
+   */
+  workspaceIndex?: {
+    scanAll(ids: readonly string[]): Promise<void>;
+    search: NonNullable<WorkspaceFsOptions["index"]>["search"];
+    files(id: string): number;
+  };
   /** Agents. Left out: sessions cannot pick one. */
   agents?: AgentStore;
   /** Skills. Left out: no run has any. */
@@ -1150,6 +1161,9 @@ export class RunManager {
       attached: () => store.forSession(sessionId, projectId),
       readCap: () => this.options.settings().workspaceReadCap,
       reads,
+      ...(this.options.workspaceIndex
+        ? { index: this.options.workspaceIndex }
+        : {}),
     });
   }
 
@@ -1558,6 +1572,19 @@ export class RunManager {
         const support = await this.options
           .mediaSupport?.(generation.model)
           .catch(() => undefined);
+        // A session that starts or continues rescans the ticked parts of its
+        // workspaces, so what changed while the app was closed is found. A
+        // big folder cannot hold the run up for long.
+        const index = this.options.workspaceIndex;
+        const searchable = attachedWorkspaces().filter(
+          (w) => w.ticks.length > 0,
+        );
+        if (child === null && index && searchable.length > 0) {
+          await Promise.race([
+            index.scanAll(searchable.map((w) => w.id)).catch(() => {}),
+            new Promise<void>((r) => setTimeout(r, 5000).unref()),
+          ]);
+        }
         const workspaceAccess = this.workspaceAccessFor(
           sessionId,
           session?.project_id ?? null,

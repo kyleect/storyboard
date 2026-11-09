@@ -65,12 +65,12 @@ core  ◀── tools  ◀── backend
   └────────────────── frontend   (imports types and a few pure helpers only)
 ```
 
-| Package    | Depends on                                                                                 | Runtime                                    |
-| ---------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| `core`     | `zod`                                                                                      | Any JavaScript runtime. No Node-only APIs. |
-| `tools`    | `core`, `turndown`, `@mixmark-io/domino`                                                   | Node                                       |
-| `backend`  | `core`, `tools`, `fastify`, `ajv`, `better-sqlite3-multiple-ciphers`, `sqlite-vec`, `yaml` | Node 22.12+                                |
-| `frontend` | `core`, React, Mantine, TanStack Router and Query, Zustand, CodeMirror                     | Browser                                    |
+| Package    | Depends on                                                                                             | Runtime                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `core`     | `zod`                                                                                                  | Any JavaScript runtime. No Node-only APIs. |
+| `tools`    | `core`, `turndown`, `@mixmark-io/domino`                                                               | Node                                       |
+| `backend`  | `core`, `tools`, `fastify`, `ajv`, `better-sqlite3-multiple-ciphers`, `chokidar`, `sqlite-vec`, `yaml` | Node 22.22+                                |
+| `frontend` | `core`, React, Mantine, TanStack Router and Query, Zustand, CodeMirror                                 | Browser                                    |
 
 The frontend imports `@harness/core` for types and for the pure function
 that applies streamed events to a message. It never imports `tools` or
@@ -98,7 +98,7 @@ that applies streamed events to a message. It never imports `tools` or
 
 ## Running it
 
-Prerequisites: Node 22.12+, pnpm 10, and a running `llama-server` started with
+Prerequisites: Node 22.22+, pnpm 10, and a running `llama-server` started with
 `--jinja` (needed for tool calls).
 
 ```sh

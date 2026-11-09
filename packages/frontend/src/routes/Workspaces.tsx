@@ -22,6 +22,7 @@ import {
   api,
   type Workspace,
   type WorkspaceAttachment,
+  type WorkspaceTreeEntry,
   type WorkspaceInput,
   type WorkspaceOwner,
 } from "../api";
@@ -199,6 +200,157 @@ function WorkspaceForm({
   );
 }
 
+/** One folder of the tree of searched parts, loaded when it is opened. */
+function TreeFolder({
+  workspaceId,
+  path,
+}: {
+  workspaceId: string;
+  path: string;
+}) {
+  const queryClient = useQueryClient();
+  const tree = useQuery({
+    queryKey: workspaceKeys.tree(workspaceId, path),
+    queryFn: () => api.getWorkspaceTree(workspaceId, path),
+  });
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const toggle = useMutation({
+    mutationFn: (v: { path: string; on: boolean }) =>
+      api.toggleWorkspaceTick(workspaceId, v.path, v.on),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.all }),
+    onError: failed("Could not change what is searched"),
+  });
+  if (tree.isPending) return <Loader size="xs" />;
+  if (tree.isError) return <Alert color="red">{tree.error.message}</Alert>;
+  if (tree.data.entries.length === 0) {
+    return (
+      <Text size="xs" c="dimmed">
+        Empty.
+      </Text>
+    );
+  }
+  const row = (e: WorkspaceTreeEntry) => (
+    <div key={e.path}>
+      <Group gap="xs" wrap="nowrap">
+        <Checkbox
+          size="xs"
+          label={e.kind === "folder" ? `${e.name}/` : e.name}
+          checked={e.state === "all"}
+          indeterminate={e.state === "some"}
+          disabled={toggle.isPending}
+          onChange={() =>
+            toggle.mutate({ path: e.path, on: e.state !== "all" })
+          }
+        />
+        {e.kind === "folder" && (
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            aria-label={`${open[e.path] ? "Close" : "Open"} ${e.name}`}
+            onClick={() => setOpen({ ...open, [e.path]: !open[e.path] })}
+          >
+            {open[e.path] ? "Close" : "Open"}
+          </Button>
+        )}
+      </Group>
+      {e.kind === "folder" && open[e.path] && (
+        <Stack gap={2} ml="md" mt={2}>
+          <TreeFolder workspaceId={workspaceId} path={e.path} />
+        </Stack>
+      )}
+    </div>
+  );
+  return <Stack gap={2}>{tree.data.entries.map(row)}</Stack>;
+}
+
+/**
+ * What agents can search in a workspace (files unification design, D45): the
+ * user ticks folders and files; a new file in a ticked folder is included.
+ */
+function SearchedParts({ workspace }: { workspace: Workspace }) {
+  const queryClient = useQueryClient();
+  const [shown, setShown] = useState(false);
+  const index = useQuery({
+    queryKey: workspaceKeys.index(workspace.id),
+    queryFn: () => api.getWorkspaceIndex(workspace.id),
+    enabled: shown,
+    // A scan runs in the background after a change.
+    refetchInterval: (q) => (q.state.data?.status?.scanning ? 1000 : false),
+  });
+  const all = useMutation({
+    mutationFn: (on: boolean) => api.toggleWorkspaceTick(workspace.id, "", on),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.all }),
+    onError: failed("Could not change what is searched"),
+  });
+  const rescan = useMutation({
+    mutationFn: () => api.rescanWorkspace(workspace.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.all }),
+    onError: failed("Could not rescan"),
+  });
+  const status = index.data?.status;
+  return (
+    <Stack gap="xs" mt="xs">
+      <Group gap="xs">
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          onClick={() => setShown(!shown)}
+        >
+          {shown ? "Hide searched parts" : "Searched parts"}
+        </Button>
+        {!shown && workspace.ticks.length > 0 && (
+          <Text size="xs" c="dimmed">
+            {workspace.ticks.length === 1 && workspace.ticks[0] === ""
+              ? "everything"
+              : `${workspace.ticks.length} chosen`}
+          </Text>
+        )}
+      </Group>
+      {shown && (
+        <Stack gap="xs">
+          <Text size="xs" c="dimmed">
+            Tick what agents can search with <code>workspace_search</code>, by
+            keywords and by meaning. A new file in a ticked folder is included.
+            Everything else can still be listed and read.
+          </Text>
+          <Checkbox
+            size="xs"
+            label="The whole folder"
+            checked={workspace.ticks.includes("")}
+            disabled={all.isPending}
+            onChange={(e) => all.mutate(e.currentTarget.checked)}
+          />
+          <TreeFolder workspaceId={workspace.id} path="" />
+          {status && (
+            <Group gap="xs">
+              <Text size="xs" c="dimmed">
+                {status.scanning
+                  ? "Scanning…"
+                  : status.unavailable
+                    ? "The folder is not there; the index is kept as it was."
+                    : `${status.files} ${status.files === 1 ? "file" : "files"} searchable.`}
+                {status.truncated &&
+                  " Too many files are ticked; some are left out."}
+              </Text>
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                loading={rescan.isPending}
+                onClick={() => rescan.mutate()}
+              >
+                Rescan
+              </Button>
+            </Group>
+          )}
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 /** What the user said "Always allow" to, per tool and workspace. */
 function Grants() {
   const queryClient = useQueryClient();
@@ -338,6 +490,7 @@ export function WorkspacesPage() {
                 )}
               </Group>
             </Group>
+            {!w.deleted && <SearchedParts workspace={w} />}
           </Paper>
         ),
       )}

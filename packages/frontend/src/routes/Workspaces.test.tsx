@@ -21,6 +21,7 @@ const workspace = (over: Partial<Workspace> = {}): Workspace => ({
   createdAt: "2026-11-06T00:00:00Z",
   updatedAt: "2026-11-06T00:00:00Z",
   deleted: false,
+  ticks: [],
   ...over,
 });
 
@@ -169,6 +170,127 @@ describe("WorkspacesPage", () => {
     await waitFor(() =>
       expect(revoke).toHaveBeenCalledWith("workspace_write", "w1"),
     );
+  });
+});
+
+describe("searched parts", () => {
+  const entry = (
+    name: string,
+    kind: "file" | "folder",
+    state: "all" | "some" | "none",
+    folder = "",
+  ) => ({
+    name,
+    kind,
+    state,
+    path: folder === "" ? name : `${folder}/${name}`,
+  });
+
+  function open() {
+    vi.spyOn(api, "getWorkspaceIndex").mockResolvedValue({
+      ticks: ["notes"],
+      status: {
+        files: 3,
+        chunks: 5,
+        scanning: false,
+        truncated: false,
+        unavailable: false,
+        lastScan: "2026-11-07T00:00:00Z",
+      },
+    });
+    vi.spyOn(api, "getWorkspaceTree").mockImplementation((_id, path = "") =>
+      Promise.resolve({
+        path,
+        entries:
+          path === ""
+            ? [
+                entry("notes", "folder", "all"),
+                entry("drafts", "folder", "some"),
+                entry("ch1.md", "file", "none"),
+              ]
+            : [entry("idea.md", "file", "all", path)],
+      }),
+    );
+    renderPage([workspace({ ticks: ["notes"] })]);
+    return screen.findByRole("button", { name: "Searched parts" });
+  }
+
+  it("shows how many parts are chosen, and the tree with ticks when opened", async () => {
+    fireEvent.click(await open());
+    expect(await screen.findByLabelText("notes/")).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(screen.getByLabelText("ch1.md")).toHaveProperty("checked", false);
+    // Part of "drafts" is chosen: the box is neither on nor off.
+    expect(screen.getByLabelText("drafts/")).toHaveProperty(
+      "indeterminate",
+      true,
+    );
+    expect(await screen.findByText("3 files searchable.")).toBeTruthy();
+  });
+
+  it("ticks and unticks a path", async () => {
+    const toggle = vi
+      .spyOn(api, "toggleWorkspaceTick")
+      .mockResolvedValue({ ticks: [], status: null });
+    fireEvent.click(await open());
+    fireEvent.click(await screen.findByLabelText("ch1.md"));
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith("w1", "ch1.md", true),
+    );
+    fireEvent.click(screen.getByLabelText("notes/"));
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith("w1", "notes", false),
+    );
+    // A partly chosen folder is ticked as a whole.
+    fireEvent.click(screen.getByLabelText("drafts/"));
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith("w1", "drafts", true),
+    );
+  });
+
+  it("opens a folder to show what is in it", async () => {
+    fireEvent.click(await open());
+    fireEvent.click(await screen.findByRole("button", { name: "Open notes" }));
+    expect(await screen.findByLabelText("idea.md")).toBeTruthy();
+  });
+
+  it("ticks the whole folder, and rescans", async () => {
+    const toggle = vi
+      .spyOn(api, "toggleWorkspaceTick")
+      .mockResolvedValue({ ticks: [""], status: null });
+    const rescan = vi.spyOn(api, "rescanWorkspace").mockResolvedValue({});
+    fireEvent.click(await open());
+    fireEvent.click(await screen.findByLabelText("The whole folder"));
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith("w1", "", true));
+    fireEvent.click(await screen.findByRole("button", { name: "Rescan" }));
+    await waitFor(() => expect(rescan).toHaveBeenCalledWith("w1"));
+  });
+
+  it("says when the folder is not there", async () => {
+    vi.spyOn(api, "getWorkspaceIndex").mockResolvedValue({
+      ticks: ["notes"],
+      status: {
+        files: 3,
+        chunks: 5,
+        scanning: false,
+        truncated: false,
+        unavailable: true,
+        lastScan: null,
+      },
+    });
+    vi.spyOn(api, "getWorkspaceTree").mockResolvedValue({
+      path: "",
+      entries: [],
+    });
+    renderPage([workspace({ ticks: ["notes"] })]);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Searched parts" }),
+    );
+    expect(
+      await screen.findByText(/The folder is not there; the index is kept/),
+    ).toBeTruthy();
   });
 });
 

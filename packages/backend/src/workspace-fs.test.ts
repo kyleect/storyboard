@@ -53,6 +53,7 @@ function setup(over: { writable?: boolean; cap?: number } = {}) {
     createdAt: "t",
     updatedAt: "t",
     deleted: false,
+    ticks: [],
   };
   const reads = new Map<string, ReadRecord>();
   const access = createWorkspaceAccess({

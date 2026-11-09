@@ -36,6 +36,7 @@ import type { McpManager } from "./mcp-manager.js";
 import type { McpServerStore } from "./mcp-store.js";
 import { registerSkillRoutes } from "./skill-routes.js";
 import { registerWorkspaceRoutes } from "./workspace-routes.js";
+import type { WorkspaceIndexer } from "./workspace-index.js";
 import { WorkspaceStore, WorkspaceStoreError } from "./workspaces-store.js";
 import { SkillStore } from "./skills-store.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -72,6 +73,8 @@ export interface ServerOptions {
   /** Skills. Default: over `store.db`. */
   skills?: SkillStore;
   workspaces?: WorkspaceStore;
+  /** Keeps the search index of workspaces current. Left out: not indexed. */
+  workspaceIndexer?: WorkspaceIndexer;
   /** Global, project and agent schemas and data. Default: over `store.db`. */
   data?: DataStore;
   /**
@@ -228,6 +231,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   registerWorkspaceRoutes(app, {
     store,
     workspaces: options.workspaces ?? new WorkspaceStore(store.db, now, newId),
+    ...(options.workspaceIndexer ? { indexer: options.workspaceIndexer } : {}),
     events,
   });
 

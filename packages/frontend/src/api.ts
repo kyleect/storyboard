@@ -419,6 +419,8 @@ export interface Workspace {
   updatedAt: string;
   /** In the trash. */
   deleted: boolean;
+  /** The parts that are searched; "" is all of the folder. */
+  ticks: string[];
 }
 
 export interface WorkspaceInput {
@@ -442,6 +444,36 @@ export interface WorkspaceGrant {
   tool: string;
   workspaceId: string;
   workspaceName: string | null;
+}
+
+/** What a tree shows for a path: searched, partly searched or not. */
+export type TickState = "all" | "some" | "none";
+
+export interface WorkspaceTreeEntry {
+  name: string;
+  path: string;
+  kind: "file" | "folder";
+  state: TickState;
+}
+
+export interface WorkspaceTree {
+  path: string;
+  entries: WorkspaceTreeEntry[];
+}
+
+export interface WorkspaceIndexStatus {
+  files: number;
+  chunks: number;
+  scanning: boolean;
+  truncated: boolean;
+  unavailable: boolean;
+  lastScan: string | null;
+}
+
+/** The ticks of a workspace and how its index stands. */
+export interface WorkspaceIndexView {
+  ticks: string[];
+  status: WorkspaceIndexStatus | null;
 }
 
 /** The folders inside a folder, for the folder picker. */
@@ -1132,6 +1164,27 @@ export const api = {
     request<unknown>(
       "DELETE",
       `/api/${owner}/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`,
+    ),
+  getWorkspaceTree: (id: string, path = "") =>
+    request<WorkspaceTree>(
+      "GET",
+      `/api/workspaces/${encodeURIComponent(id)}/tree?path=${encodeURIComponent(path)}`,
+    ),
+  getWorkspaceIndex: (id: string) =>
+    request<WorkspaceIndexView>(
+      "GET",
+      `/api/workspaces/${encodeURIComponent(id)}/index`,
+    ),
+  toggleWorkspaceTick: (id: string, path: string, on: boolean) =>
+    request<WorkspaceIndexView>(
+      "POST",
+      `/api/workspaces/${encodeURIComponent(id)}/ticks/toggle`,
+      { path, on },
+    ),
+  rescanWorkspace: (id: string) =>
+    request<unknown>(
+      "POST",
+      `/api/workspaces/${encodeURIComponent(id)}/rescan`,
     ),
   listWorkspaceGrants: () =>
     request<WorkspaceGrant[]>("GET", "/api/workspace-grants"),

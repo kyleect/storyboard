@@ -177,6 +177,29 @@ export interface WorkspaceFsOptions {
    * session.
    */
   reads: Map<string, ReadRecord>;
+  /**
+   * The search index of workspaces. Left out: `search` finds nothing and
+   * says so.
+   */
+  index?: {
+    search(q: {
+      query: string;
+      limit: number;
+      workspaceIds: readonly string[];
+      signal?: AbortSignal;
+    }): Promise<{
+      hits: {
+        workspaceId: string;
+        path: string;
+        excerpt: string;
+        matched: "keyword" | "meaning" | "both";
+      }[];
+      mode: "keyword+meaning" | "keyword";
+      notice?: string;
+    }>;
+    /** How many files of a workspace are searchable. */
+    files(id: string): number;
+  };
 }
 
 const info = (w: AttachedWorkspace): WorkspaceInfo => ({
@@ -501,6 +524,43 @@ export function createWorkspaceAccess(
       for (const k of [...options.reads.keys()]) {
         if (k.startsWith(key(id, `${from}/`))) options.reads.delete(k);
       }
+    },
+
+    search: async (query, limit, signal) => {
+      const attached = options.attached();
+      const indexed = attached.map((w) => ({
+        workspace: info(w),
+        files: options.index?.files(w.id) ?? 0,
+      }));
+      const ids = attached.filter((w) => w.ticks.length > 0).map((w) => w.id);
+      if (!options.index || ids.length === 0) {
+        return { hits: [], mode: "keyword", indexed };
+      }
+      const found = await options.index.search({
+        query,
+        limit,
+        workspaceIds: ids,
+        ...(signal ? { signal } : {}),
+      });
+      const byId = new Map(attached.map((w) => [w.id, w]));
+      return {
+        hits: found.hits.flatMap((h) => {
+          const w = byId.get(h.workspaceId);
+          return w
+            ? [
+                {
+                  workspace: info(w),
+                  path: h.path,
+                  excerpt: h.excerpt,
+                  matched: h.matched,
+                },
+              ]
+            : [];
+        }),
+        mode: found.mode,
+        ...(found.notice !== undefined ? { notice: found.notice } : {}),
+        indexed,
+      };
     },
 
     deleteFolder: async (id, path, o) => {
