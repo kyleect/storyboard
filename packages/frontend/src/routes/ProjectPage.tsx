@@ -77,7 +77,7 @@ export function ProjectPage() {
       />
       {trashed && (
         <Alert color="yellow" title="This project is in the trash">
-          Restore it from the Trash section in Settings to change it.
+          Restore it from the Trash tab in Settings to change it.
         </Alert>
       )}
       <Group gap="xs">

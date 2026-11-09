@@ -9,6 +9,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
   RouterProvider,
 } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -94,9 +95,22 @@ const routeTree = rootRoute.addChildren([
     path: "/errors",
     component: ErrorsPage,
   }),
+  // The tabs are in the address: /settings/<area>/<section>. Every page is
+  // this one route, so changing tabs does not remount the page.
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/settings",
+    beforeLoad: () => {
+      throw redirect({
+        to: "/settings/$",
+        params: { _splat: "general/models" },
+        replace: true,
+      });
+    },
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$",
     component: Settings,
   }),
 ]);

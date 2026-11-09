@@ -177,7 +177,7 @@ export function McpServers() {
       </Group>
       <Text size="xs" c="dimmed">
         Servers the backend connects to over the Model Context Protocol. Their
-        tools appear in the tools section under MCP, and ask before they run
+        tools appear under MCP in the Permissions tab, and ask before they run
         until you change that. A stdio server is a program the backend starts,
         with your permissions; add only ones you trust.
       </Text>

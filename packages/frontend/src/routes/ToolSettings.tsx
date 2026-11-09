@@ -19,7 +19,7 @@ import { toolKeys } from "../queries";
 import { groupTools } from "../tool-grant";
 
 /*
- * The Settings tools section (tool management design, decisions 12 to 16):
+ * The Settings Tools tab (tool management design, decisions 12 to 16):
  * for each tool, whether it is always on, whether it asks before it runs and
  * whether it is off for the whole harness; each group's header sets all
  * three for the group. Saved as they change.

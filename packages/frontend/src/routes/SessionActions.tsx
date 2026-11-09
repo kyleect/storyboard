@@ -73,7 +73,7 @@ export function useSessionActions() {
       children: (
         <Text size="sm">
           “{session.title}” moves to the trash. You can restore it from the
-          Trash section in Settings.
+          Trash tab in Settings.
         </Text>
       ),
       labels: { confirm: "Move to trash", cancel: "Cancel" },
@@ -233,7 +233,7 @@ export function useProjectActions() {
       children: (
         <Text size="sm">
           “{project.name}” and all its sessions move to the trash. You can
-          restore them from the Trash section in Settings.
+          restore them from the Trash tab in Settings.
         </Text>
       ),
       labels: { confirm: "Move to trash", cancel: "Cancel" },

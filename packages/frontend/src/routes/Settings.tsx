@@ -12,17 +12,18 @@ import {
   Select,
   Stack,
   Switch,
+  Tabs,
   Text,
   Textarea,
   TextInput,
   Title,
 } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { useForm, type UseFormInput } from "@mantine/form";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { COPY_LIMIT_MAX } from "@harness/core";
 import {
   api,
@@ -37,65 +38,39 @@ import { showError, useSessionActions } from "./SessionActions";
 import { McpServers } from "./McpServers";
 import { ToolSettings } from "./ToolSettings";
 
-/**
- * The fields the main form saves; the system prompt and session titles
- * sections have their own, and the default agent is set on the agents page.
+/*
+ * The settings page is a set of forms, each with its own Save that stores
+ * only its own fields (the backend takes a partial settings object). The
+ * forms are grouped under vertical tabs, one per area; an area with several
+ * groups of settings splits them again under horizontal tabs. The tabs are
+ * in the address: /settings/<area>/<section>.
+ *
+ *   General  Models · Server
+ *   Chat     System prompt · Session titles · Media
+ *   Agents   Subagents · Limits
+ *   Tools    Permissions · MCP servers
+ *   Trash
  */
-type MainSettings = Omit<
-  SettingsShape,
-  | keyof TitleSettings
-  | keyof PromptSettings
-  | keyof SubagentSettings
-  | keyof DescriberSettings
-  | "defaultAgentId"
->;
 
-/** The subagent settings have their own form (agent delegation design). */
-type SubagentSettings = Pick<
-  SettingsShape,
-  "childReminders" | "childPrompt" | "subagentMessageLabel" | "subagentDepth"
->;
-
-function subagentSettings(s: SettingsShape): SubagentSettings {
-  return {
-    childReminders: s.childReminders,
-    childPrompt: s.childPrompt,
-    subagentMessageLabel: s.subagentMessageLabel,
-    subagentDepth: s.subagentDepth,
-  };
-}
-
-type PromptSettings = Pick<SettingsShape, "systemPrompt">;
-
-type TitleSettings = Pick<
-  SettingsShape,
-  "autoRename" | "autoRenameSource" | "titleModel" | "titlePrompt"
->;
-
-function mainSettings(s: SettingsShape): MainSettings {
-  return {
-    llamaServerUrl: s.llamaServerUrl,
-    model: s.model,
-    reasoningEffort: s.reasoningEffort,
-    port: s.port,
-    loopLimit: s.loopLimit,
-    copyLimit: s.copyLimit,
-    trashRetentionDays: s.trashRetentionDays,
-    embeddingModel: s.embeddingModel,
-    inlineMediaCap: s.inlineMediaCap,
-    keepMediaInline: s.keepMediaInline,
-    workspaceReadCap: s.workspaceReadCap,
-  };
-}
-
-function titleSettings(s: SettingsShape): TitleSettings {
-  return {
-    autoRename: s.autoRename,
-    autoRenameSource: s.autoRenameSource,
-    titleModel: s.titleModel,
-    titlePrompt: s.titlePrompt,
-  };
-}
+const MODEL_KEYS = ["model", "reasoningEffort", "embeddingModel"] as const;
+const SERVER_KEYS = ["llamaServerUrl", "port"] as const;
+const PROMPT_KEYS = ["systemPrompt"] as const;
+const TITLE_KEYS = [
+  "autoRename",
+  "autoRenameSource",
+  "titleModel",
+  "titlePrompt",
+] as const;
+const SUBAGENT_KEYS = [
+  "childReminders",
+  "childPrompt",
+  "subagentMessageLabel",
+  "subagentDepth",
+] as const;
+const LIMIT_KEYS = ["loopLimit", "copyLimit", "workspaceReadCap"] as const;
+const MEDIA_KEYS = ["inlineMediaCap", "keepMediaInline"] as const;
+const DESCRIBER_KEYS = ["mediaDescriberAgent", "mediaDescriberModel"] as const;
+const TRASH_KEYS = ["trashRetentionDays"] as const;
 
 /** Saves settings, showing the outcome. */
 function useSaveSettings() {
@@ -122,213 +97,372 @@ function envNoteFor(view: SettingsView) {
     env[key] ? `Overridden by the ${env[key]} environment variable` : undefined;
 }
 
+/**
+ * The form for some of the settings: filled from the view (and again when it
+ * changes).
+ */
+function useSettingsFields<K extends keyof SettingsShape>(
+  view: SettingsView,
+  keys: readonly K[],
+  validate: NonNullable<UseFormInput<Pick<SettingsShape, K>>["validate"]> = {},
+) {
+  const pick = () =>
+    Object.fromEntries(keys.map((k) => [k, view.effective[k]])) as Pick<
+      SettingsShape,
+      K
+    >;
+  const form = useForm<Pick<SettingsShape, K>>({
+    initialValues: pick(),
+    validate,
+  });
+
+  // React runs a hidden tab's effects again when the tab is shown, even with
+  // the same view, so refill only for a view not yet filled in: an edit not
+  // yet saved survives leaving a tab and coming back to it.
+  const filled = useRef(view);
+  useEffect(() => {
+    if (filled.current === view) return;
+    filled.current = view;
+    const values = pick();
+    form.setValues(values);
+    form.resetDirty(values);
+    // Only when fresh data arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  return {
+    form,
+    env: view.overriddenByEnv,
+    envNote: envNoteFor(view),
+  };
+}
+
+/** The form for some of the settings, with a Save that stores only them. */
+function useSettingsForm<K extends keyof SettingsShape>(
+  view: SettingsView,
+  keys: readonly K[],
+  validate?: NonNullable<UseFormInput<Pick<SettingsShape, K>>["validate"]>,
+) {
+  const save = useSaveSettings();
+  return { ...useSettingsFields(view, keys, validate), save };
+}
+
+type Section = {
+  value: string;
+  label: string;
+  render: (view: SettingsView) => ReactNode;
+};
+
+/** An area is a vertical tab: horizontal tabs of sections, or one page. */
+type Area = {
+  value: string;
+  label: string;
+  sections?: readonly Section[];
+  render?: (view: SettingsView) => ReactNode;
+};
+
+/**
+ * The areas and sections. Their values are what the address says:
+ * /settings/<area>/<section>.
+ */
+const AREAS: readonly Area[] = [
+  {
+    value: "general",
+    label: "General",
+    sections: [
+      {
+        value: "models",
+        label: "Models",
+        render: (view) => <ModelSettings view={view} />,
+      },
+      {
+        value: "server",
+        label: "Server",
+        render: (view) => <ServerSettings view={view} />,
+      },
+    ],
+  },
+  {
+    value: "chat",
+    label: "Chat",
+    sections: [
+      {
+        value: "system-prompt",
+        label: "System prompt",
+        render: (view) => <SystemPrompt view={view} />,
+      },
+      {
+        value: "titles",
+        label: "Session titles",
+        render: (view) => <SessionTitles view={view} />,
+      },
+      {
+        value: "media",
+        label: "Media",
+        render: (view) => <MediaSettings view={view} />,
+      },
+    ],
+  },
+  {
+    value: "agents",
+    label: "Agents",
+    sections: [
+      {
+        value: "subagents",
+        label: "Subagents",
+        render: (view) => <Subagents view={view} />,
+      },
+      {
+        value: "limits",
+        label: "Limits",
+        render: (view) => <Limits view={view} />,
+      },
+    ],
+  },
+  {
+    value: "tools",
+    label: "Tools",
+    sections: [
+      {
+        value: "permissions",
+        label: "Permissions",
+        render: () => <ToolSettings />,
+      },
+      { value: "mcp", label: "MCP servers", render: () => <McpServers /> },
+    ],
+  },
+  {
+    value: "trash",
+    label: "Trash",
+    render: (view) => (
+      <Stack>
+        <TrashRetention view={view} />
+        <Divider />
+        <TrashSection />
+      </Stack>
+    ),
+  },
+];
+
+/** The address of a section: its area's first, with none given. */
+function settingsPath(area: Area, section?: Section) {
+  const chosen = section ?? area.sections?.[0];
+  return chosen ? `${area.value}/${chosen.value}` : area.value;
+}
+
+/**
+ * Which area and section an address names. What it does not name, or names
+ * wrongly, is the first.
+ */
+function resolveSettingsPath(path: string | undefined) {
+  const [areaValue, sectionValue] = (path ?? "").split("/");
+  const area = AREAS.find((a) => a.value === areaValue) ?? AREAS[0];
+  if (!area) throw new Error("No settings areas");
+  const section =
+    area.sections?.find((x) => x.value === sectionValue) ?? area.sections?.[0];
+  return { area, section, canonical: settingsPath(area, section) };
+}
+
+/** Horizontal tabs, for an area with several groups of settings. */
+function SubTabs({
+  sections,
+  value,
+  view,
+  onChange,
+}: {
+  sections: readonly Section[];
+  /** The chosen section; none while the area is not the one shown. */
+  value: string | undefined;
+  view: SettingsView;
+  onChange: (section: Section) => void;
+}) {
+  return (
+    <Tabs
+      value={value ?? sections[0]?.value ?? null}
+      onChange={(v) => {
+        const section = sections.find((x) => x.value === v);
+        if (section) onChange(section);
+      }}
+    >
+      <Tabs.List mb="md">
+        {sections.map((x) => (
+          <Tabs.Tab key={x.value} value={x.value}>
+            {x.label}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+      {sections.map((x) => (
+        <Tabs.Panel key={x.value} value={x.value}>
+          {x.render(view)}
+        </Tabs.Panel>
+      ))}
+    </Tabs>
+  );
+}
+
+/**
+ * The tabs are in the address (/settings/<area>/<section>), so a page of
+ * settings can be linked to. Every page is one route, so going from tab to
+ * tab does not remount the page and lose an edit not yet saved.
+ */
 export function Settings() {
   const query = useQuery({
     queryKey: settingsKeys.all,
     queryFn: api.getSettings,
   });
-  const form = useForm<MainSettings>({
-    initialValues: {
-      llamaServerUrl: "",
-      model: "",
-      reasoningEffort: "",
-      port: 0,
-      loopLimit: 1,
-      copyLimit: 1,
-      trashRetentionDays: 0,
-      embeddingModel: "",
-      inlineMediaCap: 0,
-      keepMediaInline: false,
-      workspaceReadCap: 100,
-    },
-    validate: {
-      llamaServerUrl: (v) =>
-        /^https?:\/\/.+/.test(v) ? null : "Must be an http(s) URL",
-      port: (v) =>
-        Number.isInteger(v) && v >= 0 && v <= 65535 ? null : "0–65535",
-      loopLimit: (v) =>
-        Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
-      copyLimit: (v) =>
-        Number.isInteger(v) && v >= 1 && v <= COPY_LIMIT_MAX
-          ? null
-          : `A whole number, 1 to ${COPY_LIMIT_MAX}`,
-      trashRetentionDays: (v) =>
-        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
-      inlineMediaCap: (v) =>
-        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
-      workspaceReadCap: (v) =>
-        Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
-    },
-  });
+  const { _splat: path } = useParams({ strict: false });
+  const navigate = useNavigate();
+  const { area, section, canonical } = resolveSettingsPath(path);
 
+  const go = (to: string, replace = false) =>
+    void navigate({ to: "/settings/$", params: { _splat: to }, replace });
+
+  // An address that names no area or section, or a wrong one, is replaced
+  // by the one that shows.
   useEffect(() => {
-    if (query.data) {
-      const values = mainSettings(query.data.effective);
-      form.setValues(values);
-      form.resetDirty(values);
-    }
-    // Only when fresh data arrives.
+    if (path !== canonical) go(canonical, true);
+    // go() only calls navigate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.data]);
-
-  const save = useSaveSettings();
+  }, [path, canonical]);
 
   if (query.isPending) return <Loader />;
   if (query.isError) return <Alert color="red">{query.error.message}</Alert>;
-  const env = query.data.overriddenByEnv;
-  const envNote = envNoteFor(query.data);
+  const view = query.data;
 
   return (
-    <Stack maw={480}>
-      <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
-        <Stack>
-          <Title order={3}>Settings</Title>
-          <TextInput
-            label="llama-server URL"
-            description={envNote("llamaServerUrl")}
-            {...form.getInputProps("llamaServerUrl")}
-          />
-          <ModelPicker
-            label="Default model"
-            description={
-              envNote("model") ??
-              "For sessions with no model chosen. Clear it to send no model name."
-            }
-            placeholder="None (the server decides)"
-            value={form.values.model || null}
-            onChange={(model) => form.setFieldValue("model", model ?? "")}
-            disabled={!!env.model}
-            size="sm"
-            w={444}
-          />
-          <ReasoningPicker
-            label="Default reasoning effort"
-            description={
-              envNote("reasoningEffort") ??
-              "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
-            }
-            placeholder="Not sent (the server decides)"
-            model={form.values.model || undefined}
-            value={form.values.reasoningEffort || null}
-            onChange={(effort) =>
-              form.setFieldValue("reasoningEffort", effort ?? "")
-            }
-            disabled={!!env.reasoningEffort}
-            size="sm"
-            w="100%"
-          />
-          <ModelPicker
-            label="Embedding model"
-            description={
-              envNote("embeddingModel") ??
-              "A dedicated embedding model on the router, for searching files and memory by meaning. Clear it for keyword search only."
-            }
-            placeholder="None (keyword search only)"
-            value={form.values.embeddingModel || null}
-            onChange={(model) =>
-              form.setFieldValue("embeddingModel", model ?? "")
-            }
-            disabled={!!env.embeddingModel}
-            size="sm"
-            w={444}
-          />
-          <NumberInput
-            label="Backend port"
-            description={
-              envNote("port") ?? "Takes effect when the backend restarts."
-            }
-            allowDecimal={false}
-            {...form.getInputProps("port")}
-          />
-          <NumberInput
-            label="Loop limit"
-            description={
-              envNote("loopLimit") ??
-              "The most model calls one run makes before it stops."
-            }
-            allowDecimal={false}
-            min={1}
-            disabled={!!env.loopLimit}
-            {...form.getInputProps("loopLimit")}
-          />
-          <NumberInput
-            label="Copy limit"
-            description={
-              envNote("copyLimit") ??
-              `The most files or notes one copy or move call may name, 1 to ${COPY_LIMIT_MAX}. Copying everything in a scope is not limited.`
-            }
-            allowDecimal={false}
-            min={1}
-            max={COPY_LIMIT_MAX}
-            disabled={!!env.copyLimit}
-            {...form.getInputProps("copyLimit")}
-          />
-          <NumberInput
-            label="Days in the trash"
-            description={
-              envNote("trashRetentionDays") ??
-              "Items in the trash longer than this are deleted when the backend starts. 0: never."
-            }
-            allowDecimal={false}
-            min={0}
-            disabled={!!env.trashRetentionDays}
-            {...form.getInputProps("trashRetentionDays")}
-          />
-          <NumberInput
-            label="Images and audio kept in view"
-            description={
-              envNote("inlineMediaCap") ??
-              "The most images and audio files from earlier turns that are sent again with each request, when they are kept. The newest are sent; older ones become a text reference. Files from the current turn are always sent. 0: only the current turn's."
-            }
-            allowDecimal={false}
-            min={0}
-            disabled={!!env.inlineMediaCap}
-            {...form.getInputProps("inlineMediaCap")}
-          />
-          <Switch
-            label="Keep images and audio in view in later turns"
-            description={
-              envNote("keepMediaInline") ??
-              "Off: a file from an earlier turn becomes a text reference unless you or the agent chose to keep it. You can choose per file in the conversation."
-            }
-            disabled={!!env.keepMediaInline}
-            {...form.getInputProps("keepMediaInline", { type: "checkbox" })}
-          />
-          <NumberInput
-            label="Workspace read size"
-            description={
-              envNote("workspaceReadCap") ??
-              "The most characters of a workspace file one read returns. Longer files come back in parts: the agent reads the rest with an offset."
-            }
-            allowDecimal={false}
-            min={100}
-            disabled={!!env.workspaceReadCap}
-            {...form.getInputProps("workspaceReadCap")}
-          />
-          <Text size="xs" c="dimmed">
-            Saved to the database. Environment variables, when set, take
-            precedence.
-          </Text>
-          <Button type="submit" loading={save.isPending} w="fit-content">
-            Save
-          </Button>
-        </Stack>
-      </form>
-      <Divider />
-      <SystemPrompt view={query.data} />
-      <Divider />
-      <MediaDescriptions view={query.data} />
-      <Divider />
-      <Subagents view={query.data} />
-      <Divider />
-      <SessionTitles view={query.data} />
-      <Divider />
-      <McpServers />
-      <Divider />
-      <ToolSettings />
-      <Divider />
-      <TrashSection />
+    <Stack maw={900}>
+      <Title order={3}>Settings</Title>
+      <Tabs
+        value={area.value}
+        onChange={(v) => {
+          const chosen = AREAS.find((a) => a.value === v);
+          if (chosen) go(settingsPath(chosen));
+        }}
+        orientation="vertical"
+        styles={{ tabLabel: { textAlign: "left" } }}
+      >
+        <Tabs.List miw={140}>
+          {AREAS.map((a) => (
+            <Tabs.Tab key={a.value} value={a.value}>
+              {a.label}
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+        {AREAS.map((a) => (
+          <Tabs.Panel key={a.value} value={a.value} pl="lg">
+            {a.sections ? (
+              <SubTabs
+                sections={a.sections}
+                value={a === area ? section?.value : undefined}
+                view={view}
+                onChange={(x) => go(settingsPath(a, x))}
+              />
+            ) : (
+              a.render?.(view)
+            )}
+          </Tabs.Panel>
+        ))}
+      </Tabs>
     </Stack>
+  );
+}
+
+/**
+ * The defaults for sessions that have no model, reasoning effort or
+ * embedding model of their own.
+ */
+function ModelSettings({ view }: { view: SettingsView }) {
+  const { form, save, env, envNote } = useSettingsForm(view, MODEL_KEYS);
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack maw={480}>
+        <ModelPicker
+          label="Default model"
+          description={
+            envNote("model") ??
+            "For sessions with no model chosen. Clear it to send no model name."
+          }
+          placeholder="None (the server decides)"
+          value={form.values.model || null}
+          onChange={(model) => form.setFieldValue("model", model ?? "")}
+          disabled={!!env.model}
+          size="sm"
+          w={444}
+        />
+        <ReasoningPicker
+          label="Default reasoning effort"
+          description={
+            envNote("reasoningEffort") ??
+            "For sessions with none chosen. Levels are those of the default model. Clear it to send none."
+          }
+          placeholder="Not sent (the server decides)"
+          model={form.values.model || undefined}
+          value={form.values.reasoningEffort || null}
+          onChange={(effort) =>
+            form.setFieldValue("reasoningEffort", effort ?? "")
+          }
+          disabled={!!env.reasoningEffort}
+          size="sm"
+          w="100%"
+        />
+        <ModelPicker
+          label="Embedding model"
+          description={
+            envNote("embeddingModel") ??
+            "A dedicated embedding model on the router, for searching files and memory by meaning. Clear it for keyword search only."
+          }
+          placeholder="None (keyword search only)"
+          value={form.values.embeddingModel || null}
+          onChange={(model) =>
+            form.setFieldValue("embeddingModel", model ?? "")
+          }
+          disabled={!!env.embeddingModel}
+          size="sm"
+          w={444}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/** Where llama-server is, and the port the backend listens on. */
+function ServerSettings({ view }: { view: SettingsView }) {
+  const { form, save, envNote } = useSettingsForm(view, SERVER_KEYS, {
+    llamaServerUrl: (v) =>
+      /^https?:\/\/.+/.test(v) ? null : "Must be an http(s) URL",
+    port: (v) =>
+      Number.isInteger(v) && v >= 0 && v <= 65535 ? null : "0–65535",
+  });
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack maw={480}>
+        <TextInput
+          label="llama-server URL"
+          description={envNote("llamaServerUrl")}
+          {...form.getInputProps("llamaServerUrl")}
+        />
+        <NumberInput
+          label="Backend port"
+          description={
+            envNote("port") ?? "Takes effect when the backend restarts."
+          }
+          allowDecimal={false}
+          {...form.getInputProps("port")}
+        />
+        <Text size="xs" c="dimmed">
+          Saved to the database. Environment variables, when set, take
+          precedence.
+        </Text>
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
   );
 }
 
@@ -337,25 +471,11 @@ export function Settings() {
  * own Save.
  */
 function SystemPrompt({ view }: { view: SettingsView }) {
-  const save = useSaveSettings();
-  const form = useForm<PromptSettings>({
-    initialValues: { systemPrompt: view.effective.systemPrompt },
-  });
-
-  useEffect(() => {
-    const values = { systemPrompt: view.effective.systemPrompt };
-    form.setValues(values);
-    form.resetDirty(values);
-    // Only when fresh data arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
-
-  const envNote = envNoteFor(view);
+  const { form, save, envNote } = useSettingsForm(view, PROMPT_KEYS);
 
   return (
     <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
-      <Stack>
-        <Title order={4}>System prompt</Title>
+      <Stack maw={640}>
         <Textarea
           label="Global system prompt"
           description={
@@ -376,10 +496,126 @@ function SystemPrompt({ view }: { view: SettingsView }) {
   );
 }
 
-type DescriberSettings = Pick<
-  SettingsShape,
-  "mediaDescriberAgent" | "mediaDescriberModel"
->;
+/**
+ * Auto-rename (auto-rename plan, decisions 1 to 4), with its own Save.
+ */
+function SessionTitles({ view }: { view: SettingsView }) {
+  const { form, save, env, envNote } = useSettingsForm(view, TITLE_KEYS, {
+    titlePrompt: (v) => (v.trim() !== "" ? null : "Must not be empty"),
+  });
+  const off = !form.values.autoRename;
+  const fromMessage = form.values.autoRenameSource === "message";
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack maw={480}>
+        <Switch
+          label="Rename new sessions after the first message"
+          description={
+            envNote("autoRename") ?? "Only sessions still titled “New session”."
+          }
+          disabled={!!env.autoRename}
+          {...form.getInputProps("autoRename", { type: "checkbox" })}
+        />
+        <Input.Wrapper
+          label="Title source"
+          description={
+            envNote("autoRenameSource") ??
+            "When the model can't write a title, the first message is used."
+          }
+        >
+          <SegmentedControl
+            display="flex"
+            mt={4}
+            data={[
+              { value: "model", label: "Model writes it" },
+              { value: "message", label: "First message" },
+            ]}
+            disabled={off || !!env.autoRenameSource}
+            {...form.getInputProps("autoRenameSource")}
+          />
+        </Input.Wrapper>
+        <ModelPicker
+          label="Title model"
+          description={
+            envNote("titleModel") ??
+            "The model that writes titles. Clear it to use the session's model."
+          }
+          placeholder="Session's model"
+          value={form.values.titleModel || null}
+          onChange={(model) => form.setFieldValue("titleModel", model ?? "")}
+          disabled={off || fromMessage || !!env.titleModel}
+          size="sm"
+          w={444}
+        />
+        <Textarea
+          label="Title prompt"
+          description={
+            envNote("titlePrompt") ??
+            "Sent as the system message, before the first message."
+          }
+          autosize
+          minRows={3}
+          disabled={off || fromMessage || !!env.titlePrompt}
+          {...form.getInputProps("titlePrompt")}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/** Images and audio from earlier turns that are sent again with a request. */
+function MediaInView({ view }: { view: SettingsView }) {
+  const { form, save, env, envNote } = useSettingsForm(view, MEDIA_KEYS, {
+    inlineMediaCap: (v) =>
+      Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+  });
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack maw={480}>
+        <Title order={4}>Images and audio in view</Title>
+        <NumberInput
+          label="Images and audio kept in view"
+          description={
+            envNote("inlineMediaCap") ??
+            "The most images and audio files from earlier turns that are sent again with each request, when they are kept. The newest are sent; older ones become a text reference. Files from the current turn are always sent. 0: only the current turn's."
+          }
+          allowDecimal={false}
+          min={0}
+          disabled={!!env.inlineMediaCap}
+          {...form.getInputProps("inlineMediaCap")}
+        />
+        <Switch
+          label="Keep images and audio in view in later turns"
+          description={
+            envNote("keepMediaInline") ??
+            "Off: a file from an earlier turn becomes a text reference unless you or the agent chose to keep it. You can choose per file in the conversation."
+          }
+          disabled={!!env.keepMediaInline}
+          {...form.getInputProps("keepMediaInline", { type: "checkbox" })}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/** What is sent of images and audio, and who writes their text. */
+function MediaSettings({ view }: { view: SettingsView }) {
+  return (
+    <Stack>
+      <MediaInView view={view} />
+      <Divider />
+      <MediaDescriptions view={view} />
+    </Stack>
+  );
+}
 
 /**
  * Who writes the text of images and audio (files unification design, D43,
@@ -389,25 +625,11 @@ type DescriberSettings = Pick<
  */
 export function MediaDescriptions({ view }: { view: SettingsView }) {
   const queryClient = useQueryClient();
-  const describerOf = (s: SettingsShape): DescriberSettings => ({
-    mediaDescriberAgent: s.mediaDescriberAgent,
-    mediaDescriberModel: s.mediaDescriberModel,
-  });
-  const form = useForm<DescriberSettings>({
-    initialValues: describerOf(view.effective),
-  });
+  const { form, env, envNote } = useSettingsFields(view, DESCRIBER_KEYS);
   const agents = useQuery({
     queryKey: ["agents", "describer-choices"],
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
-
-  useEffect(() => {
-    const values = describerOf(view.effective);
-    form.setValues(values);
-    form.resetDirty(values);
-    // Only when fresh data arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
 
   const save = useMutation({
     mutationFn: api.saveSettings,
@@ -434,13 +656,11 @@ export function MediaDescriptions({ view }: { view: SettingsView }) {
       }),
   });
 
-  const env = view.overriddenByEnv;
-  const envNote = envNoteFor(view);
   const choices = (agents.data ?? []).filter((a) => !a.deleted);
 
   return (
     <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
-      <Stack>
+      <Stack maw={480}>
         <Title order={4}>Descriptions of images and audio</Title>
         <ModelPicker
           label="Media describer model"
@@ -522,32 +742,16 @@ function askToRegenerate(info: { files: number; empty: number }) {
  * its own Save. Each agent can set its own reminders and line.
  */
 function Subagents({ view }: { view: SettingsView }) {
-  const save = useSaveSettings();
-  const form = useForm<SubagentSettings>({
-    initialValues: subagentSettings(view.effective),
-    validate: {
-      childReminders: (v) =>
-        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
-      subagentDepth: (v) =>
-        Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
-    },
+  const { form, save, env, envNote } = useSettingsForm(view, SUBAGENT_KEYS, {
+    childReminders: (v) =>
+      Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+    subagentDepth: (v) =>
+      Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
   });
-
-  useEffect(() => {
-    const values = subagentSettings(view.effective);
-    form.setValues(values);
-    form.resetDirty(values);
-    // Only when fresh data arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
-
-  const env = view.overriddenByEnv;
-  const envNote = envNoteFor(view);
 
   return (
     <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
-      <Stack>
-        <Title order={4}>Subagents</Title>
+      <Stack maw={480}>
         <NumberInput
           label="Subagent depth"
           description={
@@ -606,84 +810,84 @@ function Subagents({ view }: { view: SettingsView }) {
   );
 }
 
-/**
- * Auto-rename (auto-rename plan, decisions 1 to 4), with its own Save.
- */
-function SessionTitles({ view }: { view: SettingsView }) {
-  const save = useSaveSettings();
-  const form = useForm<TitleSettings>({
-    initialValues: titleSettings(view.effective),
-    validate: {
-      titlePrompt: (v) => (v.trim() !== "" ? null : "Must not be empty"),
-    },
+/** How much one run, one copy or move call, and one workspace read may do. */
+function Limits({ view }: { view: SettingsView }) {
+  const { form, save, env, envNote } = useSettingsForm(view, LIMIT_KEYS, {
+    loopLimit: (v) =>
+      Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
+    copyLimit: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= COPY_LIMIT_MAX
+        ? null
+        : `A whole number, 1 to ${COPY_LIMIT_MAX}`,
+    workspaceReadCap: (v) =>
+      Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
   });
-
-  useEffect(() => {
-    const values = titleSettings(view.effective);
-    form.setValues(values);
-    form.resetDirty(values);
-    // Only when fresh data arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
-
-  const env = view.overriddenByEnv;
-  const envNote = envNoteFor(view);
-  const off = !form.values.autoRename;
-  const fromMessage = form.values.autoRenameSource === "message";
 
   return (
     <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
-      <Stack>
-        <Title order={4}>Session titles</Title>
-        <Switch
-          label="Rename new sessions after the first message"
+      <Stack maw={480}>
+        <NumberInput
+          label="Loop limit"
           description={
-            envNote("autoRename") ?? "Only sessions still titled “New session”."
+            envNote("loopLimit") ??
+            "The most model calls one run makes before it stops."
           }
-          disabled={!!env.autoRename}
-          {...form.getInputProps("autoRename", { type: "checkbox" })}
+          allowDecimal={false}
+          min={1}
+          disabled={!!env.loopLimit}
+          {...form.getInputProps("loopLimit")}
         />
-        <Input.Wrapper
-          label="Title source"
+        <NumberInput
+          label="Copy limit"
           description={
-            envNote("autoRenameSource") ??
-            "When the model can't write a title, the first message is used."
+            envNote("copyLimit") ??
+            `The most files or notes one copy or move call may name, 1 to ${COPY_LIMIT_MAX}. Copying everything in a scope is not limited.`
           }
-        >
-          <SegmentedControl
-            display="flex"
-            mt={4}
-            data={[
-              { value: "model", label: "Model writes it" },
-              { value: "message", label: "First message" },
-            ]}
-            disabled={off || !!env.autoRenameSource}
-            {...form.getInputProps("autoRenameSource")}
-          />
-        </Input.Wrapper>
-        <ModelPicker
-          label="Title model"
-          description={
-            envNote("titleModel") ??
-            "The model that writes titles. Clear it to use the session's model."
-          }
-          placeholder="Session's model"
-          value={form.values.titleModel || null}
-          onChange={(model) => form.setFieldValue("titleModel", model ?? "")}
-          disabled={off || fromMessage || !!env.titleModel}
-          size="sm"
-          w={444}
+          allowDecimal={false}
+          min={1}
+          max={COPY_LIMIT_MAX}
+          disabled={!!env.copyLimit}
+          {...form.getInputProps("copyLimit")}
         />
-        <Textarea
-          label="Title prompt"
+        <NumberInput
+          label="Workspace read size"
           description={
-            envNote("titlePrompt") ??
-            "Sent as the system message, before the first message."
+            envNote("workspaceReadCap") ??
+            "The most characters of a workspace file one read returns. Longer files come back in parts: the agent reads the rest with an offset."
           }
-          autosize
-          minRows={3}
-          disabled={off || fromMessage || !!env.titlePrompt}
-          {...form.getInputProps("titlePrompt")}
+          allowDecimal={false}
+          min={100}
+          disabled={!!env.workspaceReadCap}
+          {...form.getInputProps("workspaceReadCap")}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/** How long items stay in the trash. */
+function TrashRetention({ view }: { view: SettingsView }) {
+  const { form, save, env, envNote } = useSettingsForm(view, TRASH_KEYS, {
+    trashRetentionDays: (v) =>
+      Number.isInteger(v) && v >= 0 ? null : "A whole number, 0 or more",
+  });
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack maw={480}>
+        <NumberInput
+          label="Days in the trash"
+          description={
+            envNote("trashRetentionDays") ??
+            "Items in the trash longer than this are deleted when the backend starts. 0: never."
+          }
+          allowDecimal={false}
+          min={0}
+          disabled={!!env.trashRetentionDays}
+          {...form.getInputProps("trashRetentionDays")}
         />
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save
