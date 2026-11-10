@@ -54,7 +54,7 @@ src/
   branches.ts, fork.ts message branches (a transcript is a tree with a tip) and forking a session
   *-store.ts           agents, skills, entries, data, errors, mcp, workspaces
   tool-settings.ts, tool-grants.ts, tool-access.ts   which tools a run gets
-  placeholders.ts      {{skills}} {{tools}} {{schemas}} {{data}} {{agents}} in prompts
+  placeholders.ts      prompts as Mustache templates: {{skills}} {{tools}} {{schemas}} {{data}} {{agents}} ...
   search-index.ts, search.ts, embedder.ts   keyword and vector search
   mcp-manager.ts       connects to configured MCP servers
   workspace-*.ts       workspace folders: file access, indexing, search

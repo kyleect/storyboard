@@ -23,12 +23,13 @@ import {
   firstSentence,
   formatDate,
   formatTime,
+  PlaceholderError,
   toolsList,
   usesPlaceholder,
 } from "./placeholders.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
-import { readSettings, writeSettings } from "./settings.js";
+import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
 import { SkillStore, type SkillContent } from "./skills-store.js";
 import { Store } from "./store.js";
 import { grant, clearBuiltins, tempDatabase } from "./test-helpers.js";
@@ -528,5 +529,259 @@ describe("placeholders in runs", () => {
     s.skills.create({ scope: "global" }, skill({ body: "Use {{tools}}." }));
     await say(s, await newSession(s.app));
     expect(s.skills.inScope(null, null)[0]?.body).toBe("Use {{tools}}.");
+  });
+});
+
+describe("Mustache templates", () => {
+  const values = {
+    skills: "- a: A.",
+    tools: "- t: T.",
+    schemas: "",
+    data: "",
+    agents: "",
+    workspaces: "",
+    date: "Friday, November 6, 2026",
+    time: "14:32 UTC",
+  };
+  const none = { ...values, skills: "" };
+
+  it("does not HTML-escape a value", () => {
+    const text = `- a: "quoted" <b> & it's x/y`;
+    expect(
+      expandPlaceholders("{{skills}}|{{{skills}}}|{{&skills}}", {
+        ...values,
+        skills: text,
+      }),
+    ).toBe(`${text}|${text}|${text}`);
+  });
+
+  it("keeps a section only when the placeholder has text", () => {
+    const text = "{{#skills}}Skills:\n{{skills}}{{/skills}}";
+    expect(expandPlaceholders(text, values)).toBe("Skills:\n- a: A.");
+    expect(expandPlaceholders(text, none)).toBe("");
+  });
+
+  it("keeps an inverted section only when the placeholder is empty", () => {
+    const text = "{{^skills}}No skills.{{/skills}}";
+    expect(expandPlaceholders(text, values)).toBe("");
+    expect(expandPlaceholders(text, none)).toBe("No skills.");
+  });
+
+  it("gives {{.}} inside a section as the placeholder's text", () => {
+    expect(expandPlaceholders("{{#skills}}[{{.}}]{{/skills}}", values)).toBe(
+      "[- a: A.]",
+    );
+  });
+
+  it("leaves no blank lines where a section's own lines were", () => {
+    const text = "A\n{{#skills}}\n{{skills}}\n{{/skills}}\nB";
+    expect(expandPlaceholders(text, values)).toBe("A\n- a: A.\nB");
+    expect(expandPlaceholders(text, none)).toBe("A\nB");
+  });
+
+  it("drops a comment", () => {
+    expect(expandPlaceholders("A{{! a note }}B", values)).toBe("AB");
+  });
+
+  it("leaves a variable tag that is not a placeholder as typed", () => {
+    const text =
+      "{{skils}} {{ Skills }} {{a.b}} {{.}} {{{agent}}} {{&nope}} {{ }} {{{}}}";
+    expect(expandPlaceholders(text, values)).toBe(text);
+  });
+
+  it("keeps each of them in place between known ones and inside a section", () => {
+    const text =
+      "{{date}}\n  {{typo}} and {{tools}}\n{{#skills}}\n{{typo2}} {{skills}}\n{{/skills}}\n{{ other }}";
+    expect(expandPlaceholders(text, values)).toBe(
+      "Friday, November 6, 2026\n  {{typo}} and - t: T.\n{{typo2}} - a: A.\n{{ other }}",
+    );
+  });
+
+  it("refuses a section on a name that is not a placeholder", () => {
+    expect(() =>
+      expandPlaceholders("A\n  {{#skils}}x{{/skils}}", values),
+    ).toThrow(/"skils" is not a placeholder.*\(line 2, column 3\)/);
+    expect(() => expandPlaceholders("{{^nope}}x{{/nope}}", values)).toThrow(
+      PlaceholderError,
+    );
+  });
+
+  it("refuses partials and changed delimiters", () => {
+    expect(() => expandPlaceholders("{{> part}}", values)).toThrow(
+      /Partials are not supported \(line 1, column 1\)/,
+    );
+    expect(() => expandPlaceholders("x\n{{=<% %>=}}", values)).toThrow(
+      /delimiters.*\(line 2, column 1\)/,
+    );
+  });
+
+  it("reports a template that does not parse, with the line and column", () => {
+    expect(() => expandPlaceholders("ok\nUse {{ here", values)).toThrow(
+      /^Unclosed tag \(line 2, column \d+\)$/,
+    );
+    expect(() => expandPlaceholders("{{#skills}} x", values)).toThrow(
+      /^Unclosed section "skills" \(line 1, column \d+\)$/,
+    );
+    expect(() => expandPlaceholders("{{/skills}}", values)).toThrow(
+      /^Unopened section "skills" \(line 1, column 1\)$/,
+    );
+  });
+
+  it("counts only a variable tag as using a placeholder", () => {
+    expect(usesPlaceholder("{{{skills}}}", "skills")).toBe(true);
+    expect(usesPlaceholder("{{&skills}}", "skills")).toBe(true);
+    expect(
+      usesPlaceholder("{{#skills}}x {{skills}}{{/skills}}", "skills"),
+    ).toBe(true);
+    expect(usesPlaceholder("{{#skills}}only a test{{/skills}}", "skills")).toBe(
+      false,
+    );
+    expect(usesPlaceholder("{{! skills }}", "skills")).toBe(false);
+  });
+
+  it("does not count a template that is not valid", () => {
+    expect(usesPlaceholder("{{skills", "skills")).toBe(false);
+    expect(usesPlaceholder("{{#nope}}{{skills}}{{/nope}}", "skills")).toBe(
+      false,
+    );
+  });
+});
+
+describe("Mustache templates in runs", () => {
+  const CONDITIONAL =
+    "{{#skills}}Skills:\n{{skills}}{{/skills}}{{^skills}}No skills.{{/skills}}";
+
+  it("uses a section to word the skill list, and adds no default one", async () => {
+    const s = await setup([answer, answer]);
+    writeSettings(s.t.db, { systemPrompt: CONDITIONAL });
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe("No skills.\n\nBASE");
+
+    s.skills.create({ scope: "global" }, skill());
+    await say(s, await newSession(s.app));
+    const system = systemOf(s.model.requests[1]);
+    expect(system).toBe("Skills:\n- my-skill: Use when testing.\n\nBASE");
+    expect(system).not.toContain("You have skills");
+  });
+
+  it("does not HTML-escape what a list holds", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: "{{skills}}" });
+    s.skills.create(
+      { scope: "global" },
+      skill({ description: `Use for "dialogue" & <tags>, it's x/y.` }),
+    );
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe(
+      `- my-skill: Use for "dialogue" & <tags>, it's x/y.\n\nBASE`,
+    );
+  });
+
+  it("fails the run before the model is called when the global prompt is not a valid template", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: "Fine.\nBroken {{#skills}} here" });
+    const session = await newSession(s.app);
+    await say(s, session);
+
+    expect(s.model.requests).toHaveLength(0);
+    const run = new Store(s.t.db).listRuns(session)[0];
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toMatch(
+      /^Global system prompt: Unclosed section "skills" \(line 2, column \d+\)$/,
+    );
+    // Recorded as the failed run it is, for the errors console.
+    const recorded = s.t.db
+      .prepare("SELECT kind, message FROM errors WHERE session_id = ?")
+      .all(session) as { kind: string; message: string }[];
+    expect(recorded).toEqual([
+      { kind: "run_failed", message: run?.error as string },
+    ]);
+  });
+
+  it("names the agent's prompt when that is the one that is not valid", async () => {
+    const s = await setup([answer]);
+    const agent = (
+      await api(
+        s.app,
+        "POST",
+        "/api/global/agents",
+        agentContent({ prompt: "Use {{#skils}}x{{/skils}}" }),
+      )
+    ).body.id as string;
+    const session = await newSession(s.app);
+    await say(s, session, agent);
+
+    expect(s.model.requests).toHaveLength(0);
+    const run = new Store(s.t.db).listRuns(session)[0];
+    expect(run?.error).toMatch(
+      /^Agent prompt: "skils" is not a placeholder.*\(line 1, column 5\)$/,
+    );
+  });
+});
+
+describe("the default global prompt", () => {
+  const render = (values: Parameters<typeof expandPlaceholders>[1]) =>
+    expandPlaceholders(DEFAULTS.systemPrompt, values);
+  const nothing = {
+    skills: "",
+    tools: "- t: T.",
+    schemas: "",
+    data: "",
+    agents: "",
+    workspaces: "",
+    date: "Friday, November 6, 2026",
+    time: "14:32 UTC",
+  };
+  const everything = {
+    ...nothing,
+    skills: "- a: A.",
+    schemas: "- S: a shape.",
+    data: "- S: a piece of data",
+    agents: "- (a1) Ed: Edits.",
+    workspaces: "- Notes: workspace://w1/ (read-only)",
+  };
+  const blocks = ["skills", "schemas", "data", "agents", "workspaces"];
+
+  it("leaves out a block that has nothing to list", () => {
+    const out = render(nothing);
+    for (const name of blocks) expect(out).not.toContain(`<${name}>`);
+    expect(out).toContain("<tools>\n- t: T.\n</tools>");
+    expect(out).toContain("Today is Friday, November 6, 2026.");
+    // No run of blank lines where a block was.
+    expect(out).not.toMatch(/\n{3,}/);
+  });
+
+  it("has each block, closed, when there is something to list", () => {
+    const out = render(everything);
+    for (const name of blocks) {
+      expect(out).toMatch(new RegExp(`<${name}>\\n[\\s\\S]+\\n</${name}>`));
+    }
+    expect(out).toContain("- a: A.\n</skills>");
+    expect(out).toContain("- (a1) Ed: Edits.\n</agents>");
+    expect(out).not.toMatch(/\n{3,}/);
+  });
+
+  it("tells the model how to load a skill, with the tool's real name", () => {
+    expect(DEFAULTS.systemPrompt).toContain(`call ${SKILL_LOAD} with its name`);
+  });
+
+  it("gives the skill introduction once in a run, not again as the default list", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: DEFAULTS.systemPrompt });
+    s.skills.create({ scope: "global" }, skill());
+    await say(s, await newSession(s.app));
+    const system = systemOf(s.model.requests[0]) as string;
+    expect(system.match(/You have skills/g)).toHaveLength(1);
+    expect(system).toContain("<skills>\nYou have skills:");
+    expect(system).toContain("- my-skill: Use when testing.\n</skills>");
+  });
+
+  it("sends no skills block when there are no skills", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: DEFAULTS.systemPrompt });
+    await say(s, await newSession(s.app));
+    const system = systemOf(s.model.requests[0]) as string;
+    expect(system).not.toContain("<skills>");
+    expect(system).not.toContain("You have skills");
   });
 });

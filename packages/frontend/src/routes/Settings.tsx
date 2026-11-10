@@ -486,7 +486,7 @@ function SystemPrompt({ view }: { view: SettingsView }) {
           label="Global system prompt"
           description={
             envNote("systemPrompt") ??
-            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}}, {{agents}} or {{workspaces}} to put the list of skills, tools, schemas, data, agents (the ones it can start) or workspaces the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts."
+            "Sent first in every chat, before the project's and the agent's prompts. Clear it to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}}, {{agents}} or {{workspaces}} to put the list of skills, tools, schemas, data, agents (the ones it can start) or workspaces the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts. Wrap text in {{#skills}}…{{/skills}} (or any other of these names) to keep it only when the chat has some, and in {{^skills}}…{{/skills}} to keep it only when it has none."
           }
           autosize
           minRows={4}

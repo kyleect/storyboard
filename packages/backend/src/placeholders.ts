@@ -1,3 +1,5 @@
+import Mustache from "mustache";
+
 /*
  * Placeholders in the prompts the user writes (placeholders design). A
  * placeholder is `{{skills}}`, `{{tools}}`, `{{schemas}}`, `{{data}}` or
@@ -5,6 +7,13 @@
  * (files unification design, D39); it is replaced, when a
  * run starts, with what the run has access to. `{{date}}` and `{{time}}` are
  * replaced with the date and the time of day the run starts.
+ *
+ * A prompt is a Mustache template (mustache.js), so these names can also be
+ * used as conditions: `{{#skills}}...{{/skills}}` is kept only when there are
+ * skills, `{{^skills}}...{{/skills}}` only when there are none, and
+ * `{{! note }}` is a comment. The values are plain text, so nothing is
+ * HTML-escaped. Unlike stock Mustache, a name that is not a placeholder is
+ * never silently dropped (see `expandPlaceholders`).
  */
 
 export type PlaceholderName =
@@ -17,9 +26,122 @@ export type PlaceholderName =
   | "date"
   | "time";
 
-/** A placeholder, with spaces inside the braces allowed. */
-const PLACEHOLDER =
-  /\{\{\s*(skills|tools|schemas|data|agents|workspaces|date|time)\s*\}\}/g;
+const NAMES: ReadonlySet<string> = new Set<PlaceholderName>([
+  "skills",
+  "tools",
+  "schemas",
+  "data",
+  "agents",
+  "workspaces",
+  "date",
+  "time",
+]);
+
+/**
+ * A prompt that is not a valid template, such as an unclosed `{{`. The
+ * message says where, by line and column, and is meant to be shown.
+ */
+export class PlaceholderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlaceholderError";
+  }
+}
+
+/**
+ * A mustache.js token: `[type, value, start, end]`, where `start` and `end`
+ * are the tag's position in the text; a section also has its tokens and the
+ * position of its closing tag.
+ */
+type Token = [
+  type: string,
+  value: string,
+  start: number,
+  end: number,
+  children?: Token[],
+  closeStart?: number,
+];
+
+/**
+ * Our own writer, not mustache.js's shared one, so nothing here is global.
+ * Its cache is cleared after each use: a prompt is read once per run, and
+ * every edit of a prompt would otherwise leave another entry behind.
+ */
+const writer = new Mustache.Writer();
+
+/** `line 3, column 7` for the character at `index`. */
+function where(text: string, index: number): string {
+  const before = text.slice(0, index);
+  const line = before.split("\n").length;
+  const column = index - (before.lastIndexOf("\n") + 1) + 1;
+  return `line ${line}, column ${column}`;
+}
+
+function parseTokens(text: string): Token[] {
+  try {
+    return writer.parse(text) as Token[];
+  } catch (err) {
+    // mustache.js reports `Unclosed tag at 12`: a character index.
+    const message = err instanceof Error ? err.message : String(err);
+    const m = /^(.*) at (\d+)$/.exec(message);
+    throw new PlaceholderError(
+      m?.[1] !== undefined && m[2] !== undefined
+        ? `${m[1]} (${where(text, Number(m[2]))})`
+        : message,
+    );
+  } finally {
+    writer.clearCache();
+  }
+}
+
+/** What a template uses, found without rendering it. */
+interface Scan {
+  /** Placeholders written as a variable tag: `{{skills}}`, `{{{skills}}}`, `{{&skills}}`. */
+  variables: Set<PlaceholderName>;
+  /** Variable tags that name no placeholder, in the order they are written. */
+  unknown: Token[];
+}
+
+/**
+ * Walks a template's tokens. Things that cannot be kept as typed and would
+ * otherwise vanish without a trace are refused: a section on a name that is
+ * not a placeholder, a partial and a change of delimiters.
+ */
+function scan(text: string, tokens: readonly Token[], depth = 0): Scan {
+  const found: Scan = { variables: new Set(), unknown: [] };
+  for (const token of tokens) {
+    const [type, value, start] = token;
+    switch (type) {
+      case "name":
+      case "&":
+        if (NAMES.has(value)) found.variables.add(value as PlaceholderName);
+        // `{{.}}` is the section's own text, so it is fine inside one.
+        else if (!(value === "." && depth > 0)) found.unknown.push(token);
+        break;
+      case "#":
+      case "^": {
+        if (!NAMES.has(value)) {
+          throw new PlaceholderError(
+            `"${value}" is not a placeholder, so the section {{${type}${value}}} would be dropped (${where(text, start)})`,
+          );
+        }
+        const inner = scan(text, token[4] ?? [], depth + 1);
+        for (const v of inner.variables) found.variables.add(v);
+        found.unknown.push(...inner.unknown);
+        break;
+      }
+      case ">":
+        throw new PlaceholderError(
+          `Partials are not supported (${where(text, start)})`,
+        );
+      case "=":
+        throw new PlaceholderError(
+          `Changing the delimiters is not supported (${where(text, start)})`,
+        );
+    }
+  }
+  return found;
+}
 
 /**
  * What `{{date}}` expands to: the weekday and the date, such as `Friday,
@@ -54,29 +176,58 @@ export function formatTime(now: Date, timeZone?: string): string {
 }
 
 /**
- * Replaces each placeholder in `text` with its value (decisions 1 to 5). One
- * pass: text that an expansion produces is not scanned again. Anything else
- * in braces, such as a misspelt name, is left as typed.
+ * Renders `text` as a Mustache template over `values` (decisions 1 to 5). One
+ * pass: text that an expansion produces is not scanned again. The values are
+ * plain text and are not HTML-escaped.
+ *
+ * A variable tag that names no placeholder, such as a misspelt `{{skils}}`,
+ * is left as typed, so the mistake stays visible (decision 3). Mustache
+ * would render it as nothing. Anything that cannot be left as typed and
+ * would be dropped without a word, and a template that does not parse, throw
+ * a `PlaceholderError`.
  */
 export function expandPlaceholders(
   text: string,
   values: Record<PlaceholderName, string>,
 ): string {
-  return text.replace(PLACEHOLDER, (_match, name: PlaceholderName) => {
-    return values[name];
-  });
+  const { unknown } = scan(text, parseTokens(text));
+  // Each unknown tag is swapped for a tag on a value that holds the tag's own
+  // text, so Mustache writes it back unchanged. Last first, so the positions
+  // of the earlier ones still hold.
+  const view: Record<string, string> = { ...values };
+  let template = text;
+  for (let i = unknown.length - 1; i >= 0; i--) {
+    const token = unknown[i];
+    if (token === undefined) continue;
+    const key = `literal${i}`;
+    view[key] = text.slice(token[2], token[3]);
+    template = `${template.slice(0, token[2])}{{${key}}}${template.slice(token[3])}`;
+  }
+  try {
+    return writer.render(template, view, undefined, {
+      escape: (value: string) => value,
+    });
+  } finally {
+    writer.clearCache();
+  }
 }
 
-/** Whether `text` has the placeholder, so its default position is not used. */
+/**
+ * Whether `text` writes the placeholder as a variable tag, so its default
+ * position is not used. A comment, a section on the name and a tag that is
+ * not valid do not count.
+ */
 export function usesPlaceholder(
   text: string | undefined,
   name: PlaceholderName,
 ): boolean {
   if (text === undefined) return false;
-  for (const m of text.matchAll(PLACEHOLDER)) {
-    if (m[1] === name) return true;
+  try {
+    return scan(text, parseTokens(text)).variables.has(name);
+  } catch (err) {
+    if (err instanceof PlaceholderError) return false;
+    throw err;
   }
-  return false;
 }
 
 /** The first sentence of a tool's description, on one line. */

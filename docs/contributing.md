@@ -211,7 +211,8 @@ table when SQLite cannot alter it. Document new tables in
 The system message is composed in `backend/src/runs.ts` from the global prompt, the
 project prompt, the agent's prompt and the instruction blocks the tools package
 exports (`entriesInstruction`, `skillsInstruction`, `schemasInstruction`, …).
-Placeholders such as `{{tools}}` and `{{date}}` are expanded in `placeholders.ts`.
+Prompts are Mustache templates; placeholders such as `{{tools}}` and `{{date}}`
+are expanded in `placeholders.ts`.
 The exact system message and tool definitions of every run are stored on the run
 and shown in the Debug tab, so you can check what the model really got.
 

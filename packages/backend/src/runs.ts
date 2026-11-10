@@ -84,6 +84,7 @@ import {
   expandPlaceholders,
   formatDate,
   formatTime,
+  PlaceholderError,
   toolsList,
   workspacesList,
   usesPlaceholder,
@@ -1685,12 +1686,14 @@ export class RunManager {
           })
         : [];
     const schemasText = this.options.schemasPrompt?.(schemas);
-    // The prompts the user wrote may place the lists with {{skills}},
-    // {{tools}}, {{schemas}}, {{data}} and {{agents}}, and the date and time
-    // with {{date}} and {{time}}; they are filled in
+    // The prompts the user wrote are Mustache templates. They may place the
+    // lists with {{skills}}, {{tools}}, {{schemas}}, {{data}} and {{agents}},
+    // and the date and time with {{date}} and {{time}}; they are filled in
     // once, here, from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
     // {{skills}} the skill list goes after them, as before (decision 10).
+    // A prompt that is not a valid template is kept as typed and the run
+    // fails before the model is called, with the error naming the prompt.
     // A subagent's system message is built the same way, with its own line
     // at the very end: the agent's, else the global one (decisions 14, 17).
     const childLine = child
@@ -1726,9 +1729,24 @@ export class RunManager {
       date: formatDate(startedAt),
       time: formatTime(startedAt),
     };
-    const expanded = written.map((p) =>
-      p === undefined ? p : expandPlaceholders(p, values),
-    );
+    const promptLabels = [
+      "Global system prompt",
+      "Project system prompt",
+      "Agent prompt",
+    ];
+    const promptErrors: Error[] = [];
+    const expanded = written.map((p, i) => {
+      if (p === undefined) return p;
+      try {
+        return expandPlaceholders(p, values);
+      } catch (err) {
+        if (!(err instanceof PlaceholderError)) throw err;
+        promptErrors.push(
+          new Error(`${promptLabels[i] ?? "System prompt"}: ${err.message}`),
+        );
+        return p;
+      }
+    });
     const placed = written.some((p) => usesPlaceholder(p, "skills"));
     const schemasPlaced = written.some((p) => usesPlaceholder(p, "schemas"));
     // Global, project and agent prompts, then the skill list, then the files
@@ -1852,6 +1870,9 @@ export class RunManager {
     const execute = async (): Promise<LoopResult | undefined> => {
       let loopResult: LoopResult | undefined;
       try {
+        // A prompt that is not a valid template ends the run here, as any
+        // failure before the first model call does, and is recorded.
+        if (promptErrors[0]) throw promptErrors[0];
         // Image and audio handling for this run: what the model reads, and
         // the policy that decides which media is in each request (files
         // unification design, D14, D40). Choices and files are read for each

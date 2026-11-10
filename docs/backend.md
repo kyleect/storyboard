@@ -581,8 +581,28 @@ are replaced once, when the run starts, with what _this run_ has:
 | `{{time}}`    | The time on a 24-hour clock when the run starts, with the zone's short name: `14:32 PST`.               |
 
 Expansion is a single pass: text produced by an expansion is not scanned again.
-Anything else in braces is left as typed. Because the same lists are generated
-at launch, the model always sees what is actually available for the run.
+Because the same lists are generated at launch, the model always sees what is
+actually available for the run.
+
+**Templates.** The three prompts are [Mustache](https://github.com/janl/mustache.js)
+templates (`placeholders.ts`), so the same names also work as conditions.
+`{{#skills}}Skills:\n{{skills}}{{/skills}}` is kept only when the run has
+skills, `{{^skills}}No skills.{{/skills}}` only when it has none, and
+`{{! note }}` is a comment. The values are plain text and are never
+HTML-escaped. Two things differ from stock Mustache, so that nothing is dropped
+without a word:
+
+- A variable tag that is not a placeholder (`{{skils}}`, `{{Skills}}`) is left
+  as typed. Mustache would render it as nothing.
+- What cannot be left as typed is an error: a section on a name that is not a
+  placeholder, a partial (`{{> x}}`), a change of delimiters, and a template that
+  does not parse, such as an unclosed `{{`. The run then fails before the model
+  is called. The error names the prompt, the line and the column, and is
+  recorded like any failed run.
+
+A prompt "uses" a placeholder, for the _unless_ in parts 4 and 5, when it writes
+it as a variable tag (`{{skills}}`, `{{{skills}}}`, `{{&skills}}`), also inside a
+section. A section on the name, or a comment, does not count.
 
 The date and time are read once per run, so they do not move while a run goes
 on. Each user message starts a new run, and a subagent is a run of its own: its

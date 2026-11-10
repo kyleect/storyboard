@@ -271,7 +271,9 @@ instructions. See [backend.md](backend.md#the-system-message).
 **Placeholder**
 A token in a prompt the user writes: `{{skills}}`, `{{tools}}`, `{{schemas}}`,
 `{{data}}`, `{{agents}}`, `{{date}}` or `{{time}}`. It is replaced when a run
-starts with what that run has, or with the date or time then.
+starts with what that run has, or with the date or time then. Prompts are
+Mustache templates, so a placeholder can also be a condition:
+`{{#skills}}…{{/skills}}` is kept only when there are skills.
 
 **Skill**
 A named block of written instructions. The system message lists each skill
