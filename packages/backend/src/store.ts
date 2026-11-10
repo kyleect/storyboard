@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { sweepBlobs } from "./blobs.js";
+import { messagePreview } from "./branches.js";
 import {
   Message,
   Usage,
@@ -26,24 +27,31 @@ export interface SessionRow {
   trashed_with_project: number;
   /** The session's chosen agent; null means no agent (agents design 12). */
   agent_id: string | null;
+  /** The last message of the line the session shows; null: no messages. */
+  tip_id: string | null;
+  /** For a forked session: the session it was copied from, and its title then. */
+  forked_from_id: string | null;
+  forked_from_title: string | null;
 }
 
 /** The title a session gets when none is given. */
 export const DEFAULT_TITLE = "New session";
 
 const SESSION_COLUMNS =
-  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id";
+  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id, tip_id, forked_from_id, forked_from_title";
 
 /**
- * The usage of a session's latest message that reported one, leaving out
- * subagents' messages. For a query over `sessions`.
+ * The usage of the nearest message that reported one, walking up the line
+ * from the session's tip (message editing plan, part A), so a message on
+ * another branch is never taken. Subagents' messages are not on a line. For
+ * a query over `sessions`.
  */
-const LATEST_USAGE = `(SELECT m.usage FROM messages m
-            WHERE m.session_id = sessions.id AND m.usage IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM run_messages x JOIN runs xr ON xr.id = x.run_id
-                WHERE x.message_id = m.id AND xr.parent_run_id IS NOT NULL)
-            ORDER BY m.seq DESC LIMIT 1) AS usage`;
+const LATEST_USAGE = `(WITH RECURSIVE up(id, parent_id, depth) AS (
+              SELECT m0.id, m0.parent_id, 0 FROM messages m0 WHERE m0.id = sessions.tip_id
+              UNION ALL
+              SELECT m1.id, m1.parent_id, up.depth + 1 FROM messages m1 JOIN up ON m1.id = up.parent_id)
+            SELECT m.usage FROM up JOIN messages m ON m.id = up.id
+            WHERE m.usage IS NOT NULL ORDER BY up.depth LIMIT 1) AS usage`;
 
 /** A session in a list, with how full its context is. */
 export interface SessionListRow extends SessionRow {
@@ -131,6 +139,25 @@ export interface StoredMessage extends Generation {
    * started that run (agent delegation design, decision 40). Null otherwise.
    */
   parentCallId: string | null;
+  /**
+   * The message before this one on its line; null for a first message and
+   * for a subagent run's messages.
+   */
+  parentId: string | null;
+  /**
+   * When this top-level message has live siblings (other messages after the
+   * same parent), their ids in creation order, with this one's place in the
+   * list. Null when it has none, and for a subagent run's messages.
+   */
+  branches: { ids: string[]; index: number } | null;
+}
+
+/** A message as the debug export lists it: with where it sits in the tree. */
+export interface StoredBranchMessage extends StoredMessage {
+  /** Whether it is on the line the session shows (or anchored to it). */
+  active: boolean;
+  /** Whether it is in a deleted branch. */
+  trashed: boolean;
 }
 
 const parseUsage = (json: string | null): Usage | null =>
@@ -183,6 +210,22 @@ const toEvent = (r: EventRow): StoredEvent =>
     data: JSON.parse(r.data) as unknown,
   }) as StoredEvent;
 
+/** The key a session's first messages are grouped under (they have no parent). */
+const ROOT = "\u0000root";
+
+/** A deleted branch, as the Trash page lists it. */
+export interface TrashedBranch {
+  /** The first message of the branch. */
+  messageId: string;
+  sessionId: string;
+  sessionTitle: string;
+  /** The first line of the branch's first message. */
+  preview: string;
+  trashedAt: string;
+  /** How many messages are in the branch, the nested ones included. */
+  messages: number;
+}
+
 export class Store {
   constructor(readonly db: Database) {}
 
@@ -207,6 +250,9 @@ export class Store {
       project_id: projectId,
       trashed_with_project: 0,
       agent_id: null,
+      tip_id: null,
+      forked_from_id: null,
+      forked_from_title: null,
     };
   }
 
@@ -435,6 +481,10 @@ export class Store {
       this.db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM errors WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM runs WHERE session_id = ?").run(id);
+      // The session points at a message, and messages at each other (foreign
+      // keys are on): let go of the tip first. One statement then deletes
+      // them all, and a constraint is checked at the end of a statement.
+      this.db.prepare("UPDATE sessions SET tip_id = NULL WHERE id = ?").run(id);
       this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
       this.db
         .prepare("DELETE FROM session_tool_approvals WHERE session_id = ?")
@@ -737,6 +787,12 @@ export class Store {
     }
   }
 
+  /**
+   * Adds a message at the end of the line the session shows: its parent is
+   * the session's tip, which it becomes. A message with an `anchorId` (a
+   * subagent run's) leaves the tip alone and has no parent; it is shown with
+   * the line that passes through its anchor.
+   */
   addMessage(
     sessionId: string,
     id: string,
@@ -744,11 +800,79 @@ export class Store {
     now: string,
     generation: Generation = NO_GENERATION,
     usage: Usage | null = null,
+    anchorId: string | null = null,
+  ) {
+    this.db.transaction(() => {
+      const parentId =
+        anchorId === null
+          ? ((
+              this.db
+                .prepare("SELECT tip_id FROM sessions WHERE id = ?")
+                .get(sessionId) as { tip_id: string | null } | undefined
+            )?.tip_id ?? null)
+          : null;
+      this.insertMessage(
+        sessionId,
+        id,
+        message,
+        now,
+        generation,
+        usage,
+        parentId,
+        anchorId,
+      );
+      if (anchorId !== null) return;
+      this.db
+        .prepare("UPDATE sessions SET tip_id = ? WHERE id = ?")
+        .run(id, sessionId);
+      if (parentId !== null) {
+        this.db
+          .prepare("UPDATE messages SET last_child_id = ? WHERE id = ?")
+          .run(id, parentId);
+      }
+    })();
+  }
+
+  /**
+   * Adds a message as a child of `parentId` (null: a new first message),
+   * leaving the session's tip where it is. It makes a branch: the caller
+   * moves the tip to it (`moveTip`).
+   */
+  addMessageAfter(
+    sessionId: string,
+    parentId: string | null,
+    id: string,
+    message: Message,
+    now: string,
+  ) {
+    this.db.transaction(() => {
+      this.insertMessage(
+        sessionId,
+        id,
+        message,
+        now,
+        NO_GENERATION,
+        null,
+        parentId,
+        null,
+      );
+    })();
+  }
+
+  private insertMessage(
+    sessionId: string,
+    id: string,
+    message: Message,
+    now: string,
+    generation: Generation,
+    usage: Usage | null,
+    parentId: string | null,
+    anchorId: string | null,
   ) {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort, usage, agent_id, agent_version)
-         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (id, session_id, seq, message, created_at, model, reasoning_effort, usage, agent_id, agent_version, parent_id, anchor_id)
+         VALUES (?, ?, (SELECT coalesce(max(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -761,12 +885,14 @@ export class Store {
         usage ? JSON.stringify(usage) : null,
         generation.agent?.id ?? null,
         generation.agent?.version ?? null,
+        parentId,
+        anchorId,
       );
   }
 
   /**
    * Inserts the message, or replaces it (with its model, effort and usage)
-   * if the id exists.
+   * if the id exists. Replacing changes nothing in the tree.
    */
   saveMessage(
     sessionId: string,
@@ -775,6 +901,7 @@ export class Store {
     now: string,
     generation: Generation = NO_GENERATION,
     usage: Usage | null = null,
+    anchorId: string | null = null,
   ) {
     const updated = this.db
       .prepare(
@@ -790,7 +917,62 @@ export class Store {
         id,
       );
     if (updated.changes === 0)
-      this.addMessage(sessionId, id, message, now, generation, usage);
+      this.addMessage(sessionId, id, message, now, generation, usage, anchorId);
+  }
+
+  /**
+   * Replaces a message's JSON and nothing else (an edit in place). Its
+   * model, usage and place in the tree stay as they are.
+   */
+  replaceMessage(id: string, message: Message) {
+    this.db
+      .prepare("UPDATE messages SET message = ? WHERE id = ?")
+      .run(JSON.stringify(message), id);
+  }
+
+  /**
+   * The message to anchor a new subagent run's messages to: the top-level
+   * assistant message that holds the root `start_subagent` call. The call is
+   * `callId` of the run `parentRunId`; when that run is itself a subagent's,
+   * the message holding the call carries the anchor, which is returned. Null
+   * only when the session has no line at all.
+   */
+  anchorFor(parentRunId: string, callId: string): string | null {
+    const rows = this.db
+      .prepare(
+        `SELECT m.id AS id, m.message AS message, m.anchor_id AS anchor_id
+         FROM run_messages rm JOIN messages m ON m.id = rm.message_id
+         WHERE rm.run_id = ? ORDER BY rm.seq`,
+      )
+      .all(parentRunId) as {
+      id: string;
+      message: string;
+      anchor_id: string | null;
+    }[];
+    const holds = (json: string) => {
+      const m = JSON.parse(json) as { role?: string; content?: unknown };
+      return (
+        m.role === "assistant" &&
+        Array.isArray(m.content) &&
+        (m.content as { type?: string; callId?: string }[]).some(
+          (b) => b.type === "tool_call" && b.callId === callId,
+        )
+      );
+    };
+    const holder = rows.find((r) => holds(r.message));
+    if (holder) return holder.anchor_id ?? holder.id;
+    // The message that holds the call was not saved: the parent run's latest
+    // message, else the end of the line.
+    const last = rows.at(-1);
+    if (last) return last.anchor_id ?? last.id;
+    const session = this.getRun(parentRunId)?.session_id;
+    return session
+      ? ((
+          this.db
+            .prepare("SELECT tip_id FROM sessions WHERE id = ?")
+            .get(session) as { tip_id: string | null } | undefined
+        )?.tip_id ?? null)
+      : null;
   }
 
   getMessage(id: string): Message | undefined {
@@ -829,29 +1011,48 @@ export class Store {
   }
 
   /**
-   * The session's messages in order. By default all of them, including those
-   * of subagents' runs. `"top"`: only those a top-level run sees, leaving
-   * out every subagent run's messages. `{ run }`: only those the run wrote
-   * (a subagent's request, decision 29).
+   * The session's messages in order, as the line the session shows (message
+   * editing plan, part A). By default the active view: the line from the
+   * first message to the session's tip, with the messages of subagent runs
+   * anchored to it. `"top"`: the line only. `{ run }`: only those the run
+   * wrote (a subagent's request, decision 29). `"all"`: every message of
+   * every branch, deleted ones included, each marked `active` and `trashed`;
+   * only the debug export asks for it.
    */
+  listMessages(sessionId: string, only: "all"): StoredBranchMessage[];
   listMessages(
     sessionId: string,
     only?: "top" | { run: string },
-  ): StoredMessage[] {
+  ): StoredMessage[];
+  listMessages(
+    sessionId: string,
+    only?: "all" | "top" | { run: string },
+  ): StoredMessage[] | StoredBranchMessage[] {
+    const onLine = `(m.id IN (SELECT id FROM line) OR m.anchor_id IN (SELECT id FROM line))`;
+    // A session with a tip is read as its line; one with none has no
+    // messages (or, before the backfill, no line yet, and shows them all).
     const filter =
       only === undefined
-        ? ""
-        : only === "top"
-          ? `AND NOT EXISTS (
-               SELECT 1 FROM run_messages x JOIN runs xr ON xr.id = x.run_id
-               WHERE x.message_id = m.id AND xr.parent_run_id IS NOT NULL)`
-          : `AND EXISTS (
+        ? `AND (${onLine} OR NOT EXISTS (SELECT 1 FROM line))`
+        : only === "all"
+          ? ""
+          : only === "top"
+            ? `AND (m.id IN (SELECT id FROM line) OR NOT EXISTS (SELECT 1 FROM line))
+               AND m.anchor_id IS NULL`
+            : `AND EXISTS (
                SELECT 1 FROM run_messages x
                WHERE x.message_id = m.id AND x.run_id = @run)`;
     const rows = this.db
       .prepare(
-        `SELECT m.id, m.message, m.model, m.reasoning_effort, m.usage,
+        `WITH RECURSIVE line(id, parent_id) AS (
+           SELECT t.id, t.parent_id FROM messages t
+             WHERE t.id = (SELECT tip_id FROM sessions WHERE id = @session)
+           UNION ALL
+           SELECT p.id, p.parent_id FROM messages p JOIN line ON p.id = line.parent_id)
+         SELECT m.id, m.message, m.model, m.reasoning_effort, m.usage,
            m.agent_id, m.agent_version, v.name AS agent_name, a.project_id AS agent_project_id,
+           m.parent_id, m.anchor_id, m.trashed_at,
+           (SELECT 1 FROM line WHERE line.id = m.id OR line.id = m.anchor_id) AS on_line,
            (SELECT rm.run_id FROM run_messages rm JOIN runs r ON r.id = rm.run_id
               WHERE rm.message_id = m.id ORDER BY r.started_at, r.rowid LIMIT 1) AS run_id,
            (SELECT r.parent_call_id FROM run_messages rm JOIN runs r ON r.id = rm.run_id
@@ -874,27 +1075,420 @@ export class Store {
       agent_version: number | null;
       agent_name: string | null;
       agent_project_id: string | null;
+      parent_id: string | null;
+      anchor_id: string | null;
+      trashed_at: string | null;
+      on_line: number | null;
       run_id: string | null;
       parent_call_id: string | null;
     }[];
-    return rows.map((r) => ({
-      id: r.id,
-      message: Message.parse(JSON.parse(r.message)),
-      model: r.model,
-      reasoningEffort: r.reasoning_effort,
-      agent:
-        r.agent_id !== null && r.agent_version !== null
-          ? {
-              id: r.agent_id,
-              version: r.agent_version,
-              name: r.agent_name ?? "",
-              projectId: r.agent_project_id,
-            }
-          : null,
-      usage: parseUsage(r.usage),
-      runId: r.run_id,
-      parentCallId: r.parent_call_id,
-    }));
+
+    const branches =
+      typeof only === "object" ? null : this.liveSiblingGroups(sessionId);
+    const trashed = only === "all" ? this.trashedIds(sessionId) : null;
+    return rows.map((r) => {
+      const group =
+        r.anchor_id === null ? branches?.get(r.parent_id ?? ROOT) : undefined;
+      const message: StoredMessage = {
+        id: r.id,
+        message: Message.parse(JSON.parse(r.message)),
+        model: r.model,
+        reasoningEffort: r.reasoning_effort,
+        agent:
+          r.agent_id !== null && r.agent_version !== null
+            ? {
+                id: r.agent_id,
+                version: r.agent_version,
+                name: r.agent_name ?? "",
+                projectId: r.agent_project_id,
+              }
+            : null,
+        usage: parseUsage(r.usage),
+        runId: r.run_id,
+        parentCallId: r.parent_call_id,
+        parentId: r.parent_id,
+        branches:
+          group && group.length >= 2 && r.trashed_at === null
+            ? { ids: group, index: group.indexOf(r.id) }
+            : null,
+      };
+      if (only !== "all") return message;
+      return {
+        ...message,
+        active: r.on_line === 1,
+        trashed: trashed?.has(r.id) ?? false,
+      } satisfies StoredBranchMessage;
+    });
+  }
+
+  /**
+   * The live top-level messages of a session grouped by parent, each group
+   * in creation order; the first messages are grouped under `ROOT`.
+   */
+  private liveSiblingGroups(sessionId: string): Map<string, string[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, parent_id FROM messages
+         WHERE session_id = ? AND anchor_id IS NULL AND trashed_at IS NULL
+         ORDER BY seq`,
+      )
+      .all(sessionId) as { id: string; parent_id: string | null }[];
+    const groups = new Map<string, string[]>();
+    for (const r of rows) {
+      const key = r.parent_id ?? ROOT;
+      const list = groups.get(key);
+      if (list) list.push(r.id);
+      else groups.set(key, [r.id]);
+    }
+    return groups;
+  }
+
+  /**
+   * The ids of the session's messages that are in a deleted branch: the
+   * first message of the branch, everything under it, and the subagent
+   * messages anchored to any of those.
+   */
+  private trashedIds(sessionId: string): Set<string> {
+    const rows = this.db
+      .prepare(
+        "SELECT id, parent_id, anchor_id, trashed_at FROM messages WHERE session_id = ?",
+      )
+      .all(sessionId) as {
+      id: string;
+      parent_id: string | null;
+      anchor_id: string | null;
+      trashed_at: string | null;
+    }[];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const memo = new Map<string, boolean>();
+    const isTrashed = (id: string | null): boolean => {
+      if (id === null) return false;
+      const known = memo.get(id);
+      if (known !== undefined) return known;
+      const row = byId.get(id);
+      const result =
+        !!row &&
+        (row.trashed_at !== null ||
+          isTrashed(row.parent_id) ||
+          isTrashed(row.anchor_id));
+      memo.set(id, result);
+      return result;
+    };
+    return new Set(rows.filter((r) => isTrashed(r.id)).map((r) => r.id));
+  }
+
+  /** The ids from the first message to `tipId`, in order. */
+  lineIds(tipId: string): string[] {
+    return (
+      this.db
+        .prepare(
+          `WITH RECURSIVE up(id, parent_id, depth) AS (
+             SELECT id, parent_id, 0 FROM messages WHERE id = ?
+             UNION ALL
+             SELECT m.id, m.parent_id, up.depth + 1 FROM messages m JOIN up ON m.id = up.parent_id)
+           SELECT id FROM up ORDER BY depth DESC`,
+        )
+        .all(tipId) as { id: string }[]
+    ).map((r) => r.id);
+  }
+
+  /** The id and parent of a top-level message; undefined for others. */
+  getNode(id: string):
+    | {
+        id: string;
+        sessionId: string;
+        parentId: string | null;
+        anchorId: string | null;
+        trashedAt: string | null;
+      }
+    | undefined {
+    const r = this.db
+      .prepare(
+        "SELECT id, session_id, parent_id, anchor_id, trashed_at FROM messages WHERE id = ?",
+      )
+      .get(id) as
+      | {
+          id: string;
+          session_id: string;
+          parent_id: string | null;
+          anchor_id: string | null;
+          trashed_at: string | null;
+        }
+      | undefined;
+    return r
+      ? {
+          id: r.id,
+          sessionId: r.session_id,
+          parentId: r.parent_id,
+          anchorId: r.anchor_id,
+          trashedAt: r.trashed_at,
+        }
+      : undefined;
+  }
+
+  /**
+   * The live messages that share `id`'s parent, `id` included, in creation
+   * order, so a branch's place in "2/3" does not change. A first message's
+   * siblings are the session's other first messages.
+   */
+  siblings(id: string): string[] {
+    const node = this.getNode(id);
+    if (!node || node.anchorId !== null) return [];
+    return (
+      this.db
+        .prepare(
+          `SELECT id FROM messages
+           WHERE session_id = ? AND parent_id IS ? AND anchor_id IS NULL
+             AND trashed_at IS NULL
+           ORDER BY seq`,
+        )
+        .all(node.sessionId, node.parentId) as { id: string }[]
+    ).map((r) => r.id);
+  }
+
+  /** The live messages after `id`, in creation order. */
+  children(id: string): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id FROM messages
+           WHERE parent_id = ? AND anchor_id IS NULL AND trashed_at IS NULL
+           ORDER BY seq`,
+        )
+        .all(id) as { id: string }[]
+    ).map((r) => r.id);
+  }
+
+  /**
+   * The last message of the continuation of `id` that was last viewed: the
+   * child its `last_child_id` names while that is live, else the newest live
+   * child, and so on down to a message with no live child.
+   */
+  descend(id: string): string {
+    const lastChild = this.db.prepare(
+      "SELECT last_child_id FROM messages WHERE id = ?",
+    );
+    const newest = this.db.prepare(
+      `SELECT id FROM messages
+       WHERE parent_id = ? AND anchor_id IS NULL AND trashed_at IS NULL
+       ORDER BY seq DESC LIMIT 1`,
+    );
+    const live = this.db.prepare(
+      `SELECT 1 FROM messages
+       WHERE id = ? AND parent_id = ? AND anchor_id IS NULL AND trashed_at IS NULL`,
+    );
+    let current = id;
+    for (;;) {
+      const hint = (lastChild.get(current) as { last_child_id: string | null })
+        .last_child_id;
+      let next: string | undefined;
+      if (hint !== null && live.get(hint, current)) next = hint;
+      else next = (newest.get(current) as { id: string } | undefined)?.id;
+      if (next === undefined) return current;
+      current = next;
+    }
+  }
+
+  /**
+   * Makes `tipId` the end of the line the session shows, and remembers the
+   * line: each message on it names the next as its last child, so switching
+   * back lands here. The tip's own last child is left as it was.
+   */
+  moveTip(sessionId: string, tipId: string) {
+    this.db.transaction(() => {
+      const line = this.lineIds(tipId);
+      const set = this.db.prepare(
+        "UPDATE messages SET last_child_id = ? WHERE id = ?",
+      );
+      for (let i = 0; i + 1 < line.length; i++) {
+        set.run(line[i + 1], line[i]);
+      }
+      this.db
+        .prepare("UPDATE sessions SET tip_id = ? WHERE id = ?")
+        .run(tipId, sessionId);
+    })();
+  }
+
+  /** Deletes a branch: marks its first message; all under it goes with it. */
+  trashBranch(id: string, now: string) {
+    this.db
+      .prepare(
+        "UPDATE messages SET trashed_at = ? WHERE id = ? AND anchor_id IS NULL",
+      )
+      .run(now, id);
+  }
+
+  /** Brings a deleted branch back. A nested one deleted earlier stays. */
+  restoreBranch(id: string) {
+    this.db
+      .prepare("UPDATE messages SET trashed_at = NULL WHERE id = ?")
+      .run(id);
+  }
+
+  /**
+   * The deleted branches of sessions that are not themselves in the trash,
+   * most recently deleted first. A branch inside another deleted branch is
+   * not listed on its own: it comes back, still deleted, with the outer one.
+   */
+  listTrashedBranches(): TrashedBranch[] {
+    const rows = this.db
+      .prepare(
+        `SELECT m.id, m.session_id, m.parent_id, m.trashed_at, m.message, s.title
+         FROM messages m JOIN sessions s ON s.id = m.session_id
+         WHERE m.trashed_at IS NOT NULL AND s.trashed_at IS NULL
+         ORDER BY m.trashed_at DESC`,
+      )
+      .all() as {
+      id: string;
+      session_id: string;
+      parent_id: string | null;
+      trashed_at: string;
+      message: string;
+      title: string;
+    }[];
+    const result: TrashedBranch[] = [];
+    for (const r of rows) {
+      if (this.hasTrashedAncestor(r.parent_id)) continue;
+      result.push({
+        messageId: r.id,
+        sessionId: r.session_id,
+        sessionTitle: r.title,
+        preview: messagePreview(JSON.parse(r.message) as Message),
+        trashedAt: r.trashed_at,
+        messages: this.subtreeIds([r.id], true).length,
+      });
+    }
+    return result;
+  }
+
+  private hasTrashedAncestor(parentId: string | null): boolean {
+    const row = this.db.prepare(
+      "SELECT parent_id, trashed_at FROM messages WHERE id = ?",
+    );
+    let id = parentId;
+    while (id !== null) {
+      const r = row.get(id) as
+        { parent_id: string | null; trashed_at: string | null } | undefined;
+      if (!r) return false;
+      if (r.trashed_at !== null) return true;
+      id = r.parent_id;
+    }
+    return false;
+  }
+
+  /**
+   * The messages in the subtrees under `roots`, roots included: everything
+   * reached through parents, and the subagent messages anchored to any of
+   * them. `topOnly` leaves the subagent messages out.
+   */
+  private subtreeIds(roots: readonly string[], topOnly = false): string[] {
+    if (roots.length === 0) return [];
+    const top = this.db
+      .prepare(
+        `WITH RECURSIVE sub(id) AS (
+           SELECT value FROM json_each(?)
+           UNION
+           SELECT m.id FROM messages m JOIN sub ON m.parent_id = sub.id)
+         SELECT id FROM sub`,
+      )
+      .all(JSON.stringify(roots)) as { id: string }[];
+    const ids = top.map((r) => r.id);
+    if (topOnly) return ids;
+    const anchored = this.db
+      .prepare(
+        `SELECT id FROM messages WHERE anchor_id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(ids)) as { id: string }[];
+    return [...ids, ...anchored.map((r) => r.id)];
+  }
+
+  /**
+   * Permanently deletes the messages of the deleted branches, or only those
+   * deleted before `before` (an ISO timestamp), with everything under them
+   * (design: deleting a branch). The runs that wrote only those messages go
+   * with them, with their events and errors, then the bytes nothing names
+   * any more. A branch inside another deleted one goes with it. Returns the
+   * ids of the branches' first messages.
+   */
+  purgeTrashedBranches(before?: string): string[] {
+    const roots = (
+      this.db
+        .prepare(
+          `SELECT id FROM messages
+           WHERE trashed_at IS NOT NULL AND (? IS NULL OR trashed_at < ?)`,
+        )
+        .all(before ?? null, before ?? null) as { id: string }[]
+    ).map((r) => r.id);
+    if (roots.length > 0) this.purgeBranchRows(roots);
+    return roots;
+  }
+
+  /** Permanently deletes one deleted branch, as `purgeTrashedBranches`. */
+  purgeBranch(id: string) {
+    this.purgeBranchRows([id]);
+  }
+
+  private purgeBranchRows(roots: readonly string[]) {
+    this.db.transaction(() => {
+      // A root already inside another root's subtree goes with that one.
+      const ids = [...new Set(this.subtreeIds(roots))];
+      if (ids.length === 0) return;
+      const doomed = JSON.stringify(ids);
+      // Runs that wrote any of the messages; those left with none are
+      // deleted, children before the runs that started them.
+      const candidates = (
+        this.db
+          .prepare(
+            `SELECT DISTINCT run_id FROM run_messages
+             WHERE message_id IN (SELECT value FROM json_each(?))`,
+          )
+          .all(doomed) as { run_id: string }[]
+      ).map((r) => r.run_id);
+      this.db
+        .prepare(
+          "DELETE FROM run_messages WHERE message_id IN (SELECT value FROM json_each(?))",
+        )
+        .run(doomed);
+      const empty = candidates.filter(
+        (runId) =>
+          this.db
+            .prepare("SELECT 1 FROM run_messages WHERE run_id = ? LIMIT 1")
+            .get(runId) === undefined,
+      );
+      const emptyJson = JSON.stringify(empty);
+      this.db
+        .prepare(
+          "DELETE FROM events WHERE run_id IN (SELECT value FROM json_each(?))",
+        )
+        .run(emptyJson);
+      this.db
+        .prepare(
+          "DELETE FROM errors WHERE run_id IN (SELECT value FROM json_each(?))",
+        )
+        .run(emptyJson);
+      this.db
+        .prepare(
+          `DELETE FROM runs WHERE parent_run_id IS NOT NULL
+             AND id IN (SELECT value FROM json_each(?))`,
+        )
+        .run(emptyJson);
+      this.db
+        .prepare(
+          "DELETE FROM runs WHERE id IN (SELECT value FROM json_each(?))",
+        )
+        .run(emptyJson);
+      this.db
+        .prepare(
+          "UPDATE messages SET last_child_id = NULL WHERE last_child_id IN (SELECT value FROM json_each(?))",
+        )
+        .run(doomed);
+      this.db
+        .prepare(
+          "DELETE FROM messages WHERE id IN (SELECT value FROM json_each(?))",
+        )
+        .run(doomed);
+      sweepBlobs(this.db);
+    })();
   }
 
   createRun(run: {

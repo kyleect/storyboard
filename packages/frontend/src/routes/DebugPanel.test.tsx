@@ -60,7 +60,7 @@ const events: StoredEvent[] = [
 ];
 
 const debug: SessionDebug = {
-  format: 1,
+  format: 2,
   exportedAt: at(5),
   session: { id: "s", title: "T" } as SessionDebug["session"],
   project: null,
@@ -110,6 +110,10 @@ const debug: SessionDebug = {
       usage: null,
       runId: null,
       parentCallId: null,
+      parentId: null,
+      branches: null,
+      active: true,
+      trashed: false,
       createdAt: at(0),
     },
   ],

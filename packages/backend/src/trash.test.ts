@@ -32,6 +32,7 @@ describe("purgeExpiredTrash", () => {
     expect(purgeExpiredTrash(store, 30, now)).toEqual({
       projects: [],
       sessions: ["old"],
+      branches: [],
     });
     expect(store.getSession("old")).toBeUndefined();
     expect(store.getSession("recent")).toBeDefined();
@@ -45,6 +46,7 @@ describe("purgeExpiredTrash", () => {
     expect(purgeExpiredTrash(store, 0, now)).toEqual({
       projects: [],
       sessions: [],
+      branches: [],
     });
     expect(store.getSession("old")).toBeDefined();
   });
@@ -70,6 +72,7 @@ describe("purgeExpiredTrash with projects", () => {
     expect(purgeExpiredTrash(store, 30, now)).toEqual({
       projects: ["old"],
       sessions: ["alone"],
+      branches: [],
     });
     expect(store.getProject("old")).toBeUndefined();
     expect(store.getSession("old-s")).toBeUndefined();
@@ -90,5 +93,49 @@ describe("trashRetentionDays setting", () => {
     expect(() =>
       readSettings(db, { HARNESS_TRASH_RETENTION_DAYS: "-1" }),
     ).toThrow(/HARNESS_TRASH_RETENTION_DAYS/);
+  });
+});
+
+describe("purgeExpiredTrash with deleted branches", () => {
+  const now = new Date("2026-10-31T12:00:00.000Z");
+
+  it("purges a branch counted from when it was deleted, whatever its session", () => {
+    t = tempDatabase();
+    const store = new Store(t.db);
+    store.createSession("s", "s", "2026-01-01T00:00:00.000Z");
+    store.addMessage(
+      "s",
+      "u1",
+      { role: "user", content: "one" },
+      "2026-01-01T00:00:00.000Z",
+    );
+    store.addMessageAfter(
+      "s",
+      null,
+      "u2",
+      { role: "user", content: "two" },
+      "2026-01-02T00:00:00.000Z",
+    );
+    store.addMessageAfter(
+      "s",
+      null,
+      "u3",
+      { role: "user", content: "three" },
+      "2026-01-03T00:00:00.000Z",
+    );
+    store.moveTip("s", "u3");
+    store.trashBranch("u1", "2026-09-01T00:00:00.000Z");
+    store.trashBranch("u2", "2026-10-30T00:00:00.000Z");
+
+    expect(purgeExpiredTrash(store, 30, now)).toEqual({
+      projects: [],
+      sessions: [],
+      branches: ["u1"],
+    });
+    expect(store.getNode("u1")).toBeUndefined();
+    expect(store.getNode("u2")).toBeDefined();
+    // Turning it off keeps them.
+    expect(purgeExpiredTrash(store, 0, now).branches).toEqual([]);
+    expect(store.getNode("u2")).toBeDefined();
   });
 });

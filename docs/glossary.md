@@ -340,7 +340,7 @@ Configuration values stored in the database and editable in the UI, each
 overridable by an environment variable.
 
 **Trash**
-Sessions and projects are moved here before deletion. Items older than the
+Sessions, projects and deleted branches of a transcript are moved here before deletion. Items older than the
 retention period are purged at backend startup.
 
 **Token (API token)**

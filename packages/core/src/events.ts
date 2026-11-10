@@ -383,12 +383,27 @@ export const SessionDataChanged = event(
   z.object({ messageId: z.string() }),
 );
 
+/**
+ * The line of messages the session shows changed (message editing plan,
+ * part A): a message was edited, the session moved to another branch, or a
+ * branch was deleted or restored. `messageId` is the message that was
+ * edited, moved to or deleted. Pages showing the session read it again.
+ */
+export const SessionTranscriptChanged = event(
+  "session.transcript_changed",
+  z.object({
+    reason: z.enum(["edit", "move", "delete_branch", "restore_branch"]),
+    messageId: z.string(),
+  }),
+);
+
 export const SessionEventBody = z.discriminatedUnion("type", [
   SessionTrashed,
   SessionEntriesChanged,
   SessionDataChanged,
   SessionRenamed,
   SessionAgentChanged,
+  SessionTranscriptChanged,
 ]);
 export type SessionEventBody = z.infer<typeof SessionEventBody>;
 

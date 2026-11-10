@@ -93,6 +93,8 @@ const effective: SettingsShape = {
   childPrompt: "Hand back when done.",
   subagentMessageLabel: "",
   subagentDepth: 1,
+  editMode: "branch",
+  answerAfterEdit: true,
 };
 
 const view: SettingsView = { effective, stored: {}, overriddenByEnv: {} };
@@ -110,7 +112,11 @@ beforeEach(() => {
   vi.spyOn(api, "listTools").mockResolvedValue([]);
   vi.spyOn(api, "listMcpServers").mockResolvedValue([]);
   vi.spyOn(api, "listProjects").mockResolvedValue([]);
-  vi.spyOn(api, "getTrash").mockResolvedValue({ projects: [], sessions: [] });
+  vi.spyOn(api, "getTrash").mockResolvedValue({
+    projects: [],
+    sessions: [],
+    branches: [],
+  });
 });
 
 afterEach(() => {
@@ -172,7 +178,7 @@ describe("Settings tabs", () => {
   });
 
   it.each([
-    ["Chat", ["System prompt", "Session titles", "Media"]],
+    ["Chat", ["System prompt", "Session titles", "Editing", "Media"]],
     ["Agents", ["Subagents", "Limits"]],
     ["Tools", ["Permissions", "MCP servers"]],
   ])("splits %s into horizontal tabs", async (area, subtabs) => {
@@ -322,6 +328,46 @@ describe("Settings forms", () => {
       inlineMediaCap: 8,
       keepMediaInline: false,
     });
+  });
+
+  it("saves the editing choices from the Editing tab", async () => {
+    await renderSettings();
+    open("Chat");
+    fireEvent.click(screen.getByRole("tab", { name: "Editing" }));
+    fireEvent.click(await screen.findByLabelText("Overwrite in place"));
+    fireEvent.click(screen.getByLabelText(/Answer after a branched edit/));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]?.[0]).toEqual({
+      editMode: "in_place",
+      answerAfterEdit: false,
+    });
+  });
+
+  it("lists deleted branches in the Trash and restores one", async () => {
+    vi.spyOn(api, "getTrash").mockResolvedValue({
+      projects: [],
+      sessions: [],
+      branches: [
+        {
+          messageId: "m9",
+          sessionId: "s1",
+          sessionTitle: "Story",
+          preview: "The old opening",
+          trashedAt: "2026-11-08T00:00:00Z",
+          messages: 3,
+        },
+      ],
+    });
+    const restore = vi
+      .spyOn(api, "restoreBranch")
+      .mockResolvedValue({ ok: true });
+    await renderSettings();
+    open("Trash");
+    expect(await screen.findByText(/The old opening/)).toBeTruthy();
+    expect(screen.queryByText("The trash is empty.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith("m9"));
   });
 
   it("saves only the retention from the Trash tab", async () => {

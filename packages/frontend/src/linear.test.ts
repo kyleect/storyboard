@@ -43,6 +43,10 @@ const msg = (
   usage: null,
   runId,
   parentCallId: null,
+  parentId: null,
+  branches: null,
+  active: true,
+  trashed: false,
   createdAt: createdAt === null ? null : t(createdAt),
 });
 
@@ -76,7 +80,7 @@ const assistantCall = {
 function session(): SessionDebug {
   id = 0;
   return {
-    format: 1,
+    format: 2,
     exportedAt: t(20),
     session: { id: "s", title: "T" } as SessionDebug["session"],
     project: null,

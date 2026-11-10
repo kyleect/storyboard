@@ -258,12 +258,146 @@ export function attachmentsToFiles(db: Database): number {
   return changed;
 }
 
+/**
+ * Chains every session's messages into one line (message editing and forking
+ * plan, part A). Top-level messages, those no subagent run wrote, point at
+ * the one before them by `seq`, and the session points at the last. A
+ * subagent run's messages get an anchor: the top-level assistant message
+ * that holds the root `start_subagent` call, found by parsing the messages
+ * of the run that started it. When there is none (a run that crashed before
+ * saving it), the anchor is the nearest top-level message before the run's
+ * first message, so they stay visible as they are today.
+ */
+export function branchesBackfill(db: Database): number {
+  const sessions = db.prepare("SELECT id FROM sessions").all() as {
+    id: string;
+  }[];
+  const setLine = db.prepare(
+    "UPDATE messages SET parent_id = ?, last_child_id = ? WHERE id = ?",
+  );
+  const setAnchor = db.prepare(
+    "UPDATE messages SET anchor_id = ? WHERE id = ?",
+  );
+  const setTip = db.prepare("UPDATE sessions SET tip_id = ? WHERE id = ?");
+  let changed = 0;
+
+  for (const { id: sessionId } of sessions) {
+    const rows = db
+      .prepare(
+        "SELECT id, seq, message FROM messages WHERE session_id = ? ORDER BY seq",
+      )
+      .all(sessionId) as { id: string; seq: number; message: string }[];
+    if (rows.length === 0) continue;
+
+    // Every message a subagent run wrote, with the earliest such run.
+    const childRuns = new Map<string, string>();
+    for (const r of db
+      .prepare(
+        `SELECT rm.message_id AS message_id, rm.run_id AS run_id
+         FROM run_messages rm JOIN runs r ON r.id = rm.run_id
+         WHERE r.session_id = ? AND r.parent_run_id IS NOT NULL
+         ORDER BY r.started_at DESC, r.rowid DESC`,
+      )
+      .all(sessionId) as { message_id: string; run_id: string }[]) {
+      // Later rows (earlier runs) overwrite, so the earliest run wins.
+      childRuns.set(r.message_id, r.run_id);
+    }
+
+    const top = rows.filter((r) => !childRuns.has(r.id));
+    top.forEach((r, i) => {
+      setLine.run(top[i - 1]?.id ?? null, top[i + 1]?.id ?? null, r.id);
+      changed++;
+    });
+    const last = top.at(-1);
+    setTip.run(last?.id ?? null, sessionId);
+    if (!last) continue;
+
+    const topIds = new Set(top.map((r) => r.id));
+    const bySeq = new Map(rows.map((r) => [r.id, r]));
+    const runRow = db.prepare(
+      "SELECT parent_run_id, parent_call_id FROM runs WHERE id = ?",
+    );
+    const runMessages = db.prepare(
+      `SELECT m.id AS id, m.message AS message FROM run_messages rm
+       JOIN messages m ON m.id = rm.message_id
+       WHERE rm.run_id = ? ORDER BY rm.seq`,
+    );
+    const firstOfRun = db.prepare(
+      `SELECT min(m.seq) AS seq FROM run_messages rm
+       JOIN messages m ON m.id = rm.message_id WHERE rm.run_id = ?`,
+    );
+
+    const holdsCall = (json: string, callId: string): boolean => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(json);
+      } catch {
+        return false;
+      }
+      const m = parsed as { role?: unknown; content?: unknown };
+      return (
+        m.role === "assistant" &&
+        Array.isArray(m.content) &&
+        (m.content as { type?: unknown; callId?: unknown }[]).some(
+          (b) => b.type === "tool_call" && b.callId === callId,
+        )
+      );
+    };
+
+    const anchors = new Map<string, string | null>();
+    const anchorOfRun = (runId: string, seen = new Set<string>()): string => {
+      const known = anchors.get(runId);
+      if (known) return known;
+      seen.add(runId);
+      const run = runRow.get(runId) as
+        | { parent_run_id: string | null; parent_call_id: string | null }
+        | undefined;
+      let found: string | undefined;
+      if (run?.parent_run_id && run.parent_call_id) {
+        const holder = (
+          runMessages.all(run.parent_run_id) as {
+            id: string;
+            message: string;
+          }[]
+        ).find((m) => holdsCall(m.message, run.parent_call_id as string));
+        if (holder) {
+          // A message of a subagent run carries the anchor of that run.
+          const holderRun = childRuns.get(holder.id);
+          found = topIds.has(holder.id)
+            ? holder.id
+            : holderRun !== undefined && !seen.has(holderRun)
+              ? anchorOfRun(holderRun, seen)
+              : undefined;
+        }
+      }
+      if (!found) {
+        // The nearest top-level message before the run's first message.
+        const first = (firstOfRun.get(runId) as { seq: number | null }).seq;
+        const before = top
+          .filter((r) => first !== null && r.seq < first)
+          .at(-1);
+        found = (before ?? top[0] ?? last).id;
+      }
+      anchors.set(runId, found);
+      return found;
+    };
+
+    for (const [messageId, runId] of childRuns) {
+      if (!bySeq.has(messageId)) continue;
+      setAnchor.run(anchorOfRun(runId), messageId);
+      changed++;
+    }
+  }
+  return changed;
+}
+
 export const DATA_STEPS: DataStep[] = [
   {
     name: "file-ops-media-types",
     run: (db) => rewriteMessages(db, fileOpsToMediaTypes),
   },
   { name: "attachments-to-files", run: attachmentsToFiles },
+  { name: "branches-backfill", run: branchesBackfill },
 ];
 
 /** Runs the steps that have not run yet; returns each one's name and count. */

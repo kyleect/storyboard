@@ -106,6 +106,18 @@ export const Settings = z.object({
    * user can still type the text.
    */
   mediaDescriberModel: z.string(),
+  /**
+   * What editing a message does by default (message editing plan, part B):
+   * "branch" keeps the old message and what followed on a branch of its own
+   * and continues from the edited copy; "in_place" overwrites the text and
+   * keeps the messages after it. Each edit can choose the other.
+   */
+  editMode: z.enum(["branch", "in_place"]),
+  /**
+   * Whether the model answers right after an edit that made a branch. An
+   * edit in place never runs the model.
+   */
+  answerAfterEdit: z.boolean(),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -182,6 +194,8 @@ These files are available to you. Search in files to find information.
   workspaceReadCap: 10_000,
   mediaDescriberAgent: "builtin-media-describer",
   mediaDescriberModel: "",
+  editMode: "branch",
+  answerAfterEdit: true,
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -208,6 +222,8 @@ const ENV: Record<keyof Settings, string> = {
   workspaceReadCap: "HARNESS_WORKSPACE_READ_CAP",
   mediaDescriberAgent: "HARNESS_MEDIA_DESCRIBER_AGENT",
   mediaDescriberModel: "HARNESS_MEDIA_DESCRIBER_MODEL",
+  editMode: "HARNESS_EDIT_MODE",
+  answerAfterEdit: "HARNESS_ANSWER_AFTER_EDIT",
 };
 
 const NUMERIC = new Set<keyof Settings>([
@@ -221,7 +237,11 @@ const NUMERIC = new Set<keyof Settings>([
   "workspaceReadCap",
 ]);
 
-const BOOLEAN = new Set<keyof Settings>(["autoRename", "keepMediaInline"]);
+const BOOLEAN = new Set<keyof Settings>([
+  "autoRename",
+  "keepMediaInline",
+  "answerAfterEdit",
+]);
 
 /** "true" and "false" only; anything else is left for the schema to refuse. */
 function parseBoolean(raw: string): unknown {

@@ -39,6 +39,7 @@ import {
   type Choices,
   type MessageAgent,
   type SessionDetail,
+  type StoredMessage,
 } from "../api";
 import {
   modelKeys,
@@ -69,6 +70,15 @@ import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
 import { ContextMeter, latestUsage } from "./ContextMeter";
 import { FilesPanel, NotesPanel } from "./Entries";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
+import {
+  BranchSwitcher,
+  Continuations,
+  EditMessageBox,
+  ForkedFromLine,
+  MessageActions,
+  openForkDialog,
+  useBranchActions,
+} from "./Branching";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { AttachedWorkspaces } from "./Workspaces";
@@ -139,6 +149,8 @@ interface ShownMessage {
   streaming: boolean;
   /** Running token count while streaming. */
   usage?: Usage | undefined;
+  /** The messages that can start here, with this one's place among them. */
+  branches?: StoredMessage["branches"] | undefined;
 }
 
 export function Chat() {
@@ -226,6 +238,8 @@ export function Chat() {
   const actions = useSessionActions();
   const [restoring, setRestoring] = useState(false);
   const session = detail.data?.session;
+  // The message being edited, if any.
+  const [editing, setEditing] = useState<string | null>(null);
   const choices: Choices = {
     ...(session?.model ? { model: session.model } : {}),
     ...(session?.reasoning_effort
@@ -234,6 +248,7 @@ export function Chat() {
     // Sent every time, so "no agent" is sent too (agents design 11).
     ...(session ? { agentId: session.agent_id } : {}),
   };
+  const branch = useBranchActions(sessionId, choices);
 
   const setChoices = useMutation({
     mutationFn: (c: {
@@ -379,6 +394,7 @@ export function Chat() {
       reasoningEffort: m.reasoningEffort,
       agent: m.agent,
       streaming: false,
+      branches: m.branches,
     };
     if (m.parentCallId) {
       nested.set(m.parentCallId, [...(nested.get(m.parentCallId) ?? []), item]);
@@ -436,6 +452,7 @@ export function Chat() {
   const trashed = detail.data.session.trashed_at !== null;
   const busy =
     trashed ||
+    branch.pending ||
     !!live ||
     send.isPending ||
     cont.isPending ||
@@ -560,12 +577,17 @@ export function Chat() {
     >
       <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
         <Group justify="space-between" wrap="nowrap">
-          <EditableTitle
-            title={detail.data.session.title}
-            disabled={trashed}
-            label="Session title"
-            onSave={(title) => actions.rename(sessionId, title)}
-          />
+          <Stack gap={0} style={{ minWidth: 0 }}>
+            <EditableTitle
+              title={detail.data.session.title}
+              disabled={trashed}
+              label="Session title"
+              onSave={(title) => actions.rename(sessionId, title)}
+            />
+            {detail.data.forkedFrom && (
+              <ForkedFromLine from={detail.data.forkedFrom} />
+            )}
+          </Stack>
           <Group gap="sm" wrap="nowrap">
             <CopyDebugButton sessionId={sessionId} />
             <ContextMeter
@@ -651,9 +673,57 @@ export function Chat() {
               {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
               {shown.map((m) => (
                 <div key={m.id} id={messageAnchor(m.id)}>
-                  <MessageView {...m} notes={notes} asks={asks} />
+                  {m.branches && (
+                    <BranchSwitcher
+                      branches={m.branches}
+                      disabled={busy}
+                      onSwitch={(id) => branch.switchTo.mutate(id)}
+                      onDelete={(id) => branch.deleteBranch.mutate(id)}
+                    />
+                  )}
+                  {editing === m.id && m.message.role === "user" ? (
+                    <EditMessageBox
+                      initial={m.message.content}
+                      hasFiles={(m.message.files?.length ?? 0) > 0}
+                      defaultMode={
+                        settings.data?.effective.editMode ?? "branch"
+                      }
+                      saving={branch.edit.isPending}
+                      onSave={(content, mode) =>
+                        branch.edit.mutate(
+                          { messageId: m.id, content, mode },
+                          { onSuccess: () => setEditing(null) },
+                        )
+                      }
+                      onCancel={() => setEditing(null)}
+                    />
+                  ) : (
+                    <MessageView {...m} notes={notes} asks={asks} />
+                  )}
+                  {!busy && !m.streaming && editing === null && (
+                    <MessageActions
+                      messageId={m.id}
+                      branching={detail.data.branching}
+                      last={m.id === last?.id}
+                      onEdit={() => setEditing(m.id)}
+                      onBranchOff={() => branch.branchOff.mutate(m.id)}
+                      onFork={() =>
+                        openForkDialog(detail.data.session.title, (title) =>
+                          branch.fork.mutate({ messageId: m.id, title }),
+                        )
+                      }
+                      onRegenerate={() => branch.regenerate.mutate()}
+                    />
+                  )}
                 </div>
               ))}
+              {!busy && editing === null && (
+                <Continuations
+                  items={detail.data.branching.continuations}
+                  disabled={busy}
+                  onSwitch={(id) => branch.switchTo.mutate(id)}
+                />
+              )}
               {toolRunning && (
                 <Group gap="xs">
                   <Loader size="xs" />

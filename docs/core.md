@@ -167,13 +167,14 @@ Rules that make the stream reliable:
 
 ### Session events
 
-| Event                     | Data                                                             | Emitted when                                                        |
-| ------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `session.trashed`         | (empty)                                                          | The session was moved to the trash.                                 |
-| `session.entries_changed` | `messageId`                                                      | The user edited session files or notes (an edit message was added). |
-| `session.data_changed`    | `messageId`                                                      | The user edited session schemas or data.                            |
-| `session.renamed`         | `title`, `source` (`user`, `model`, `message`), `model`, `usage` | The title changed.                                                  |
-| `session.agent_changed`   | `agentId` or `null`                                              | A tool changed the session's agent.                                 |
+| Event                        | Data                                                                      | Emitted when                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `session.trashed`            | (empty)                                                                   | The session was moved to the trash.                                                                             |
+| `session.entries_changed`    | `messageId`                                                               | The user edited session files or notes (an edit message was added).                                             |
+| `session.data_changed`       | `messageId`                                                               | The user edited session schemas or data.                                                                        |
+| `session.transcript_changed` | `reason` (`edit`, `move`, `delete_branch`, `restore_branch`), `messageId` | The shown line of the transcript changed: an in-place edit, the tip moved, or a branch was deleted or restored. |
+| `session.renamed`            | `title`, `source` (`user`, `model`, `message`), `model`, `usage`          | The title changed.                                                                                              |
+| `session.agent_changed`      | `agentId` or `null`                                                       | A tool changed the session's agent.                                                                             |
 
 ### Rebuilding a message from events
 

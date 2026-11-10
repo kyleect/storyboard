@@ -410,6 +410,8 @@ describe("continue", () => {
         usage: { promptTokens: 7, completionTokens: 3 },
         runId: expect.any(String),
         parentCallId: null,
+        parentId: expect.any(String),
+        branches: null,
       },
     ]);
   });
@@ -1285,10 +1287,13 @@ describe("trash", () => {
     await trashed(app);
     const keep = await newSession(app);
     const res = await api(app, "DELETE", "/api/trash");
-    expect(res.body).toEqual({ purged: { projects: 0, sessions: 2 } });
+    expect(res.body).toEqual({
+      purged: { projects: 0, sessions: 2, branches: 0 },
+    });
     expect((await api(app, "GET", "/api/trash")).body).toEqual({
       projects: [],
       sessions: [],
+      branches: [],
     });
     expect(await api(app, "GET", "/api/sessions")).toMatchObject({
       body: [{ id: keep }],
@@ -1571,7 +1576,7 @@ describe("projects", () => {
     const s = await newSession(app);
     await api(app, "POST", `/api/sessions/${s}/trash`);
     expect((await api(app, "DELETE", "/api/trash")).body).toEqual({
-      purged: { projects: 1, sessions: 1 },
+      purged: { projects: 1, sessions: 1, branches: 0 },
     });
     expect(store.getProject(p.id)).toBeUndefined();
     expect(

@@ -56,6 +56,8 @@ const detail: SessionDetail = {
   },
   project: null,
   messages: [],
+  branching: { points: [], editable: [], regenerate: null, continuations: [] },
+  forkedFrom: null,
   subagentUsage: null,
   lastEventId: 0,
   activeRun: null,

@@ -12,7 +12,12 @@ import {
   type RunAgent,
   type Usage,
 } from "@harness/core";
-import { appEventsUrl, eventsUrl, type SessionDetail } from "./api";
+import {
+  appEventsUrl,
+  eventsUrl,
+  type SessionDetail,
+  type StoredMessage,
+} from "./api";
 import {
   agentKeys,
   dataKeys,
@@ -229,6 +234,21 @@ export function useSessionEvents(
           });
           void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           break;
+        case "session.transcript_changed":
+          // A message was edited, or the session moved to another branch or
+          // had one deleted or restored, here or in another window. The
+          // files, notes, data and subagents follow the line shown.
+          void queryClient.invalidateQueries({
+            queryKey: sessionKeys.detail(sessionId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
+          });
+          void queryClient.invalidateQueries({ queryKey: dataKeys.all });
+          void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+          if (event.data.reason !== "edit")
+            void queryClient.invalidateQueries({ queryKey: trashKeys.all });
+          break;
         case "session.agent_changed":
           // A tool changed the session's agent; the picker reads it from
           // the session (agent tools design, Q18).
@@ -307,7 +327,13 @@ export function useSessionEvents(
             sessionKeys.detail(sessionId),
             (old) => {
               if (!old || event.data.message.content.length === 0) return old;
-              const stored = {
+              const at = old.messages.findIndex(
+                (m) => m.id === event.data.messageId,
+              );
+              // Where the message sits in the tree is not in the event; a
+              // continued message keeps what it had, a new one has no
+              // siblings yet.
+              const stored: StoredMessage = {
                 id: event.data.messageId,
                 message: event.data.message,
                 model: run?.model ?? null,
@@ -316,10 +342,9 @@ export function useSessionEvents(
                 usage: event.data.usage ?? null,
                 runId: event.runId,
                 parentCallId,
+                parentId: old.messages[at]?.parentId ?? null,
+                branches: old.messages[at]?.branches ?? null,
               };
-              const at = old.messages.findIndex(
-                (m) => m.id === event.data.messageId,
-              );
               const messages = [...old.messages];
               if (at === -1) messages.push(stored);
               else messages[at] = stored;

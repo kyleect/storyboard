@@ -43,9 +43,12 @@ export function fileLookup(
   workspaces?: WorkspaceMedia,
 ): (ref: string) => FoundFile | undefined {
   let state: SessionEntries | undefined;
-  let seen = -1;
-  const count = store.db.prepare(
-    "SELECT count(*) AS n FROM messages WHERE session_id = ?",
+  let seen = "";
+  // A switch between branches changes the tip and no row count; a run adds
+  // rows. Either means the transcript must be read again.
+  const version = store.db.prepare(
+    `SELECT coalesce(s.tip_id, '') || ':' || (SELECT count(*) FROM messages WHERE session_id = s.id) AS v
+     FROM sessions s WHERE s.id = ?`,
   );
   return (ref) => {
     const parsed = parseRef(ref);
@@ -57,8 +60,9 @@ export function fileLookup(
         : undefined;
     }
     if (parsed.location === "session") {
-      // Read again when messages were added since: a run adds files.
-      const n = (count.get(sessionId) as { n: number }).n;
+      // Read again when messages were added or the line changed since: a
+      // run adds files.
+      const n = (version.get(sessionId) as { v: string } | undefined)?.v ?? "";
       if (!state || n !== seen) {
         seen = n;
         state = replaySessionEntries(

@@ -5,6 +5,7 @@ import {
   type EntryKind,
   type Scope,
 } from "@harness/core";
+import { activeMessageJson } from "./transcript.js";
 
 /*
  * The search index over files and memory notes (files and memory design,
@@ -114,6 +115,27 @@ export class SearchIndex {
     if (chunks.length > 0) this.onChunksAdded();
   }
 
+  /**
+   * Replaces the chunks of the session's own files and notes with those of
+   * the line it shows now. For after the line changes (a switch, an edit or
+   * a deleted branch): files of the branch left are no longer searched.
+   */
+  reindexSession(sessionId: string) {
+    const state = replaySessionEntries(
+      activeMessageJson(this.db, sessionId).map((m) => JSON.parse(m) as never),
+    );
+    this.db.transaction(() => {
+      this.db
+        .prepare("DELETE FROM chunks WHERE scope = 'session' AND owner_id = ?")
+        .run(sessionId);
+      for (const kind of ["file", "note"] as const) {
+        for (const [key, current] of state[kind]) {
+          this.indexEntry(kind, "session", sessionId, key, current.value);
+        }
+      }
+    })();
+  }
+
   /** Removes the chunks of some files of a workspace, or all with no paths. */
   dropWorkspaceFiles(workspaceId: string, paths?: readonly string[]) {
     const del = this.db.prepare(
@@ -171,13 +193,12 @@ export class SearchIndex {
         const sessions = this.db.prepare("SELECT id FROM sessions").all() as {
           id: string;
         }[];
-        const messages = this.db.prepare(
-          "SELECT message FROM messages WHERE session_id = ? ORDER BY seq",
-        );
         for (const { id } of sessions) {
-          const rows = messages.all(id) as { message: string }[];
+          // The line the session shows, not every branch (message editing
+          // plan, part A): files that exist only on another branch are not
+          // searched until it is switched to.
           const state = replaySessionEntries(
-            rows.map((r) => JSON.parse(r.message) as never),
+            activeMessageJson(this.db, id).map((m) => JSON.parse(m) as never),
           );
           for (const kind of ["file", "note"] as const) {
             for (const [key, current] of state[kind]) {

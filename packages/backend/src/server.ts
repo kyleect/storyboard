@@ -19,6 +19,12 @@ import {
   type StoredEvent,
 } from "@harness/core";
 import { registerAgentRoutes } from "./agent-routes.js";
+import {
+  completePoints,
+  isEditable,
+  messagePreview,
+  regenerableTurn,
+} from "./branches.js";
 import { fileLookup } from "./file-lookup.js";
 import type { MediaDescriber } from "./media-describer.js";
 import { buildSessionDebug } from "./session-debug.js";
@@ -40,7 +46,7 @@ import type { WorkspaceIndexer } from "./workspace-index.js";
 import { WorkspaceStore, WorkspaceStoreError } from "./workspaces-store.js";
 import { SkillStore } from "./skills-store.js";
 import { readSettings, writeSettings } from "./settings.js";
-import { DEFAULT_TITLE, type Store } from "./store.js";
+import { DEFAULT_TITLE, type SessionRow, type Store } from "./store.js";
 import { allowedNames } from "./tool-grants.js";
 import {
   FixedApprovalError,
@@ -379,6 +385,55 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return reply.code(201).send(session);
   });
 
+  /**
+   * What the page needs to offer branching: where a branch or fork may start,
+   * which messages can be edited, the turn Regenerate would redo, and the
+   * other continuations after the line's end (after a branch off).
+   */
+  function branching(sessionId: string, tipId: string | null) {
+    const line = store.listMessages(sessionId, "top");
+    return {
+      /** Messages a branch or fork may start at (a complete point). */
+      points: [...completePoints(line)],
+      /** The user's own messages, which can be edited. */
+      editable: line.filter(isEditable).map((m) => m.id),
+      /** The user message that started the turn Regenerate would redo. */
+      regenerate: regenerableTurn(line),
+      /** Live messages after the end of the line, in creation order. */
+      continuations:
+        tipId === null
+          ? []
+          : store.children(tipId).flatMap((childId) => {
+              const message = store.getMessage(childId);
+              return message
+                ? [
+                    {
+                      id: childId,
+                      role: message.role,
+                      preview: messagePreview(message),
+                    },
+                  ]
+                : [];
+            }),
+    };
+  }
+
+  /** The session this one was forked from, as it is now. */
+  function forkedFrom(session: SessionRow) {
+    if (session.forked_from_id === null) return null;
+    const source = store.getSession(session.forked_from_id);
+    const state: "live" | "trashed" | "gone" = !source
+      ? "gone"
+      : source.trashed_at !== null
+        ? "trashed"
+        : "live";
+    return {
+      id: session.forked_from_id,
+      title: session.forked_from_title ?? "",
+      state,
+    };
+  }
+
   app.get("/api/sessions/:id", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
     const session = store.getSession(id);
@@ -389,6 +444,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         ? (store.getProject(session.project_id) ?? null)
         : null,
       messages: store.listMessages(id),
+      branching: branching(id, session.tip_id),
+      forkedFrom: forkedFrom(session),
       subagentUsage: store.subagentUsage(id),
       ...runs.snapshot(id),
     };
@@ -615,17 +672,43 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       sessions: store.listSessionsTrashedWithProject(p.id),
     })),
     sessions: store.listTrashedSessions(),
+    branches: store.listTrashedBranches(),
   }));
+
+  /** Brings a deleted branch back. */
+  app.post("/api/trash/branches/:messageId/restore", async (req) => {
+    const { messageId } = z.object({ messageId: z.string() }).parse(req.params);
+    runs.restoreBranch(messageId);
+    return { ok: true };
+  });
+
+  /** Permanently deletes one deleted branch, with everything under it. */
+  app.delete("/api/trash/branches/:messageId", async (req, reply) => {
+    const { messageId } = z.object({ messageId: z.string() }).parse(req.params);
+    const node = store.getNode(messageId);
+    if (!node || node.anchorId !== null) {
+      return reply.code(404).send({ error: "Branch not found." });
+    }
+    if (node.trashedAt === null) {
+      return reply
+        .code(409)
+        .send({ error: "Only a branch in the trash can be deleted." });
+    }
+    store.purgeBranch(messageId);
+    return { ok: true };
+  });
 
   /** Empties the trash: permanently deletes everything in it. */
   app.delete("/api/trash", async () => {
     let projects = 0;
     let sessions = 0;
+    let branches = 0;
     store.db.transaction(() => {
       projects = store.purgeTrashedProjects().length;
       sessions = store.purgeTrashedSessions().length;
+      branches = store.purgeTrashedBranches().length;
     })();
-    return { purged: { projects, sessions } };
+    return { purged: { projects, sessions, branches } };
   });
 
   app.get("/api/projects", async () => store.listProjects());
@@ -770,6 +853,77 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const { id } = IdParams.parse(req.params);
     const choices = Choices.parse(req.body ?? {});
     return reply.code(202).send(runs.continueLast(id, defined(choices)));
+  });
+
+  /**
+   * Edits the text of one of the user's messages. `mode` "branch" keeps the
+   * old message and what followed on a branch and continues from the edited
+   * copy (the model answers unless the `answerAfterEdit` setting is off);
+   * "in_place" overwrites the text and keeps what follows, and the model does
+   * not run. Left out: the `editMode` setting.
+   */
+  app.patch("/api/sessions/:id/messages/:messageId", async (req, reply) => {
+    const { id, messageId } = z
+      .object({ id: z.string(), messageId: z.string() })
+      .parse(req.params);
+    const { content, mode, ...choices } = Choices.extend({
+      content: z.string(),
+      mode: z.enum(["branch", "in_place"]).optional(),
+    }).parse(req.body);
+    const result = runs.editMessage(
+      id,
+      messageId,
+      defined({ content, mode }) as { content: string },
+      defined(choices),
+    );
+    return reply.code(result.runId === null ? 200 : 202).send(result);
+  });
+
+  /** Asks the model for another reply; the old one stays as a branch. */
+  app.post("/api/sessions/:id/regenerate", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const choices = Choices.parse(req.body ?? {});
+    return reply.code(202).send(runs.regenerate(id, defined(choices)));
+  });
+
+  /**
+   * Ends the line at a message, which is kept, and leaves what followed as a
+   * branch. At a user message the model answers right away (202).
+   */
+  app.post("/api/sessions/:id/branch", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { messageId, ...choices } = Choices.extend({
+      messageId: z.string(),
+    }).parse(req.body);
+    const result = runs.branchOff(id, messageId, defined(choices));
+    return reply.code(result.runId === null ? 200 : 202).send(result);
+  });
+
+  /**
+   * Copies the line up to a message, and the branches that leave it earlier,
+   * into a new session (201). The title is the new session's.
+   */
+  app.post("/api/sessions/:id/fork", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { messageId, title } = z
+      .object({ messageId: z.string(), title: Title })
+      .parse(req.body);
+    return reply.code(201).send(runs.fork(id, messageId, title));
+  });
+
+  /** Shows another branch. */
+  app.post("/api/sessions/:id/switch", async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const { messageId } = z.object({ messageId: z.string() }).parse(req.body);
+    return runs.switchBranch(id, messageId);
+  });
+
+  /** Deletes a branch (to the Trash). The last branch cannot be deleted. */
+  app.delete("/api/sessions/:id/branches/:messageId", async (req) => {
+    const { id, messageId } = z
+      .object({ id: z.string(), messageId: z.string() })
+      .parse(req.params);
+    return runs.deleteBranch(id, messageId);
   });
 
   /** Asks the model to stop reasoning and answer. */

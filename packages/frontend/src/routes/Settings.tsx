@@ -46,7 +46,7 @@ import { ToolSettings } from "./ToolSettings";
  * in the address: /settings/<area>/<section>.
  *
  *   General  Models · Server
- *   Chat     System prompt · Session titles · Media
+ *   Chat     System prompt · Session titles · Editing · Media
  *   Agents   Subagents · Limits
  *   Tools    Permissions · MCP servers
  *   Trash
@@ -68,6 +68,7 @@ const SUBAGENT_KEYS = [
   "subagentDepth",
 ] as const;
 const LIMIT_KEYS = ["loopLimit", "copyLimit", "workspaceReadCap"] as const;
+const EDITING_KEYS = ["editMode", "answerAfterEdit"] as const;
 const MEDIA_KEYS = ["inlineMediaCap", "keepMediaInline"] as const;
 const DESCRIBER_KEYS = ["mediaDescriberAgent", "mediaDescriberModel"] as const;
 const TRASH_KEYS = ["trashRetentionDays"] as const;
@@ -195,6 +196,11 @@ const AREAS: readonly Area[] = [
         value: "titles",
         label: "Session titles",
         render: (view) => <SessionTitles view={view} />,
+      },
+      {
+        value: "editing",
+        label: "Editing",
+        render: (view) => <EditingSettings view={view} />,
       },
       {
         value: "media",
@@ -558,6 +564,48 @@ function SessionTitles({ view }: { view: SettingsView }) {
           minRows={3}
           disabled={off || fromMessage || !!env.titlePrompt}
           {...form.getInputProps("titlePrompt")}
+        />
+        <Button type="submit" loading={save.isPending} w="fit-content">
+          Save
+        </Button>
+      </Stack>
+    </form>
+  );
+}
+
+/** What editing one of your messages does (message editing plan, B). */
+function EditingSettings({ view }: { view: SettingsView }) {
+  const { form, save, env, envNote } = useSettingsForm(view, EDITING_KEYS);
+
+  return (
+    <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
+      <Stack maw={480}>
+        <Title order={4}>Editing messages</Title>
+        <Stack gap={4}>
+          <Text size="sm" fw={500}>
+            When you save an edit
+          </Text>
+          <SegmentedControl
+            data={[
+              { value: "branch", label: "Keep the old one on a branch" },
+              { value: "in_place", label: "Overwrite in place" },
+            ]}
+            disabled={!!env.editMode}
+            {...form.getInputProps("editMode")}
+          />
+          <Text size="xs" c="dimmed">
+            {envNote("editMode") ??
+              "A branch keeps the old message and what followed it, and you can switch back. Overwriting changes the text and keeps what follows; the old text is gone. You can choose the other way each time you save."}
+          </Text>
+        </Stack>
+        <Switch
+          label="Answer after a branched edit"
+          description={
+            envNote("answerAfterEdit") ??
+            "On: the model replies to the edited message right away. Off: the edit is saved and you send when ready."
+          }
+          disabled={!!env.answerAfterEdit}
+          {...form.getInputProps("answerAfterEdit", { type: "checkbox" })}
         />
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save
@@ -956,7 +1004,11 @@ function TrashSection() {
 
   const trashedProjects = trash.data?.projects ?? [];
   const sessions = trash.data?.sessions ?? [];
-  const empty = trashedProjects.length === 0 && sessions.length === 0;
+  const branches = trash.data?.branches ?? [];
+  const empty =
+    trashedProjects.length === 0 &&
+    sessions.length === 0 &&
+    branches.length === 0;
   const projectOf = (s: Session) =>
     s.project_id === null
       ? undefined
@@ -1110,6 +1162,55 @@ function TrashSection() {
           </Paper>
         );
       })}
+      {branches.map((b) => (
+        <Paper key={b.messageId} p="xs" withBorder>
+          <Group justify="space-between" wrap="nowrap">
+            <Stack gap={0} style={{ minWidth: 0 }}>
+              <Text size="sm" truncate>
+                Branch: {b.preview === "" ? "(no text)" : b.preview}
+              </Text>
+              <Text size="xs" c="dimmed">
+                In {b.sessionTitle} · {b.messages}{" "}
+                {b.messages === 1 ? "message" : "messages"} · Deleted{" "}
+                {new Date(b.trashedAt).toLocaleString()}
+              </Text>
+            </Stack>
+            <Group gap="xs" wrap="nowrap">
+              <Button
+                size="xs"
+                variant="light"
+                loading={busy === b.messageId}
+                onClick={() =>
+                  run(
+                    b.messageId,
+                    () =>
+                      api
+                        .restoreBranch(b.messageId)
+                        .then(() => actions.refreshProjects()),
+                    "Could not restore",
+                  )
+                }
+              >
+                Restore
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                variant="subtle"
+                onClick={() =>
+                  confirmDelete(
+                    "Delete branch forever?",
+                    "This branch and everything after it will be deleted. This cannot be undone.",
+                    () => api.deleteTrashedBranch(b.messageId),
+                  )
+                }
+              >
+                Delete forever
+              </Button>
+            </Group>
+          </Group>
+        </Paper>
+      ))}
     </Stack>
   );
 }

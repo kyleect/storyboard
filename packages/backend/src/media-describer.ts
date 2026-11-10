@@ -11,6 +11,7 @@ import type { AgentStore } from "./agents-store.js";
 import { getBlob } from "./blobs.js";
 import type { SearchIndex } from "./search-index.js";
 import type { Settings } from "./settings.js";
+import { activeMessageJson } from "./transcript.js";
 
 /*
  * Derived text (files unification design, D18, D43, D44, D56 to D60): the
@@ -283,14 +284,9 @@ export function reindexBlob(
       "SELECT DISTINCT session_id FROM messages WHERE instr(message, ?) > 0",
     )
     .all(hash) as { session_id: string }[];
-  const messages = db.prepare(
-    "SELECT message FROM messages WHERE session_id = ? ORDER BY seq",
-  );
   for (const { session_id: id } of sessions) {
     const state = replaySessionEntries(
-      (messages.all(id) as { message: string }[]).map(
-        (r) => JSON.parse(r.message) as Message,
-      ),
+      activeMessageJson(db, id).map((m) => JSON.parse(m) as Message),
     );
     for (const [key, file] of state.file) {
       if (file.blob?.hash === hash)

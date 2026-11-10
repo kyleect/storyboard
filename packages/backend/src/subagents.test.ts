@@ -439,6 +439,54 @@ describe("a subagent's run", () => {
     expect(top.every((m) => m.parentCallId === null)).toBe(true);
   });
 
+  it("anchors the child's messages to the message that holds the call, off the line", async () => {
+    const c = await setup([[], [], []]);
+    const editor = startable(c, "Editor");
+    const boss = c.agents.create(
+      null,
+      content("Boss", { toolGrant: grant("allow", ["start_subagent"]) }),
+    );
+    c.scripts.splice(
+      0,
+      3,
+      [call("p1", "start_subagent", { agentId: editor.id, task: "Do it" })],
+      [call("k1", "subagent_handback", { output: "Done." })],
+      text("Fine"),
+    );
+    const id = await newSession(c, boss.id);
+    await go(c, id);
+
+    const holder = c.store
+      .listMessages(id, "top")
+      .find(
+        (m) =>
+          m.message.role === "assistant" &&
+          m.message.content.some(
+            (b) => b.type === "tool_call" && b.callId === "p1",
+          ),
+      );
+    expect(holder).toBeDefined();
+    const [child] = childRuns(c, id);
+    const childIds = c.store.runMessageIds(child?.runId as string);
+    expect(childIds).toHaveLength(3);
+    for (const messageId of childIds) {
+      expect(c.store.getNode(messageId)).toMatchObject({
+        parentId: null,
+        anchorId: holder?.id,
+      });
+    }
+    // The line is the top-level messages only, and ends at the parent's reply.
+    const line = c.store.lineIds(c.store.getSession(id)?.tip_id as string);
+    expect(line.some((m) => childIds.includes(m))).toBe(false);
+    expect(c.store.listMessages(id).map((m) => m.id)).toEqual(
+      expect.arrayContaining(childIds),
+    );
+    // Recovering after a crash anchors what it adds the same way.
+    expect(c.store.anchorFor(child?.parentRunId as string, "p1")).toBe(
+      holder?.id,
+    );
+  });
+
   it("sums the subagent's usage over all its calls, apart from the session's own count", async () => {
     const c = await setup([[], [], [], []]);
     const editor = startable(c, "Editor");

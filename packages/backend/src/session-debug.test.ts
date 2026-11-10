@@ -105,7 +105,7 @@ describe("session debug export", () => {
     expect(res.status).toBe(200);
     const debug = res.body as SessionDebug;
 
-    expect(debug.format).toBe(1);
+    expect(debug.format).toBe(2);
     expect(debug.session.id).toBe(sessionId);
     expect(debug.runs).toHaveLength(1);
     const run = debug.runs[0];

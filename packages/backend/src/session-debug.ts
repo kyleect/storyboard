@@ -1,5 +1,5 @@
 import type { StoredEvent, ToolDefinition } from "@harness/core";
-import type { SessionRow, Store, StoredMessage } from "./store.js";
+import type { SessionRow, Store, StoredBranchMessage } from "./store.js";
 
 /*
  * A session exported for debugging: everything needed to see what the model
@@ -32,17 +32,24 @@ export interface DebugRun {
   request: "recorded" | "not_recorded";
 }
 
-/** A stored message with when it was created (user messages have no event). */
-export type DebugMessage = StoredMessage & { createdAt: string | null };
+/**
+ * A stored message with when it was created (user messages have no event),
+ * and where it sits in the tree: `parentId`, whether it is on the line the
+ * session shows (`active`), and whether it is in a deleted branch.
+ */
+export type DebugMessage = StoredBranchMessage & { createdAt: string | null };
 
 export interface SessionDebug {
   /** Version of this shape, so a pasted export can be told apart later. */
-  format: 1;
+  format: 2;
   exportedAt: string;
   session: SessionRow;
   project: unknown;
   runs: DebugRun[];
-  /** The transcript, every message of the session including subagents'. */
+  /**
+   * The transcript: every message of the session, every branch and the
+   * subagents' included. Version 2 added `parentId`, `active` and `trashed`.
+   */
   messages: DebugMessage[];
   /** Every stored event of the session, in order. */
   events: StoredEvent[];
@@ -83,7 +90,7 @@ export function buildSessionDebug(
   });
   const times = store.messageTimes(session.id);
   return {
-    format: 1,
+    format: 2,
     exportedAt: now,
     session,
     project: session.project_id
@@ -91,7 +98,7 @@ export function buildSessionDebug(
       : null,
     runs,
     messages: store
-      .listMessages(session.id)
+      .listMessages(session.id, "all")
       .map((m) => ({ ...m, createdAt: times.get(m.id) ?? null })),
     events: store.eventsAfter(session.id, 0),
   };

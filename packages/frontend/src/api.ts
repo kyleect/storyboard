@@ -208,6 +208,21 @@ export interface Trash {
   projects: (Project & { sessions: Session[] })[];
   /** Sessions trashed on their own. */
   sessions: Session[];
+  /** Deleted branches of sessions that are not themselves in the trash. */
+  branches: TrashedBranch[];
+}
+
+/** A deleted branch: its first message, and everything after it. */
+export interface TrashedBranch {
+  /** The first message of the branch. */
+  messageId: string;
+  sessionId: string;
+  sessionTitle: string;
+  /** The first line of the branch's first message. */
+  preview: string;
+  trashedAt: string;
+  /** How many messages the branch holds, nested branches included. */
+  messages: number;
 }
 
 export interface StoredMessage {
@@ -231,6 +246,14 @@ export interface StoredMessage {
    * started that run. Null for the session's own messages.
    */
   parentCallId: string | null;
+  /** The message before this one on its line; null for a first message. */
+  parentId: string | null;
+  /**
+   * When this message has live siblings (other messages after the same
+   * parent): their ids in creation order and this one's place. Null when it
+   * has none, and for a subagent run's messages.
+   */
+  branches: { ids: string[]; index: number } | null;
 }
 
 /** An active run as a reconnecting client sees it. */
@@ -264,6 +287,10 @@ export interface SessionDetail {
   /** The session's project; null for a standalone session. */
   project: Project | null;
   messages: StoredMessage[];
+  /** What the page needs to offer editing and branching. */
+  branching: Branching;
+  /** The session this one was forked from; null: it was not forked. */
+  forkedFrom: ForkedFrom | null;
   /**
    * Tokens used by the session's finished subagent runs, summed over all
    * their model calls; null: none. Work done, not context occupancy.
@@ -273,6 +300,35 @@ export interface SessionDetail {
   activeRun: ActiveRunSnapshot | null;
   /** Subagents' runs in progress. */
   childRuns: ChildRunSnapshot[];
+}
+
+/** Where a forked session came from, and whether that session is still there. */
+export interface ForkedFrom {
+  id: string;
+  /** The title it had when forked. */
+  title: string;
+  state: "live" | "trashed" | "gone";
+}
+
+/** Where the session can be edited and branched (message editing plan). */
+export interface Branching {
+  /** Messages a branch or fork may start at: a request ending there is valid. */
+  points: string[];
+  /** The user's own messages, which can be edited. */
+  editable: string[];
+  /** The user message that started the turn Regenerate would redo; null: none. */
+  regenerate: string | null;
+  /** Live messages after the end of the line, such as after a branch off. */
+  continuations: { id: string; role: Message["role"]; preview: string }[];
+}
+
+/** What editing a message did. */
+export interface EditResult {
+  /** The edited message: the copy, for a new branch. */
+  messageId: string;
+  mode: "branch" | "in_place";
+  /** The run that answers it; null: none was started. */
+  runId: string | null;
 }
 
 /** One run's request in a debugging export. */
@@ -296,12 +352,20 @@ export interface DebugRun {
   request: "recorded" | "not_recorded";
 }
 
-/** A stored message with when it was created. */
-export type DebugMessage = StoredMessage & { createdAt: string | null };
+/**
+ * A stored message with when it was created, and whether it is on the line
+ * the session shows (`active`) or in a deleted branch (`trashed`). The export
+ * holds every branch.
+ */
+export type DebugMessage = StoredMessage & {
+  createdAt: string | null;
+  active: boolean;
+  trashed: boolean;
+};
 
 /** A session exported for debugging (`GET /api/sessions/:id/debug`). */
 export interface SessionDebug {
-  format: 1;
+  format: 2;
   exportedAt: string;
   session: Session;
   project: Project | null;
@@ -387,6 +451,13 @@ export interface Settings {
   mediaDescriberAgent: string;
   /** The router model that runs it. Empty: off. */
   mediaDescriberModel: string;
+  /**
+   * What editing a message does by default: "branch" keeps the old message and
+   * what followed on a branch; "in_place" overwrites the text.
+   */
+  editMode: "branch" | "in_place";
+  /** Whether the model answers right after an edit that made a branch. */
+  answerAfterEdit: boolean;
 }
 
 /** Where a file's text came from. */
@@ -1017,10 +1088,15 @@ export const api = {
     request<{ ok: true }>("DELETE", `/api/sessions/${id}`),
   getTrash: () => request<Trash>("GET", "/api/trash"),
   emptyTrash: () =>
-    request<{ purged: { projects: number; sessions: number } }>(
-      "DELETE",
-      "/api/trash",
-    ),
+    request<{
+      purged: { projects: number; sessions: number; branches: number };
+    }>("DELETE", "/api/trash"),
+  /** Brings a deleted branch back. */
+  restoreBranch: (messageId: string) =>
+    request<{ ok: true }>("POST", `/api/trash/branches/${messageId}/restore`),
+  /** Permanently deletes a deleted branch, with everything under it. */
+  deleteTrashedBranch: (messageId: string) =>
+    request<{ ok: true }>("DELETE", `/api/trash/branches/${messageId}`),
   listProjects: () => request<Project[]>("GET", "/api/projects"),
   getProject: (id: string) => request<Project>("GET", `/api/projects/${id}`),
   createProject: (p: { name: string; description: string }) =>
@@ -1055,6 +1131,53 @@ export const api = {
       ...(files.length > 0 ? { files } : {}),
       ...choices,
     }),
+  /**
+   * Edits the text of one of the user's messages. `mode` left out is the
+   * Settings default; "branch" keeps the old message on a branch and answers
+   * the copy, "in_place" overwrites the text.
+   */
+  editMessage: (
+    id: string,
+    messageId: string,
+    content: string,
+    mode: "branch" | "in_place" | undefined,
+    choices: Choices,
+  ) =>
+    request<EditResult>("PATCH", `/api/sessions/${id}/messages/${messageId}`, {
+      content,
+      ...(mode ? { mode } : {}),
+      ...choices,
+    }),
+  /** Asks for another reply to the last turn; the old one stays as a branch. */
+  regenerate: (id: string, choices: Choices) =>
+    request<{ runId: string }>(
+      "POST",
+      `/api/sessions/${id}/regenerate`,
+      choices,
+    ),
+  /**
+   * Ends the line at a message, which is kept. At a user message the model
+   * answers right away (`runId` set).
+   */
+  branchOff: (id: string, messageId: string, choices: Choices) =>
+    request<{ runId: string | null }>("POST", `/api/sessions/${id}/branch`, {
+      messageId,
+      ...choices,
+    }),
+  /** Copies the line up to a message into a new session. */
+  forkSession: (id: string, messageId: string, title: string) =>
+    request<Session>("POST", `/api/sessions/${id}/fork`, { messageId, title }),
+  /** Shows another branch. */
+  switchBranch: (id: string, messageId: string) =>
+    request<{ tipId: string }>("POST", `/api/sessions/${id}/switch`, {
+      messageId,
+    }),
+  /** Deletes a branch to the Trash. */
+  deleteBranch: (id: string, messageId: string) =>
+    request<{ tipId: string }>(
+      "DELETE",
+      `/api/sessions/${id}/branches/${messageId}`,
+    ),
   /**
    * Uploads an image or audio file to a scope as a binary file. A name in
    * use gets a suffix unless `replace` is set; the result names the file

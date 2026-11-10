@@ -47,6 +47,8 @@ import { cleanTitle, requestTitle } from "./auto-title.js";
 import type { Settings } from "./settings.js";
 import type { EntryStore } from "./entries-store.js";
 import { putBlob } from "./blobs.js";
+import { completePoints, isEditable, regenerableTurn } from "./branches.js";
+import { forkSession } from "./fork.js";
 import {
   getDerived,
   indexedText,
@@ -659,6 +661,270 @@ export class RunManager {
     );
   }
 
+  /**
+   * Moves the line the session shows to end at `targetId`: the one place the
+   * line changes other than by appending a message (message editing plan,
+   * part B). Remembers the line, reads the files of the new line into the
+   * search index, and tells other pages. The caller has checked the session
+   * is idle.
+   */
+  private moveTip(
+    sessionId: string,
+    targetId: string,
+    reason: "edit" | "move" | "delete_branch" | "restore_branch",
+    messageId: string = targetId,
+  ) {
+    this.placeTip(sessionId, targetId);
+    this.publishTranscriptChanged(sessionId, reason, messageId);
+  }
+
+  /** The move itself, without telling anyone (see `moveTip`). */
+  private placeTip(sessionId: string, targetId: string) {
+    // The files of the workspaces are put back to match the new line here,
+    // when the user asks for it (workspace snapshots, a later part).
+    this.store.moveTip(sessionId, targetId);
+    this.options.index?.reindexSession(sessionId);
+  }
+
+  private publishTranscriptChanged(
+    sessionId: string,
+    reason: "edit" | "move" | "delete_branch" | "restore_branch",
+    messageId: string,
+  ) {
+    this.publish({
+      runId: null,
+      sessionId,
+      time: this.now(),
+      type: "session.transcript_changed",
+      data: { reason, messageId },
+    });
+  }
+
+  /**
+   * A top-level message of the session that the line shown passes through,
+   * with the line; 404 for another session's message or a message that is
+   * not there, 409 for one off the line (a deleted branch, a subagent's).
+   */
+  private onLine(sessionId: string, messageId: string) {
+    const node = this.store.getNode(messageId);
+    if (!node || node.sessionId !== sessionId) {
+      throw new RunError("Message not found.", 404);
+    }
+    const line = this.store.listMessages(sessionId, "top");
+    const message = line.find((m) => m.id === messageId);
+    if (!message) {
+      throw new RunError("That message is not on the line shown.", 409);
+    }
+    return { line, message };
+  }
+
+  /**
+   * Edits one of the user's messages: its text only, never its files. In the
+   * mode "branch" the old message and everything after it stay as a branch;
+   * the line continues from a copy with the new text, and the model answers
+   * unless the setting says not to. In "in_place" the text is overwritten and
+   * the messages after it stay; the model does not run. `mode` left out is
+   * the `editMode` setting. Refused while a run is in progress.
+   */
+  editMessage(
+    sessionId: string,
+    messageId: string,
+    edit: { content: string; mode?: "branch" | "in_place" },
+    choices: RunChoices = {},
+  ): { messageId: string; mode: "branch" | "in_place"; runId: string | null } {
+    this.requireIdle(sessionId);
+    const { message: target } = this.onLine(sessionId, messageId);
+    const original = target.message;
+    if (original.role !== "user" || !isEditable(target)) {
+      throw new RunError("Only your own messages can be edited.", 409);
+    }
+    if (edit.content.length === 0 && (original.files?.length ?? 0) === 0) {
+      throw new RunError("The message is empty.", 400);
+    }
+    const settings = this.options.settings();
+    const mode = edit.mode ?? settings.editMode;
+    const edited = { ...original, content: edit.content };
+    if (mode === "in_place") {
+      this.store.replaceMessage(messageId, edited);
+      this.publishTranscriptChanged(sessionId, "edit", messageId);
+      return { messageId, mode, runId: null };
+    }
+    const copyId = this.newId();
+    this.store.addMessageAfter(
+      sessionId,
+      target.parentId,
+      copyId,
+      edited,
+      this.now(),
+    );
+    this.moveTip(sessionId, copyId, "edit");
+    if (!settings.answerAfterEdit)
+      return { messageId: copyId, mode, runId: null };
+    this.checkAgentChoice(sessionId, choices);
+    this.store.setSessionChoices(sessionId, choices);
+    return { messageId: copyId, mode, ...this.start(sessionId, null) };
+  }
+
+  /**
+   * Asks the model for another reply to the turn the line ends in. The line
+   * moves back to the user message that started the turn; the old reply stays
+   * as a branch. 409 when there is no reply to regenerate.
+   */
+  regenerate(sessionId: string, choices: RunChoices = {}): { runId: string } {
+    this.requireIdle(sessionId);
+    const turn = regenerableTurn(this.store.listMessages(sessionId, "top"));
+    if (turn === null) {
+      throw new RunError("There is no reply to regenerate.", 409);
+    }
+    this.checkAgentChoice(sessionId, choices);
+    this.store.setSessionChoices(sessionId, choices);
+    this.moveTip(sessionId, turn, "move");
+    return this.start(sessionId, null);
+  }
+
+  /**
+   * Ends the line at `messageId`, which is kept, and leaves what followed it
+   * as a branch. At a user message the model answers right away; elsewhere
+   * the line waits for the user to send. Only a point where a request is
+   * valid is allowed: not an assistant message with tool calls, nor part of
+   * a group of tool results.
+   */
+  branchOff(
+    sessionId: string,
+    messageId: string,
+    choices: RunChoices = {},
+  ): { runId: string | null } {
+    this.requireIdle(sessionId);
+    const { line, message } = this.onLine(sessionId, messageId);
+    if (!completePoints(line).has(messageId)) {
+      throw new RunError(
+        "A branch cannot start between a tool call and its results.",
+        409,
+      );
+    }
+    const answers = message.message.role === "user";
+    if (answers) {
+      this.checkAgentChoice(sessionId, choices);
+      this.store.setSessionChoices(sessionId, choices);
+    }
+    this.moveTip(sessionId, messageId, "move");
+    return answers ? this.start(sessionId, null) : { runId: null };
+  }
+
+  /**
+   * Copies the line up to `messageId`, with the branches that leave it
+   * earlier, into a new session (message editing plan, part D). The source
+   * must be idle and the message a complete point on the line shown.
+   */
+  fork(sessionId: string, messageId: string, title: string): SessionRow {
+    this.requireIdle(sessionId);
+    const { line } = this.onLine(sessionId, messageId);
+    if (!completePoints(line).has(messageId)) {
+      throw new RunError(
+        "A fork cannot start between a tool call and its results.",
+        409,
+      );
+    }
+    const newSessionId = this.newId();
+    const now = this.now();
+    this.store.db.transaction(() =>
+      forkSession(this.store, {
+        sourceId: sessionId,
+        messageId,
+        newSessionId,
+        title,
+        now,
+        newId: this.newId,
+      }),
+    )();
+    this.options.index?.reindexSession(newSessionId);
+    const created = this.store.getSession(newSessionId);
+    if (!created) throw new RunError("Session not found.", 404);
+    return created;
+  }
+
+  /**
+   * Shows another branch: `messageId` is a live message that follows a
+   * message of the line shown (or is a first message), such as a sibling of a
+   * message on it or a continuation of its tip. The line then ends where
+   * that branch was last viewed.
+   */
+  switchBranch(sessionId: string, messageId: string): { tipId: string } {
+    this.requireIdle(sessionId);
+    const node = this.store.getNode(messageId);
+    const tipId = this.store.getSession(sessionId)?.tip_id ?? null;
+    if (!node || node.sessionId !== sessionId || node.anchorId !== null) {
+      throw new RunError("Message not found.", 404);
+    }
+    if (node.trashedAt !== null) {
+      throw new RunError("That branch is deleted.", 409);
+    }
+    if (
+      node.parentId !== null &&
+      (tipId === null || !this.store.lineIds(tipId).includes(node.parentId))
+    ) {
+      throw new RunError("That message does not follow the line shown.", 409);
+    }
+    const target = this.store.descend(messageId);
+    this.moveTip(sessionId, target, "move", messageId);
+    return { tipId: target };
+  }
+
+  /**
+   * Deletes a branch: it and everything under it go to the Trash, where it
+   * can be restored. Deleting the branch the line shows first moves the line
+   * to the previous sibling, else the next. The last branch cannot be
+   * deleted.
+   */
+  deleteBranch(sessionId: string, messageId: string): { tipId: string } {
+    this.requireIdle(sessionId);
+    const node = this.store.getNode(messageId);
+    if (!node || node.sessionId !== sessionId || node.anchorId !== null) {
+      throw new RunError("Message not found.", 404);
+    }
+    if (node.trashedAt !== null) {
+      throw new RunError("That branch is already deleted.", 409);
+    }
+    const siblings = this.store.siblings(messageId);
+    if (siblings.length < 2) {
+      throw new RunError("The last branch cannot be deleted.", 409);
+    }
+    const session = this.store.getSession(sessionId);
+    const shown = session?.tip_id
+      ? this.store.lineIds(session.tip_id).includes(messageId)
+      : false;
+    // The branch the line shows is left for the previous sibling, else the
+    // next; one that is not shown is just deleted.
+    const at = siblings.indexOf(messageId);
+    const next = shown ? (siblings[at - 1] ?? siblings[at + 1]) : undefined;
+    this.store.db.transaction(() => {
+      if (next !== undefined) {
+        this.placeTip(sessionId, this.store.descend(next));
+      }
+      this.store.trashBranch(messageId, this.now());
+    })();
+    this.publishTranscriptChanged(sessionId, "delete_branch", messageId);
+    return {
+      tipId: this.store.getSession(sessionId)?.tip_id ?? messageId,
+    };
+  }
+
+  /** Brings a deleted branch back from the Trash. */
+  restoreBranch(messageId: string) {
+    const node = this.store.getNode(messageId);
+    if (!node || node.anchorId !== null) {
+      throw new RunError("Branch not found.", 404);
+    }
+    if (node.trashedAt === null) {
+      throw new RunError("That branch is not in the trash.", 409);
+    }
+    if (this.store.getSession(node.sessionId)?.trashed_at != null) {
+      throw new RunError("The session is in the trash.", 409);
+    }
+    this.store.restoreBranch(messageId);
+    this.publishTranscriptChanged(node.sessionId, "restore_branch", messageId);
+  }
+
   /** Asks the model to stop reasoning and answer. */
   async endReasoning(runId: string): Promise<ControlResult> {
     const run = this.active.get(runId);
@@ -945,6 +1211,11 @@ export class RunManager {
       };
       const base = { runId: run.id, sessionId: run.session_id };
       const insert = (event: HarnessEvent) => this.store.insertEvent(event);
+      // A subagent run's messages are anchored, as when it ran.
+      const anchorId =
+        run.parent_run_id !== null && run.parent_call_id !== null
+          ? this.store.anchorFor(run.parent_run_id, run.parent_call_id)
+          : null;
 
       const partial = this.inFlight(events);
       if (partial && partial.content.length > 0) {
@@ -955,6 +1226,7 @@ export class RunManager {
           this.now(),
           generation,
           lastStreamedUsage(events, partial.messageId),
+          anchorId,
         );
         this.store.linkRunMessage(run.id, partial.messageId);
       }
@@ -989,7 +1261,15 @@ export class RunManager {
             content: INTERRUPTED_CALL,
             isError: true,
           };
-          this.store.addMessage(run.session_id, id, result, this.now());
+          this.store.addMessage(
+            run.session_id,
+            id,
+            result,
+            this.now(),
+            NO_GENERATION,
+            null,
+            anchorId,
+          );
           this.store.linkRunMessage(run.id, id);
           insert({
             ...base,
@@ -1500,6 +1780,12 @@ export class RunManager {
       this.publish(e);
     };
 
+    // A subagent run's messages are not on the line: each is anchored to the
+    // top-level assistant message that holds the root `start_subagent` call,
+    // which was saved before the tool ran (message editing plan, part A).
+    const anchorId = child
+      ? this.store.anchorFor(child.parent.runId, child.parent.callId)
+      : null;
     const saveMessage = (id: string, message: Message, usage?: Usage) => {
       this.store.saveMessage(
         sessionId,
@@ -1508,6 +1794,7 @@ export class RunManager {
         this.now(),
         message.role === "assistant" ? generation : NO_GENERATION,
         usage ?? null,
+        anchorId,
       );
       this.store.linkRunMessage(runId, id);
       if (message.role === "tool" && message.entries) {

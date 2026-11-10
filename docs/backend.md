@@ -106,20 +106,20 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 
 ### Tables
 
-| Area             | Tables                                                                                                         | Notes                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| MCP              | `mcp_servers`                                                                                                  | Servers the backend connects to; see [MCP servers](#mcp-servers).                                  |
-| Settings         | `settings`                                                                                                     | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.            |
-| Conversation     | `sessions`, `messages`, `projects`                                                                             | `messages.message` holds the provider-neutral message as JSON; `seq` orders them per session.      |
-| Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments). |
-| Workspaces       | `workspaces`, `workspace_attachments`, `workspace_index_files`                                                 | Folders and what attaches them; see [Workspaces](#workspaces).                                     |
-| Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                         |
-| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`                     | Project and global entries, and indexed workspace files (scope `workspace`).                       |
-| Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                    |
-| Skills           | `skills`, `skill_versions`                                                                                     |                                                                                                    |
-| Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                    |
-| Diagnostics      | `errors`                                                                                                       |                                                                                                    |
-| System           | `schema_migrations`                                                                                            |                                                                                                    |
+| Area             | Tables                                                                                                         | Notes                                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP              | `mcp_servers`                                                                                                  | Servers the backend connects to; see [MCP servers](#mcp-servers).                                                                             |
+| Settings         | `settings`                                                                                                     | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.                                                       |
+| Conversation     | `sessions`, `messages`, `projects`                                                                             | `messages.message` holds the provider-neutral message as JSON; `seq` is insertion order. The transcript is a tree, see [Branches](#branches). |
+| Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments).                                            |
+| Workspaces       | `workspaces`, `workspace_attachments`, `workspace_index_files`                                                 | Folders and what attaches them; see [Workspaces](#workspaces).                                                                                |
+| Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                                                                    |
+| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`                     | Project and global entries, and indexed workspace files (scope `workspace`).                                                                  |
+| Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                                                               |
+| Skills           | `skills`, `skill_versions`                                                                                     |                                                                                                                                               |
+| Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                                                               |
+| Diagnostics      | `errors`                                                                                                       |                                                                                                                                               |
+| System           | `schema_migrations`                                                                                            |                                                                                                                                               |
 
 **Sessions** have `title`, `project_id`, `agent_id`, `model`,
 `reasoning_effort`, `trashed_at` and `trashed_with_project`. A `NULL` model or
@@ -208,11 +208,12 @@ understanding the run system:
 - **Messages** are written with `addMessage` and upserted by `saveMessage`. Each
   message records the model, effort, agent version and usage of the run that
   _last_ wrote it.
-- **`listMessages(sessionId, only?)`** has three modes:
-  - no filter: every message of the session, including subagents';
-  - `"top"`: the messages a top-level run sees (excludes any message written by a
-    child run);
-  - `{ run }`: only the messages that run wrote (what a subagent sees).
+- **`listMessages(sessionId, only?)`** has four modes:
+  - no filter: the active view, meaning the line from the first message to the
+    session's tip plus the subagent messages anchored to messages on that line;
+  - `"top"`: the top-level messages of that line (what a top-level run sees);
+  - `{ run }`: only the messages that run wrote (what a subagent sees);
+  - `"all"`: every message of the session, deleted branches included (debug export).
 - **Events** are inserted with `insertEvent` (returning the stored event with its
   id) and read with `eventsAfter(sessionId, id)` for replay and `runEvents(runId)`
   for recovery and snapshots.
@@ -712,6 +713,40 @@ title job in the background:
 A title the user set in the meantime is never overwritten. The job ends with
 `session.renamed`.
 
+### Branches
+
+A session's transcript is a tree. Each top-level message has a `parent_id`, and
+the session's `tip_id` is the last message of the line it shows. Messages of
+subagent runs have no parent; `anchor_id` points at the top-level assistant
+message holding the root `start_subagent` call, and they are shown with the line
+through that message. `last_child_id` remembers which continuation was last
+viewed so switching lands on it. `trashed_at` on the first message of a deleted
+branch hides everything under it until it is restored or purged (after
+`trashRetentionDays`, counted from the deletion).
+
+Editing, regenerating and branching only move the tip or add a sibling; nothing
+is rewritten except an `in_place` edit of the text. A branch may only start or end
+at a _complete point_ (a user message, an `edit` message, an assistant message
+without tool calls, or the last tool result of a group), see `branches.ts`. The
+`editMode` setting (`HARNESS_EDIT_MODE`) picks the default for an edit and
+`answerAfterEdit` whether the model replies to a branched edit. Every change
+publishes `session.transcript_changed` so open pages reload. `GET
+/api/sessions/:id` returns `branching` (points, editable messages, the turn
+Regenerate would redo, and continuations after the tip). **Forking** (`fork.ts`, `RunManager.fork`) copies, in one transaction, the line
+up to a complete point and the branches that leave it earlier (not deleted
+ones, nor anything after the point) into a new session with new ids: messages
+with their subagent messages, the runs that wrote them with their
+`run_messages`, and those runs' events with `messageId` and `parentRunId`
+rewritten (events about messages after the point are dropped). It also copies
+the model, effort, agent and project, media choices, session tool and subject
+approvals and workspace attachments. Files, notes and data belong to the
+project or global scope and are shared, and blobs are shared by hash. The new
+session records `forked_from_id` and the title the source had; the session
+detail returns `forkedFrom` with `state` `live`, `trashed` or `gone`. A new
+event field that holds a message or run id must be added to the lists in
+`fork.ts` (a test checks every event type). Workspace file
+snapshots are not part of this yet: moving the tip leaves files as they are.
+
 ### Trash
 
 `trashSession` and `trashProject` move items to the trash and emit
@@ -888,7 +923,12 @@ errors return `{ error }` with a status (400 invalid request, 401 unauthorized,
 | `PATCH /api/sessions/:id`                                               | Rename, or change model, effort or agent.                                                  |
 | `POST /api/sessions/:id/trash`, `…/restore`, `DELETE /api/sessions/:id` | Trash, restore, permanently delete (trashed only).                                         |
 | `GET /api/sessions/:id/debug`                                           | Debug export.                                                                              |
-| `GET /api/trash`, `DELETE /api/trash`                                   | List the trash; empty it.                                                                  |
+| `GET /api/trash`, `DELETE /api/trash`                                   | List the trash (projects, sessions, deleted branches); empty it.                           |
+| `PATCH /api/sessions/:id/messages/:messageId`                           | Edit a user message (`mode` `branch` or `in_place`); see [Branches](#branches).            |
+| `POST /api/sessions/:id/regenerate`, `…/branch`, `…/switch`             | Regenerate the last reply; end the line at a message; show another branch.                 |
+| `POST /api/sessions/:id/fork`                                           | Copy the line up to a message into a new session (201); body `{ messageId, title }`.       |
+| `DELETE /api/sessions/:id/branches/:messageId`                          | Move a branch to the trash.                                                                |
+| `POST /api/trash/branches/:messageId/restore`, `DELETE …/:messageId`    | Restore a deleted branch; delete it forever.                                               |
 | `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects.                                                       |
 | `POST /api/projects/:id/trash`, `…/restore`, `DELETE /api/projects/:id` | Trash, restore, permanently delete.                                                        |
 

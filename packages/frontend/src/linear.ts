@@ -74,6 +74,7 @@ const ANCHORS: ReadonlySet<string> = new Set([
   "user.message",
   "session.entries_changed",
   "session.data_changed",
+  "session.transcript_changed",
 ]);
 
 const messageIdOf = (e: StoredEvent): string | undefined => {
