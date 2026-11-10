@@ -8,6 +8,42 @@ import {
   UserMessageSource,
 } from "./messages.js";
 
+type InputEvents = "input.requested" | "input.resolved";
+type MessageEvents = "message.started" | "message.finished";
+type ReasoningEvents = "reasoning.delta" | "reasoning.end";
+type RequestEvents = "request.cancel";
+type RunEvents =
+  "run.started" | "run.finished" | "run.failed" | "run.interrupted";
+type SessionEvents =
+  | "session.trashed"
+  | "session.entries_changed"
+  | "session.renamed"
+  | "session.agent_changed"
+  | "session.data_changed"
+  | "session.transcript_changed";
+type StepEvents = "step.started" | "step.finished" | "text.delta";
+type TextEvents = "text.end";
+type ToolEvents =
+  | "tool.called"
+  | "tool.malformed"
+  | "tool.approval_requested"
+  | "tool.approval_resolved"
+  | "tool.update"
+  | "tool.result";
+type UserEvents = "user.message";
+
+export type Events =
+  | InputEvents
+  | MessageEvents
+  | ReasoningEvents
+  | RequestEvents
+  | RunEvents
+  | SessionEvents
+  | StepEvents
+  | TextEvents
+  | ToolEvents
+  | UserEvents;
+
 /*
  * The streamed event contract (design doc, "Streamed event contract").
  *
@@ -15,7 +51,7 @@ import {
  * assigns the increasing `id` that is used as the SSE event ID for replay.
  */
 
-const event = <T extends string, D extends z.ZodType>(type: T, data: D) =>
+const event = <T extends Events, D extends z.ZodType>(type: T, data: D) =>
   z.object({ type: z.literal(type), data });
 
 export const RunKind = z.enum(["single", "loop", "pipeline"]);
