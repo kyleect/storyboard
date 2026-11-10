@@ -3,11 +3,13 @@ import {
   checkFileName,
   checkFileValue,
   EntryError,
+  ToolError,
   type AgentAccess,
   type AgentSummary,
   type EntryAuthor,
   type ProjectAccess,
   type ProjectPush,
+  type ProjectSummary,
 } from "@harness/core";
 import { AgentError, type Agent, type AgentStore } from "./agents-store.js";
 import type { AppEvents } from "./app-events.js";
@@ -40,6 +42,10 @@ export interface ProjectAccessDeps {
    * copy into a project.
    */
   runAgent?: Agent | null | undefined;
+  /** Throws a `RunError` when the session cannot use the agent. */
+  checkAgentChangeChoice: (agentId: string | null) => void;
+  /** Tells the session's listeners that the pick changed. */
+  agentChanged: (agentId: string | null) => void;
   /** For the default agent rule (global default agent setting). */
   env?: NodeJS.ProcessEnv | undefined;
   /** Who is recorded as the author of entries a tool sends. */
@@ -55,6 +61,13 @@ const randomId = () => randomBytes(8).toString("hex");
 
 export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
   const { store, entries, session } = deps;
+
+  const summary = (a: Agent): ProjectSummary => ({
+    id: a.id,
+    name: a.name,
+    description: a.description,
+  });
+
   return {
     list: () =>
       store
@@ -96,6 +109,29 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
         name: project.name,
         description: project.description,
       };
+    },
+    pending: () => {
+      // The session's pick as it is now; one it can no longer use counts as
+      // none, as at the start of a run.
+      const picked = store.getSession(session.id)?.agent_id ?? null;
+      const pickedAgent =
+        picked !== null ? deps.agents?.get(picked) : undefined;
+      const usable =
+        pickedAgent && deps.agents?.usableIn(pickedAgent, session.project_id)
+          ? pickedAgent
+          : null;
+      if ((usable?.id ?? null) === (deps.runAgent?.id ?? null))
+        return undefined;
+      return { agent: usable ? summary(usable) : null };
+    },
+    choose: (agentId) => {
+      try {
+        deps.checkAgentChangeChoice(agentId);
+      } catch (err) {
+        throw new ToolError(err instanceof Error ? err.message : String(err));
+      }
+      store.setSessionChoices(session.id, { agentId });
+      deps.agentChanged(agentId);
     },
     push: (projectId): ProjectPush => {
       const project = store.getProject(projectId);
@@ -332,6 +368,7 @@ export interface AgentAccessDeps {
 
 export function agentAccess(deps: AgentAccessDeps): AgentAccess {
   const { store, agents, session } = deps;
+
   const summary = (a: Agent): AgentSummary => ({
     id: a.id,
     name: a.name,
@@ -345,6 +382,7 @@ export function agentAccess(deps: AgentAccessDeps): AgentAccess {
     subagent: a.subagent,
     builtin: a.builtin,
   });
+
   const list = () =>
     agents ? agents.pickable(session.project_id).map(summary) : [];
   return {
