@@ -105,9 +105,9 @@ These run through the whole codebase (details in `docs/README.md`).
   includes Mermaid rendering in `docs/_includes/head-custom.html`). When you
   change behavior the docs describe, update the matching page in `docs/`:
   `core.md`, `tools.md`, `backend.md`, `frontend.md`, or the glossary. The docs
-  are not complete or always current (for example, `backend.md` lists
-  migrations only up to `0022`); when they disagree with the code, the code is
-  right. There is no `AGENTS.md` inside `docs/` because that folder is the
-  site's source.
+  can still fall behind the code; when they disagree, the code is right, and
+  fixing the doc is part of the change. `docs/contributing.md` is the guide for
+  new contributors. There is no `AGENTS.md` inside `docs/` because that folder
+  is the site's source.
 - Do not commit build output (`dist/`) or `.patch` files other than those
   under `patches/` (see `.gitignore`).

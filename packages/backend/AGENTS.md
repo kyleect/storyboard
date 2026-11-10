@@ -21,6 +21,12 @@ changes: also read `migrations/AGENTS.md`.
   call it; they do not write runs, run messages or run events themselves.
 - **One active top-level run per session** (`requireIdle`). Subagent runs are
   children of the active run.
+- **A session's transcript is a tree.** What the model, the files and the UI see
+  is the line from the first message to the session's tip. Editing,
+  regenerating and branching move the tip or add a sibling; they do not rewrite
+  messages (except an in-place edit of the text). A new event field that holds a
+  message id or a run id must be added to the lists in `fork.ts`, or forking will
+  copy it wrongly; a test in `fork.test.ts` checks every event type.
 - **No hard deletes of versioned records.** Entries, agents, skills, schemas
   and data are soft-deleted with a new version flagged `deleted`; sessions and
   projects go to the trash first and are purged at startup after
@@ -44,6 +50,8 @@ src/
   *-routes.ts          agent, skill, entry (files and notes), data, mcp, workspace routes
   runs.ts              RunManager: starts, supervises, answers and records runs
   store.ts             sessions, projects, messages, runs, events (plain SQL)
+  transcript.ts        reads the active line of a transcript straight from the database
+  branches.ts, fork.ts message branches (a transcript is a tree with a tip) and forking a session
   *-store.ts           agents, skills, entries, data, errors, mcp, workspaces
   tool-settings.ts, tool-grants.ts, tool-access.ts   which tools a run gets
   placeholders.ts      {{skills}} {{tools}} {{schemas}} {{data}} {{agents}} in prompts

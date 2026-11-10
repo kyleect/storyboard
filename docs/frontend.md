@@ -17,23 +17,34 @@ packages/frontend/src
   queries/               query-key factories, one file per feature
   live.ts                live run state (Zustand) and the two event-stream hooks
   picked.ts              the project picked in the navbar
+  sessionsPrefs.ts       the Sessions page's sort direction and page size
   linear.ts, debug.ts    debug export → linear view; clipboard helpers
   schema-builder.ts      JSON Schema ⇄ editable field tree
   tool-grant.ts          tool grants: allowed tools and the edits a click makes
+  mcp-form.ts            parsing and formatting the MCP server form's text fields
+  attachments.ts, audio.ts   accepted file types; voice recording to WAV
   routes/
-    Layout.tsx           navbar, project picker, session list
+    Layout.tsx           navbar, project picker, session list, and the Home page
+    Sessions.tsx         the Sessions page: a paged, sortable table of sessions
+    SessionActions.tsx   rename, trash and restore sessions and projects
     Chat.tsx             a session: transcript, composer, tabs
+    TranscriptScroll.tsx keeps the transcript pinned to the bottom
     ApprovalDialog.tsx   tool approval prompt
     AskUserForm.tsx      inline forms
     Entries.tsx          files and memory notes
     Agents.tsx, Skills.tsx, Schemas.tsx, Data.tsx   management pages
+    Workspaces.tsx       workspaces and what they search
     Errors.tsx           errors console
-    Settings.tsx         settings
-    ToolSettings.tsx     the Settings tools section
+    Settings.tsx         settings (areas and sections)
+    ToolSettings.tsx     the Settings Tools → Permissions section
+    McpServers.tsx       the Settings Tools → MCP servers section
     ToolGrantEditor.tsx  the agent editor's tools section
     ApprovalSelect.tsx   ask / don't ask choice
     ProjectPage.tsx      one project
     DebugPanel.tsx, LinearView.tsx   debugging tab
+    EditableTitle.tsx    click-to-edit session title and project name
+    JsonEditor.tsx       CodeMirror JSON editor
+    Branching.tsx        editing, branching, regenerating and forking controls in the chat
     ContextMeter.tsx, ModelPicker.tsx, ReasoningPicker.tsx, Markdown.tsx, …
 ```
 
@@ -70,13 +81,14 @@ Defined in `main.tsx`; every page renders inside `Layout`.
 | Path                                                        | Page                                                          |
 | ----------------------------------------------------------- | ------------------------------------------------------------- |
 | `/`                                                         | Home                                                          |
+| `/sessions`                                                 | Sessions: a table of the picked project's sessions            |
 | `/sessions/$sessionId`                                      | Chat                                                          |
 | `/projects/$projectId`                                      | Project page (name, description, its sessions)                |
 | `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files and notes, agents, skills, schemas and data |
 | `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                 |
 | `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants     |
 | `/errors`                                                   | Errors console across all sessions                            |
-| `/settings`                                                 | Settings                                                      |
+| `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                     |
 
 ## Where state lives
 
@@ -149,19 +161,43 @@ other window.
 
 ## The Chat page
 
-`routes/Chat.tsx` is the main screen. It has five tabs:
+`routes/Chat.tsx` is the main screen. It has six tabs:
 
-| Tab    | Content                                                                       |
-| ------ | ----------------------------------------------------------------------------- |
-| Chat   | The transcript, the composer, and the live run.                               |
-| Files  | The session's own files. Project and global files are managed on their pages. |
-| Memory | The session's memory notes.                                                   |
-| Data   | The session's schemas and data.                                               |
-| Debug  | The linear view, an event table, and each run's request.                      |
+| Tab        | Content                                                                       |
+| ---------- | ----------------------------------------------------------------------------- |
+| Chat       | The transcript, the composer, and the live run.                               |
+| Files      | The session's own files. Project and global files are managed on their pages. |
+| Memory     | The session's memory notes.                                                   |
+| Data       | The session's schemas and data.                                               |
+| Workspaces | The workspaces attached to the session (and its project's, read-only).        |
+| Debug      | The linear view, an event table, and each run's request.                      |
 
-**Loading.** `["session", id]` fetches the session detail: session, project, all
-messages (with model, effort, agent version, usage, run id, parent call id),
-subagent usage, and the live-run snapshot.
+**Editing and branching.** The transcript is a tree (see
+[Branches](backend.md#branches)); the page shows one line of it. `routes/Branching.tsx`
+holds the controls, and the session detail's `branching` field says where each
+applies: `points` (messages a branch or fork may start at), `editable` (the user's
+own messages), `regenerate` (the user message that started the turn _Regenerate_
+would redo) and `continuations` (live messages after the end of the line). The
+controls appear only while the session is idle.
+
+| Control           | Does                                                                                                                                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| _Edit_            | Opens a box on one of your messages. Saving uses the default from Settings → Chat → Editing (`editMode`); the ▾ menu next to _Save_ saves the other way: a _branch_ keeps the old message and what followed on a branch of its own, _in place_ overwrites the text and keeps what follows. |
+| _Branch off_      | Ends the line at that message, so the next message continues from there.                                                                                                                                                                                                                   |
+| _Regenerate_      | Asks the model for another reply to the last turn. The line moves back to the user message that started the turn, and the old reply stays as a branch.                                                                                                                                     |
+| _Fork_            | Asks for a title (default `<title> (fork)`), then copies the line up to that message into a new session.                                                                                                                                                                                   |
+| `2/3` switcher    | On a message that has siblings: previous and next branch, and a delete that moves the branch to the Trash.                                                                                                                                                                                 |
+| Continuations row | Under the end of the line: the other messages that continue from it, each switching to its branch.                                                                                                                                                                                         |
+| _Forked from …_   | Under a forked session's title: a link to the source (marked when it is in the Trash or deleted).                                                                                                                                                                                          |
+
+The requests are in `useBranchActions`; each refreshes the session afterwards.
+`session.transcript_changed` (from this or another window) invalidates the session
+and its files, notes and data, since they follow the line shown.
+
+**Loading.** `["session", id]` fetches the session detail: session, project, the
+messages of the line shown (with model, effort, agent version, usage, run id,
+parent call id and sibling branches), `branching`, `forkedFrom`, subagent usage,
+and the live-run snapshot.
 
 **The transcript** is the stored messages with live messages merged in: an
 in-flight message replaces its stored version (if continuing) or follows the
@@ -270,6 +306,39 @@ allow a tool before it is switched off.
 In the session context, edits to session-scoped files, notes and data go through
 `…/sessions/:id/…` routes and become **edit messages** in the transcript. They
 are disabled while a run is active.
+
+## The Sessions page
+
+`routes/Sessions.tsx` (`/sessions`) lists the sessions of the project picked in the
+navbar, or the standalone ones when none is picked, in a table: title, creation
+time, context use and agents. The server pages and sorts it
+(`GET /api/sessions-page`): the user chooses newest or oldest first and 10, 25, 50
+or 100 rows, and `sessionsPrefs.ts` remembers both in `localStorage`. Rows can be
+selected, across pages; the header checkbox asks the server for every session id
+(`GET /api/sessions-page/ids`) and selects the ones with no run in progress, since
+a running session cannot be trashed. _Move to trash_ sends the ids to
+`POST /api/sessions/trash`. Picking another project starts the page over.
+
+## Settings
+
+`routes/Settings.tsx` is one route (`/settings/$`) whose address names the tab:
+`/settings/<area>/<section>`, so changing tabs does not remount the page and a tab
+can be linked to. An unknown area or section is replaced by the first one.
+
+| Area    | Sections                                                   |
+| ------- | ---------------------------------------------------------- |
+| General | Models, Server                                             |
+| Chat    | System prompt, Session titles, Editing, Media              |
+| Agents  | Subagents, Limits                                          |
+| Tools   | Permissions (`ToolSettings`), MCP servers (`McpServers`)   |
+| Trash   | Retention, and the trashed sessions, projects and branches |
+
+`McpServers.tsx` lists the MCP servers the backend connects to, each with its
+connection state and tools, and a form to add or edit one (stdio or http, see
+[MCP servers](backend.md#mcp-servers)). `mcp-form.ts` turns its text fields (one
+`KEY=value` per line for environment, one `Name: value` per line for headers)
+into the stored shape and back. Settings values that an environment variable
+overrides are shown as such.
 
 ## Workspaces
 

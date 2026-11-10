@@ -213,14 +213,14 @@ extras, plus the tools that existed when the version was saved. See
 [backend.md](backend.md#tool-grants).
 
 **Tool group**
-A set of related tools (Files, Memory, Structured Data, Projects, Agents,
-Subagents, Sessions, Skills, Web, Utilities). Every tool is in exactly one. An
+A set of related tools (Files, Workspaces, Memory, Structured Data, Projects,
+Agents, Subagents, Sessions, Skills, Web, MCP, Utilities). Every tool is in exactly one. An
 agent can be given or refused a whole group. See [tools.md](tools.md#tool-groups).
 
 **Always-on tools**
 Tools offered to every agent regardless of its tool grant. A tool's own default
-can be changed in Settings. By default: the file and memory tools, `skill_load`
-and `subagent_handback`.
+can be changed in Settings. By default: `skill_load` and `subagent_handback`. The
+file and memory tools are in tool groups, so an agent gets them through its grant.
 
 **Needs-review tool**
 A destructive or prompt-changing tool that a group grant does not cover; an agent
@@ -287,9 +287,28 @@ _project_, _agent_, _global_ (schemas also have _builtin_). Skills have _builtin
 _global_, _project_ and _agent_.
 
 **File**
-A named text document (`plain`, `markdown` or `json`) with a key such as
-`characters.alice.md`. Keys allow letters, digits, `.`, `_` and `-` and are
-case-sensitive. Written by both the user and the model.
+A named document with a key such as `characters/alice.md`. A text file is
+`plain`, `markdown` or `json`; an image or audio file is a _binary file_. A key
+is a path of names separated by `/`; names are case-sensitive and follow the
+rules in [core.md](core.md#file-names-and-references).
+Written by both the user and the model.
+
+**Folder**
+The `/`-separated part of a file's key. A folder with files needs no record; an
+_explicit folder_ (a row for project and global files, a transcript entry for
+session files) lets an empty folder exist. See
+[backend.md](backend.md#folders).
+
+**File reference**
+Text that says where a file is: `session://notes.md`, `project://…`,
+`global://…` or `workspace://<id>/path`. Written in angle brackets in messages
+and tool results. See
+[core.md](core.md#file-names-and-references).
+
+**Binary file (blob)**
+An image or audio file. Its bytes are stored once, by SHA-256, in the `blobs`
+table; the file record points at them. See
+[backend.md](backend.md#binary-files-and-attachments).
 
 **Memory note**
 A short text note the model writes for itself. It has a generated id instead
@@ -321,6 +340,18 @@ merge patch applied.
 **Merge patch**
 An RFC 7396 JSON Merge Patch, used by `data_update` and `data_migrate`.
 
+**Branch / tip**
+A session's transcript is a tree: each top-level message points at the one before
+it (`parent_id`). The page shows one line of it, from the first message to the
+session's _tip_ (`tip_id`). Editing, regenerating or branching off adds a sibling
+or moves the tip instead of rewriting messages, and a branch can be switched to,
+deleted (to the Trash) and restored. See [backend.md](backend.md#branches).
+
+**Fork**
+Copies a session's line up to a message into a new session, with new ids. Files,
+notes and data are shared with the source because they live in the project or
+global scope. See [backend.md](backend.md#branches).
+
 **Replay**
 Rebuilding session-scoped files, notes, schemas and data by applying, in order,
 the changes recorded on the session's messages.
@@ -348,6 +379,16 @@ The secret the UI sends with every request. Distinct from a _model token_.
 
 **Data directory**
 The folder holding the database, key file, API token and runtime file.
+
+**MCP server**
+An external program or remote service the backend connects to as an MCP client;
+its tools become harness tools in the `mcp` group, named `mcp_<server>_<tool>`.
+See [backend.md](backend.md#mcp-servers).
+
+**Data step**
+A one-time change to stored data that SQL cannot make (for example rewriting JSON
+inside messages), run once after the migrations and recorded in `data_steps`. See
+[backend.md](backend.md#migrations).
 
 **Migration (database)**
 Not to be confused with a data migration. A numbered `.sql` file that changes

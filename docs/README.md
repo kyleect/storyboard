@@ -13,13 +13,15 @@ and how the parts fit together.
 
 | Document                                             | Read it to learn                                                                                         |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [glossary.md](glossary.md)                           | What each term means (session, run, project, scope, and so on). Start here.                              |
+| [contributing.md](contributing.md)                   | New here? Set up, read in order, where code lives, and recipes for common changes.                       |
+| [glossary.md](glossary.md)                           | What each term means (session, run, project, scope, and so on). Read this before the rest.               |
 | [core.md](core.md)                                   | The framework-free engine: messages, events, the agent loop, tool definitions, the llama-server adapter. |
 | [tools.md](tools.md)                                 | The tools an agent can call, and how a tool is written.                                                  |
-| [backend.md](backend.md)                             | The server: run management, persistence, the HTTP API, search, startup and shutdown.                     |
+| [backend.md](backend.md)                             | The server: run management, persistence, files, workspaces, MCP, the HTTP API, search, startup.          |
 | [frontend.md](frontend.md)                           | The browser UI: how it loads state, follows live runs and answers prompts.                               |
 | [how-it-works-together.md](how-it-works-together.md) | End-to-end walk-throughs: sending a message, approvals, subagents, reconnecting, crash recovery.         |
 | [worked-example.md](worked-example.md)               | One real conversation traced step by step through every layer, from a debug export.                      |
+| [DEVELOPMENT.md](DEVELOPMENT.md)                     | Requirements, running the app, multimodal models, environment variables, checks.                         |
 
 ## The system in one picture
 
@@ -57,24 +59,26 @@ packages/
   frontend/   @harness/frontend  React + Mantine UI (Vite)
 ```
 
-Dependencies point one way:
+Dependencies point one way
 
+| Package    | Depends on      | Runtime                |
+| ---------- | --------------- | ---------------------- |
+| `core`     |                 | Any JavaScript runtime |
+| `tools`    | `core`          | Node                   |
+| `backend`  | `core`, `tools` | Node 22.22+            |
+| `frontend` | `core`          | Browser                |
+
+```mermaid
+flowchart RL
+  core
+  tools
+  backend
+  frontend
+
+  tools --> core
+  backend --> tools
+  frontend --> core
 ```
-core  ◀── tools  ◀── backend
-  ▲
-  └────────────────── frontend   (imports types and a few pure helpers only)
-```
-
-| Package    | Depends on                                                                                             | Runtime                                    |
-| ---------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| `core`     | `zod`                                                                                                  | Any JavaScript runtime. No Node-only APIs. |
-| `tools`    | `core`, `turndown`, `@mixmark-io/domino`                                                               | Node                                       |
-| `backend`  | `core`, `tools`, `fastify`, `ajv`, `better-sqlite3-multiple-ciphers`, `chokidar`, `sqlite-vec`, `yaml` | Node 22.22+                                |
-| `frontend` | `core`, React, Mantine, TanStack Router and Query, Zustand, CodeMirror                                 | Browser                                    |
-
-The frontend imports `@harness/core` for types and for the pure function
-that applies streamed events to a message. It never imports `tools` or
-`backend`.
 
 ## Design principles visible throughout the code
 
@@ -120,15 +124,15 @@ Each setting can come from an environment variable, from the database
 environment variable, then stored value, then default. Three values are read
 before the database opens and can only come from the environment:
 
-| Variable           | Default                                 | Meaning                       |
-| ------------------ | --------------------------------------- | ----------------------------- |
-| `HARNESS_DATA_DIR` | `~/Library/Application Support/harness` | Folder for all backend files. |
-| `HARNESS_DB_PATH`  | `<data dir>/harness.db`                 | The encrypted database.       |
-| `HARNESS_KEY_FILE` | `<data dir>/harness.key`                | The database key.             |
+| Variable           | Default                                 | Meaning                              |
+| ------------------ | --------------------------------------- | ------------------------------------ |
+| `HARNESS_DATA_DIR` | `~/Library/Application Support/harness` | Folder for all backend files.        |
+| `HARNESS_DB_PATH`  |                                         | The encrypted database. `harness.db` |
+| `HARNESS_KEY_FILE` |                                         | The database key. `harness.key`      |
 
 The remaining settings are listed in [backend.md](backend.md#settings).
 
-### Files in the data directory
+### Important Files
 
 | File           | Purpose                                                                    |
 | -------------- | -------------------------------------------------------------------------- |

@@ -10,14 +10,19 @@ scripted model and in-memory fakes.
 
 ```
 packages/core/src
+  index.ts               the public surface: re-exports every module below except testing.ts
   messages.ts            message and content-block types (Zod)
   events.ts              the event contract (Zod)
   model.ts               ModelAdapter interface, request and chunk types
   run.ts                 streamMessage, runSingleCall
   loop.ts                runLoop: the agent loop
-  tools.ts               Tool, defineTool, ToolContext, access interfaces
+  tools.ts               Tool, defineTool, ToolContext, TOOL_GROUPS, access interfaces
   forms.ts               input forms: reading, validating, describing
   entries.ts             files and memory notes: access API, replay
+  file-names.ts          rules for file and folder names
+  file-refs.ts           file references: session://, project://, global://, workspace://
+  workspaces.ts          WorkspaceAccess, the interface for workspace folders
+  media.ts               which images and audio are inline in a request (foldMedia)
   schemas-data.ts        schemas and data: access API, replay
   schema-features.ts     the JSON Schema subset schemas may use
   review.ts, changes.ts  describing and applying proposed changes
@@ -26,7 +31,8 @@ packages/core/src
   control.ts             RunControl: act on a streaming response
   message-state.ts       rebuild a message from events
   fake-model.ts          ScriptedModel for tests
-  llama-server/          adapter, models, props, embeddings, SSE reader
+  fake-shared-entries.ts in-memory SharedEntries for tests (exported by testing.ts)
+  llama-server/          adapter, models, props, embeddings, SSE reader, fake server
   testing.ts             test helpers exported as @harness/core/testing
 ```
 
@@ -425,6 +431,8 @@ the transcript. Without the hook, nothing is taken.
 | `onMessage`, `reportError`                                             | Persistence and error reporting hooks.                                                                 |
 | `errorLimit`, `previewLimit`, `cancelledText`                          | Truncation limits and wording.                                                                         |
 | `projectId`, `projectName`                                             | The session's project, if any.                                                                         |
+| `mediaSupport`, `blobs`                                                | What the model reads (images, audio); where a tool stores bytes it makes.                              |
+| `workspaces`                                                           | `WorkspaceAccess`: the workspace folders the session can use.                                          |
 | `sharedEntries`, `searchEntries`, `newNoteId`                          | Project and global files and notes; search; id generation.                                             |
 | `sharedData`, `schemaChecker`                                          | Global, project and agent schemas and data; JSON Schema validation.                                    |
 | `projects`, `agents`, `subagents`                                      | Access for the project, agent and subagent tools.                                                      |
@@ -458,9 +466,10 @@ const tool = defineTool({
 ```
 
 `TOOL_GROUPS` lists the groups a tool can belong to, in display order (`files`,
-`memory`, `structured-data`, `projects`, `agents`, `subagents`, `sessions`,
-`skills`, `web`, `utilities`). `RunFacts` describes the run a tool would be
-offered in: `hasSkills`, `isChild` and `canStartSubagent`. What these fields mean
+`workspaces`, `memory`, `structured-data`, `projects`, `agents`, `subagents`,
+`sessions`, `skills`, `web`, `mcp`, `utilities`). `RunFacts` describes the run a
+tool would be offered in: `hasSkills`, `isChild`, `canStartSubagent` and
+`hasWorkspaces`. What these fields mean
 for the tools a run gets is described in [tools.md](tools.md#tool-groups).
 
 `defineTool` converts the Zod schema to JSON Schema for the model and **rejects
@@ -513,6 +522,23 @@ it to `needsApproval(tool, subject)`. A tool without one behaves as before.
 Tools never reach the database directly. They use these interfaces, and the
 backend decides what is behind them.
 
+## File names and references
+
+`fileNameProblem(path)` checks a file or folder path before it is created: each
+`/`-separated name must have no control characters, not be `.` or `..`, not end
+in a dot or space, not be a name Windows reserves (`CON`, `NUL`, `COM1`, …), and
+be at most 255 characters. Names are case-sensitive and compared exactly as
+typed. A name that is already stored stays valid. `parentFolders`, `joinPath`
+and `isInFolder` are the path helpers the stores and the UI share.
+
+A **file reference** says where a file is. The forms are `session://notes.md`,
+`project://characters/alice.md`, `global://My Photo.png` and
+`workspace://<id>/chapters/one.md`. In text (a message, a task, a tool result) a
+reference is written in angle brackets, `<session://My Photo.png>`; tools accept
+the plain form with or without brackets. `parseRef`, `plainRef`, `formatRef` and
+`findRefs` read and write them. It is not a URL parser: a name with spaces is
+valid, and a name containing `>` cannot be written inside brackets.
+
 ## Files and memory notes (`entries.ts`)
 
 Files and memory notes (together _entries_) exist in three scopes.
@@ -528,8 +554,9 @@ Files and memory notes (together _entries_) exist in three scopes.
 combines the replayed session state with the shared scopes, only offers the
 `project` scope when the session is in a project, and appends every
 session-scoped change to a list that the loop records on the call's result.
-`checkFileKey` and `checkFileValue` enforce the key pattern
-(`^[A-Za-z0-9._-]+$`) and that `json` files parse.
+`checkFileName` (using `fileNameProblem`, see
+[File names and references](#file-names-and-references))
+and `checkFileValue` enforce the name rules and that `json` files parse.
 
 Search is a function supplied by the caller (`EntrySearch`); without it,
 search tools fail with "Search is not available."

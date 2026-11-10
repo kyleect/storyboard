@@ -303,3 +303,5 @@ overridden and the stored value stays dormant until the variable is removed.
 | How does the UI show a prompt?            | `frontend/src/routes/ApprovalDialog.tsx`, `AskUserForm.tsx`        |
 | How does search work?                     | `backend/src/search*.ts`, `embedder.ts`, `core/src/chunking.ts`    |
 | How does model communication work?        | `core/src/llama-server/adapter.ts`                                 |
+| How do workspaces and MCP tools work?     | `backend/src/workspace-*.ts`, `mcp-manager.ts`                     |
+| How do I make a change?                   | [contributing.md](contributing.md)                                 |

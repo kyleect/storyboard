@@ -24,7 +24,9 @@ packages/tools/src
   subagents.ts       start_subagent, subagent_handback
   skills.ts          skill_load, skillsList, skillsInstruction
   schemas-data.ts    schema and data tools, schemasText, dataText, schemasInstruction
+  workspaces.ts      workspaces_list and the workspace_* tools
   results.ts         shared helpers: fail, notDone, guarded
+  domino.d.ts        type declaration for @mixmark-io/domino
 ```
 
 ## How a tool call is handled
@@ -127,8 +129,12 @@ form, because _the model suggests and the user decides_ where things go.
 | `memory_delete`                                                       | never    | Deletes a note by id.                                                                                                                                              |
 | `memory_search`                                                       | never    | Keyword and meaning search over notes.                                                                                                                             |
 
-Key rules: letters, digits, `.`, `_` and `-` only; case-sensitive. File types
-are `plain`, `markdown` and `json` (a `json` file must parse).
+Key rules: a key is a path of names separated by `/` (for example
+`characters/alice.md`), so files can sit in folders. Spaces and any letters are
+allowed. A name may not be `.` or `..`, contain a control character, end in a dot
+or a space, be a name Windows reserves (`CON`, `NUL`, …) or be longer than 255
+characters. Keys are case-sensitive. Text file types are `plain`, `markdown` and
+`json` (a `json` file must parse); images and audio are binary files.
 
 The **copy and move** tools move entries between scopes or to another project.
 They always ask for approval and then show a form with the model's suggested

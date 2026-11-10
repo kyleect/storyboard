@@ -16,5 +16,6 @@ Design decisions live in the project's design document (`claude/base-design.md`)
 
 ## Documentation
 
-- [`docs/`](./docs/README.md)
+- [`docs/`](./docs/README.md); new contributors start with
+  [`docs/contributing.md`](./docs/contributing.md)
 - https://kyleect.github.io/storyboard/

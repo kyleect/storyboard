@@ -21,7 +21,8 @@ Read the root `AGENTS.md` first. Background: `docs/tools.md`.
 2. Every tool declares:
    - `name` (snake_case), `description` (this is prompt text the model reads;
      write it for the model),
-   - `input`: a Zod object,
+   - `input`: a Zod object. `defineTool` rejects any integer field that lacks both
+     `.min()` and `.max()`, so give every integer a minimum and a maximum,
    - `approval`: `"never"`, `"ask"` or `"always"`,
    - `group`: one of `TOOL_GROUPS` in core. Each tool is in exactly one group.
 3. Optional: `alwaysOn`, `needsReview` (destructive or prompt-changing tools; a

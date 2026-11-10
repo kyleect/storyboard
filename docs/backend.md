@@ -7,29 +7,48 @@ serves the HTTP API; and pushes events to the UI over server-sent events (SSE).
 
 ```
 packages/backend
-  migrations/            0001_init.sql … 0022_tool_grants.sql
+  migrations/            0001_init.sql … 0031_branches.sql
   src/
     main.ts              startup, wiring, shutdown
     config.ts            data directory and file locations
     db.ts                encrypted database, key file
     migrate.ts           migration runner
+    data-steps.ts        one-time data changes SQL cannot make (run after migrations)
     token.ts             API token file
     settings.ts          settings: defaults, environment, stored values
     server.ts            Fastify app: auth, core routes, event streams
     agent-routes.ts      agent HTTP routes         ┐
-    skill-routes.ts      skill HTTP routes         │ registered by server.ts
-    entry-routes.ts      file and note routes      │
-    data-routes.ts       schema and data routes    ┘
+    skill-routes.ts      skill HTTP routes         │
+    entry-routes.ts      file, note, folder, blob  │ registered by server.ts
+                         and media-describer routes│
+    data-routes.ts       schema and data routes    │
+    mcp-routes.ts        MCP server routes         │
+    workspace-routes.ts  workspace routes          ┘
     runs.ts              RunManager (the heart of the backend)
     store.ts             sessions, projects, messages, runs, events (SQL)
+    transcript.ts        reads the active line of a session's transcript straight from the database
+    branches.ts          which messages a branch may start or end at, and the branching view of a session
+    fork.ts              copies a session's line into a new session
     agents-store.ts      agents and versions
+    agent-files.ts       agents as Markdown files (import and export)
     skills-store.ts      skills and versions
-    entries-store.ts     project/global files and notes, versions
+    entries-store.ts     project/global files, folders and notes, versions
     data-store.ts        global/project/agent schemas and data, versions
+    mcp-store.ts         MCP server rows
+    mcp-manager.ts       connects to MCP servers; their tools become harness tools
+    workspaces-store.ts  workspaces and their attachments
+    workspace-fs.ts      disk access for workspaces (path safety, stale check)
+    workspace-index.ts   indexes ticked workspace files for search
+    workspace-ticks.ts   the set of paths the user chose to search
+    blobs.ts             bytes of binary files, by SHA-256
+    file-lookup.ts       reads a referenced file's kind and bytes for a request
+    media-detect.ts      which uploads are accepted, and how they are checked
+    media-support.ts     whether the model in use reads images and audio
+    media-describer.ts   writes a description or transcript of an image or audio file
     tool-settings.ts     per-tool approval, always-on and off settings
     tool-grants.ts       an agent's tool grant: groups, exceptions, extras
     tool-access.ts       project and agent access for tools
-    placeholders.ts      {{skills}} {{tools}} {{schemas}} {{data}} {{agents}}
+    placeholders.ts      {{skills}} {{tools}} {{schemas}} {{data}} {{agents}} {{workspaces}} {{date}} {{time}}
     default-agent.ts     which agent a new session starts with
     search-index.ts, search.ts, embedder.ts, embed-prefix.ts   search
     json-schema.ts       Ajv-based schema checker
@@ -38,6 +57,8 @@ packages/backend
     auto-title.ts        session titles
     trash.ts             purge of expired trash
     session-debug.ts     debugging export
+    test-helpers.ts      tempDatabase() and friends, used by tests
+    test-fixtures/       a small MCP server used by the MCP tests
 ```
 
 ## Startup and shutdown
@@ -48,7 +69,8 @@ packages/backend
    owner-only.
 2. Read bootstrap paths from the environment (`config.ts`).
 3. Load or create the database key; open the encrypted database.
-4. Apply pending migrations.
+4. Apply pending migrations, then run the data steps (see
+   [Migrations](#migrations)).
 5. Create the stores (`Store`, `EntryStore`, `AgentStore`, `SkillStore`,
    `DataStore`, `McpServerStore`) and the `SearchIndex`.
 6. Create the `McpManager` (it connects in step 11).
@@ -104,6 +126,14 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
   intentional and the database already matches.
 - There are no down migrations.
 
+**Data steps.** Some changes to stored data cannot be written in SQL, for example
+rewriting the JSON inside `messages.message`. `data-steps.ts` holds these as
+named steps (`file-ops-media-types`, `attachments-to-files`, `branches-backfill`). `runDataSteps` runs
+each step once, in its own transaction, right after the migrations; the
+`data_steps` table records which have run, so a second start changes nothing.
+A step's name must never change once released, because the name is the record
+that it ran.
+
 ### Tables
 
 | Area             | Tables                                                                                                         | Notes                                                                                                                                         |
@@ -114,12 +144,12 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 | Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments).                                            |
 | Workspaces       | `workspaces`, `workspace_attachments`, `workspace_index_files`                                                 | Folders and what attaches them; see [Workspaces](#workspaces).                                                                                |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                                                                    |
-| Files and memory | `entries`, `entry_versions`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`                     | Project and global entries, and indexed workspace files (scope `workspace`).                                                                  |
+| Files and memory | `entries`, `entry_versions`, `folders`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`          | Project and global entries, and indexed workspace files (scope `workspace`).                                                                  |
 | Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                                                               |
 | Skills           | `skills`, `skill_versions`                                                                                     |                                                                                                                                               |
 | Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                                                               |
 | Diagnostics      | `errors`                                                                                                       |                                                                                                                                               |
-| System           | `schema_migrations`                                                                                            |                                                                                                                                               |
+| System           | `schema_migrations`, `data_steps`                                                                              |                                                                                                                                               |
 
 **Sessions** have `title`, `project_id`, `agent_id`, `model`,
 `reasoning_effort`, `trashed_at` and `trashed_with_project`. A `NULL` model or
@@ -180,6 +210,8 @@ and which are overridden by the environment.
 | `mediaDescriberAgent`  | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off. |
 | `mediaDescriberModel`  | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.      |
 | `workspaceReadCap`     | `HARNESS_WORKSPACE_READ_CAP`     | `10000`                   | The most characters one workspace read returns (100 or more).                 |
+| `editMode`             | `HARNESS_EDIT_MODE`              | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.     |
+| `answerAfterEdit`      | `HARNESS_ANSWER_AFTER_EDIT`      | `true`                    | Whether the model replies right after an edit that made a branch.             |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.
@@ -782,6 +814,17 @@ Common behaviour:
   data that passes the new version is moved to it, and data that fails stays on
   its old version and is flagged out of date until migrated.
 
+### Folders
+
+A file's key can contain `/`, so files form a tree. A folder that holds files
+needs no record. An **explicit folder** is a row in `folders` (`project_id`
+null for global, `path`) that lets an empty folder exist. Session folders are
+kept in the transcript, like session files. Renaming a folder writes each file
+inside it under its new key (a new version) and deletes the old key, and moves
+explicit folder rows to match; deleting a folder deletes the row and
+soft-deletes the files inside it, so they can be restored. Folder and file
+names follow core's name rules (`file-names.ts`).
+
 `json-schema.ts` implements core's `SchemaChecker` with Ajv (JSON Schema
 2020-12, strict mode, plus `ajv-formats`). It checks that a schema is valid,
 that it uses only the supported features, and that every default matches its own
@@ -831,9 +874,10 @@ used (not resources, prompts or sampling).
   tool a run was already offered, when its server has gone, tries to reconnect
   once and otherwise fails with an error the model sees. Saving a server
   reconnects it with the new settings; turning it off closes the connection.
-- **Results.** Text is passed on. Images, audio and binary resources are named
-  and left out (a tool result is text only, even though a user message can carry
-  images and audio). A result the server marks as an error
+- **Results.** Text is passed on. An image or audio block (or a binary resource
+  with a media type) is saved as a session file when it is a type llama-server
+  reads and is under 20 MB (see [Media in requests](#media-in-requests));
+  otherwise it is named and left out. A result the server marks as an error
   is an error result; one with no content but structured content is that as
   JSON. Results are cut at 60 000 characters, and a call times out after 60 s.
 - **`RunManager.tools`** is the built-in tools followed by `dynamicTools()`, read
@@ -899,7 +943,8 @@ including subagents', and every stored event. It works for a session in the tras
 
 All routes under `/api` require the token. Request bodies are validated with Zod;
 errors return `{ error }` with a status (400 invalid request, 401 unauthorized,
-404 not found, 409 conflict, 502 llama-server unreachable).
+404 not found, 409 conflict, 502 llama-server unreachable). A 400 for an invalid
+request also lists the `issues`.
 
 ### Health and settings
 
@@ -915,22 +960,25 @@ errors return `{ error }` with a status (400 invalid request, 401 unauthorized,
 
 ### Sessions and projects
 
-| Method and path                                                         | Purpose                                                                                    |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `GET /api/sessions?projectId=`                                          | List sessions (a project's, or standalone).                                                |
-| `POST /api/sessions`                                                    | Create (optionally in a project; applies the default agent).                               |
-| `GET /api/sessions/:id`                                                 | Session detail: session, project, all messages, subagent usage, and the live-run snapshot. |
-| `PATCH /api/sessions/:id`                                               | Rename, or change model, effort or agent.                                                  |
-| `POST /api/sessions/:id/trash`, `…/restore`, `DELETE /api/sessions/:id` | Trash, restore, permanently delete (trashed only).                                         |
-| `GET /api/sessions/:id/debug`                                           | Debug export.                                                                              |
-| `GET /api/trash`, `DELETE /api/trash`                                   | List the trash (projects, sessions, deleted branches); empty it.                           |
-| `PATCH /api/sessions/:id/messages/:messageId`                           | Edit a user message (`mode` `branch` or `in_place`); see [Branches](#branches).            |
-| `POST /api/sessions/:id/regenerate`, `…/branch`, `…/switch`             | Regenerate the last reply; end the line at a message; show another branch.                 |
-| `POST /api/sessions/:id/fork`                                           | Copy the line up to a message into a new session (201); body `{ messageId, title }`.       |
-| `DELETE /api/sessions/:id/branches/:messageId`                          | Move a branch to the trash.                                                                |
-| `POST /api/trash/branches/:messageId/restore`, `DELETE …/:messageId`    | Restore a deleted branch; delete it forever.                                               |
-| `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects.                                                       |
-| `POST /api/projects/:id/trash`, `…/restore`, `DELETE /api/projects/:id` | Trash, restore, permanently delete.                                                        |
+| Method and path                                                         | Purpose                                                                                                                                                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/sessions?projectId=`                                          | List sessions (a project's, or standalone).                                                                                                                                                |
+| `GET /api/sessions-page`                                                | One page of sessions for the Sessions page: `projectId`, `direction` (`asc`/`desc` by creation time), `page`, `pageSize` (10, 25, 50 or 100). Each item says whether a run is in progress. |
+| `GET /api/sessions-page/ids`                                            | The ids of every session not in the trash (a project's, or standalone) and whether each is running: what "select all" needs.                                                               |
+| `POST /api/sessions/trash`                                              | Trash several sessions (`{ ids }`). The ones that cannot be trashed (not found, already trashed, a run in progress) come back with the reason.                                             |
+| `POST /api/sessions`                                                    | Create (optionally in a project; applies the default agent).                                                                                                                               |
+| `GET /api/sessions/:id`                                                 | Session detail: session, project, the messages of the line shown (each with its sibling branches), `branching`, `forkedFrom`, subagent usage, and the live-run snapshot.                   |
+| `PATCH /api/sessions/:id`                                               | Rename, or change model, effort or agent.                                                                                                                                                  |
+| `POST /api/sessions/:id/trash`, `…/restore`, `DELETE /api/sessions/:id` | Trash, restore, permanently delete (trashed only).                                                                                                                                         |
+| `GET /api/sessions/:id/debug`                                           | Debug export.                                                                                                                                                                              |
+| `GET /api/trash`, `DELETE /api/trash`                                   | List the trash (projects, sessions, deleted branches); empty it.                                                                                                                           |
+| `PATCH /api/sessions/:id/messages/:messageId`                           | Edit a user message (`mode` `branch` or `in_place`); see [Branches](#branches).                                                                                                            |
+| `POST /api/sessions/:id/regenerate`, `…/branch`, `…/switch`             | Regenerate the last reply; end the line at a message; show another branch.                                                                                                                 |
+| `POST /api/sessions/:id/fork`                                           | Copy the line up to a message into a new session (201); body `{ messageId, title }`.                                                                                                       |
+| `DELETE /api/sessions/:id/branches/:messageId`                          | Move a branch to the trash.                                                                                                                                                                |
+| `POST /api/trash/branches/:messageId/restore`, `DELETE …/:messageId`    | Restore a deleted branch; delete it forever.                                                                                                                                               |
+| `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects.                                                                                                                                                       |
+| `POST /api/projects/:id/trash`, `…/restore`, `DELETE /api/projects/:id` | Trash, restore, permanently delete.                                                                                                                                                        |
 
 ### Runs
 
@@ -965,7 +1013,8 @@ The same sub-paths exist under each scope prefix:
 
 | Sub-path                                                          | Available under                 | Purpose                                                                                                            |
 | ----------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/files`, `/files/:key`, `/notes`, `/notes/:id` (plus `/restore`) | global, project, session        | List, read, write, update, delete, restore files and notes.                                                        |
+| `/files`, `/files/:key`, `/notes`, `/notes/:id` (plus `/restore`) | global, project, session        | List, read, write, update, delete, restore files and notes. `POST /files` uploads a binary file.                   |
+| `/folders`, `/folders/rename`, `/folders/delete`                  | global, project, session        | List, create, rename and delete explicit folders of files (see [Folders](#folders)).                               |
 | `/data`, `/data/:dataId` (plus `/migrate`, `/restore`)            | global, project, agent, session | Data.                                                                                                              |
 | `/schemas`, `/schemas/:schemaId` (plus `/restore`, `/copy`)       | global, project, agent, session | Schemas.                                                                                                           |
 | `/agents`                                                         | global, project                 | Agents. Also `GET/PUT/DELETE /api/agents/:id`, `…/restore`, `…/versions/:seq`, `…/export`, `POST …/agents/import`. |

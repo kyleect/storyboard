@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node 22.22 or later (chokidar, which watches workspace folders, needs it), pnpm 10.
+- Node 22.22 or later, pnpm 10.
 - A running `llama-server`, started with `--jinja` so tool calls work. In router mode, pick a model in each session's
   model picker, or set a default model in Settings. Picking a model in a session
   asks the router to load it. Reasoning effort works the same way.
@@ -53,6 +53,12 @@ get a new token.
 | `HARNESS_PORT`                 | stored setting, else `4317`                  | Backend port                                                                        |
 | `HARNESS_LOOP_LIMIT`           | stored setting, else `20`                    | The most model calls one run makes                                                  |
 | `HARNESS_TRASH_RETENTION_DAYS` | stored setting, else `30`                    | Days in the trash before an item is deleted at startup (`0`: never)                 |
+
+These are the settings most often changed. Every other setting (copy limit,
+embedding model, session titles, subagents, media, workspace read size, and so
+on) also has an `HARNESS_*` variable; the full list with defaults is in
+[backend.md](backend.md#settings). New to the project? Start with
+[contributing.md](contributing.md).
 
 `HARNESS_BACKEND_URL` tells the frontend dev server where the backend is
 (default `http://127.0.0.1:4317`).

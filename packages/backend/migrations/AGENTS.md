@@ -35,6 +35,10 @@ Read `packages/backend/AGENTS.md` for the rest of the backend.
   inserted by migrations with `builtin = 1` and live in a scope of their own so
   a user's record can share a name. Changing a built-in's text means a new
   migration that updates it, never an edit to the old one.
+- Changes SQL cannot make, such as rewriting the JSON inside `messages.message`,
+  belong in a data step (`src/data-steps.ts`), which runs once after the
+  migrations and is recorded in `data_steps`. `0031_branches.sql` adds columns and
+  its data step `branches-backfill` fills them for existing messages.
 - Foreign keys are on (`foreign_keys=ON`) and the database uses WAL; the
   `sqlite-vec` extension is loaded before migrations run.
 
