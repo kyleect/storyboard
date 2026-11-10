@@ -43,7 +43,7 @@ flowchart LR
 
     subgraph LLM["llama-server"]
         Chat["/v1/chat/completions"]
-        Embed["/v1/embed…"]
+        Embed["/v1/embeddings"]
     end
 
     DB[("Encrypted SQLite file<br/>(+ key file, token file)")]
