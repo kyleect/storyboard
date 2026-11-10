@@ -155,6 +155,17 @@ export interface ProjectAccess {
   list(): ProjectSummary[];
   /** The session's project; null for a standalone session. */
   current(): ProjectInfo | null;
+  /**
+   * An agent change waiting for the next run: the session's pick when it
+   * differs from this run's agent. `agent` null means "no agent". Undefined:
+   * nothing is pending.
+   */
+  pending(): { agent: AgentSummary | null } | undefined;
+  /**
+   * Sets the session's agent; it applies from the next run. Throws a
+   * `ToolError` when the agent does not exist or the session cannot use it.
+   */
+  choose(agentId: string | null): void;
   /** Creates a project. It has no default agent. */
   create(input: {
     name: string;
