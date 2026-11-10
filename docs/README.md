@@ -68,36 +68,14 @@ flowchart LR
 
 ## Packages
 
-The repository is a pnpm workspace with four packages.
+The repository is a pnpm workspace with four packages. Their dependencies point one way.
 
-```
-packages/
-  core/       @harness/core      messages, events, agent loop, tool API, llama-server adapter
-  tools/      @harness/tools     every tool an agent can call
-  backend/    @harness/backend   Fastify server, SQLite, run manager, migrations
-  frontend/   @harness/frontend  React + Mantine UI (Vite)
-```
-
-Dependencies point one way
-
-| Package    | Depends on      | Runtime                |
-| ---------- | --------------- | ---------------------- |
-| `core`     |                 | Any JavaScript runtime |
-| `tools`    | `core`          | Node                   |
-| `backend`  | `core`, `tools` | Node 22.22+            |
-| `frontend` | `core`          | Browser                |
-
-```mermaid
-flowchart RL
-  core
-  tools
-  backend
-  frontend
-
-  tools --> core
-  backend --> tools
-  frontend --> core
-```
+| `packages/` | Package             | Depends on                         |
+| ----------- | ------------------- | ---------------------------------- |
+| `core/`     | `@harness/core `    |                                    |
+| `tools/`    | `@harness/tools`    | `@harness/core `                   |
+| `backend/`  | `@harness/backend`  | `@harness/core `, `@harness/tools` |
+| `frontend/` | `@harness/frontend` | `@harness/core `                   |
 
 ## Design principles visible throughout the code
 
