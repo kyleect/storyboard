@@ -25,17 +25,36 @@ and how the parts fit together.
 
 ## The system in one picture
 
-```
-   Browser                      Backend (Node, Fastify)                 llama-server
-┌──────────────┐  HTTP + SSE  ┌──────────────────────────────┐  HTTP + SSE  ┌────────────┐
-│  React UI    │ ───────────▶ │  HTTP routes                 │ ───────────▶ │ /v1/chat/  │
-│  (frontend)  │ ◀─────────── │  RunManager ──▶ core.runLoop │ ◀─────────── │ completions│
-└──────────────┘  events      │  Stores (SQL)                │  chunks      │ /v1/embed… │
-                              │  Search index + embedder     │              └────────────┘
-                              └──────────────┬───────────────┘
-                                             │
-                                  encrypted SQLite file
-                                  (+ key file, token file)
+```mermaid
+flowchart LR
+    subgraph Browser
+        UI["React UI<br/>(frontend)"]
+    end
+
+    subgraph Backend["Backend (Node, Fastify)"]
+        direction TB
+        Routes["HTTP routes"]
+        RM["RunManager"]
+        Core["core.runLoop"]
+        Stores["Stores (SQL)"]
+        Search["Search index + embedder"]
+        RM --> Core
+    end
+
+    subgraph LLM["llama-server"]
+        Chat["/v1/chat/completions"]
+        Embed["/v1/embed…"]
+    end
+
+    DB[("Encrypted SQLite file<br/>(+ key file, token file)")]
+
+    UI -- "HTTP + SSE" --> Routes
+    Routes -- "events" --> UI
+    Core -- "HTTP + SSE" --> Chat
+    Chat -- "chunks" --> Core
+    Search -- "HTTP" --> Embed
+    Stores --> DB
+    Search --> DB
 ```
 
 - The **UI** never talks to llama-server. It talks only to the backend.
