@@ -107,6 +107,15 @@ export function Layout() {
           {showPicker && sessionsLink}
           {showPicker && (
             <Stack gap={4}>
+              <Button
+                size="xs"
+                radius="xs"
+                variant="filled"
+                onClick={() => create.mutate()}
+                loading={create.isPending}
+              >
+                New Chat
+              </Button>
               <Select
                 size="sm"
                 radius="xs"
@@ -275,16 +284,6 @@ export function Layout() {
               </Button>
             </Stack>
           )}
-
-          <Button
-            size="xs"
-            radius="xs"
-            variant="filled"
-            onClick={() => create.mutate()}
-            loading={create.isPending}
-          >
-            New Chat
-          </Button>
 
           <Stack gap={0}>
             {!showPicker && sessionsLink}
