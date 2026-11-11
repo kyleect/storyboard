@@ -40,7 +40,7 @@ function Spinner({ label }: { label: string }) {
           ●
         </Text>
       ) : (
-        <Loader size={12} />
+        <Loader color="blue" type="dots" size="sm" />
       )}
     </span>
   );
@@ -71,7 +71,7 @@ export function SessionRunBadge({
   // goes straight back to the spinner.
   const shown = useDebouncedFlag(state !== undefined);
   if (state === "waiting") return <WaitingBadge />;
-  return shown ? <Spinner label="An agent is working" /> : null;
+  return shown ? <Loader color="blue" type="dots" size="xs" /> : null;
 }
 
 /** The summary at the top of the navbar; a popover lists the runs. */
@@ -83,12 +83,15 @@ export function GlobalRunIndicator({
   const workingNow = summary?.working ?? 0;
   const waiting = summary?.waiting ?? 0;
   const showWorking = useDebouncedFlag(workingNow > 0);
+
   // Keep the last count while the spinner lingers after the last run ends.
   const [lastWorking, setLastWorking] = useState(0);
   if (workingNow > 0 && workingNow !== lastWorking) setLastWorking(workingNow);
 
   if (!summary || (!showWorking && waiting === 0)) return null;
-  const workingText = `${lastWorking} ${lastWorking === 1 ? "agent" : "agents"} working`;
+
+  const workingText = `${lastWorking} ${lastWorking === 1 ? "agent" : "agents"}`;
+
   return (
     <>
       <Popover width={280} position="bottom-start" shadow="md" withArrow>
@@ -96,9 +99,11 @@ export function GlobalRunIndicator({
           <UnstyledButton aria-label="Agent activity">
             <Group gap={6} wrap="nowrap">
               {showWorking && (
-                <Group gap={4} wrap="nowrap">
+                <Group>
+                  <Badge size="xs" radius="xs" variant="gradient">
+                    {workingText}
+                  </Badge>
                   <Spinner label="Agents are working" />
-                  <Text size="xs">{workingText}</Text>
                 </Group>
               )}
               {waiting > 0 && (
