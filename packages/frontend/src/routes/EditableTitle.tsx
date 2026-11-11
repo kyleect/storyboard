@@ -30,7 +30,7 @@ export function EditableTitle({
         title={disabled ? undefined : "Rename"}
         style={{ minWidth: 0 }}
       >
-        <Title order={3} lineClamp={1}>
+        <Title order={5} lineClamp={1}>
           {title}
         </Title>
       </UnstyledButton>
@@ -55,7 +55,7 @@ export function EditableTitle({
   return (
     <TextInput
       style={{ flex: 1 }}
-      size="md"
+      size="sm"
       autoFocus
       aria-label={label}
       value={draft}
