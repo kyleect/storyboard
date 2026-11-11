@@ -309,7 +309,9 @@ one page per scope.
 
 **The agent's tools.** `ToolGrantEditor` shows tools under their group. Each group
 has its own on/off box and approval choice (each tool's setting, ask for all, or
-don't ask for all). Tools that are always on are shown locked, tools added since
+don't ask for all). Inside the MCP group, MCP tools (`mcp_<server>_<tool>`)
+are grouped by server, each server collapsed by default and with the same
+header; a server's box switches only that server's tools. Tools that are always on are shown locked, tools added since
 the agent was last saved (`newTools`) are marked, and a switch changes the agent
 between `allow` and `deny` mode. `tool-grant.ts` holds the pure logic: it works
 out which tools a grant allows with the same rules as the backend and computes

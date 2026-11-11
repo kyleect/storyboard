@@ -47,6 +47,57 @@ export function groupTools<T extends { group: ToolGroup }>(
 }
 
 /**
+ * The server an MCP tool belongs to, from its name `mcp_<server>_<tool>`. A
+ * server name has no "_" (backend `SERVER_NAME`), so the first "_" after the
+ * prefix ends it.
+ */
+export const mcpServerOf = (name: string): string | undefined =>
+  /^mcp_([a-z0-9][a-z0-9-]*)_/.exec(name)?.[1];
+
+/** A box in the agent editor: a tool group, or one MCP server's tools. */
+export interface ToolSection<T> {
+  /** Unique among the sections; an MCP server's is `mcp:<server>`. */
+  id: string;
+  /** The group the tools are in. */
+  group: ToolGroup;
+  label: string;
+  tools: T[];
+  /** Sections inside this one: the MCP group has one per server. */
+  children?: ToolSection<T>[];
+}
+
+/**
+ * `groupTools`, with each MCP server's tools also in a section of its own
+ * inside the MCP group (named as the server is, in the order of the server
+ * names). An MCP tool whose name does not give a server goes in one named
+ * "Other".
+ */
+export function sectionTools<T extends { name: string; group: ToolGroup }>(
+  tools: readonly T[],
+): ToolSection<T>[] {
+  return groupTools(tools).map((g): ToolSection<T> => {
+    if (g.id !== "mcp") return { ...g, group: g.id };
+    const servers = new Map<string, T[]>();
+    for (const t of g.tools) {
+      const server = mcpServerOf(t.name) ?? "";
+      servers.set(server, [...(servers.get(server) ?? []), t]);
+    }
+    return {
+      ...g,
+      group: g.id,
+      children: [...servers]
+        .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)))
+        .map(([server, inServer]) => ({
+          id: `mcp:${server}`,
+          group: g.id,
+          label: server === "" ? "Other" : server,
+          tools: inServer,
+        })),
+    };
+  });
+}
+
+/**
  * Whether the grant itself covers the tool (the same rules as the backend).
  * A tool that needs review is never covered by a blanket grant: in allow
  * mode it has to be in `extras`, in deny mode in `except`.
@@ -122,6 +173,22 @@ export function setGroup(
     except: g.except.filter((n) => !names.has(n) || keptExcept.has(n)),
     extras: g.extras.filter((n) => !names.has(n) || keptExtras.has(n)),
   };
+}
+
+/**
+ * Switches some of a group's tools on or off, for a section that is only part
+ * of a group (one MCP server's tools): `setGroup` would grant or deny the
+ * whole group. As with `setGroup`, switching on leaves a tool that needs
+ * review as it was.
+ */
+export function setTools(
+  g: ToolGrant,
+  tools: readonly GrantTool[],
+  on: boolean,
+): ToolGrant {
+  return tools
+    .filter((t) => !on || !t.needsReview)
+    .reduce((acc, t) => setTool(acc, t, on), g);
 }
 
 export type ToggleState = "all" | "none" | "mixed";

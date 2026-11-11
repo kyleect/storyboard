@@ -30,20 +30,29 @@ const TOOLS = [
   tool("read_webpage", "web", { off: true }),
 ];
 
-const approvals: ToolApprovalInfo[] = TOOLS.map((t) => ({
-  name: t.name,
-  description: t.description,
-  group: t.group,
-  alwaysOn: t.alwaysOn,
-  ask: false,
-  fixed: false,
-}));
+/** Two MCP servers: notes (one tool needs review) and calendar. */
+const MCP_TOOLS = [
+  tool("mcp_notes_search", "mcp"),
+  tool("mcp_notes_write", "mcp", { needsReview: true }),
+  tool("mcp_calendar_list", "mcp"),
+];
+
+const approvalsOf = (list: AgentToolInfo[]): ToolApprovalInfo[] =>
+  list.map((t) => ({
+    name: t.name,
+    description: t.description,
+    group: t.group,
+    alwaysOn: t.alwaysOn,
+    ask: false,
+    fixed: false,
+  }));
 
 /** Renders the editor with real state, and exposes what it last changed to. */
 function setup(
   start: ToolGrant = emptyGrant(),
   newTools: string[] = [],
   startApproval: Record<string, boolean> = {},
+  list: AgentToolInfo[] = TOOLS,
 ) {
   const seen = { grant: start, approval: startApproval };
   function Host() {
@@ -57,8 +66,8 @@ function setup(
         onGrant={setGrant}
         approval={approval}
         onApproval={setApproval}
-        tools={TOOLS}
-        approvals={approvals}
+        tools={list}
+        approvals={approvalsOf(list)}
         newTools={new Set(newTools)}
       />
     );
@@ -166,6 +175,58 @@ describe("ToolGrantEditor", () => {
     const mixed = select("Approval for Web tools");
     expect(mixed.value).toBe("");
     expect(mixed.placeholder).toBe("Mixed");
+  });
+
+  it("groups MCP tools by server inside the MCP group, collapsed", () => {
+    setup(emptyGrant(), [], {}, MCP_TOOLS);
+    expect(screen.getByText("MCP")).toBeTruthy();
+    expect(screen.getByText("0 of 3")).toBeTruthy();
+    // The servers are inside the group, which starts collapsed.
+    expect(screen.queryByText("notes")).toBeNull();
+    open("MCP");
+    expect(screen.getByText("notes")).toBeTruthy();
+    expect(screen.getByText("calendar")).toBeTruthy();
+    expect(screen.getByText("0 of 1")).toBeTruthy();
+    // So are the servers' tools.
+    expect(screen.queryByText("mcp_notes_search")).toBeNull();
+    open("notes");
+    expect(screen.getByText("mcp_notes_search")).toBeTruthy();
+    expect(screen.queryByText("mcp_calendar_list")).toBeNull();
+  });
+
+  it("grants the whole MCP group from its header", () => {
+    const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+    fireEvent.click(screen.getByLabelText("MCP tools"));
+    expect(seen.grant.groups).toEqual(["mcp"]);
+    // Not the tool that needs review.
+    expect(screen.getByText("2 of 3")).toBeTruthy();
+  });
+
+  it("grants one server from its header, not the others", () => {
+    const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+    open("MCP");
+    fireEvent.click(screen.getByLabelText("calendar tools"));
+    expect(seen.grant.groups).toEqual([]);
+    expect(seen.grant.extras).toEqual(["mcp_calendar_list"]);
+    expect(screen.getByText("1 of 1")).toBeTruthy();
+    expect(screen.getByText("1 of 3")).toBeTruthy();
+  });
+
+  it("opens the group and server that have something new", () => {
+    setup(emptyGrant(), ["mcp_calendar_list"], {}, MCP_TOOLS);
+    expect(screen.getByText("mcp_calendar_list")).toBeTruthy();
+    expect(screen.queryByText("mcp_notes_search")).toBeNull();
+  });
+
+  it("sets approval for one server only", () => {
+    const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+    open("MCP");
+    fireEvent.click(select("Approval for notes tools"));
+    fireEvent.click(screen.getByRole("option", { name: "Don't ask for all" }));
+    expect(seen.approval).toEqual({
+      mcp_notes_search: false,
+      mcp_notes_write: false,
+    });
   });
 
   it("keeps the same tools when switching between allow and deny", () => {
