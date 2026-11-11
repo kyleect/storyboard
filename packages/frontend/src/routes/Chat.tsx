@@ -68,7 +68,9 @@ import {
 } from "./Attachments";
 import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
 import { ContextMeter, latestUsage } from "./ContextMeter";
-import { FilesPanel, NotesPanel } from "./Entries";
+import { NotesPanel } from "./Entries";
+import { FilesExplorer } from "./FilesExplorer";
+import { LeaveGuard } from "./LeaveGuard";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
 import {
   BranchSwitcher,
@@ -189,6 +191,11 @@ export function Chat() {
   });
   // Chat, or the session's files, memory, data or debugging tools (plan U3).
   const [tab, setTab] = useState<string>("chat");
+  // The Files view is made on the first visit and kept, hidden, after that,
+  // so edits not yet saved survive a look at the chat.
+  const [filesOpened, setFilesOpened] = useState(false);
+  const [filesDirty, setFilesDirty] = useState(false);
+  if (tab === "files" && !filesOpened) setFilesOpened(true);
 
   // "Show in transcript" (error reporting plan, P7): scrolls to a message,
   // from the errors panel, or from the address (#message-<id>) when opened
@@ -638,7 +645,31 @@ export function Chat() {
           </Tabs.List>
         </Tabs>
 
-        {tab !== "chat" && (
+        {filesOpened && (
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: tab === "files" ? "block" : "none",
+            }}
+          >
+            <FilesExplorer
+              key={sessionId}
+              page={{ scope: "session", id: sessionId }}
+              projectId={detail.data.session.project_id}
+              readOnly={entriesReadOnly}
+              projectReadOnly={
+                detail.data.project?.trashed_at
+                  ? "The project is in the trash, so its files can be read but not changed."
+                  : undefined
+              }
+              onDirtyChange={setFilesDirty}
+            />
+          </div>
+        )}
+        {filesDirty && <LeaveGuard />}
+
+        {tab !== "chat" && tab !== "files" && (
           <ScrollArea style={{ flex: 1 }}>
             {tab === "debug" ? (
               <DebugPanel sessionId={sessionId} />
@@ -651,11 +682,6 @@ export function Chat() {
             ) : tab === "data" ? (
               <SchemasAndData
                 owner={{ scope: "session", id: sessionId }}
-                readOnly={entriesReadOnly}
-              />
-            ) : tab === "files" ? (
-              <FilesPanel
-                scope={{ scope: "session", id: sessionId }}
                 readOnly={entriesReadOnly}
               />
             ) : (

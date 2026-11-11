@@ -369,7 +369,11 @@ export function useSessionEvents(
             void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           }
           // The session's Files and Memory tabs update live (decision 35).
-          if (/^(files|memory)_/.test(event.data.name)) {
+          // The Files view also shows the project's and the global files, so
+          // a files tool can have changed any of them.
+          if (/^files_/.test(event.data.name)) {
+            void queryClient.invalidateQueries({ queryKey: entryKeys.all });
+          } else if (/^memory_/.test(event.data.name)) {
             void queryClient.invalidateQueries({
               queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
             });

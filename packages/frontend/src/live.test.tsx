@@ -8,7 +8,7 @@ import { act, render, screen } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
-import { projectKeys, runKeys, sessionKeys } from "./queries";
+import { entryKeys, projectKeys, runKeys, sessionKeys } from "./queries";
 import { useAppEvents, useLive, useSessionEvents } from "./live";
 import { EditableTitle } from "./routes/EditableTitle";
 
@@ -411,5 +411,54 @@ describe("a subagent's run", () => {
       }),
     );
     show.mockRestore();
+  });
+});
+
+describe("tool.result of a files tool", () => {
+  function pushResult(name: string) {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    function Listener() {
+      useSessionEvents("s1", detail);
+      return null;
+    }
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={queryClient}>
+          <Listener />
+        </QueryClientProvider>
+      </MantineProvider>,
+    );
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        runId: "r1",
+        sessionId: "s1",
+        time: "2026-11-11T00:00:01Z",
+        type: "tool.result",
+        data: {
+          messageId: "m1",
+          callId: "c1",
+          name,
+          isError: false,
+          preview: "",
+          durationMs: 1,
+        },
+      }),
+    );
+    return invalidate;
+  }
+
+  it("refreshes every scope's files, since the Files view shows project and global files too", () => {
+    const invalidate = pushResult("files_write");
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: entryKeys.all });
+  });
+
+  it("refreshes only the session's notes for a memory tool", () => {
+    const invalidate = pushResult("memory_write");
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: entryKeys.inScope({ scope: "session", id: "s1" }),
+    });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: entryKeys.all });
   });
 });

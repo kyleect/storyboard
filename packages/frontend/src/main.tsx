@@ -18,7 +18,7 @@ import { token } from "./api";
 import { GlobalAgentsPage, ProjectAgentsPage } from "./routes/Agents";
 import { Chat } from "./routes/Chat";
 import { GlobalDataPage, ProjectDataPage } from "./routes/Data";
-import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/Entries";
+import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/EntriesPages";
 import { ErrorsPage } from "./routes/Errors";
 import { Home, Layout } from "./routes/Layout";
 import { ProjectPage } from "./routes/ProjectPage";

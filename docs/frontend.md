@@ -8,7 +8,8 @@ Everything it shows comes from the backend's HTTP API and event streams.
 notifications), [TanStack Router](https://tanstack.com/router) (routing),
 [TanStack Query](https://tanstack.com/query) (server state),
 [Zustand](https://zustand.docs.pmnd.rs) (client state), `react-markdown` with
-`remark-gfm` (Markdown), and CodeMirror (JSON editor).
+`remark-gfm` (Markdown), [Tabler icons](https://tabler.io/icons), and CodeMirror
+(the JSON editor and the Files editor).
 
 ```
 packages/frontend/src
@@ -23,6 +24,7 @@ packages/frontend/src
   tool-grant.ts          tool grants: allowed tools and the edits a click makes
   mcp-form.ts            parsing and formatting the MCP server form's text fields
   attachments.ts, audio.ts   accepted file types; voice recording to WAV
+  files-explorer.ts      the Files view's logic: roots, tree, tab rules, saved view
   routes/
     Layout.tsx           navbar, project picker, session list, and the Home page
     Sessions.tsx         the Sessions page: a paged, sortable table of sessions
@@ -31,7 +33,11 @@ packages/frontend/src
     TranscriptScroll.tsx keeps the transcript pinned to the bottom
     ApprovalDialog.tsx   tool approval prompt
     AskUserForm.tsx      inline forms
-    Entries.tsx          files and memory notes
+    Entries.tsx          memory notes; the pieces for viewing a file (preview, versions)
+    EntriesPages.tsx     the global and project pages for files and memory notes
+    FilesExplorer.tsx    the Files view: file tree, tabs, status bar
+    FileTree.tsx, FileTab.tsx, TextEditor.tsx   its tree, its tab content, its editor
+    LeaveGuard.tsx       asks before leaving the page with unsaved edits
     Agents.tsx, Skills.tsx, Schemas.tsx, Data.tsx   management pages
     Workspaces.tsx       workspaces and what they search
     Errors.tsx           errors console
@@ -181,14 +187,14 @@ in the query cache rather than in `useLive`.
 
 `routes/Chat.tsx` is the main screen. It has six tabs:
 
-| Tab        | Content                                                                       |
-| ---------- | ----------------------------------------------------------------------------- |
-| Chat       | The transcript, the composer, and the live run.                               |
-| Files      | The session's own files. Project and global files are managed on their pages. |
-| Memory     | The session's memory notes.                                                   |
-| Data       | The session's schemas and data.                                               |
-| Workspaces | The workspaces attached to the session (and its project's, read-only).        |
-| Debug      | The linear view, an event table, and each run's request.                      |
+| Tab        | Content                                                                |
+| ---------- | ---------------------------------------------------------------------- |
+| Chat       | The transcript, the composer, and the live run.                        |
+| Files      | An editor-style view of every file the session can use (see below).    |
+| Memory     | The session's memory notes.                                            |
+| Data       | The session's schemas and data.                                        |
+| Workspaces | The workspaces attached to the session (and its project's, read-only). |
+| Debug      | The linear view, an event table, and each run's request.               |
 
 **Editing and branching.** The transcript is a tree (see
 [Branches](backend.md#branches)); the page shows one line of it. `routes/Branching.tsx`
@@ -241,9 +247,10 @@ llama-server says the model in use cannot read a kind of file (the model's
 `inputModalities`), the composer warns and Send is disabled until they are
 removed; when it does not say, attaching is allowed. A sent message shows its
 files above the text, found by reference (a file that has since been deleted is
-named as no longer available). The Files views have an Upload button and take
-dropped files for any scope, preview a binary file as an image or audio player,
-and show no text editor for it. Chosen audio can be played back in the composer before it is sent. Each file in a message, and each file a tool read, has a _Default / Keep in view / Drop later_ choice that says whether the model keeps seeing it in later turns (saved per session; Default follows the agent and the Settings page). Settings has the number of kept files and the keep-by-default switch, and a section for the Media describer model and agent. After either changes, a dialog asks "Generate descriptions for N files?" with _Fill the ones with no text_, _Write all again_ and _Not now_; nothing is written before the answer. In the Files views an image or audio file shows its text under the preview, with its source ("Written by the Media Describer", "Edited by you", "Not generated" after a failure), Save text, and Retry or Generate (disabled while descriptions are off). The bytes are fetched by hash with the token and shown from object
+named as no longer available). The Files view has an Upload button in the
+explorer header and takes files dropped on the tree (a file dropped on a folder
+goes into it), previews a binary file as an image or audio player, and shows no
+text editor for it. Chosen audio can be played back in the composer before it is sent. Each file in a message, and each file a tool read, has a _Default / Keep in view / Drop later_ choice that says whether the model keeps seeing it in later turns (saved per session; Default follows the agent and the Settings page). Settings has the number of kept files and the keep-by-default switch, and a section for the Media describer model and agent. After either changes, a dialog asks "Generate descriptions for N files?" with _Fill the ones with no text_, _Write all again_ and _Not now_; nothing is written before the answer. In the Files view an image or audio file shows its text under the preview, with its source ("Written by the Media Describer", "Edited by you", "Not generated" after a failure), Save text, and Retry or Generate (disabled while descriptions are off). The bytes are fetched by hash with the token and shown from object
 URLs, because `<img>` and `<audio>` cannot send the token themselves.
 
 **Voice.** Two buttons record from the microphone (`routes/VoiceButtons.tsx`,
@@ -292,20 +299,69 @@ answered, and both are re-created after a page reload from the snapshot.
 Both are sent with the id of the **run that asked**, so a subagent's question is
 answered against the child run.
 
+## The Files view
+
+`FilesExplorer.tsx` is the Files tab of a session and of the global and project
+pages. It looks like a code editor: a file tree on the left, the open files as
+tabs on the right, a status bar below. The rules behind it (roots, tree, tabs,
+what is remembered) are in `files-explorer.ts`, which is tested without a DOM.
+
+**Roots.** The tree has a root folder for each place files live that the page
+can see: a session shows Session, Project (when it is in a project) and Global; a
+project page shows Project and Global; the global page shows Global. Each root
+holds its folders (folders first) and files. Every root is fetched with the
+ordinary `entries` routes of its scope; there is nothing special on the backend.
+
+**Tree.** Mantine's `Tree`, with a header (New file, New folder, Upload, Show
+deleted) and a right-click menu on roots, folders and files. A new file or
+folder, and a folder rename, are typed into a name box in the tree. A new file's
+type follows its extension (`.md` Markdown, `.json` JSON, anything else plain);
+a new JSON file starts as `{}`, because JSON must parse. The tree is made once
+the files are known, so the folders remembered as open stay open. The file in the
+active tab is the selected row, and its folders are opened.
+
+**Tabs.** A single click opens a file in an italic _transient_ tab that the next
+single click replaces; a double click, or editing, keeps it. A tab is a file and
+its root, so the same name in two roots gives two tabs, labelled with the root
+(`notes.md · Project`). A Markdown file opens in the editor; its Preview button
+opens the rendered text in a tab of its own, which follows unsaved text.
+
+**Editing.** A text file is a CodeMirror editor (line numbers, undo, search, and
+Markdown or JSON highlighting). Text typed and not saved is the tab's _draft_,
+shown as a dot on the tab and "Unsaved changes" in the status bar; Save, or
+Ctrl/Cmd+S, writes it. Saving a file in a root _higher_ than the page's own
+scope (global above project above session) asks first. Closing a tab with a
+draft asks too, and a draft whose file has changed since it was started warns and
+keeps the text until the user chooses to drop it. Drafts live in the component, so
+the view is kept mounted when the Chat page moves to another tab, and
+`LeaveGuard` asks before the page is left or reloaded while there is a draft.
+
+**Read-only.** While a run is in progress, or the session is in the trash, no
+root can be changed. A trashed project makes its root read-only. A deleted file
+(shown when Show deleted is on) opens read-only with its last value; its
+Versions dialog restores it.
+
+**Remembered.** For each page, in `localStorage`: the open tabs, the active tab,
+which folders are open, the width of the tree (dragged, or with the arrow keys,
+between 180 and 520 px) and Show deleted. Unsaved text is not saved.
+
+**Live updates.** A `files_*` tool result invalidates every scope's entries, not
+only the session's, because the view shows all three.
+
 ## Management pages
 
 Each follows the same layout: a list on the left, the selected item on the right,
-one page per scope.
+one page per scope. (The Files view is the exception; see [The Files view](#the-files-view).)
 
-| Page                        | Edits                  | Notes                                                                                                                                                                                                                           |
-| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Entries.tsx`               | Files and memory notes | Files in a list with a viewer/editor; notes as cards. Version history opens in a dialog, where an older version can be made current.                                                                                            |
-| `Agents.tsx`                | Agents                 | Prompt, tool grant (see below), per-tool approval, subagent settings, import and export, version history, and a read-only view of the agent version a message was written with.                                                 |
-| `Skills.tsx`                | Skills                 | Display name, description, body.                                                                                                                                                                                                |
-| `Schemas.tsx`               | Schemas                | A **builder** (a field tree and the selected field's settings) or a JSON editor (CodeMirror); earlier versions can be viewed. The builder only offers features the schema subset supports, so what it produces is always valid. |
-| `Data.tsx`, `DataValue.tsx` | Data                   | Forms generated from the schema; the backend's validation is final and its problems are shown next to the fields. `DataValue` renders data read-only, laid out by its schema.                                                   |
-| `Errors.tsx`                | (read)                 | Every recorded tool error and failed run, with a link to the message in the transcript. Also shown as a panel under each chat.                                                                                                  |
-| `Settings.tsx`              | Settings               | All settings, global system prompt, title settings, and the tools section (see below). Shows which settings an environment variable overrides.                                                                                  |
+| Page                        | Edits        | Notes                                                                                                                                                                                                                           |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Entries.tsx`               | Memory notes | Notes as cards. Version history (shared with the Files view) opens in a dialog, where an older version can be made current.                                                                                                     |
+| `Agents.tsx`                | Agents       | Prompt, tool grant (see below), per-tool approval, subagent settings, import and export, version history, and a read-only view of the agent version a message was written with.                                                 |
+| `Skills.tsx`                | Skills       | Display name, description, body.                                                                                                                                                                                                |
+| `Schemas.tsx`               | Schemas      | A **builder** (a field tree and the selected field's settings) or a JSON editor (CodeMirror); earlier versions can be viewed. The builder only offers features the schema subset supports, so what it produces is always valid. |
+| `Data.tsx`, `DataValue.tsx` | Data         | Forms generated from the schema; the backend's validation is final and its problems are shown next to the fields. `DataValue` renders data read-only, laid out by its schema.                                                   |
+| `Errors.tsx`                | (read)       | Every recorded tool error and failed run, with a link to the message in the transcript. Also shown as a panel under each chat.                                                                                                  |
+| `Settings.tsx`              | Settings     | All settings, global system prompt, title settings, and the tools section (see below). Shows which settings an environment variable overrides.                                                                                  |
 
 **The agent's tools.** `ToolGrantEditor` shows tools under their group. Each group
 has its own on/off box and approval choice (each tool's setting, ask for all, or
