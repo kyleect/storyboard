@@ -185,33 +185,40 @@ resolved by precedence: **environment variable, then stored value, then
 default.** `GET /api/settings` returns the effective values, the stored values,
 and which are overridden by the environment.
 
-| Setting                | Env variable                     | Default                   | Meaning                                                                       |
-| ---------------------- | -------------------------------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `llamaServerUrl`       | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080`   | Address of llama-server.                                                      |
-| `model`                | `HARNESS_MODEL`                  | empty (not sent)          | Default model (router mode).                                                  |
-| `reasoningEffort`      | `HARNESS_REASONING_EFFORT`       | empty (not sent)          | Default effort; `none` turns reasoning off.                                   |
-| `port`                 | `HARNESS_PORT`                   | `4317`                    | Backend port.                                                                 |
-| `loopLimit`            | `HARNESS_LOOP_LIMIT`             | `20`                      | Most model calls per run.                                                     |
-| `copyLimit`            | `HARNESS_COPY_LIMIT`             | `20` (max 200)            | Most keys per copy/move call.                                                 |
-| `trashRetentionDays`   | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                      | Days in trash before purge at startup; `0` never.                             |
-| `embeddingModel`       | `HARNESS_EMBEDDING_MODEL`        | empty                     | Router model for embeddings; empty means keyword search only.                 |
-| `autoRename`           | `HARNESS_AUTO_RENAME`            | `true`                    | Title a new session from its first message.                                   |
-| `autoRenameSource`     | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                   | `model` or `message`.                                                         |
-| `titleModel`           | `HARNESS_TITLE_MODEL`            | empty                     | Model that writes titles; empty uses the session's model.                     |
-| `titlePrompt`          | `HARNESS_TITLE_PROMPT`           | built-in text             | System prompt of the title call.                                              |
-| `systemPrompt`         | `HARNESS_SYSTEM_PROMPT`          | built-in text             | Global system prompt (see below).                                             |
-| `defaultAgentId`       | `HARNESS_DEFAULT_AGENT_ID`       | empty                     | Global default agent.                                                         |
-| `childReminders`       | `HARNESS_CHILD_REMINDERS`        | `2`                       | Reminders a subagent gets before its last text is taken as output.            |
-| `childPrompt`          | `HARNESS_CHILD_PROMPT`           | built-in text             | Line appended to a subagent's system message.                                 |
-| `subagentMessageLabel` | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.  |
-| `subagentDepth`        | `HARNESS_SUBAGENT_DEPTH`         | `2`                       | How deep subagents nest; `0` turns subagents off.                             |
-| `inlineMediaCap`       | `HARNESS_INLINE_MEDIA_CAP`       | `4`                       | The most kept images and audio files from earlier turns sent with a request.  |
-| `keepMediaInline`      | `HARNESS_KEEP_MEDIA_INLINE`      | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.  |
-| `mediaDescriberAgent`  | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off. |
-| `mediaDescriberModel`  | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.      |
-| `workspaceReadCap`     | `HARNESS_WORKSPACE_READ_CAP`     | `10000`                   | The most characters one workspace read returns (100 or more).                 |
-| `editMode`             | `HARNESS_EDIT_MODE`              | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.     |
-| `answerAfterEdit`      | `HARNESS_ANSWER_AFTER_EDIT`      | `true`                    | Whether the model replies right after an edit that made a branch.             |
+| Setting                 | Env variable                     | Default                   | Meaning                                                                           |
+| ----------------------- | -------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
+| `llamaServerUrl`        | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080`   | Address of llama-server.                                                          |
+| `model`                 | `HARNESS_MODEL`                  | empty (not sent)          | Default model (router mode).                                                      |
+| `reasoningEffort`       | `HARNESS_REASONING_EFFORT`       | empty (not sent)          | Default effort; `none` turns reasoning off.                                       |
+| `port`                  | `HARNESS_PORT`                   | `4317`                    | Backend port.                                                                     |
+| `loopLimit`             | `HARNESS_LOOP_LIMIT`             | `20`                      | Most model calls per run.                                                         |
+| `copyLimit`             | `HARNESS_COPY_LIMIT`             | `20` (max 200)            | Most keys per copy/move call.                                                     |
+| `trashRetentionDays`    | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                      | Days in trash before purge at startup; `0` never.                                 |
+| `embeddingModel`        | `HARNESS_EMBEDDING_MODEL`        | empty                     | Router model for embeddings; empty means keyword search only.                     |
+| `autoRename`            | `HARNESS_AUTO_RENAME`            | `true`                    | Title a new session from its first message.                                       |
+| `autoRenameSource`      | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                   | `model` or `message`.                                                             |
+| `titleModel`            | `HARNESS_TITLE_MODEL`            | empty                     | Model that writes titles; empty uses the session's model.                         |
+| `titlePrompt`           | `HARNESS_TITLE_PROMPT`           | built-in text             | System prompt of the title call.                                                  |
+| `systemPrompt`          | `HARNESS_SYSTEM_PROMPT`          | built-in text             | Global system prompt (see below).                                                 |
+| `skillsInstruction`     | `HARNESS_SKILLS_INSTRUCTION`     | built-in text             | Wording before the skill list when it is auto-inserted; `{{skills_instruction}}`. |
+| `schemasInstruction`    | `HARNESS_SCHEMAS_INSTRUCTION`    | built-in text             | The same for the schema list; `{{schemas_instruction}}`.                          |
+| `toolsInstruction`      | `HARNESS_TOOLS_INSTRUCTION`      | built-in text             | Wording for `{{tools_instruction}}`; empty when the list is.                      |
+| `dataInstruction`       | `HARNESS_DATA_INSTRUCTION`       | built-in text             | Wording for `{{data_instruction}}`; empty when the list is.                       |
+| `agentsInstruction`     | `HARNESS_AGENTS_INSTRUCTION`     | built-in text             | Wording for `{{agents_instruction}}`; empty when the list is.                     |
+| `workspacesInstruction` | `HARNESS_WORKSPACES_INSTRUCTION` | built-in text             | Wording for `{{workspaces_instruction}}`; empty when the list is.                 |
+| `filesInstruction`      | `HARNESS_FILES_INSTRUCTION`      | built-in text             | Wording for `{{files_instruction}}`; empty when the list is.                      |
+| `defaultAgentId`        | `HARNESS_DEFAULT_AGENT_ID`       | empty                     | Global default agent.                                                             |
+| `childReminders`        | `HARNESS_CHILD_REMINDERS`        | `2`                       | Reminders a subagent gets before its last text is taken as output.                |
+| `childPrompt`           | `HARNESS_CHILD_PROMPT`           | built-in text             | Line appended to a subagent's system message.                                     |
+| `subagentMessageLabel`  | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.      |
+| `subagentDepth`         | `HARNESS_SUBAGENT_DEPTH`         | `2`                       | How deep subagents nest; `0` turns subagents off.                                 |
+| `inlineMediaCap`        | `HARNESS_INLINE_MEDIA_CAP`       | `4`                       | The most kept images and audio files from earlier turns sent with a request.      |
+| `keepMediaInline`       | `HARNESS_KEEP_MEDIA_INLINE`      | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.      |
+| `mediaDescriberAgent`   | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off.     |
+| `mediaDescriberModel`   | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.          |
+| `workspaceReadCap`      | `HARNESS_WORKSPACE_READ_CAP`     | `10000`                   | The most characters one workspace read returns (100 or more).                     |
+| `editMode`              | `HARNESS_EDIT_MODE`              | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.         |
+| `answerAfterEdit`       | `HARNESS_ANSWER_AFTER_EDIT`      | `true`                    | Whether the model replies right after an edit that made a branch.                 |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.
@@ -560,25 +567,40 @@ empty parts dropped and the rest joined by blank lines:
 1. the global system prompt (`systemPrompt` setting);
 2. the project's system prompt;
 3. the agent's prompt;
-4. the skills list and introduction, _unless_ a prompt above uses `{{skills}}`;
-5. the schemas list and instruction, _unless_ a prompt above uses `{{schemas}}`;
+4. the `skillsInstruction` setting and the skills list, _unless_ a prompt above
+   uses `{{skills}}` or `{{skills_instruction}}`;
+5. the `schemasInstruction` setting and the schemas list, _unless_ a prompt above
+   uses `{{schemas}}` or `{{schemas_instruction}}`;
 6. the files and memory instruction (says whether the session is in a project);
 7. for a subagent, its closing line (the agent's `childPrompt`, else the global
    one).
 
 **Placeholders.** In prompts the user writes (parts 1 to 3), `{{skills}}`,
-`{{tools}}`, `{{schemas}}`, `{{data}}`, `{{agents}}`, `{{date}}` and `{{time}}`
-are replaced once, when the run starts, with what _this run_ has:
+`{{tools}}`, `{{schemas}}`, `{{data}}`, `{{agents}}`, `{{workspaces}}`, `{{files}}`,
+the `…_instruction` placeholder of each list, `{{date}}` and `{{time}}` are replaced once, when the run starts, with what _this run_ has:
 
-| Placeholder   | Expands to                                                                                              |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `{{skills}}`  | One line per skill in scope: `- name: description`.                                                     |
-| `{{tools}}`   | One line per offered tool: name and the first sentence of its description.                              |
-| `{{schemas}}` | One line per schema in scope. Empty if the run offers no schema or data tool.                           |
-| `{{data}}`    | One line per piece of data in scope, with its schema's name.                                            |
-| `{{agents}}`  | One line per startable agent: `- (id) name: description`. Empty unless the run offers `start_subagent`. |
-| `{{date}}`    | The weekday and date when the run starts, in the computer's time zone: `Friday, November 6, 2026`.      |
-| `{{time}}`    | The time on a 24-hour clock when the run starts, with the zone's short name: `14:32 PST`.               |
+| Placeholder                                                                                                                      | Expands to                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{skills}}`                                                                                                                     | One line per skill in scope: `- name: description`.                                                                                                                        |
+| `{{skills_instruction}}`                                                                                                         | The `skillsInstruction` setting. Empty if no skill is in scope.                                                                                                            |
+| `{{tools}}`                                                                                                                      | One line per offered tool: name and the first sentence of its description.                                                                                                 |
+| `{{schemas}}`                                                                                                                    | One line per schema in scope. Empty if the run offers no schema or data tool.                                                                                              |
+| `{{schemas_instruction}}`                                                                                                        | The `schemasInstruction` setting. Empty if no schema is in scope.                                                                                                          |
+| `{{data}}`                                                                                                                       | One line per piece of data in scope, with its schema's name.                                                                                                               |
+| `{{agents}}`                                                                                                                     | One line per startable agent: `- (id) name: description`. Empty unless the run offers `start_subagent`.                                                                    |
+| `{{workspaces}}`                                                                                                                 | One line per attached workspace: its name and reference, and whether it can be changed.                                                                                    |
+| `{{files}}`                                                                                                                      | One line per file in the global, project and session scopes: `- <scope://name> (media type)`, then `: description` for a binary file that has one (cut at 120 characters). |
+| `{{tools_instruction}}`, `{{data_instruction}}`, `{{agents_instruction}}`, `{{workspaces_instruction}}`, `{{files_instruction}}` | The setting of the same name (`toolsInstruction` and so on). Empty when its list is.                                                                                       |
+| `{{date}}`                                                                                                                       | The weekday and date when the run starts, in the computer's time zone: `Friday, November 6, 2026`.                                                                         |
+| `{{time}}`                                                                                                                       | The time on a 24-hour clock when the run starts, with the zone's short name: `14:32 PST`.                                                                                  |
+
+The instruction placeholders are the wording apart from the data: a prompt can
+place the introduction and the list in different places, with its own text between
+them, or use only one. For skills and schemas, a prompt that writes either
+placeholder of a pair takes over that pair, so the auto-insert (parts 4 and 5) is
+skipped, and nothing is added for the one it left out. The other lists have no
+auto-insert: they appear only where a prompt places them. The default global prompt
+places every list with its instruction, so changing a setting changes the default.
 
 Expansion is a single pass: text produced by an expansion is not scanned again.
 Because the same lists are generated at launch, the model always sees what is

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dataText, schemasInstruction, schemasText } from "./schemas-data.js";
+import { dataText, schemasText } from "./schemas-data.js";
 
 describe("the schema list (decisions 37, 38)", () => {
   const schemas = [
@@ -39,17 +39,6 @@ describe("the schema list (decisions 37, 38)", () => {
 
   it("is empty when no schema is in scope", () => {
     expect(schemasText([])).toBe("");
-  });
-
-  it("introduces the list and names the data tools", () => {
-    const text = schemasInstruction(schemas) ?? "";
-    expect(text).toMatch(/^You have schemas:/);
-    expect(text).toContain("data_list");
-    expect(text.endsWith(schemasText(schemas))).toBe(true);
-  });
-
-  it("is nothing when no schema is in scope", () => {
-    expect(schemasInstruction([])).toBeUndefined();
   });
 });
 

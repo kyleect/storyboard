@@ -836,19 +836,3 @@ export function dataText(data: readonly ListedData[]): string {
     })
     .join("\n");
 }
-
-/**
- * The schema list with its instruction (decision 38), or undefined when no
- * schema is in scope. It goes after the prompts when none has `{{schemas}}`
- * (decision 41). The wording is Claude's draft, for review.
- */
-export function schemasInstruction(
-  schemas: readonly ListedSchema[],
-): string | undefined {
-  if (schemas.length === 0) return undefined;
-  return [
-    "You have schemas: named shapes for structured state, such as tasks or decisions. Data made from them is reached with the data tools: data_list to see what exists (check it before creating something new), data_view to read a piece, and data_create, data_update and data_migrate to change it. schema_view shows a schema's fields.",
-    "",
-    schemasText(schemas),
-  ].join("\n");
-}

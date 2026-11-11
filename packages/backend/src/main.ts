@@ -8,9 +8,7 @@ import {
   dataText,
   entriesInstruction,
   schemaDataTools,
-  schemasInstruction,
   schemasText,
-  skillsInstruction,
   skillsList,
 } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
@@ -117,13 +115,11 @@ async function main() {
           q,
         ),
     },
-    skillsPrompt: skillsInstruction,
     skillsList,
     entries,
     data,
     schemaChecker,
     dataTools: schemaDataTools.map((t) => t.name),
-    schemasPrompt: schemasInstruction,
     schemasList: schemasText,
     dataList: dataText,
     systemPrompt: (session) => entriesInstruction(session.project_id !== null),

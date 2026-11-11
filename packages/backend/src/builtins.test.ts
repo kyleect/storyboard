@@ -3,9 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ScriptedModel, type ChatRequest } from "@harness/core";
 import {
   schemaDataTools,
-  schemasInstruction,
   schemasText,
-  skillsInstruction,
   skillsList,
   skillTools,
 } from "@harness/tools";
@@ -48,12 +46,10 @@ function setup() {
     tools: [...schemaDataTools, ...skillTools],
     agents,
     skills,
-    skillsPrompt: skillsInstruction,
     skillsList,
     data,
     schemaChecker,
     dataTools: schemaDataTools.map((s) => s.name),
-    schemasPrompt: schemasInstruction,
     schemasList: schemasText,
   });
   const app = buildServer({

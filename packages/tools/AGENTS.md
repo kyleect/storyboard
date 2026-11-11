@@ -57,8 +57,8 @@ src/
   project-copy.ts    what project_create copies
   agents.ts          agents_list, agent_view
   subagents.ts       start_subagent, subagent_handback
-  skills.ts          skill_load, skillsList, skillsInstruction
-  schemas-data.ts    schema and data tools, schemasText, dataText, schemasInstruction
+  skills.ts          skill_load, skillsList
+  schemas-data.ts    schema and data tools, schemasText, dataText
   workspaces.ts      workspace tools
   results.ts         shared helpers: fail, notDone, guarded
   domino.d.ts        type declaration for @mixmark-io/domino

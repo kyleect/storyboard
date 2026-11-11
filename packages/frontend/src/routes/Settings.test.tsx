@@ -88,6 +88,13 @@ const effective: SettingsShape = {
   titleModel: "",
   titlePrompt: "Write a short title.",
   systemPrompt: "",
+  skillsInstruction: "You have skills.",
+  schemasInstruction: "You have schemas.",
+  toolsInstruction: "You have tools.",
+  dataInstruction: "Data is listed.",
+  agentsInstruction: "You have agents.",
+  workspacesInstruction: "You have workspaces.",
+  filesInstruction: "You have files.",
   defaultAgentId: "",
   childReminders: 2,
   childPrompt: "Hand back when done.",
@@ -178,7 +185,10 @@ describe("Settings tabs", () => {
   });
 
   it.each([
-    ["Chat", ["System prompt", "Session titles", "Editing", "Media"]],
+    [
+      "Chat",
+      ["System prompt", "Instructions", "Session titles", "Editing", "Media"],
+    ],
     ["Agents", ["Subagents", "Limits"]],
     ["Tools", ["Permissions", "MCP servers"]],
   ])("splits %s into horizontal tabs", async (area, subtabs) => {
@@ -327,6 +337,29 @@ describe("Settings forms", () => {
     expect(save.mock.calls[0]?.[0]).toEqual({
       inlineMediaCap: 8,
       keepMediaInline: false,
+    });
+  });
+
+  it("saves only the instructions from the Instructions tab", async () => {
+    await renderSettings();
+    open("Chat");
+    open("Instructions");
+    fireEvent.change(await screen.findByLabelText("Skills instruction"), {
+      target: { value: "Load a skill when it fits." },
+    });
+    fireEvent.change(screen.getByLabelText("Schemas instruction"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]?.[0]).toEqual({
+      skillsInstruction: "Load a skill when it fits.",
+      toolsInstruction: "You have tools.",
+      schemasInstruction: "",
+      dataInstruction: "Data is listed.",
+      agentsInstruction: "You have agents.",
+      workspacesInstruction: "You have workspaces.",
+      filesInstruction: "You have files.",
     });
   });
 

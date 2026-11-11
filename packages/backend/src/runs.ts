@@ -33,6 +33,7 @@ import {
   type Usage,
   dataEditNotice,
   replaySessionData,
+  replaySessionEntries,
   type DataOp,
   type SchemaChecker,
   type SchemaScope,
@@ -81,6 +82,7 @@ import { allowedNames } from "./tool-grants.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
 import {
   agentsList,
+  filesList,
   expandPlaceholders,
   formatDate,
   formatTime,
@@ -217,14 +219,9 @@ export interface RunManagerOptions {
   /** Skills. Left out: no run has any. */
   skills?: SkillStore;
   /**
-   * The skill list for the system message, or undefined for none (skills
-   * design, decisions 6, 11). It goes after the agent prompt and before
-   * `systemPrompt`.
-   */
-  skillsPrompt?: (skills: readonly RunSkill[]) => string | undefined;
-  /**
    * What `{{skills}}` expands to: one line per skill (placeholders design,
-   * decision 8). Left out: it expands to nothing.
+   * decision 8). Left out: it expands to nothing, and no skill list is put
+   * after the prompts either.
    */
   skillsList?: (skills: readonly RunSkill[]) => string;
   /**
@@ -264,19 +261,6 @@ export interface RunManagerOptions {
   dataList?: (
     data: readonly { schema: string; name: string; description: string }[],
   ) => string;
-  /**
-   * The schema list with its instruction (decisions 37, 38), or undefined
-   * for none. It goes after the skill list when no prompt has
-   * `{{schemas}}` (decision 41).
-   */
-  schemasPrompt?: (
-    schemas: readonly {
-      id: string;
-      name: string;
-      scope: SchemaScope;
-      description: string;
-    }[],
-  ) => string | undefined;
   /**
    * A system message put before the transcript of every model call; not
    * stored. Undefined: none. The global, project and agent prompts go
@@ -1429,6 +1413,41 @@ export class RunManager {
     return workspaceMediaSource(() => store.forSession(sessionId, projectId));
   }
 
+  /**
+   * The files a run can see, for `{{files}}`: global, then the project's,
+   * then the session's own, each with the description of a binary file's
+   * bytes when there is one. Workspaces are listed apart, by `{{workspaces}}`.
+   */
+  private filesInScope(
+    sessionId: string,
+    projectId: string | null,
+  ): Parameters<typeof filesList>[0] {
+    const describe = (blob?: { hash: string }) =>
+      blob ? getDerived(this.store.db, blob.hash)?.text : undefined;
+    const shared = this.options.entries?.shared(projectId);
+    const sharedFiles = (["global", "project"] as const).flatMap((scope) =>
+      scope === "project" && projectId === null
+        ? []
+        : (shared?.list("file", scope) ?? []).map((e) => ({
+            scope,
+            key: e.key,
+            mediaType: e.mediaType ?? "text/plain",
+            description: describe(e.blob),
+          })),
+    );
+    const own = [
+      ...replaySessionEntries(
+        this.store.listMessages(sessionId).map((m) => m.message),
+      ).file,
+    ].map(([key, e]) => ({
+      scope: "session" as const,
+      key,
+      mediaType: e.mediaType ?? "text/plain",
+      description: describe(e.blob),
+    }));
+    return [...sharedFiles, ...own];
+  }
+
   /** Workspace access for a session, or undefined when it has none. */
   workspaceAccessFor(sessionId: string, projectId: string | null) {
     const store = this.options.workspaces;
@@ -1685,13 +1704,14 @@ export class RunManager {
               : [{ schema, name: d.name, description: d.description }];
           })
         : [];
-    const schemasText = this.options.schemasPrompt?.(schemas);
-    // The prompts the user wrote are Mustache templates. They may place the
-    // lists with {{skills}}, {{tools}}, {{schemas}}, {{data}} and {{agents}},
-    // and the date and time with {{date}} and {{time}}; they are filled in
-    // once, here, from what this run has
+    // The prompts the user wrote may place the lists with {{skills}},
+    // {{tools}}, {{schemas}}, {{data}} and {{agents}}, the wording that
+    // introduces the skill and schema lists with {{skills_instruction}} and
+    // {{schemas_instruction}}, and the date and time with {{date}} and
+    // {{time}}; they are filled in once, here, from what this run has
     // (placeholders design, decisions 1, 6, 12). Where no prompt has
-    // {{skills}} the skill list goes after them, as before (decision 10).
+    // {{skills}} or {{skills_instruction}} the skill instruction (a setting)
+    // and the skill list go after them (decision 10); the same for schemas.
     // A prompt that is not a valid template is kept as typed and the run
     // fails before the model is called, with the error naming the prompt.
     // A subagent's system message is built the same way, with its own line
@@ -1719,13 +1739,39 @@ export class RunManager {
     // through this same method, gets the time when it starts, not its
     // parent's.
     const startedAt = new Date(this.now());
+    const skillsText = this.options.skillsList?.(skills) ?? "";
+    const schemasText = this.options.schemasList?.(schemas) ?? "";
+    // An instruction is only worth sending with something to introduce.
+    const skillsInstruction =
+      skills.length > 0 ? settings.skillsInstruction : "";
+    const schemasInstruction =
+      schemas.length > 0 ? settings.schemasInstruction : "";
+    const toolsText = toolsList(tools);
+    const dataText = this.options.dataList?.(dataItems) ?? "";
+    const filesText = filesList(
+      this.filesInScope(sessionId, session?.project_id ?? null),
+    );
+    // Each instruction goes with its list and is empty when the list is.
+    const withList = (instruction: string, list: string) =>
+      list === "" ? "" : instruction;
     const values = {
-      skills: this.options.skillsList?.(skills) ?? "",
-      tools: toolsList(tools),
-      schemas: this.options.schemasList?.(schemas) ?? "",
-      data: this.options.dataList?.(dataItems) ?? "",
+      skills: skillsText,
+      skills_instruction: skillsInstruction,
+      tools: toolsText,
+      tools_instruction: withList(settings.toolsInstruction, toolsText),
+      schemas: schemasText,
+      schemas_instruction: schemasInstruction,
+      data: dataText,
+      data_instruction: withList(settings.dataInstruction, dataText),
       agents: agentsText,
+      agents_instruction: withList(settings.agentsInstruction, agentsText),
       workspaces: workspacesText,
+      workspaces_instruction: withList(
+        settings.workspacesInstruction,
+        workspacesText,
+      ),
+      files: filesText,
+      files_instruction: withList(settings.filesInstruction, filesText),
       date: formatDate(startedAt),
       time: formatTime(startedAt),
     };
@@ -1747,16 +1793,29 @@ export class RunManager {
         return p;
       }
     });
-    const placed = written.some((p) => usesPlaceholder(p, "skills"));
-    const schemasPlaced = written.some((p) => usesPlaceholder(p, "schemas"));
+    const placed = written.some(
+      (p) =>
+        usesPlaceholder(p, "skills") ||
+        usesPlaceholder(p, "skills_instruction"),
+    );
+    const schemasPlaced = written.some(
+      (p) =>
+        usesPlaceholder(p, "schemas") ||
+        usesPlaceholder(p, "schemas_instruction"),
+    );
+    // The instruction, then the list, with nothing when there is no list.
+    const introduced = (instruction: string, list: string) =>
+      list.trim() === ""
+        ? undefined
+        : [instruction, list].filter((t) => t.trim() !== "").join("\n\n");
     // Global, project and agent prompts, then the skill list, then the files
     // and memory instruction (system prompts design, decisions 1 and 2;
     // skills design 11). Empty ones are left out.
     const system =
       [
         ...expanded,
-        placed ? undefined : this.options.skillsPrompt?.(skills),
-        schemasPlaced ? undefined : schemasText,
+        placed ? undefined : introduced(skillsInstruction, skillsText),
+        schemasPlaced ? undefined : introduced(schemasInstruction, schemasText),
         base,
         childLine,
       ]

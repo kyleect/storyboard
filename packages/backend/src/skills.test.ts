@@ -8,12 +8,12 @@ import {
   type ScriptStep,
   type Tool,
 } from "@harness/core";
-import { skillLoad, skillsInstruction, SKILL_LOAD } from "@harness/tools";
+import { skillLoad, skillsList, SKILL_LOAD } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents, type AppEvent } from "./app-events.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
-import { readSettings, writeSettings } from "./settings.js";
+import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
 import {
   MAX_DESCRIPTION,
   slugify,
@@ -85,7 +85,7 @@ async function setup(scripts: ScriptStep[][] = []) {
     tools: TOOLS,
     agents,
     skills,
-    skillsPrompt: skillsInstruction,
+    skillsList,
     systemPrompt: () => "BASE",
     now,
   });
@@ -588,7 +588,7 @@ describe("skills in runs", () => {
 
     await send(await newSession(app, p), agent.id);
     const system = systemOf(model.requests[0]) as string;
-    const list = skillsInstruction(skills.inScope(p, agent.id)) as string;
+    const list = `${DEFAULTS.skillsInstruction}\n\n${skillsList(skills.inScope(p, agent.id))}`;
     expect(system).toBe(`Global.\n\nProject.\n\nBe terse.\n\n${list}\n\nBASE`);
     expect(list).toContain("- g-one: Global one.");
     expect(list).toContain("- p-one: Project one.");
@@ -598,7 +598,7 @@ describe("skills in runs", () => {
     // A standalone session has global skills only.
     await send(await newSession(app));
     expect(systemOf(model.requests[1])).toBe(
-      `Global.\n\n${skillsInstruction(skills.inScope(null, null))}\n\nBASE`,
+      `Global.\n\n${DEFAULTS.skillsInstruction}\n\n${skillsList(skills.inScope(null, null))}\n\nBASE`,
     );
     expect(systemOf(model.requests[1])).not.toContain("p-one");
 

@@ -1,12 +1,17 @@
+import { formatRef } from "@harness/core";
 import Mustache from "mustache";
 
 /*
  * Placeholders in the prompts the user writes (placeholders design). A
  * placeholder is `{{skills}}`, `{{tools}}`, `{{schemas}}`, `{{data}}` or
- * `{{agents}}` (schemas and data design, decision 39) or `{{workspaces}}`
- * (files unification design, D39); it is replaced, when a
+ * `{{agents}}` (schemas and data design, decision 39), `{{workspaces}}`
+ * (files unification design, D39) or `{{files}}`; it is replaced, when a
  * run starts, with what the run has access to. `{{date}}` and `{{time}}` are
  * replaced with the date and the time of day the run starts.
+ * Each list also has an `_instruction` placeholder, such as
+ * `{{skills_instruction}}`: the wording that introduces the list, from the
+ * setting of the same name (`skillsInstruction`), kept apart from the list.
+ * It is empty when the list is.
  *
  * A prompt is a Mustache template (mustache.js), so these names can also be
  * used as conditions: `{{#skills}}...{{/skills}}` is kept only when there are
@@ -23,16 +28,32 @@ export type PlaceholderName =
   | "data"
   | "agents"
   | "workspaces"
+  | "files"
+  | "skills_instruction"
+  | "tools_instruction"
+  | "schemas_instruction"
+  | "data_instruction"
+  | "agents_instruction"
+  | "workspaces_instruction"
+  | "files_instruction"
   | "date"
   | "time";
 
 const NAMES: ReadonlySet<string> = new Set<PlaceholderName>([
   "skills",
+  "skills_instruction",
   "tools",
+  "tools_instruction",
   "schemas",
+  "schemas_instruction",
   "data",
+  "data_instruction",
   "agents",
+  "agents_instruction",
   "workspaces",
+  "workspaces_instruction",
+  "files",
+  "files_instruction",
   "date",
   "time",
 ]);
@@ -287,5 +308,35 @@ export function workspacesList(
       (w) =>
         `- ${w.name}: workspace://${w.id}/ (${w.effectiveWritable ? "can be changed" : "read-only"})`,
     )
+    .join("\n");
+}
+
+/** The longest description a `{{files}}` line shows, in characters. */
+export const FILE_DESCRIPTION_MAX = 120;
+
+/**
+ * What `{{files}}` expands to: one line per file in the scopes the run can
+ * see, `- <scope://name> (media type): description`. The description is what
+ * a binary file's derived text says (a description or transcript), on one
+ * line and cut at `FILE_DESCRIPTION_MAX` characters with "…"; a file with none
+ * has no colon part. Empty for none.
+ */
+export function filesList(
+  files: readonly {
+    scope: "session" | "project" | "global";
+    key: string;
+    mediaType: string;
+    description?: string | undefined;
+  }[],
+): string {
+  return files
+    .map((f) => {
+      const text = (f.description ?? "").replace(/\s+/g, " ").trim();
+      const shown =
+        text.length > FILE_DESCRIPTION_MAX
+          ? `${text.slice(0, FILE_DESCRIPTION_MAX).trimEnd()}…`
+          : text;
+      return `- ${formatRef({ location: f.scope, path: f.key })} (${f.mediaType})${shown === "" ? "" : `: ${shown}`}`;
+    })
     .join("\n");
 }

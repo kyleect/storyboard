@@ -11,7 +11,6 @@ import {
 import {
   dataText,
   schemaDataTools,
-  schemasInstruction,
   schemasText,
   SKILL_LOAD,
 } from "@harness/tools";
@@ -21,7 +20,7 @@ import { DataStore } from "./data-store.js";
 import { schemaChecker } from "./json-schema.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
-import { readSettings, writeSettings } from "./settings.js";
+import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
 import { grant, clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 import { setToolAsks } from "./tool-settings.js";
@@ -327,7 +326,6 @@ async function setup(scripts: ScriptStep[][], ask = false) {
     data,
     schemaChecker,
     dataTools: schemaDataTools.map((x) => x.name),
-    schemasPrompt: schemasInstruction,
     schemasList: schemasText,
     dataList: dataText,
     now,
@@ -468,7 +466,11 @@ describe("schemas and data in runs", () => {
       (await api(s.app, "POST", "/api/sessions", {})).body.id as string,
     );
     const system = systemOf(s.model.requests[0]);
-    expect(system).toMatch(/^G\n\nYou have schemas:/);
+    expect(system).toMatch(
+      new RegExp(
+        `^G\\n\\n${DEFAULTS.schemasInstruction.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n\\n- `,
+      ),
+    );
     // The built-in Task has the same name, so the scope is shown.
     expect(system).toContain("- Task (global): A task.");
   });
@@ -492,7 +494,38 @@ describe("schemas and data in runs", () => {
     const system = systemOf(s.model.requests[0]) ?? "";
     expect(system.startsWith("<schemas>\n- ")).toBe(true);
     expect(system).toContain("\n- Task (global): A task.\n");
-    expect(system).not.toContain("You have schemas:");
+    expect(system).not.toContain(DEFAULTS.schemasInstruction);
+  });
+
+  it("puts the schemas instruction setting before the list, and fills {{schemas_instruction}} apart from {{schemas}}", async () => {
+    const s = await setup([answer, answer]);
+    s.data
+      .shared({ projectId: null, agentId: null })
+      .createSchema(
+        "global",
+        { id: "g1", name: "Task", description: "A task.", copiedFrom: null },
+        TASK,
+      );
+    const newSession = async () =>
+      (await api(s.app, "POST", "/api/sessions", {})).body.id as string;
+
+    writeSettings(s.t.db, {
+      systemPrompt: "G",
+      schemasInstruction: "Custom schemas wording.",
+    });
+    await say(s, await newSession());
+    expect(systemOf(s.model.requests[0])).toMatch(
+      /^G\n\nCustom schemas wording\.\n\n- /,
+    );
+
+    writeSettings(s.t.db, {
+      systemPrompt: "[{{schemas_instruction}}]\n{{schemas}}",
+    });
+    await say(s, await newSession());
+    const system = systemOf(s.model.requests[1]) ?? "";
+    expect(system.startsWith("[Custom schemas wording.]\n- ")).toBe(true);
+    // Placed by the prompt, so not inserted a second time.
+    expect(system.split("Custom schemas wording.").length).toBe(2);
   });
 
   it("lists data as schema name, data name and description where {{data}} is written", async () => {

@@ -22,8 +22,8 @@ packages/tools/src
   project-copy.ts    what project_create copies: schemas and data, the agent, the delegation note
   agents.ts          agents_list, agent_view
   subagents.ts       start_subagent, subagent_handback
-  skills.ts          skill_load, skillsList, skillsInstruction
-  schemas-data.ts    schema and data tools, schemasText, dataText, schemasInstruction
+  skills.ts          skill_load, skillsList
+  schemas-data.ts    schema and data tools, schemasText, dataText
   workspaces.ts      workspaces_list and the workspace_* tools
   results.ts         shared helpers: fail, notDone, guarded
   domino.d.ts        type declaration for @mixmark-io/domino
@@ -245,8 +245,8 @@ error result with the reason (`failed`, `cancelled`, `iteration_limit` or
 
 `skill_load` is offered only when at least one skill is in scope.
 `skillsList(skills)` renders the list (`- name: description`, with the scope
-shown only for names that exist in more than one scope) and
-`skillsInstruction(skills)` wraps it with an introduction.
+shown only for names that exist in more than one scope). The introduction is the
+`skillsInstruction` setting in the backend, not a tools export.
 
 ### Schemas and data
 
@@ -279,8 +279,8 @@ Because the tools use `ctx.data`, a write in the **session** scope is recorded o
 the tool result as `dataOps`, while writes to other scopes go straight to the
 backend's tables.
 
-`schemasText`, `dataText` and `schemasInstruction` produce the lists and
-instruction text placed in the system message.
+`schemasText` and `dataText` produce the lists placed in the system message. The
+introduction is the `schemasInstruction` setting in the backend.
 
 ## Where each tool becomes available
 

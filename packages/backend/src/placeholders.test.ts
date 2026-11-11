@@ -10,7 +10,6 @@ import {
 } from "@harness/core";
 import {
   skillLoad,
-  skillsInstruction,
   skillsList,
   SKILL_LOAD,
   startSubagent,
@@ -20,6 +19,8 @@ import { AppEvents } from "./app-events.js";
 import {
   agentsList,
   expandPlaceholders,
+  filesList,
+  FILE_DESCRIPTION_MAX,
   firstSentence,
   formatDate,
   formatTime,
@@ -27,6 +28,7 @@ import {
   toolsList,
   usesPlaceholder,
 } from "./placeholders.js";
+import { EntryStore } from "./entries-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
@@ -47,8 +49,16 @@ afterEach(async () => {
 describe("expandPlaceholders (decisions 2 to 6)", () => {
   const values = {
     skills: "- a: A.",
+    skills_instruction: "Use skills.",
     tools: "- t: T.",
     schemas: "- S.",
+    schemas_instruction: "Use schemas.",
+    tools_instruction: "Use tools.",
+    data_instruction: "Use data.",
+    agents_instruction: "Use agents.",
+    workspaces_instruction: "Use workspaces.",
+    files: "- <session://a.md> (text/markdown)",
+    files_instruction: "Use files.",
     data: "- S: D.",
     agents: "- (a1) Ed: Edits.",
     workspaces: "- Notes: workspace://w1/ (read-only)",
@@ -107,6 +117,14 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
       data: "",
       agents: "",
       workspaces: "",
+      skills_instruction: "",
+      schemas_instruction: "",
+      tools_instruction: "",
+      data_instruction: "",
+      agents_instruction: "",
+      workspaces_instruction: "",
+      files: "",
+      files_instruction: "",
       date: "",
       time: "",
     });
@@ -122,16 +140,49 @@ describe("expandPlaceholders (decisions 2 to 6)", () => {
         data: "",
         agents: "",
         workspaces: "",
+        skills_instruction: "",
+        schemas_instruction: "",
+        tools_instruction: "",
+        data_instruction: "",
+        agents_instruction: "",
+        workspaces_instruction: "",
+        files: "",
+        files_instruction: "",
         date: "",
         time: "",
       }),
     ).toBe("A  B");
   });
 
+  it("replaces {{skills_instruction}} and {{schemas_instruction}}, apart from the lists", () => {
+    expect(
+      expandPlaceholders(
+        "{{skills_instruction}}|{{ schemas_instruction }}|{{skills}}",
+        values,
+      ),
+    ).toBe("Use skills.|Use schemas.|- a: A.");
+  });
+
+  it("replaces each instruction placeholder and {{files}}", () => {
+    expect(
+      expandPlaceholders(
+        "{{tools_instruction}}|{{data_instruction}}|{{agents_instruction}}|{{workspaces_instruction}}|{{files_instruction}}|{{files}}",
+        values,
+      ),
+    ).toBe(
+      "Use tools.|Use data.|Use agents.|Use workspaces.|Use files.|- <session://a.md> (text/markdown)",
+    );
+  });
+
   it("tells whether a placeholder is used", () => {
     expect(usesPlaceholder("x {{ skills }}", "skills")).toBe(true);
     expect(usesPlaceholder("x {{tools}}", "skills")).toBe(false);
     expect(usesPlaceholder(undefined, "skills")).toBe(false);
+    // The instruction and the list are different placeholders.
+    expect(usesPlaceholder("{{skills_instruction}}", "skills")).toBe(false);
+    expect(
+      usesPlaceholder("{{skills_instruction}}", "skills_instruction"),
+    ).toBe(true);
   });
 });
 
@@ -249,7 +300,13 @@ const agentContent = (over: Partial<AgentInput> = {}): AgentInput => ({
   ...over,
 });
 
-async function setup(scripts: ScriptStep[][], tools: readonly Tool[] = TOOLS) {
+async function setup(
+  scripts: ScriptStep[][],
+  tools: readonly Tool[] = TOOLS,
+  extra: (
+    t: ReturnType<typeof tempDatabase>,
+  ) => Partial<ConstructorParameters<typeof RunManager>[0]> = () => ({}),
+) {
   const t = tempDatabase();
   clearBuiltins(t.db);
   writeSettings(t.db, { systemPrompt: "" });
@@ -269,10 +326,10 @@ async function setup(scripts: ScriptStep[][], tools: readonly Tool[] = TOOLS) {
     tools,
     agents,
     skills,
-    skillsPrompt: skillsInstruction,
     skillsList,
     systemPrompt: () => "BASE",
     now,
+    ...extra(t),
   });
   const app = buildServer({
     store,
@@ -370,6 +427,60 @@ describe("placeholders in runs", () => {
     expect(system).toContain("You have skills");
     expect(system.endsWith("\n\nBASE")).toBe(true);
     expect(system.startsWith("Global. - alpha: The alpha tool.")).toBe(true);
+  });
+
+  it("puts the skills instruction setting before the list when no prompt places either", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, {
+      systemPrompt: "Global.",
+      skillsInstruction: "Custom skills wording.",
+    });
+    s.skills.create({ scope: "global" }, skill({ description: "Global one." }));
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe(
+      "Global.\n\nCustom skills wording.\n\n- my-skill: Global one.\n\nBASE",
+    );
+  });
+
+  it("sends the list alone when the skills instruction setting is empty", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: "Global.", skillsInstruction: "" });
+    s.skills.create({ scope: "global" }, skill({ description: "Global one." }));
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe(
+      "Global.\n\n- my-skill: Global one.\n\nBASE",
+    );
+  });
+
+  it("fills {{skills_instruction}} and {{skills}} apart, and then inserts nothing", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, {
+      systemPrompt:
+        "<how>{{skills_instruction}}</how>\n<list>{{skills}}</list>",
+      skillsInstruction: "Custom skills wording.",
+    });
+    s.skills.create({ scope: "global" }, skill({ description: "Global one." }));
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe(
+      "<how>Custom skills wording.</how>\n<list>- my-skill: Global one.</list>\n\nBASE",
+    );
+  });
+
+  it("does not insert the list after a prompt that places only {{skills_instruction}}", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: "{{skills_instruction}}" });
+    s.skills.create({ scope: "global" }, skill());
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe(
+      `${DEFAULTS.skillsInstruction}\n\nBASE`,
+    );
+  });
+
+  it("leaves {{skills_instruction}} empty when no skill is in scope", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: "A{{skills_instruction}}B" });
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe("AB\n\nBASE");
   });
 
   it("expands to nothing with no skills, and drops a prompt left blank", async () => {
@@ -532,9 +643,56 @@ describe("placeholders in runs", () => {
   });
 });
 
+describe("filesList", () => {
+  it("is empty for no files", () => {
+    expect(filesList([])).toBe("");
+  });
+
+  it("gives the reference and media type, and a description only when there is one", () => {
+    expect(
+      filesList([
+        { scope: "global", key: "style/voice.md", mediaType: "text/markdown" },
+        {
+          scope: "session",
+          key: "My Photo.png",
+          mediaType: "image/png",
+          description: "  A cat\non a\n  sofa. ",
+        },
+      ]),
+    ).toBe(
+      [
+        "- <global://style/voice.md> (text/markdown)",
+        "- <session://My Photo.png> (image/png): A cat on a sofa.",
+      ].join("\n"),
+    );
+  });
+
+  it("cuts a long description at the limit with an ellipsis", () => {
+    const line = filesList([
+      {
+        scope: "project",
+        key: "a.wav",
+        mediaType: "audio/wav",
+        description: "word ".repeat(100),
+      },
+    ]);
+    const description = line.split("): ")[1] as string;
+    expect(description.endsWith("…")).toBe(true);
+    expect(description.length).toBeLessThanOrEqual(FILE_DESCRIPTION_MAX + 1);
+  });
+});
+
 describe("Mustache templates", () => {
   const values = {
     skills: "- a: A.",
+    skills_instruction: "",
+    schemas_instruction: "",
+    tools_instruction: "",
+    data_instruction: "",
+    agents_instruction: "",
+    workspaces_instruction: "",
+    files: "",
+    files_instruction: "",
     tools: "- t: T.",
     schemas: "",
     data: "",
@@ -724,6 +882,14 @@ describe("the default global prompt", () => {
     expandPlaceholders(DEFAULTS.systemPrompt, values);
   const nothing = {
     skills: "",
+    skills_instruction: "",
+    schemas_instruction: "",
+    tools_instruction: DEFAULTS.toolsInstruction,
+    data_instruction: "",
+    agents_instruction: "",
+    workspaces_instruction: "",
+    files: "",
+    files_instruction: "",
     tools: "- t: T.",
     schemas: "",
     data: "",
@@ -739,13 +905,20 @@ describe("the default global prompt", () => {
     data: "- S: a piece of data",
     agents: "- (a1) Ed: Edits.",
     workspaces: "- Notes: workspace://w1/ (read-only)",
+    files: "- <session://a.md> (text/markdown)",
+    skills_instruction: DEFAULTS.skillsInstruction,
+    schemas_instruction: DEFAULTS.schemasInstruction,
+    data_instruction: DEFAULTS.dataInstruction,
+    agents_instruction: DEFAULTS.agentsInstruction,
+    workspaces_instruction: DEFAULTS.workspacesInstruction,
+    files_instruction: DEFAULTS.filesInstruction,
   };
-  const blocks = ["skills", "schemas", "data", "agents", "workspaces"];
+  const blocks = ["skills", "schemas", "data", "agents", "workspaces", "files"];
 
   it("leaves out a block that has nothing to list", () => {
     const out = render(nothing);
     for (const name of blocks) expect(out).not.toContain(`<${name}>`);
-    expect(out).toContain("<tools>\n- t: T.\n</tools>");
+    expect(out).toContain("<tools>\nYou have tools:\n\n- t: T.\n</tools>");
     expect(out).toContain("Today is Friday, November 6, 2026.");
     // No run of blank lines where a block was.
     expect(out).not.toMatch(/\n{3,}/);
@@ -758,11 +931,31 @@ describe("the default global prompt", () => {
     }
     expect(out).toContain("- a: A.\n</skills>");
     expect(out).toContain("- (a1) Ed: Edits.\n</agents>");
+    expect(out).toContain("- <session://a.md> (text/markdown)\n</files>");
+    // Each block opens with its instruction setting.
+    expect(out).toContain(`<skills>\n${DEFAULTS.skillsInstruction}\n\n`);
+    expect(out).toContain(`<files>\n${DEFAULTS.filesInstruction}\n\n`);
     expect(out).not.toMatch(/\n{3,}/);
   });
 
   it("tells the model how to load a skill, with the tool's real name", () => {
-    expect(DEFAULTS.systemPrompt).toContain(`call ${SKILL_LOAD} with its name`);
+    expect(DEFAULTS.skillsInstruction).toContain(
+      `call ${SKILL_LOAD} with its name`,
+    );
+  });
+
+  it("takes each block's wording from the settings, not the prompt's text", () => {
+    for (const name of [
+      "skills",
+      "tools",
+      "schemas",
+      "data",
+      "agents",
+      "workspaces",
+      "files",
+    ]) {
+      expect(DEFAULTS.systemPrompt).toContain(`{{${name}_instruction}}`);
+    }
   });
 
   it("gives the skill introduction once in a run, not again as the default list", async () => {
@@ -783,5 +976,100 @@ describe("the default global prompt", () => {
     const system = systemOf(s.model.requests[0]) as string;
     expect(system).not.toContain("<skills>");
     expect(system).not.toContain("You have skills");
+  });
+});
+
+describe("instruction placeholders and {{files}} in runs", () => {
+  const withEntries = (t: ReturnType<typeof tempDatabase>) => ({
+    entries: new EntryStore(t.db),
+  });
+
+  it("fills {{tools_instruction}} from the setting, apart from {{tools}}", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, {
+      systemPrompt: "<how>{{tools_instruction}}</how>\n{{tools}}",
+      toolsInstruction: "Custom tools wording.",
+    });
+    await say(s, await newSession(s.app));
+    const system = systemOf(s.model.requests[0]) as string;
+    expect(system.startsWith("<how>Custom tools wording.</how>\n- ")).toBe(
+      true,
+    );
+    expect(system.split("Custom tools wording.")).toHaveLength(2);
+  });
+
+  it("leaves each instruction empty when its list is", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, {
+      systemPrompt:
+        "[{{data_instruction}}][{{agents_instruction}}][{{workspaces_instruction}}][{{files_instruction}}][{{files}}]",
+    });
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe("[][][][][]\n\nBASE");
+  });
+
+  it("lists the global, project and session files, with a description for a binary file", async () => {
+    const s = await setup([answer], TOOLS, withEntries);
+    const entries = new EntryStore(s.t.db);
+    writeSettings(s.t.db, {
+      systemPrompt: "{{files_instruction}}\n{{files}}",
+      filesInstruction: "Custom files wording.",
+    });
+    const project = (await api(s.app, "POST", "/api/projects", { name: "P" }))
+      .body.id as string;
+    const shared = entries.shared(project);
+    shared.put(
+      "file",
+      "global",
+      { key: "voice.md", value: "Plain.", mediaType: "text/markdown" },
+      { by: "user" },
+    );
+    shared.put(
+      "file",
+      "project",
+      { key: "cast/alice.md", value: "Alice.", mediaType: "text/markdown" },
+      { by: "user" },
+    );
+    const session = (
+      await api(s.app, "POST", "/api/sessions", { projectId: project })
+    ).body.id as string;
+    await say(s, session);
+    expect(systemOf(s.model.requests[0])).toBe(
+      [
+        "Custom files wording.",
+        "- <global://voice.md> (text/markdown)",
+        "- <project://cast/alice.md> (text/markdown)",
+        "",
+        "BASE",
+      ].join("\n"),
+    );
+  });
+
+  it("does not list project files in a chat that is not in a project", async () => {
+    const s = await setup([answer], TOOLS, withEntries);
+    const entries = new EntryStore(s.t.db);
+    writeSettings(s.t.db, { systemPrompt: "{{files}}" });
+    entries
+      .shared(null)
+      .put(
+        "file",
+        "global",
+        { key: "voice.md", value: "Plain.", mediaType: "text/markdown" },
+        { by: "user" },
+      );
+    await say(s, await newSession(s.app));
+    expect(systemOf(s.model.requests[0])).toBe(
+      "- <global://voice.md> (text/markdown)\n\nBASE",
+    );
+  });
+
+  it("sends no <files> block from the default prompt when there are no files", async () => {
+    const s = await setup([answer]);
+    writeSettings(s.t.db, { systemPrompt: DEFAULTS.systemPrompt });
+    await say(s, await newSession(s.app));
+    const system = systemOf(s.model.requests[0]) as string;
+    expect(system).not.toContain("<files>");
+    expect(system).not.toContain("{{files}}");
+    expect(system).toContain(`<tools>\n${DEFAULTS.toolsInstruction}\n\n`);
   });
 });

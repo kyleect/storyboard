@@ -429,6 +429,20 @@ export interface Settings {
    */
   systemPrompt: string;
   /**
+   * The wording that introduces the skill list: what
+   * `{{skills_instruction}}` expands to, and what goes before the list where
+   * no prompt places the skills. Empty: the list goes in alone.
+   */
+  skillsInstruction: string;
+  /** The same for schemas: `{{schemas_instruction}}`. */
+  schemasInstruction: string;
+  /** The wording for the other lists: `{{tools_instruction}}` and so on. */
+  toolsInstruction: string;
+  dataInstruction: string;
+  agentsInstruction: string;
+  workspacesInstruction: string;
+  filesInstruction: string;
+  /**
    * The global agent a new session starts with when its project has no
    * default of its own. Empty: none.
    */

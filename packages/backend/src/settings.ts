@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
 import { COPY_LIMIT_MAX, DEFAULT_COPY_LIMIT } from "@harness/core";
+import { SKILL_LOAD } from "@harness/tools";
 
 /*
  * Stored settings (design doc, "Configuration details"). Precedence, highest
@@ -52,6 +53,29 @@ export const Settings = z.object({
    * decisions 1 to 3). Empty: none.
    */
   systemPrompt: z.string(),
+  /**
+   * The wording that introduces the skill list. It is what
+   * `{{skills_instruction}}` expands to, and it goes before the list where
+   * no prompt has `{{skills}}` or `{{skills_instruction}}`. Left out when the
+   * run has no skills. Empty: no introduction, so the list goes in alone.
+   */
+  skillsInstruction: z.string(),
+  /**
+   * The same for schemas: what `{{schemas_instruction}}` expands to, and
+   * what goes before the schema list where no prompt has `{{schemas}}` or
+   * `{{schemas_instruction}}`. Left out when the run has no schemas.
+   */
+  schemasInstruction: z.string(),
+  /** What `{{tools_instruction}}` expands to; empty when there are no tools. */
+  toolsInstruction: z.string(),
+  /** What `{{data_instruction}}` expands to; empty when there is no data. */
+  dataInstruction: z.string(),
+  /** What `{{agents_instruction}}` expands to; empty when none can be started. */
+  agentsInstruction: z.string(),
+  /** What `{{workspaces_instruction}}` expands to; empty without workspaces. */
+  workspacesInstruction: z.string(),
+  /** What `{{files_instruction}}` expands to; empty when there are no files. */
+  filesInstruction: z.string(),
   /**
    * The global agent a new session starts with when its project has no
    * default of its own (global default agent design, decision 5). Empty:
@@ -142,21 +166,21 @@ Today is {{date}}. The time is {{time}}.
 
 {{#skills}}
 <skills>
-You have skills: written instructions for particular kinds of work. When the user's request matches a skill's description, call skill_load with its name before you start, then follow what it returns. When two skills share a name, give the scope too, shown in parentheses.
+{{skills_instruction}}
 
 {{skills}}
 </skills>
 {{/skills}}
 
 <tools>
-You have tools:
+{{tools_instruction}}
 
 {{tools}}
 </tools>
 
 {{#schemas}}
 <schemas>
-Schemas are named shapes for structured state, such as tasks or decisions. Data is made from a schema. Check the lists below, and use the schema and data tools to read or change them, before creating something that may already exist.
+{{schema_instruction}}
 
 {{schemas}}
 </schemas>
@@ -164,7 +188,7 @@ Schemas are named shapes for structured state, such as tasks or decisions. Data 
 
 {{#data}}
 <data>
-Each line is the name of a schema, then the name and description of a piece of data made from it.
+{{data_instruction}}
 
 {{data}}
 </data>
@@ -172,7 +196,7 @@ Each line is the name of a schema, then the name and description of a piece of d
 
 {{#agents}}
 <agents>
-These are the agents available to you.
+{{agents_instruction}}
 
 {{agents}}
 </agents>
@@ -180,21 +204,35 @@ These are the agents available to you.
 
 {{#workspaces}}
 <workspaces>
-These workspaces are available to you. Search in workspaces to find information.
+{{workspaces_instruction}}
 
 {{workspaces}}
 </workspaces>
 {{/workspaces}}
+
+{{#files}}
 <files>
-These files are available to you. Search in files to find information.
+{{files_instruction}}
 
 {{files}}
 </files>
+{{/files}}
 
 <rules>
 - Be concise in your responses
 </rules>
   `.trim(),
+  skillsInstruction: `You have skills: written instructions for particular kinds of work. When the user's request matches a skill's description, call ${SKILL_LOAD} with its name before you start, then follow what it returns. When two skills share a name, give the scope too, shown in parentheses.`,
+  schemasInstruction:
+    "Schemas are named shapes for structured state, such as tasks or decisions. Data is made from a schema. Check the lists below, and use the schema and data tools to read or change them, before creating something that may already exist.",
+  toolsInstruction: "You have tools:",
+  dataInstruction:
+    "Each line is the name of a schema, then the name and description of a piece of data made from it.",
+  agentsInstruction: "These are the agents available to you.",
+  workspacesInstruction:
+    "These workspaces are available to you. Search in workspaces to find information.",
+  filesInstruction:
+    "These files are available to you. Search in files to find information.",
   defaultAgentId: "",
   childReminders: 2,
   childPrompt:
@@ -225,6 +263,13 @@ const ENV: Record<keyof Settings, string> = {
   titleModel: "HARNESS_TITLE_MODEL",
   titlePrompt: "HARNESS_TITLE_PROMPT",
   systemPrompt: "HARNESS_SYSTEM_PROMPT",
+  skillsInstruction: "HARNESS_SKILLS_INSTRUCTION",
+  schemasInstruction: "HARNESS_SCHEMAS_INSTRUCTION",
+  toolsInstruction: "HARNESS_TOOLS_INSTRUCTION",
+  dataInstruction: "HARNESS_DATA_INSTRUCTION",
+  agentsInstruction: "HARNESS_AGENTS_INSTRUCTION",
+  workspacesInstruction: "HARNESS_WORKSPACES_INSTRUCTION",
+  filesInstruction: "HARNESS_FILES_INSTRUCTION",
   defaultAgentId: "HARNESS_DEFAULT_AGENT_ID",
   childReminders: "HARNESS_CHILD_REMINDERS",
   childPrompt: "HARNESS_CHILD_PROMPT",

@@ -9,7 +9,7 @@ import {
   type RunSkill,
   type ToolContext,
 } from "@harness/core";
-import { SKILL_LOAD, skillLoad, skillsInstruction } from "./skills.js";
+import { skillLoad, skillsList } from "./skills.js";
 
 const skill = (over: Partial<RunSkill> = {}): RunSkill => ({
   name: "dialogue-polish",
@@ -44,13 +44,13 @@ const ctx = (skills: RunSkill[]): ToolContext => ({
   }),
 });
 
-describe("skillsInstruction", () => {
-  it("is undefined when no skill is in scope", () => {
-    expect(skillsInstruction([])).toBeUndefined();
+describe("skillsList", () => {
+  it("is empty when no skill is in scope", () => {
+    expect(skillsList([])).toBe("");
   });
 
   it("lists each skill with its description on one line", () => {
-    const text = skillsInstruction([
+    const text = skillsList([
       skill(),
       skill({
         name: "scene-outline",
@@ -58,29 +58,24 @@ describe("skillsInstruction", () => {
         description: "Use when breaking a scene\ninto   beats.",
         scope: "project",
       }),
-    ]) as string;
-    expect(text).toContain(SKILL_LOAD);
-    expect(text).toContain(
-      "- dialogue-polish: Use when revising dialogue so it sounds natural.",
+    ]);
+    expect(text).toBe(
+      [
+        "- dialogue-polish: Use when revising dialogue so it sounds natural.",
+        "- scene-outline: Use when breaking a scene into beats.",
+      ].join("\n"),
     );
-    expect(text).toContain(
-      "- scene-outline: Use when breaking a scene into beats.",
-    );
-    // No clash, so no scope and no sentence about scopes.
-    expect(text).not.toContain("(global)");
-    expect(text).not.toContain("scope");
   });
 
   it("shows the scope only for a name that is in more than one scope", () => {
-    const text = skillsInstruction([
+    const text = skillsList([
       skill(),
       skill({ scope: "project", description: "The project's own take." }),
       skill({ name: "other", scope: "agent", description: "Another." }),
-    ]) as string;
+    ]);
     expect(text).toContain("- dialogue-polish (global): Use when revising");
     expect(text).toContain("- dialogue-polish (project): The project's own");
     expect(text).toContain("- other: Another.");
-    expect(text).toContain("give the scope too");
   });
 });
 
