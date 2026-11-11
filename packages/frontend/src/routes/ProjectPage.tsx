@@ -1,14 +1,4 @@
-import {
-  Alert,
-  Button,
-  Group,
-  Loader,
-  NavLink,
-  Stack,
-  Text,
-  Textarea,
-  Title,
-} from "@mantine/core";
+import { Alert, Button, Group, Loader, Stack, Textarea } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -16,13 +6,14 @@ import { api, type Project } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
 import { DefaultAgentSelect } from "./Agents";
 import { EditableTitle } from "./EditableTitle";
-import { UsageBadge } from "./ContextMeter";
+import { SessionsPage } from "./Sessions";
 import { AttachedWorkspaces } from "./Workspaces";
-import { SessionMenu, showError, useProjectActions } from "./SessionActions";
+import { showError, useProjectActions } from "./SessionActions";
 
 /**
  * A project's page (sessions and projects design, Q13b): its name and
- * description, editable here; its sessions; New session; Move to trash.
+ * description, editable here; links to its files, agents, skills and
+ * structured data; its chats in a table; New chat; Move to trash.
  */
 export function ProjectPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -31,10 +22,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),
-  });
-  const sessions = useQuery({
-    queryKey: sessionKeys.list(projectId),
-    queryFn: () => api.listSessions(projectId),
   });
 
   const save = async (fields: {
@@ -67,130 +54,122 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const trashed = project.data.trashed_at !== null;
 
   return (
-    <Stack maw={720} gap="md">
-      <EditableTitle
-        title={project.data.name}
-        label="Project name"
-        disabled={trashed}
-        onSave={(name) => save({ name })}
-      />
-      {trashed && (
-        <Alert color="yellow" title="This project is in the trash">
-          Restore it from the Trash tab in Settings to change it.
-        </Alert>
-      )}
-      <Group gap="xs">
-        <Button
-          size="xs"
-          variant="default"
-          renderRoot={(props) => (
-            <Link
-              {...props}
-              to="/projects/$projectId/files"
-              params={{ projectId }}
-            />
-          )}
-        >
-          Files & memory
-        </Button>
-        <Button
-          size="xs"
-          variant="default"
-          renderRoot={(props) => (
-            <Link
-              {...props}
-              to="/projects/$projectId/agents"
-              params={{ projectId }}
-            />
-          )}
-        >
-          Agents
-        </Button>
-        <Button
-          size="xs"
-          variant="default"
-          renderRoot={(props) => (
-            <Link
-              {...props}
-              to="/projects/$projectId/skills"
-              params={{ projectId }}
-            />
-          )}
-        >
-          Skills
-        </Button>
-      </Group>
-      <DefaultAgentSelect project={project.data} disabled={trashed} />
-      <SavedText
-        key={`d:${project.data.description}`}
-        label="Description"
-        what="description"
-        initial={project.data.description}
-        disabled={trashed}
-        onSave={(description) => save({ description })}
-      />
-      <SavedText
-        key={`p:${project.data.system_prompt}`}
-        label="System prompt"
-        help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}}, {{agents}} or {{workspaces}} to put the list of skills, tools, schemas, data, agents (the ones it can start) or workspaces the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts. Wrap text in {{#skills}}…{{/skills}} (or any other of these names) to keep it only when the chat has some, and in {{^skills}}…{{/skills}} to keep it only when it has none. Write {{files}} to list the files the chat can see. Write {{skills_instruction}}, {{tools_instruction}}, {{schemas_instruction}}, {{data_instruction}}, {{agents_instruction}}, {{workspaces_instruction}} or {{files_instruction}} for the wording that introduces a list, apart from the list."
-        what="system prompt"
-        initial={project.data.system_prompt}
-        disabled={trashed}
-        onSave={(systemPrompt) => save({ systemPrompt })}
-      />
-
-      <AttachedWorkspaces owner="projects" id={projectId} disabled={trashed} />
-
-      <Group justify="space-between">
-        <Title order={4}>Sessions</Title>
-        {!trashed && (
-          <Group gap="xs">
-            <Button
-              size="xs"
-              onClick={() => create.mutate()}
-              loading={create.isPending}
-            >
-              New session
-            </Button>
-            <Button
-              size="xs"
-              color="red"
-              variant="light"
-              onClick={() => actions.confirmTrash(project.data)}
-            >
-              Move to trash
-            </Button>
-          </Group>
+    <Stack gap="lg">
+      <Stack maw={720} gap="md">
+        <EditableTitle
+          title={project.data.name}
+          label="Project name"
+          disabled={trashed}
+          onSave={(name) => save({ name })}
+        />
+        {trashed && (
+          <Alert color="yellow" title="This project is in the trash">
+            Restore it from the Trash tab in Settings to change it.
+          </Alert>
         )}
-      </Group>
-      {sessions.isPending && <Loader size="sm" />}
-      {sessions.isError && <Alert color="red">{sessions.error.message}</Alert>}
-      {sessions.data?.length === 0 && (
-        <Text size="sm" c="dimmed">
-          No sessions.
-        </Text>
-      )}
-      <Stack gap={0}>
-        {sessions.data?.map((s) => (
-          <NavLink
-            key={s.id}
+        <Group gap="xs">
+          <Button
+            size="xs"
+            variant="default"
             renderRoot={(props) => (
               <Link
                 {...props}
-                to="/sessions/$sessionId"
-                params={{ sessionId: s.id }}
+                to="/projects/$projectId/files"
+                params={{ projectId }}
               />
             )}
-            label={s.title}
-            description={new Date(s.created_at).toLocaleString()}
-            rightSection={
-              <Group gap={4} wrap="nowrap">
-                <UsageBadge usage={s.usage} />
-                <SessionMenu session={s} />
-              </Group>
-            }
-          />
-        ))}
+          >
+            Files & memory
+          </Button>
+          <Button
+            size="xs"
+            variant="default"
+            renderRoot={(props) => (
+              <Link
+                {...props}
+                to="/projects/$projectId/agents"
+                params={{ projectId }}
+              />
+            )}
+          >
+            Agents
+          </Button>
+          <Button
+            size="xs"
+            variant="default"
+            renderRoot={(props) => (
+              <Link
+                {...props}
+                to="/projects/$projectId/skills"
+                params={{ projectId }}
+              />
+            )}
+          >
+            Skills
+          </Button>
+          <Button
+            size="xs"
+            variant="default"
+            renderRoot={(props) => (
+              <Link
+                {...props}
+                to="/projects/$projectId/data"
+                params={{ projectId }}
+              />
+            )}
+          >
+            Structured Data
+          </Button>
+        </Group>
+        <DefaultAgentSelect project={project.data} disabled={trashed} />
+        <SavedText
+          key={`d:${project.data.description}`}
+          label="Description"
+          what="description"
+          initial={project.data.description}
+          disabled={trashed}
+          onSave={(description) => save({ description })}
+        />
+        <SavedText
+          key={`p:${project.data.system_prompt}`}
+          label="System prompt"
+          help="Sent in every chat in this project, after the global system prompt and before the agent's. Leave it empty to send none. Write {{skills}}, {{tools}}, {{schemas}}, {{data}}, {{agents}} or {{workspaces}} to put the list of skills, tools, schemas, data, agents (the ones it can start) or workspaces the chat has at that place. Write {{date}} or {{time}} for the date or the time of day when the run starts. Wrap text in {{#skills}}…{{/skills}} (or any other of these names) to keep it only when the chat has some, and in {{^skills}}…{{/skills}} to keep it only when it has none. Write {{files}} to list the files the chat can see. Write {{skills_instruction}}, {{tools_instruction}}, {{schemas_instruction}}, {{data_instruction}}, {{agents_instruction}}, {{workspaces_instruction}} or {{files_instruction}} for the wording that introduces a list, apart from the list."
+          what="system prompt"
+          initial={project.data.system_prompt}
+          disabled={trashed}
+          onSave={(systemPrompt) => save({ systemPrompt })}
+        />
+
+        <AttachedWorkspaces
+          owner="projects"
+          id={projectId}
+          disabled={trashed}
+        />
+      </Stack>
+
+      <Stack gap="sm">
+        <Group justify="flex-end">
+          {!trashed && (
+            <Group gap="xs">
+              <Button
+                size="xs"
+                onClick={() => create.mutate()}
+                loading={create.isPending}
+              >
+                New chat
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                variant="light"
+                onClick={() => actions.confirmTrash(project.data)}
+              >
+                Move project to trash
+              </Button>
+            </Group>
+          )}
+        </Group>
+        <SessionsPage projectId={projectId} />
       </Stack>
     </Stack>
   );

@@ -299,7 +299,8 @@ export function SessionMenu({ session }: { session: Session }) {
           ⋯
         </ActionIcon>
       </Menu.Target>
-      <Menu.Dropdown>
+      {/* The menu is drawn elsewhere, but its clicks still reach the row. */}
+      <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
         <Menu.Item onClick={() => actions.openRename(session)}>
           Rename
         </Menu.Item>

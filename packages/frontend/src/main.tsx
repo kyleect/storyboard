@@ -41,11 +41,6 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
-    path: "/projects/$projectId/sessions",
-    component: Page,
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
     path: "/projects/$projectId/files",
     component: Page,
   }),

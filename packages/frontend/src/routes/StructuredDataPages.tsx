@@ -16,36 +16,32 @@ import { StructuredExplorer } from "./StructuredExplorer";
 function Explorer({
   scope,
   readOnly,
+  height = "calc(100vh - 14rem)",
 }: {
   scope: { scope: "global" } | { scope: "project"; id: string };
   readOnly?: string | undefined;
+  /** How tall the view is; less is taken off with no page header. */
+  height?: string;
 }) {
   const [dirty, setDirty] = useState(false);
   useReportDirty(dirty);
   return (
-    <>
-      <Box h="calc(100vh - 14rem)" mih={420}>
-        <StructuredExplorer
-          page={scope}
-          readOnly={readOnly}
-          onDirtyChange={setDirty}
-        />
-      </Box>
-    </>
+    <Box h={height} mih={420}>
+      <StructuredExplorer
+        page={scope}
+        readOnly={readOnly}
+        onDirtyChange={setDirty}
+      />
+    </Box>
   );
 }
 
-/** Global structured data (decision 44). */
+/**
+ * Global structured data (decision 44). The tab says what the page is, so it
+ * has no heading or help text.
+ */
 export function GlobalStructuredDataPage() {
-  return (
-    <Stack gap="md">
-      <Title order={3}>Structured Data</Title>
-      <Text size="sm" c="dimmed">
-        Global: every session can use these.
-      </Text>
-      <Explorer scope={{ scope: "global" }} />
-    </Stack>
-  );
+  return <Explorer scope={{ scope: "global" }} height="calc(100vh - 8rem)" />;
 }
 
 /** A project's structured data (decision 44). */

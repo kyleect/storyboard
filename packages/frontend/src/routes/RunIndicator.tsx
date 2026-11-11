@@ -98,14 +98,7 @@ export function GlobalRunIndicator({
         <Popover.Target>
           <UnstyledButton aria-label="Agent activity">
             <Group gap={6} wrap="nowrap">
-              {showWorking && (
-                <Group>
-                  <Badge size="xs" radius="xs" variant="gradient">
-                    {workingText}
-                  </Badge>
-                  <Spinner label="Agents are working" />
-                </Group>
-              )}
+              {showWorking && <Spinner label={workingText} />}
               {waiting > 0 && (
                 <Group gap={4} wrap="nowrap">
                   <WaitingBadge />

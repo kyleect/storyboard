@@ -100,7 +100,7 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
   return (
     <Stack gap="sm">
       <Group justify="space-between">
-        <Title order={4}>Sessions</Title>
+        <Title order={4}>Chats</Title>
         <Group gap="xs">
           <Text size="sm" c="dimmed">
             {selected.size} selected

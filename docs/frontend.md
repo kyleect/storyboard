@@ -60,7 +60,7 @@ packages/frontend/src
     ApprovalSelect.tsx   ask / don't ask choice
     ProjectPage.tsx      one project
     DebugPanel.tsx, LinearView.tsx   debugging tab
-    EditableTitle.tsx    click-to-edit session title and project name
+    EditableTitle.tsx    click-to-edit project name
     JsonEditor.tsx       CodeMirror JSON editor
     Branching.tsx        editing, branching, regenerating and forking controls in the chat
     ContextMeter.tsx, ModelPicker.tsx, ReasoningPicker.tsx, Markdown.tsx, …
@@ -98,18 +98,17 @@ Defined in `main.tsx`. The routes are the addresses of the workbench's tabs (see
 [The workbench](#the-workbench)): `Layout` draws the workbench, and the routes
 render nothing themselves.
 
-| Path                                                        | Page                                                          |
-| ----------------------------------------------------------- | ------------------------------------------------------------- |
-| `/`                                                         | No tab: the saved active tab is shown, else an empty state    |
-| `/sessions`                                                 | Sessions: a table of the standalone sessions                  |
-| `/sessions/$sessionId`                                      | Chat                                                          |
-| `/projects/$projectId`                                      | Project page (name, description, its sessions)                |
-| `/projects/$projectId/sessions`                             | Sessions: a table of the project's sessions                   |
-| `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files and notes, agents, skills, schemas and data |
-| `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                 |
-| `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants     |
-| `/errors`                                                   | Errors console across all sessions                            |
-| `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                     |
+| Path                                                        | Page                                                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `/`                                                         | No tab: the saved active tab is shown, else an empty state                 |
+| `/sessions`                                                 | Chats with no project: a table                                             |
+| `/sessions/$sessionId`                                      | Chat                                                                       |
+| `/projects/$projectId`                                      | Project page (name, description, links to its pages, its chats as a table) |
+| `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files and notes, agents, skills, schemas and data              |
+| `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                              |
+| `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants                  |
+| `/errors`                                                   | Errors console across all sessions                                         |
+| `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                                  |
 
 ## Where state lives
 
@@ -147,10 +146,17 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
 
 - **The address decides the active tab.** Clicking a tab navigates; an address that
   is opened (a link, the address bar, Back, or the saved tab at `/`) opens or
-  activates its tab. A tab opened by a single click in the tree is in italics and is
-  replaced by the next single click; a double click, the rail, the new-chat button
-  and an address keep it. `/settings` is one tab, and returns to the section last
+  activates its tab. A tab opened by a single click in the tree, or from the rail, is
+  in italics and is replaced by the next one; a double click on it or on the row, the
+  new-chat button and an address keep it. `/settings` is one tab, and returns to the section last
   used.
+- **What a tab says.** A chat is its title with a chat icon; a project is its name
+  with a blue folder icon; a page of a project is the project's name, then the page
+  (`Novel › Files & memory`), with a blue icon; a global page is its name. The hover
+  text spells the kind out ("Project: …", "Chat: …", "Files & memory (all
+  projects)").
+- **Reordering.** Tabs are dragged to a new place, or moved with Alt and the left or
+  right arrow (`moveTab` in `explorer.ts`); the order is saved with the tabs.
 - **Which tabs are mounted.** The active tab, and any tab with unsaved edits, which
   stays mounted but hidden. The rest are unmounted, so only the active chat holds an
   event stream (the browser allows about six HTTP/1.1 connections to a host). A chat
@@ -167,10 +173,15 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
   project of the active tab, else it is a standalone chat.
 - **Trash.** Moving a session or a project to the trash closes its tabs
   (`closeTabsAndGo`), and a tab whose chat is gone closes itself.
-- **The tree** lists each project, most recently used first, with its chats and its
-  pages, and "No project". A project's chats are read only while it is open. The
-  filter matches project names and the chats already loaded. Which projects are open
-  is saved with the tabs.
+- **The tree** lists each project, most recently used first, and "No project". A
+  project opens to its latest chats (`TREE_CHATS`, five), then "Show all N chats",
+  which opens the project's page, where all its chats are in a table. A project's
+  files, agents, skills and Structured Data are links on its page and in the menu on
+  its row. The "No project" row opens the table of the chats that have no project. A
+  project's chats are read only while it is open. The filter matches project names
+  and the chats already loaded, all of them. Which projects are open is saved with
+  the tabs. The rail's Chats button shows and hides the tree (kept in
+  `harness.workbench.sidebar`); on a small screen it opens the drawer.
 - **Small screens.** Below Mantine's `sm` breakpoint the rail and the tree are in a
   drawer, opened by a menu button at the left of the tab strip; the divider and the
   status bar are hidden, and the strip scrolls sideways.
@@ -334,8 +345,11 @@ agent choices, which the backend saves.
 **Pickers.** `ModelPicker` lists the models llama-server offers with their load
 status and asks the router to load one; `ReasoningPicker` shows the effort levels
 the selected model's template supports; the agent picker lists the agents the
-session may use. `ContextMeter` shows how full the context is: the latest model
-call's prompt plus completion tokens against the model's context size.
+session may use. The chat page has no header of its own: the tab shows the title
+(rename a chat from its menu in the tree or the Sessions table), and the status bar
+shows the model, the context tokens and the connection. `ContextMeter` (the ring
+with the prompt and completion split against the model's context size) and
+`CopyDebugButton` are not shown on the chat page now.
 
 ### Answering the model
 
@@ -491,16 +505,15 @@ are disabled while a run is active.
 
 ## The Sessions page
 
-`routes/Sessions.tsx` lists the sessions of one project (`/projects/$projectId/sessions`),
-or the standalone ones (`/sessions`), in a table. The tree opens it from the
-"All chats" row of a project or of "No project". It is a table: title, creation
+`routes/Sessions.tsx` lists the sessions of one project, as part of the project's page,
+or the standalone ones (`/sessions`, the "No project" row of the tree), in a table: title, creation
 time, context use and agents. The server pages and sorts it
 (`GET /api/sessions-page`): the user chooses newest or oldest first and 10, 25, 50
 or 100 rows, and `sessionsPrefs.ts` remembers both in `localStorage`. Rows can be
 selected, across pages; the header checkbox asks the server for every session id
 (`GET /api/sessions-page/ids`) and selects the ones with no run in progress, since
 a running session cannot be trashed. _Move to trash_ sends the ids to
-`POST /api/sessions/trash`. Each project's table is its own tab, so another project starts over.
+`POST /api/sessions/trash`. A different project starts over.
 
 ## Settings
 

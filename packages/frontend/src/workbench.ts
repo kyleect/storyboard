@@ -30,8 +30,8 @@ export type WorkbenchKind = (typeof WORKBENCH_KINDS)[number];
 /**
  * A tab. `root` says what `key` is: "session" for a chat (its id), "project"
  * for the pages of a project (its id), "global" for the rest (`key` is empty).
- * The Sessions page of "No project" is global; that of a project is the
- * project's.
+ * A project's chats are listed on its own page; the Sessions tab is the table
+ * of the chats that have no project.
  */
 export type WorkbenchTab = ExplorerTab<WorkbenchKind>;
 export type NewWorkbenchTab = Omit<WorkbenchTab, "transient">;
@@ -50,7 +50,6 @@ const GLOBAL_PAGES: Record<string, WorkbenchKind> = {
 };
 
 const PROJECT_PAGES: Record<string, WorkbenchKind> = {
-  sessions: "sessions",
   files: "project-files",
   agents: "project-agents",
   skills: "project-skills",
@@ -58,7 +57,6 @@ const PROJECT_PAGES: Record<string, WorkbenchKind> = {
 };
 
 const PROJECT_SUFFIX: Partial<Record<WorkbenchKind, string>> = {
-  sessions: "sessions",
   "project-files": "files",
   "project-agents": "agents",
   "project-skills": "skills",
@@ -113,7 +111,7 @@ export function pathForTab(
     case "settings":
       return settingsPath;
     case "sessions":
-      return tab.root === "project" ? `/projects/${id}/sessions` : "/sessions";
+      return "/sessions";
     case "project-files":
     case "project-agents":
     case "project-skills":

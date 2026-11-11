@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   clampWidth,
   closeTab,
+  moveTab,
   DEFAULT_WIDTH,
   keepTab,
   loadViewIn,
@@ -27,6 +28,7 @@ import {
 
 const PAGE = { scope: "global" } as const;
 const SETTINGS_KEY = "harness.workbench.settings";
+const SIDEBAR_KEY = "harness.workbench.sidebar";
 
 interface WorkbenchState {
   tabs: WorkbenchTab[];
@@ -34,6 +36,8 @@ interface WorkbenchState {
   /** Tree nodes open or closed, by node id. */
   expanded: Record<string, boolean>;
   width: number;
+  /** The chats tree is shown (on a wide screen). */
+  sidebarOpen: boolean;
   /** The section of Settings last used, as an address. */
   settingsPath: string;
 
@@ -41,10 +45,13 @@ interface WorkbenchState {
   open: (tab: NewWorkbenchTab, permanent: boolean) => void;
   setActive: (id: string | null) => void;
   keep: (id: string) => void;
+  /** Moves a tab to the place of the tab at `toIndex`. */
+  move: (id: string, toIndex: number) => void;
   /** Closes tabs; returns where to go when the active tab was one of them. */
   close: (ids: readonly string[]) => string | null;
   setExpanded: (node: string, open: boolean) => void;
   setWidth: (width: number) => void;
+  setSidebarOpen: (open: boolean) => void;
   setSettingsPath: (path: string) => void;
 }
 
@@ -53,6 +60,14 @@ function loadSettingsPath(): string {
     return localStorage.getItem(SETTINGS_KEY) ?? "/settings";
   } catch {
     return "/settings";
+  }
+}
+
+function loadSidebarOpen(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== "closed";
+  } catch {
+    return true;
   }
 }
 
@@ -69,6 +84,7 @@ function initial() {
     active: view.active,
     expanded: view.expanded,
     width: view.width,
+    sidebarOpen: loadSidebarOpen(),
     settingsPath: loadSettingsPath(),
   };
 }
@@ -95,6 +111,12 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       return { tabs: next.tabs };
     }),
 
+  move: (id, toIndex) =>
+    set((s) => {
+      const next = moveTab({ tabs: s.tabs, active: s.active }, id, toIndex);
+      return next.tabs === s.tabs ? s : { tabs: next.tabs };
+    }),
+
   close: (ids) => {
     const before = get();
     let state = { tabs: before.tabs, active: before.active };
@@ -116,6 +138,15 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     set((s) => ({ expanded: { ...s.expanded, [node]: open } })),
 
   setWidth: (width) => set({ width: clampWidth(width) }),
+
+  setSidebarOpen: (open) => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, open ? "open" : "closed");
+    } catch {
+      // storage unavailable; the choice is kept until the page reloads
+    }
+    set({ sidebarOpen: open });
+  },
 
   setSettingsPath: (path) => {
     try {

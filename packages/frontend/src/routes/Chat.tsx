@@ -66,7 +66,7 @@ import {
   useAttachmentDraft,
 } from "./Attachments";
 import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
-import { ContextMeter, latestUsage, used } from "./ContextMeter";
+import { latestUsage, used } from "./ContextMeter";
 import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
 import { useChatStatus } from "../chatStatus";
@@ -78,7 +78,6 @@ import {
   BranchSwitcher,
   Continuations,
   EditMessageBox,
-  ForkedFromLine,
   MessageActions,
   openForkDialog,
   useBranchActions,
@@ -86,9 +85,8 @@ import {
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { AttachedWorkspaces } from "./Workspaces";
-import { EditableTitle } from "./EditableTitle";
 import { effortLabel, ReasoningPicker } from "./ReasoningPicker";
-import { CopyDebugButton, DebugPanel } from "./DebugPanel";
+import { DebugPanel } from "./DebugPanel";
 import { showError, useSessionActions } from "./SessionActions";
 import { TranscriptScroll } from "./TranscriptScroll";
 
@@ -624,31 +622,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
           tokens={contextUsage ? used(contextUsage) : undefined}
           connected={connected}
         />
-        <Group justify="space-between" wrap="nowrap">
-          <Stack gap={0} style={{ minWidth: 0 }}>
-            <EditableTitle
-              title={detail.data.session.title}
-              disabled={trashed}
-              label="Session title"
-              onSave={(title) => actions.rename(sessionId, title)}
-            />
-            {detail.data.forkedFrom && (
-              <ForkedFromLine from={detail.data.forkedFrom} />
-            )}
-          </Stack>
-          <Group gap="sm" wrap="nowrap">
-            <CopyDebugButton sessionId={sessionId} />
-            <ContextMeter
-              usage={contextUsage}
-              model={levelsModel}
-              subagentUsage={detail.data.subagentUsage}
-            />
-            <Badge color={connected ? "green" : "gray"} variant="light">
-              {connected ? "live" : "offline"}
-            </Badge>
-          </Group>
-        </Group>
-
         {trashed && (
           <Alert color="yellow" title="This session is in the trash">
             <Group justify="space-between">

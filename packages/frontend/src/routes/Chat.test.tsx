@@ -215,3 +215,16 @@ describe("recording in the composer", () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe("the chat page", () => {
+  it("has no header: the tab and the status bar say what the chat is", async () => {
+    await show();
+    // No title to edit, and none of what the header held.
+    expect(screen.queryByLabelText("Session title")).toBeNull();
+    expect(screen.queryByText("Test")).toBeNull();
+    expect(screen.queryByText("live")).toBeNull();
+    expect(screen.queryByText("offline")).toBeNull();
+    // The views are still there.
+    expect(screen.getByRole("radio", { name: "Files" })).toBeTruthy();
+  });
+});

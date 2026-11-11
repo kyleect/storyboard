@@ -47,7 +47,7 @@ import { showError } from "./SessionActions";
 /*
  * Data (schemas and data design, decisions 19 to 25, 44): a panel per scope
  * with the list on the left and the selected piece of data on the right, as
- * for skills. The global and project "Schemas & data" pages, the agent's
+ * for skills. The global and project "Structured Data" pages, the agent's
  * page and the session's Data tab use it. Forms are made from the schema
  * (decisions 19, 20); the backend's checks have the final word on save
  * (plan P3), and their problems show next to the fields.

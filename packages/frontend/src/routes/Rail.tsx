@@ -17,7 +17,8 @@ import { GlobalRunIndicator } from "./RunIndicator";
 /*
  * The icon rail at the left of the workbench: the pages that are not about
  * one chat or project, each opening as a tab, and Settings at the bottom.
- * "Chats" brings up the list of chats.
+ * "Chats" shows and hides the list of chats; the others open a page in a
+ * preview tab.
  */
 
 export const RAIL_WIDTH = 52;
@@ -47,24 +48,36 @@ const PAGES: Item[] = [
 
 export function Rail({
   activeKind,
+  chatsOpen,
   onChats,
   onOpen,
   activity,
 }: {
   /** The kind of the active tab, to mark its item. */
   activeKind: WorkbenchKind | null;
+  /** The chats tree is shown; "Chats" shows and hides it. */
+  chatsOpen: boolean;
   onChats: () => void;
   onOpen: (kind: WorkbenchKind) => void;
   activity: RunSummary | undefined;
 }) {
-  const button = (item: Item, active: boolean, onClick: () => void) => (
+  const button = (
+    item: Item,
+    active: boolean,
+    onClick: () => void,
+    expanded?: boolean,
+  ) => (
     <Tooltip key={item.kind} label={item.label} position="right" withArrow>
       <ActionIcon
         size={40}
         variant={active ? "light" : "subtle"}
         color={active ? "blue" : "gray"}
         aria-label={item.label}
-        {...(active ? { "aria-current": "page" as const } : {})}
+        {...(expanded === undefined
+          ? active
+            ? { "aria-current": "page" as const }
+            : {}
+          : { "aria-expanded": expanded })}
         onClick={onClick}
       >
         {item.icon}
@@ -87,26 +100,29 @@ export function Rail({
         borderRight: "1px solid var(--mantine-color-default-border)",
       }}
     >
-      <GlobalRunIndicator summary={activity} />
       <Stack gap={4} align="center" style={{ flex: 1 }}>
         {button(
           { kind: "chat", label: "Chats", icon: <IconMessages size={22} /> },
-          activeKind === "chat" || activeKind === "sessions",
+          chatsOpen,
           onChats,
+          chatsOpen,
         )}
+        <GlobalRunIndicator summary={activity} />
         {PAGES.map((p) =>
           button(p, activeKind === p.kind, () => onOpen(p.kind)),
         )}
       </Stack>
-      {button(
-        {
-          kind: "settings",
-          label: "Settings",
-          icon: <IconSettings size={22} />,
-        },
-        activeKind === "settings",
-        () => onOpen("settings"),
-      )}
+      <Stack>
+        {button(
+          {
+            kind: "settings",
+            label: "Settings",
+            icon: <IconSettings size={22} />,
+          },
+          activeKind === "settings",
+          () => onOpen("settings"),
+        )}
+      </Stack>
     </Box>
   );
 }

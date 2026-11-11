@@ -165,6 +165,26 @@ export function keepTab<T extends ExplorerTab<string>>(
   };
 }
 
+/**
+ * Moves a tab to `toIndex`, counted among the tabs as they are now (the index
+ * of the tab it is dropped on). The active tab stays active.
+ */
+export function moveTab<T extends ExplorerTab<string>>(
+  state: TabsOf<T>,
+  id: string,
+  toIndex: number,
+): TabsOf<T> {
+  const from = state.tabs.findIndex((t) => tabId(t) === id);
+  if (from < 0) return state;
+  const to = Math.min(state.tabs.length - 1, Math.max(0, toIndex));
+  if (to === from) return state;
+  const tabs = [...state.tabs];
+  const [moved] = tabs.splice(from, 1);
+  if (moved === undefined) return state;
+  tabs.splice(to, 0, moved);
+  return { tabs, active: state.active };
+}
+
 /** Closes a tab; the next one to the right, else the left, becomes active. */
 export function closeTab<T extends ExplorerTab<string>>(
   state: TabsOf<T>,

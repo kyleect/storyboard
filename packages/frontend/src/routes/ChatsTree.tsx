@@ -15,11 +15,12 @@ import {
   IconDots,
   IconFolder,
   IconFolderPlus,
+  IconInbox,
   IconMessage,
   IconPlus,
   IconSearch,
 } from "@tabler/icons-react";
-import type { Ref, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { api, type Project, type Session } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
@@ -32,15 +33,18 @@ import { SessionMenu, useProjectActions } from "./SessionActions";
 
 /*
  * The chats tree in the workbench's sidebar (chat workbench design, 4.1):
- * each project, newest use first, opening to its chats and its pages, and
- * "No project" for the standalone chats. A single click opens a tab in
- * italics, a double click keeps it. Chats are read only for the projects
- * that are open.
+ * each project, newest use first, opening to its latest chats, and "No
+ * project" for the standalone chats. A project's row opens its page, which has
+ * its other pages and all its chats. A single click opens a tab in italics, a
+ * double click keeps it. Chats are read only for the projects that are open.
  */
 
 /** The group of standalone chats; a project's group is `project:<id>`. */
 export const NO_PROJECT_NODE = "none";
 const projectNode = (id: string) => `project:${id}`;
+
+/** How many chats a project (or "No project") lists before "Show all". */
+export const TREE_CHATS = 5;
 
 /** What the tree reports: the row that was used last, for New chat. */
 export interface FocusedRow {
@@ -184,8 +188,12 @@ function ChatRow({
   );
 }
 
-/** The pages and chats under a project, or under "No project". */
-function Children({
+/**
+ * The chats of a project, or of "No project": the first few, then a row that
+ * opens the full list (the project's page, or the table of chats with no
+ * project). A filter looks through every chat that is loaded.
+ */
+function ChatList({
   projectId,
   sessions,
   depth,
@@ -196,45 +204,31 @@ function Children({
   depth: number;
   h: Handlers;
 }) {
-  const page = (
-    label: string,
-    kind: NewWorkbenchTab["kind"],
-    bold = false,
-  ): ReactNode => {
-    const tab: NewWorkbenchTab =
-      projectId === null
-        ? { kind, root: "global", key: "" }
-        : { kind, root: "project", key: projectId };
-    return (
-      <Row
-        key={kind}
-        label={label}
-        icon={null}
-        depth={depth}
-        bold={bold}
-        active={h.activeId === idOf(tab)}
-        onClick={() => {
-          h.onFocusRow({ projectId });
-          h.onOpen(tab, false);
-        }}
-        onDoubleClick={() => h.onOpen(tab, true)}
-      />
-    );
-  };
-  const shown = sessions.filter((s) => matches(s.title, h.filter));
+  const filtering = h.filter !== "";
+  const shown = filtering
+    ? sessions.filter((s) => matches(s.title, h.filter))
+    : sessions.slice(0, TREE_CHATS);
+  const all: NewWorkbenchTab =
+    projectId === null
+      ? { kind: "sessions", root: "global", key: "" }
+      : { kind: "project", root: "project", key: projectId };
   return (
     <>
       {shown.map((s) => (
         <ChatRow key={s.id} session={s} depth={depth} h={h} />
       ))}
-      {h.filter === "" && (
-        <>
-          {projectId !== null && page("Files & memory", "project-files")}
-          {projectId !== null && page("Agents", "project-agents")}
-          {projectId !== null && page("Skills", "project-skills")}
-          {projectId !== null && page("Schemas & data", "project-data")}
-          {page("All chats", "sessions")}
-        </>
+      {!filtering && sessions.length > TREE_CHATS && (
+        <Row
+          label={`Show all ${sessions.length} chats`}
+          icon={null}
+          depth={depth}
+          active={false}
+          onClick={() => {
+            h.onFocusRow({ projectId });
+            h.onOpen(all, false);
+          }}
+          onDoubleClick={() => h.onOpen(all, true)}
+        />
       )}
     </>
   );
@@ -243,9 +237,12 @@ function Children({
 function ProjectMenu({
   project,
   onNewChat,
+  onOpenPage,
 }: {
   project: Project;
   onNewChat: (projectId: string) => void;
+  /** Opens one of the project's pages. */
+  onOpenPage: (kind: NewWorkbenchTab["kind"]) => void;
 }) {
   const actions = useProjectActions();
   return (
@@ -261,8 +258,23 @@ function ProjectMenu({
           <IconDots size={14} />
         </ActionIcon>
       </Menu.Target>
-      <Menu.Dropdown>
+      {/* The menu is drawn elsewhere, but its clicks still reach the row. */}
+      <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
         <Menu.Item onClick={() => onNewChat(project.id)}>New chat</Menu.Item>
+        <Menu.Divider />
+        <Menu.Item onClick={() => onOpenPage("project-files")}>
+          Files & memory
+        </Menu.Item>
+        <Menu.Item onClick={() => onOpenPage("project-agents")}>
+          Agents
+        </Menu.Item>
+        <Menu.Item onClick={() => onOpenPage("project-skills")}>
+          Skills
+        </Menu.Item>
+        <Menu.Item onClick={() => onOpenPage("project-data")}>
+          Structured Data
+        </Menu.Item>
+        <Menu.Divider />
         <Menu.Item color="red" onClick={() => actions.confirmTrash(project)}>
           Move to trash
         </Menu.Item>
@@ -315,7 +327,15 @@ function ProjectGroup({
         }}
         onToggle={() => setExpanded(node, !open)}
         onDoubleClick={() => h.onOpen(tab, true)}
-        right={<ProjectMenu project={project} onNewChat={onNewChat} />}
+        right={
+          <ProjectMenu
+            project={project}
+            onNewChat={onNewChat}
+            onOpenPage={(kind) =>
+              h.onOpen({ kind, root: "project", key: project.id }, false)
+            }
+          />
+        }
       />
       {open && (
         <>
@@ -324,7 +344,7 @@ function ProjectGroup({
               {sessions.error.message}
             </Text>
           )}
-          <Children projectId={project.id} sessions={loaded} depth={1} h={h} />
+          <ChatList projectId={project.id} sessions={loaded} depth={1} h={h} />
         </>
       )}
     </div>
@@ -344,19 +364,23 @@ function NoProjectGroup({ h }: { h: Handlers }) {
     matches("No project", h.filter) ||
     loaded.some((s) => matches(s.title, h.filter));
   if (!visible) return null;
+  // The table of the chats that have no project, as a project's page has.
+  const tab: NewWorkbenchTab = { kind: "sessions", root: "global", key: "" };
   return (
     <div role="group" aria-label="No project">
       <Row
         label="No project"
-        icon={null}
+        icon={<IconInbox size={14} />}
         depth={0}
         bold
         expanded={open}
-        active={false}
+        active={h.activeId === idOf(tab)}
         onClick={() => {
           h.onFocusRow({ projectId: null });
           setExpanded(NO_PROJECT_NODE, true);
+          h.onOpen(tab, false);
         }}
+        onDoubleClick={() => h.onOpen(tab, true)}
         onToggle={() => setExpanded(NO_PROJECT_NODE, !open)}
       />
       {open && (
@@ -371,7 +395,7 @@ function NoProjectGroup({ h }: { h: Handlers }) {
               No chats.
             </Text>
           )}
-          <Children projectId={null} sessions={loaded} depth={1} h={h} />
+          <ChatList projectId={null} sessions={loaded} depth={1} h={h} />
         </>
       )}
     </div>
@@ -386,7 +410,6 @@ export function ChatsTree({
   onNewProject,
   creating,
   activity,
-  searchRef,
 }: {
   activeId: string | null;
   onOpen: (tab: NewWorkbenchTab, permanent: boolean) => void;
@@ -396,7 +419,6 @@ export function ChatsTree({
   onNewProject: () => void;
   creating: boolean;
   activity: RunSummary | undefined;
-  searchRef?: Ref<HTMLInputElement>;
 }) {
   const [filter, setFilter] = useState("");
   const projects = useQuery({
@@ -447,7 +469,6 @@ export function ChatsTree({
       </Group>
       <Box px="xs" pb={6}>
         <TextInput
-          ref={searchRef}
           size="xs"
           aria-label="Filter chats"
           placeholder="Filter"

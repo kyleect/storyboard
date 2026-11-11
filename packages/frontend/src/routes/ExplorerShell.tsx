@@ -1,6 +1,6 @@
 import { Box, Text } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { clampWidth } from "../explorer";
 
 /*
@@ -18,6 +18,8 @@ export interface ShellTab {
   id: string;
   /** What the tab says, and what closing it is called. */
   label: string;
+  /** Where the tab belongs, shown before the label: a project's name. */
+  prefix?: string;
   /** The hover text. */
   title: string;
   icon: ReactNode;
@@ -43,6 +45,7 @@ export function ExplorerShell({
   tabListLabel,
   resizeLabel,
   leading,
+  onReorder,
   hideSidebar = false,
   hideStatus = false,
 }: {
@@ -65,11 +68,19 @@ export function ExplorerShell({
   /** Before the first tab, such as the button that opens a drawer. */
   leading?: ReactNode;
   /** On a small screen the sidebar is elsewhere: no sidebar, no divider. */
+  /**
+   * Tabs can be dragged, or moved with Alt and the arrow keys; called with
+   * the tab and the index it should take. Without it they stay put.
+   */
+  onReorder?: (id: string, toIndex: number) => void;
   hideSidebar?: boolean;
   hideStatus?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  // The tab being dragged, and the one it is over.
+  const [dragged, setDragged] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const resizeTo = (clientX: number) => {
     const left = container.current?.getBoundingClientRect().left ?? 0;
     onWidthChange(clampWidth(clientX - left));
@@ -176,7 +187,46 @@ export function ExplorerShell({
                       onRequestClose(t.id);
                     }
                   }}
+                  draggable={onReorder !== undefined}
+                  onDragStart={(e) => {
+                    setDragged(t.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", t.label);
+                  }}
+                  onDragOver={(e) => {
+                    if (dragged === null) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (over !== t.id) setOver(t.id);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = dragged;
+                    setDragged(null);
+                    setOver(null);
+                    if (from !== null && from !== t.id) {
+                      onReorder?.(
+                        from,
+                        tabs.findIndex((x) => x.id === t.id),
+                      );
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setDragged(null);
+                    setOver(null);
+                  }}
                   onKeyDown={(e) => {
+                    if (e.altKey && onReorder) {
+                      const at = tabs.findIndex((x) => x.id === t.id);
+                      if (e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        onReorder(t.id, at - 1);
+                      } else if (e.key === "ArrowRight") {
+                        e.preventDefault();
+                        onReorder(t.id, at + 1);
+                      }
+                      return;
+                    }
                     if (e.key === "Enter" || e.key === " ") onActivate(t.id);
                   }}
                   style={{
@@ -190,6 +240,10 @@ export function ExplorerShell({
                     fontSize: 13,
                     fontStyle: t.transient ? "italic" : undefined,
                     borderRight: `1px solid ${BORDER}`,
+                    boxShadow:
+                      over === t.id && dragged !== t.id
+                        ? "inset 3px 0 0 var(--mantine-primary-color-filled)"
+                        : undefined,
                     borderTop: `2px solid ${isActive ? "var(--mantine-primary-color-filled)" : "transparent"}`,
                     background: isActive
                       ? "var(--mantine-color-body)"
@@ -198,6 +252,20 @@ export function ExplorerShell({
                   }}
                 >
                   {t.icon}
+                  {t.prefix && (
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        maxWidth: 110,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        opacity: 0.7,
+                      }}
+                    >
+                      {t.prefix} ›
+                    </span>
+                  )}
                   <span
                     style={{
                       overflow: "hidden",

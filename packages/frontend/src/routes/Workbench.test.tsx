@@ -27,6 +27,7 @@ import {
 import { useChatStatus } from "../chatStatus";
 import { useDirtyTabs, useReportDirty } from "../dirty";
 import { useWorkbench } from "../workbenchStore";
+import { TREE_CHATS } from "./ChatsTree";
 import { Workbench } from "./Workbench";
 
 /*
@@ -186,6 +187,7 @@ beforeEach(() => {
     active: null,
     expanded: {},
     settingsPath: "/settings",
+    sidebarOpen: true,
   });
   useDirtyTabs.setState({ dirty: {} });
   useChatStatus.setState({ status: null });
@@ -214,15 +216,22 @@ describe("the workbench: tabs and addresses", () => {
     expect(tabs()).toHaveLength(0);
   });
 
-  it("opens a page from the rail as a kept tab", async () => {
+  it("opens a page from the rail as a preview that the next one replaces", async () => {
     mockApi();
     await show("/");
     fireEvent.click(screen.getByRole("button", { name: "Errors" }));
     expect(await screen.findByText("errors page")).toBeTruthy();
-    expect(isItalic(tabNamed("Errors"))).toBe(false);
+    expect(isItalic(tabNamed("Errors"))).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Agents" }));
     await screen.findByText("agents page");
+    expect(tabs()).toHaveLength(1);
+    expect(isItalic(tabNamed("Agents"))).toBe(true);
+    // A double click on the tab keeps it.
+    fireEvent.doubleClick(tabNamed("Agents"));
+    fireEvent.click(screen.getByRole("button", { name: "Errors" }));
+    await screen.findByText("errors page");
     expect(tabs()).toHaveLength(2);
+    expect(isItalic(tabNamed("Agents"))).toBe(false);
   });
 
   it("opens a tab in italics from a single click, and replaces it with the next", async () => {
@@ -426,6 +435,18 @@ describe("the workbench: New chat", () => {
     await waitFor(() => expect(tabs()).toHaveLength(2));
   });
 
+  it("does not open the chat when its menu is used", async () => {
+    mockApi();
+    await show("/errors");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    await screen.findByText("Alpha chat");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Alpha chat" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+    expect(tabs().map((t) => t.textContent)).toEqual(["Errors"]);
+  });
+
   it("goes to the project from its menu", async () => {
     const create = mockApi();
     await show("/errors");
@@ -483,17 +504,77 @@ describe("the chats tree", () => {
     expect(screen.queryByText("Novel")).toBeNull();
   });
 
-  it("has an All chats row for a project and for No project", async () => {
+  it("lists only the latest chats, with a link to the project's page", async () => {
+    mockApi();
+    const many = Array.from({ length: TREE_CHATS + 3 }, (_, i) =>
+      session(`m${i}`, `Chat ${i}`, "p1"),
+    );
+    vi.spyOn(api, "listSessions").mockImplementation(async (projectId) =>
+      projectId === "p1" ? many : [],
+    );
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    await screen.findByText("Chat 0");
+    const novel = screen.getByRole("group", { name: "Novel" });
+    expect(within(novel).getByText(`Chat ${TREE_CHATS - 1}`)).toBeTruthy();
+    expect(within(novel).queryByText(`Chat ${TREE_CHATS}`)).toBeNull();
+    fireEvent.click(within(novel).getByText(`Show all ${many.length} chats`));
+    expect(await screen.findByText("project page p1")).toBeTruthy();
+    // A filter looks through all the chats that are loaded.
+    fireEvent.change(screen.getByLabelText("Filter chats"), {
+      target: { value: `chat ${TREE_CHATS + 1}` },
+    });
+    expect(within(novel).getByText(`Chat ${TREE_CHATS + 1}`)).toBeTruthy();
+  });
+
+  it("lists no more than the limit for No project, and links to its table", async () => {
+    mockApi();
+    const loose = Array.from({ length: TREE_CHATS + 2 }, (_, i) =>
+      session(`l${i}`, `Loose ${i}`, null),
+    );
+    vi.spyOn(api, "listSessions").mockImplementation(async (projectId) =>
+      projectId === null ? loose : [],
+    );
+    await show("/");
+    const none = await screen.findByRole("group", { name: "No project" });
+    await within(none).findByText("Loose 0");
+    expect(within(none).queryByText(`Loose ${TREE_CHATS}`)).toBeNull();
+    fireEvent.click(within(none).getByText(`Show all ${loose.length} chats`));
+    expect(await screen.findByText("sessions page none")).toBeTruthy();
+  });
+
+  it("opens the table of the chats with no project from its header", async () => {
+    mockApi();
+    await show("/");
+    const none = await screen.findByRole("group", { name: "No project" });
+    fireEvent.click(within(none).getByText("No project"));
+    expect(await screen.findByText("sessions page none")).toBeTruthy();
+  });
+
+  it("has no rows for a project's pages; its menu opens them", async () => {
     mockApi();
     await show("/");
     fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
     await screen.findByText("Alpha chat");
     const novel = screen.getByRole("group", { name: "Novel" });
-    fireEvent.click(within(novel).getByText("All chats"));
-    expect(await screen.findByText("sessions page p1")).toBeTruthy();
-    const none = screen.getByRole("group", { name: "No project" });
-    fireEvent.click(within(none).getByText("All chats"));
-    expect(await screen.findByText("sessions page none")).toBeTruthy();
+    for (const name of [
+      "Files & memory",
+      "Agents",
+      "Skills",
+      "Structured Data",
+      "Schemas & data",
+      "All chats",
+    ])
+      expect(within(novel).queryByText(name)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Novel" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Structured Data" }),
+    );
+    await waitFor(() =>
+      expect(tabs().map((t) => t.textContent)).toEqual([
+        "Novel ›Structured Data",
+      ]),
+    );
   });
 
   it("shows the chat in the status bar with its model and context", async () => {
@@ -512,6 +593,108 @@ describe("the chats tree", () => {
     expect(within(bar).getByText("qwen")).toBeTruthy();
     expect(within(bar).getByText("1,234 tokens")).toBeTruthy();
     expect(within(bar).getByText(/Alpha chat/)).toBeTruthy();
+  });
+});
+
+describe("the tab strip", () => {
+  it("tells a project, its pages, a chat and a global page apart", async () => {
+    mockApi();
+    useWorkbench.setState({
+      tabs: [
+        { kind: "project", root: "project", key: "p1", transient: false },
+        { kind: "project-files", root: "project", key: "p1", transient: false },
+        { kind: "chat", root: "session", key: "s1", transient: false },
+        { kind: "files", root: "global", key: "", transient: false },
+      ],
+      active: "project|project|p1",
+    });
+    await show("/projects/p1");
+    await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
+    const byTitle = (title: string) =>
+      screen.getAllByRole("tab").find((t) => t.title === title);
+    expect(byTitle("Project: Novel")?.textContent).toBe("Novel");
+    const page = byTitle("Project page: Novel › Files & memory");
+    expect(page?.textContent).toContain("Novel ›");
+    expect(page?.textContent).toContain("Files & memory");
+    expect(byTitle("Chat: Alpha chat")).toBeTruthy();
+    const global = byTitle("Files & memory (all projects)");
+    expect(global?.textContent).toBe("Files & memory");
+  });
+
+  // jsdom has no DataTransfer.
+  const dataTransfer = { setData: () => {}, effectAllowed: "", dropEffect: "" };
+  const dragOnto = (from: HTMLElement, to: HTMLElement) => {
+    fireEvent.dragStart(from, { dataTransfer });
+    fireEvent.dragOver(to, { dataTransfer });
+    fireEvent.drop(to, { dataTransfer });
+    fireEvent.dragEnd(from, { dataTransfer });
+  };
+  const names = () => tabs().map((t) => t.textContent);
+
+  it("lets a tab be dragged to another place", async () => {
+    mockApi();
+    useWorkbench.setState({
+      tabs: [
+        { kind: "agents", root: "global", key: "", transient: false },
+        { kind: "skills", root: "global", key: "", transient: false },
+        { kind: "errors", root: "global", key: "", transient: false },
+      ],
+      active: "agents|global|",
+    });
+    await show("/agents");
+    await screen.findByText("agents page");
+    expect(names()).toEqual(["Agents", "Skills", "Errors"]);
+    dragOnto(tabNamed("Errors"), tabNamed("Agents"));
+    expect(names()).toEqual(["Errors", "Agents", "Skills"]);
+    // The active tab is still the one shown.
+    expect(tabNamed("Agents").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("agents page")).toBeTruthy();
+    // The order is remembered.
+    expect(
+      JSON.parse(
+        localStorage.getItem("harness.workbench.global.-") ?? "{}",
+      ).tabs.map((t: { kind: string }) => t.kind),
+    ).toEqual(["errors", "agents", "skills"]);
+  });
+
+  it("moves a tab with Alt and the arrow keys", async () => {
+    mockApi();
+    useWorkbench.setState({
+      tabs: [
+        { kind: "agents", root: "global", key: "", transient: false },
+        { kind: "skills", root: "global", key: "", transient: false },
+      ],
+      active: "agents|global|",
+    });
+    await show("/agents");
+    await screen.findByText("agents page");
+    fireEvent.keyDown(tabNamed("Agents"), { key: "ArrowRight", altKey: true });
+    expect(names()).toEqual(["Skills", "Agents"]);
+    fireEvent.keyDown(tabNamed("Agents"), { key: "ArrowLeft", altKey: true });
+    expect(names()).toEqual(["Agents", "Skills"]);
+  });
+});
+
+describe("the Chats button on the rail", () => {
+  it("hides and shows the chats tree, and remembers it", async () => {
+    mockApi();
+    await show("/errors");
+    const chats = screen.getByRole("button", { name: "Chats" });
+    expect(chats.getAttribute("aria-expanded")).toBe("true");
+    expect(await screen.findByRole("tree", { name: "Chats" })).toBeTruthy();
+    expect(screen.getByRole("separator")).toBeTruthy();
+
+    fireEvent.click(chats);
+    expect(screen.queryByRole("tree", { name: "Chats" })).toBeNull();
+    expect(screen.queryByRole("separator")).toBeNull();
+    expect(chats.getAttribute("aria-expanded")).toBe("false");
+    expect(localStorage.getItem("harness.workbench.sidebar")).toBe("closed");
+    // The page is still there.
+    expect(screen.getByText("errors page")).toBeTruthy();
+
+    fireEvent.click(chats);
+    expect(await screen.findByRole("tree", { name: "Chats" })).toBeTruthy();
+    expect(chats.getAttribute("aria-expanded")).toBe("true");
   });
 });
 

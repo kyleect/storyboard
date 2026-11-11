@@ -31,6 +31,7 @@ beforeEach(() => {
     active: "chat|session|a",
     expanded: {},
     width: 280,
+    sidebarOpen: true,
     settingsPath: "/settings",
   });
 });
@@ -101,6 +102,27 @@ describe("what is kept between visits", () => {
     vi.resetModules();
     await import("./workbenchStore");
     expect(localStorage.getItem("harness.pickedProject")).toBeNull();
+  });
+
+  it("remembers whether the chats tree is shown", () => {
+    useWorkbench.getState().setSidebarOpen(false);
+    expect(useWorkbench.getState().sidebarOpen).toBe(false);
+    expect(localStorage.getItem("harness.workbench.sidebar")).toBe("closed");
+    useWorkbench.getState().setSidebarOpen(true);
+    expect(localStorage.getItem("harness.workbench.sidebar")).toBe("open");
+  });
+
+  it("moves a tab", () => {
+    useWorkbench.getState().move("agents|global|", 0);
+    expect(ids()).toEqual(["agents:", "chat:a", "chat:b"]);
+    const saved = JSON.parse(
+      localStorage.getItem("harness.workbench.global.-") ?? "{}",
+    );
+    expect(saved.tabs.map((t: { kind: string }) => t.kind)).toEqual([
+      "agents",
+      "chat",
+      "chat",
+    ]);
   });
 
   it("remembers the Settings section on its own", () => {

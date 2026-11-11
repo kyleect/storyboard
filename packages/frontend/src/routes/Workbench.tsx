@@ -15,13 +15,13 @@ import {
   IconDatabase,
   IconFiles,
   IconFolder,
-  IconList,
+  IconInbox,
   IconMenu2,
   IconMessage,
   IconRobot,
   IconSettings,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api";
 import { TabIdContext, useDirtyTabs } from "../dirty";
 import { dropDraft } from "../drafts";
@@ -67,14 +67,18 @@ import { WorkspacesPage } from "./Workspaces";
  * edits, which stay mounted, hidden (D5).
  */
 
+// What a project's tabs are marked with, so they are not mistaken for a
+// chat or a global page of the same name.
+const PROJECT_COLOR = "var(--mantine-color-blue-6)";
+
 const ICONS: Record<WorkbenchKind, ReactNode> = {
   chat: <IconMessage size={14} />,
-  sessions: <IconList size={14} />,
-  project: <IconFolder size={14} />,
-  "project-files": <IconFiles size={14} />,
-  "project-agents": <IconRobot size={14} />,
-  "project-skills": <IconBolt size={14} />,
-  "project-data": <IconDatabase size={14} />,
+  sessions: <IconInbox size={14} />,
+  project: <IconFolder size={14} color={PROJECT_COLOR} />,
+  "project-files": <IconFiles size={14} color={PROJECT_COLOR} />,
+  "project-agents": <IconRobot size={14} color={PROJECT_COLOR} />,
+  "project-skills": <IconBolt size={14} color={PROJECT_COLOR} />,
+  "project-data": <IconDatabase size={14} color={PROJECT_COLOR} />,
   agents: <IconRobot size={14} />,
   skills: <IconBolt size={14} />,
   files: <IconFiles size={14} />,
@@ -84,23 +88,20 @@ const ICONS: Record<WorkbenchKind, ReactNode> = {
   settings: <IconSettings size={14} />,
 };
 
-const GLOBAL_LABEL: Partial<Record<WorkbenchKind, string>> = {
-  sessions: "All chats",
+/** What each page is called, in a project or globally. */
+const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
+  sessions: "No project",
   agents: "Agents",
   skills: "Skills",
   files: "Files & memory",
-  data: "Structured data",
+  data: "Structured Data",
   workspaces: "Workspaces",
   errors: "Errors",
   settings: "Settings",
-};
-
-const PROJECT_SUFFIX: Partial<Record<WorkbenchKind, string>> = {
-  sessions: "chats",
-  "project-files": "files",
-  "project-agents": "agents",
-  "project-skills": "skills",
-  "project-data": "data",
+  "project-files": "Files & memory",
+  "project-agents": "Agents",
+  "project-skills": "Skills",
+  "project-data": "Structured Data",
 };
 
 /** The page a tab shows. */
@@ -144,13 +145,14 @@ export function Workbench() {
   const pathname = useLocation({ select: (l) => l.pathname });
   const small = useMediaQuery("(max-width: 48em)") ?? false;
   const [drawer, drawerHandlers] = useDisclosure(false);
-  const searchRef = useRef<HTMLInputElement>(null);
   const activity = useActiveRuns();
   const projectActions = useProjectActions();
   const chatStatus = useChatStatus((s) => s.status);
 
   const tabs = useWorkbench((s) => s.tabs);
   const width = useWorkbench((s) => s.width);
+  const sidebarOpen = useWorkbench((s) => s.sidebarOpen);
+  const setSidebarOpen = useWorkbench((s) => s.setSidebarOpen);
   const settingsPath = useWorkbench((s) => s.settingsPath);
   const dirty = useDirtyTabs((s) => s.dirty);
   // The tree row that was used last, for New chat.
@@ -237,23 +239,38 @@ export function Workbench() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goneKey]);
 
+  // A tab says what it is: a chat by its title, a project by its name, and a
+  // page of a project by the project's name, then the page. The icon and the
+  // hover text tell the kinds apart.
+  const partsOf = (t: WorkbenchTab): { prefix?: string; label: string } => {
+    if (t.kind === "chat") return { label: titleOf(t.key) ?? "Chat" };
+    if (t.kind === "project") return { label: projectName(t.key) ?? "Project" };
+    const page = PAGE_LABEL[t.kind] ?? t.kind;
+    if (t.root === "project")
+      return { prefix: projectName(t.key) ?? "Project", label: page };
+    return { label: page };
+  };
   const labelOf = (t: WorkbenchTab): string => {
-    if (t.kind === "chat") return titleOf(t.key) ?? "Chat";
-    if (t.kind === "settings") return "Settings";
-    if (t.kind === "project") return projectName(t.key) ?? "Project";
-    if (t.root === "project") {
-      return `${projectName(t.key) ?? "Project"} ${PROJECT_SUFFIX[t.kind] ?? ""}`.trim();
-    }
-    return GLOBAL_LABEL[t.kind] ?? t.kind;
+    const { prefix, label } = partsOf(t);
+    return prefix ? `${prefix} › ${label}` : label;
+  };
+  const describe = (t: WorkbenchTab): string => {
+    const text = labelOf(t);
+    if (t.kind === "chat") return `Chat: ${text}`;
+    if (t.kind === "project") return `Project: ${text}`;
+    if (t.kind === "sessions") return "Chats that have no project";
+    if (t.root === "project") return `Project page: ${text}`;
+    return `${text} (all projects)`;
   };
 
   const shellTabs: ShellTab[] = tabs.map((t) => {
     const id = tabId(t);
-    const label = labelOf(t);
+    const { prefix, label } = partsOf(t);
     return {
       id,
       label,
-      title: label,
+      ...(prefix ? { prefix } : {}),
+      title: describe(t),
       icon: ICONS[t.kind],
       transient: t.transient,
       dirty: dirty[id] === true,
@@ -393,20 +410,21 @@ export function Workbench() {
       }
       creating={create.isPending}
       activity={activity.data}
-      searchRef={searchRef}
     />
   );
   const rail = (
     <Rail
       activeKind={activeTab?.kind ?? null}
       activity={activity.data}
+      chatsOpen={small ? drawer : sidebarOpen}
       onChats={() => {
-        if (small) drawerHandlers.open();
-        else searchRef.current?.focus();
+        if (small) drawerHandlers.toggle();
+        else setSidebarOpen(!sidebarOpen);
       }}
       onOpen={(kind) => {
         setFocused(null);
-        openTab({ kind, root: "global", key: "" }, true);
+        // A page from the rail is a preview, like one from the tree.
+        openTab({ kind, root: "global", key: "" }, false);
         drawerHandlers.close();
       }}
     />
@@ -441,7 +459,8 @@ export function Workbench() {
           statusRight={statusRight}
           tabListLabel="Open pages"
           resizeLabel="Resize the chats list"
-          hideSidebar={small}
+          hideSidebar={small || !sidebarOpen}
+          onReorder={useWorkbench.getState().move}
           hideStatus={small}
           leading={
             small ? (

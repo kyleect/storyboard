@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadViewIn, saveViewIn, tabId } from "./explorer";
+import { loadViewIn, moveTab, saveViewIn, tabId } from "./explorer";
 import {
   closeTarget,
   newChatTarget,
@@ -27,7 +27,6 @@ const ROUTES = [
   "/sessions",
   "/sessions/s1",
   "/projects/p1",
-  "/projects/p1/sessions",
   "/projects/p1/files",
   "/projects/p1/agents",
   "/projects/p1/skills",
@@ -56,17 +55,14 @@ describe("tabForPath and pathForTab", () => {
     }
   });
 
-  it("tells the sessions of a project from those of no project", () => {
+  it("has a Sessions tab for the chats of no project only", () => {
     expect(tabForPath("/sessions")).toEqual({
       kind: "sessions",
       root: "global",
       key: "",
     });
-    expect(tabForPath("/projects/p1/sessions")).toEqual({
-      kind: "sessions",
-      root: "project",
-      key: "p1",
-    });
+    // A project's chats are listed on its own page.
+    expect(tabForPath("/projects/p1/sessions")).toBeNull();
   });
 
   it("gives one settings tab whatever the section", () => {
@@ -114,7 +110,7 @@ describe("projectOfTab", () => {
 
   it("takes a project page's project, a chat's, and none for the rest", () => {
     expect(projectOfTab(tab("project-data", "project", "p2"), of)).toBe("p2");
-    expect(projectOfTab(tab("sessions", "project", "p2"), of)).toBe("p2");
+    expect(projectOfTab(tab("project", "project", "p2"), of)).toBe("p2");
     expect(projectOfTab(tab("chat", "session", "s1"), of)).toBe("p1");
     expect(projectOfTab(tab("chat", "session", "s2"), of)).toBeNull();
     expect(projectOfTab(tab("agents", "global"), of)).toBeNull();
@@ -235,6 +231,44 @@ describe("tabsForSession and tabsForProject", () => {
       "project-files|project|p1",
     ]);
     expect(tabsForProject(tabs, "p9", of)).toEqual([]);
+  });
+});
+
+describe("moveTab", () => {
+  const tabs = [
+    tab("chat", "session", "a"),
+    tab("agents", "global"),
+    tab("errors", "global"),
+  ];
+  const order = (s: { tabs: WorkbenchTab[] }) => s.tabs.map((t) => t.kind);
+  const state = { tabs, active: "agents|global|" };
+
+  it("moves a tab to the right and to the left", () => {
+    expect(order(moveTab(state, "chat|session|a", 2))).toEqual([
+      "agents",
+      "errors",
+      "chat",
+    ]);
+    expect(order(moveTab(state, "errors|global|", 0))).toEqual([
+      "errors",
+      "chat",
+      "agents",
+    ]);
+  });
+
+  it("keeps the active tab", () => {
+    expect(moveTab(state, "chat|session|a", 2).active).toBe("agents|global|");
+  });
+
+  it("stays within the strip, and ignores a tab that is not there", () => {
+    expect(order(moveTab(state, "chat|session|a", 99))).toEqual([
+      "agents",
+      "errors",
+      "chat",
+    ]);
+    expect(order(moveTab(state, "errors|global|", -5))[0]).toBe("errors");
+    expect(moveTab(state, "nope", 1)).toBe(state);
+    expect(moveTab(state, "agents|global|", 1)).toBe(state);
   });
 });
 

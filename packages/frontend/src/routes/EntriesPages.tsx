@@ -27,9 +27,12 @@ import { FilesExplorer } from "./FilesExplorer";
 function EntriesTabs({
   scope,
   readOnly,
+  height = "calc(100vh - 16rem)",
 }: {
   scope: EntryScope;
   readOnly?: string | undefined;
+  /** How tall the Files view is; less is taken off with no page header. */
+  height?: string;
 }) {
   const [tab, setTab] = useState<string>("files");
   const [dirty, setDirty] = useState(false);
@@ -42,7 +45,7 @@ function EntriesTabs({
       </Tabs.List>
       {/* Kept mounted, so unsaved edits survive a visit to Memory. */}
       <Tabs.Panel value="files" keepMounted>
-        <Box h="calc(100vh - 16rem)" mih={420}>
+        <Box h={height} mih={420}>
           <FilesExplorer
             page={scope}
             readOnly={readOnly}
@@ -57,16 +60,13 @@ function EntriesTabs({
   );
 }
 
-/** Global files and memory (decision 31). */
+/**
+ * Global files and memory (decision 31). The tab says what the page is, so it
+ * has no heading or help text: just Files and Memory.
+ */
 export function GlobalEntriesPage() {
   return (
-    <Stack gap="md">
-      <Title order={3}>Files & memory</Title>
-      <Text size="sm" c="dimmed">
-        Global: every session sees these.
-      </Text>
-      <EntriesTabs scope={{ scope: "global" }} />
-    </Stack>
+    <EntriesTabs scope={{ scope: "global" }} height="calc(100vh - 11rem)" />
   );
 }
 
