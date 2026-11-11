@@ -39,14 +39,15 @@ function color(percent: number) {
 }
 
 /**
- * The chat header's ring: used / size, percent and tokens left, with the
- * prompt/output split on hover. When the size is unknown, the token count
+ * The context ring (in the workbench's status bar): used / size, percent and
+ * tokens left, with the prompt/output split on hover. When the size is unknown, the token count
  * only. Nothing before the first model call reports usage.
  */
 export function ContextMeter({
   usage,
   model,
   subagentUsage,
+  compact = false,
 }: {
   usage: Usage | undefined;
   /** The model whose context size is read; undefined: the server's. */
@@ -57,6 +58,8 @@ export function ContextMeter({
    * does not count toward this one.
    */
   subagentUsage?: Usage | null;
+  /** A small ring and small text, for the status bar. */
+  compact?: boolean;
 }) {
   const size = useQuery({
     queryKey: modelKeys.contextSize(model),
@@ -97,7 +100,7 @@ export function ContextMeter({
   if (contextSize === undefined) {
     return (
       <Tooltip label={split} multiline withArrow>
-        <Text size="sm" c="dimmed" aria-label="Context used">
+        <Text size={compact ? "xs" : "sm"} c="dimmed" aria-label="Context used">
           {tokens(total)} tokens
         </Text>
       </Tooltip>
@@ -110,17 +113,26 @@ export function ContextMeter({
     <Tooltip label={split} multiline withArrow>
       <Group gap={6} wrap="nowrap" aria-label="Context used">
         <RingProgress
-          size={36}
-          thickness={4}
+          size={compact ? 18 : 36}
+          thickness={compact ? 3 : 4}
           roundCaps
           sections={[{ value: Math.min(100, percent), color: color(percent) }]}
-          label={
-            <Text size="9px" ta="center" fw={600}>
-              {Math.round(percent)}%
-            </Text>
-          }
+          {...(compact
+            ? {}
+            : {
+                label: (
+                  <Text size="9px" ta="center" fw={600}>
+                    {Math.round(percent)}%
+                  </Text>
+                ),
+              })}
         />
-        <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+        <Text
+          size={compact ? "xs" : "sm"}
+          c="dimmed"
+          style={{ whiteSpace: "nowrap" }}
+        >
+          {compact && `${Math.round(percent)}% · `}
           {tokens(total)} / {tokens(contextSize)} · {tokens(left)} left
         </Text>
       </Group>

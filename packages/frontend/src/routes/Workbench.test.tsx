@@ -577,7 +577,70 @@ describe("the chats tree", () => {
     );
   });
 
+<<<<<<< Updated upstream
   it("shows the chat in the status bar with its model and context", async () => {
+=======
+  it("shows the chat in the status bar with its model, and the context ring", async () => {
+    mockApi();
+    vi.spyOn(api, "contextSize").mockResolvedValue({ contextSize: 2000 });
+    await show("/sessions/s1");
+    await screen.findByText("chat page s1");
+    act(() =>
+      useChatStatus.getState().publish({
+        sessionId: "s1",
+        model: "qwen",
+        usage: { promptTokens: 1000, completionTokens: 234 },
+        subagentUsage: null,
+        connected: true,
+      }),
+    );
+    const bar = screen.getByRole("status");
+    expect(within(bar).getByText("qwen")).toBeTruthy();
+    expect(within(bar).getByText(/Alpha chat/)).toBeTruthy();
+    // The ring and its counts, as the chat header had them.
+    expect(
+      await within(bar).findByText(/1,234 \/ 2,000 · 766 left/),
+    ).toBeTruthy();
+    expect(within(bar).getByText(/62% ·/)).toBeTruthy();
+    expect(within(bar).getByLabelText("Context used")).toBeTruthy();
+    // The count follows the live usage.
+    act(() =>
+      useChatStatus.getState().publish({
+        sessionId: "s1",
+        model: "qwen",
+        usage: { promptTokens: 1000, completionTokens: 500 },
+        subagentUsage: null,
+        connected: true,
+      }),
+    );
+    expect(
+      await within(bar).findByText(/1,500 \/ 2,000 · 500 left/),
+    ).toBeTruthy();
+  });
+
+  it("shows the token count alone when the context size is unknown", async () => {
+    mockApi();
+    vi.spyOn(api, "contextSize").mockResolvedValue({
+      unavailable: "no server",
+    });
+    await show("/sessions/s1");
+    await screen.findByText("chat page s1");
+    act(() =>
+      useChatStatus.getState().publish({
+        sessionId: "s1",
+        model: undefined,
+        usage: { promptTokens: 10, completionTokens: 5 },
+        subagentUsage: null,
+        connected: true,
+      }),
+    );
+    expect(
+      await within(screen.getByRole("status")).findByText("15 tokens"),
+    ).toBeTruthy();
+  });
+
+  it("shows no ring before the first model call", async () => {
+>>>>>>> Stashed changes
     mockApi();
     await show("/sessions/s1");
     await screen.findByText("chat page s1");
@@ -585,6 +648,7 @@ describe("the chats tree", () => {
       useChatStatus.getState().publish({
         sessionId: "s1",
         model: "qwen",
+<<<<<<< Updated upstream
         contextTokens: 1234,
         connected: true,
       }),
@@ -593,6 +657,16 @@ describe("the chats tree", () => {
     expect(within(bar).getByText("qwen")).toBeTruthy();
     expect(within(bar).getByText("1,234 tokens")).toBeTruthy();
     expect(within(bar).getByText(/Alpha chat/)).toBeTruthy();
+=======
+        usage: undefined,
+        subagentUsage: null,
+        connected: true,
+      }),
+    );
+    expect(
+      within(screen.getByRole("status")).queryByLabelText("Context used"),
+    ).toBeNull();
+>>>>>>> Stashed changes
   });
 });
 

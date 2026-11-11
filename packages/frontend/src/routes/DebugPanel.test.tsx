@@ -202,7 +202,7 @@ describe("CopyDebugButton", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     renderWith(<CopyDebugButton sessionId="s" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy debug" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     expect(getDebug).toHaveBeenCalledWith("s");
@@ -217,14 +217,14 @@ describe("CopyDebugButton", () => {
     expect(screen.getByText(/Session text copied/)).toBeTruthy();
   });
 
-  it("copies the whole export as JSON from the menu", async () => {
+  it("copies the whole export as JSON from the Export menu item", async () => {
     vi.spyOn(api, "getSessionDebug").mockResolvedValue(debug);
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     renderWith(<CopyDebugButton sessionId="s" />);
 
     fireEvent.click(screen.getByRole("button", { name: "More ways to copy" }));
-    fireEvent.click(await screen.findByText("Copy as JSON"));
+    fireEvent.click(await screen.findByText("Export"));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const [[text]] = writeText.mock.calls as [[string]];
@@ -239,7 +239,7 @@ describe("CopyDebugButton", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn() } });
     renderWith(<CopyDebugButton sessionId="s" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy debug" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
     expect(await screen.findByText("Could not copy the session")).toBeTruthy();
     expect(await screen.findByText("offline")).toBeTruthy();
@@ -247,6 +247,20 @@ describe("CopyDebugButton", () => {
 });
 
 describe("DebugPanel", () => {
+  it("has Copy next to Refresh, and Export in the Copy menu", async () => {
+    vi.spyOn(api, "getSessionDebug").mockResolvedValue(debug);
+    renderWith(<DebugPanel sessionId="s" />);
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    const copy = screen.getByRole("button", { name: "Copy" });
+    expect(copy.parentElement?.parentElement).toBe(refresh.parentElement);
+    fireEvent.click(screen.getByRole("button", { name: "More ways to copy" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "Export" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Copy as text")).toBeNull();
+    expect(screen.queryByText("Copy as JSON")).toBeNull();
+  });
+
   it("opens on the linear view, oldest first, with the system prompt", async () => {
     vi.spyOn(api, "getSessionDebug").mockResolvedValue(debug);
     renderWith(<DebugPanel sessionId="s" />);

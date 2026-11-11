@@ -66,7 +66,15 @@ import {
   useAttachmentDraft,
 } from "./Attachments";
 import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
+<<<<<<< Updated upstream
 import { latestUsage, used } from "./ContextMeter";
+=======
+<<<<<<< Updated upstream
+import { ContextMeter, latestUsage } from "./ContextMeter";
+=======
+import { latestUsage } from "./ContextMeter";
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
 import { useChatStatus } from "../chatStatus";
@@ -155,28 +163,54 @@ interface ShownMessage {
   branches?: StoredMessage["branches"] | undefined;
 }
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+export function Chat() {
+  const { sessionId } = useParams({ from: "/sessions/$sessionId" });
+=======
+>>>>>>> Stashed changes
 /** Tells the workbench's status bar about this chat, while it is shown. */
 function PublishStatus({
   sessionId,
   model,
+<<<<<<< Updated upstream
   tokens,
+=======
+  usage,
+  subagentUsage,
+>>>>>>> Stashed changes
   connected,
 }: {
   sessionId: string;
   model: string | undefined;
+<<<<<<< Updated upstream
   tokens: number | undefined;
+=======
+  usage: Usage | undefined;
+  subagentUsage: Usage | null;
+>>>>>>> Stashed changes
   connected: boolean;
 }) {
   const publish = useChatStatus((s) => s.publish);
   const clear = useChatStatus((s) => s.clear);
   useEffect(() => {
+<<<<<<< Updated upstream
     publish({ sessionId, model, contextTokens: tokens, connected });
   }, [publish, sessionId, model, tokens, connected]);
+=======
+    publish({ sessionId, model, usage, subagentUsage, connected });
+  }, [publish, sessionId, model, usage, subagentUsage, connected]);
+>>>>>>> Stashed changes
   useEffect(() => () => clear(sessionId), [clear, sessionId]);
   return null;
 }
 
 export function Chat({ sessionId }: { sessionId: string }) {
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
   const detail = useQuery({
     queryKey: sessionKeys.detail(sessionId),
     queryFn: () => api.getSession(sessionId),
@@ -615,13 +649,52 @@ export function Chat({ sessionId }: { sessionId: string }) {
     <SessionFilesContext.Provider
       value={{ sessionId, projectId: detail.data.session.project_id }}
     >
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+      <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
+        <Group justify="space-between" wrap="nowrap">
+          <Stack gap={0} style={{ minWidth: 0 }}>
+            <EditableTitle
+              title={detail.data.session.title}
+              disabled={trashed}
+              label="Session title"
+              onSave={(title) => actions.rename(sessionId, title)}
+            />
+            {detail.data.forkedFrom && (
+              <ForkedFromLine from={detail.data.forkedFrom} />
+            )}
+          </Stack>
+          <Group gap="sm" wrap="nowrap">
+            <CopyDebugButton sessionId={sessionId} />
+            <ContextMeter
+              usage={contextUsage}
+              model={levelsModel}
+              subagentUsage={detail.data.subagentUsage}
+            />
+            <Badge color={connected ? "green" : "gray"} variant="light">
+              {connected ? "live" : "offline"}
+            </Badge>
+          </Group>
+        </Group>
+
+=======
+>>>>>>> Stashed changes
       <Stack h="100%" gap="sm">
         <PublishStatus
           sessionId={sessionId}
           model={levelsModel}
+<<<<<<< Updated upstream
           tokens={contextUsage ? used(contextUsage) : undefined}
           connected={connected}
         />
+=======
+          usage={contextUsage}
+          subagentUsage={detail.data.subagentUsage}
+          connected={connected}
+        />
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
         {trashed && (
           <Alert color="yellow" title="This session is in the trash">
             <Group justify="space-between">

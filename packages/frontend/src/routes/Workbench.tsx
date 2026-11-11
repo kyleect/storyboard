@@ -42,6 +42,10 @@ import { setWorkbenchNavigator, useWorkbench } from "../workbenchStore";
 import { GlobalAgentsPage, ProjectAgentsPage } from "./Agents";
 import { Chat } from "./Chat";
 import { ChatsTree, type FocusedRow } from "./ChatsTree";
+<<<<<<< Updated upstream
+=======
+import { ContextMeter } from "./ContextMeter";
+>>>>>>> Stashed changes
 import { GlobalEntriesPage, ProjectEntriesPage } from "./EntriesPages";
 import { ErrorsPage } from "./Errors";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
@@ -352,11 +356,20 @@ export function Workbench() {
           {status.model}
         </Text>
       )}
+<<<<<<< Updated upstream
       {status.contextTokens !== undefined && (
         <Text size="xs" c="dimmed">
           {status.contextTokens.toLocaleString()} tokens
         </Text>
       )}
+=======
+      <ContextMeter
+        compact
+        usage={status.usage}
+        model={status.model}
+        subagentUsage={status.subagentUsage}
+      />
+>>>>>>> Stashed changes
       <Text size="xs" c={status.connected ? "green" : "dimmed"}>
         {status.connected ? "live" : "offline"}
       </Text>

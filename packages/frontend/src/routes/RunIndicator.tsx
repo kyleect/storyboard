@@ -55,6 +55,9 @@ function WaitingBadge() {
       role="img"
       aria-label="Waiting for you"
       title="Waiting for you"
+      style={{
+        cursor: "pointer",
+      }}
     >
       !
     </Badge>
@@ -97,6 +100,7 @@ export function GlobalRunIndicator({
       <Popover width={280} position="bottom-start" shadow="md" withArrow>
         <Popover.Target>
           <UnstyledButton aria-label="Agent activity">
+<<<<<<< Updated upstream
             <Group gap={6} wrap="nowrap">
               {showWorking && <Spinner label={workingText} />}
               {waiting > 0 && (
@@ -106,6 +110,12 @@ export function GlobalRunIndicator({
                 </Group>
               )}
             </Group>
+=======
+            <Stack gap={6} p="xs" align="center" flex={1}>
+              {showWorking && <Spinner label={workingText} />}
+              {waiting > 0 && <WaitingBadge />}
+            </Stack>
+>>>>>>> Stashed changes
           </UnstyledButton>
         </Popover.Target>
         <Popover.Dropdown>

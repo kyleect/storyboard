@@ -135,6 +135,11 @@ exactly what it changed: `sessionKeys.lists()` for every session list,
 `sessionKeys.detail(id)` for one session. `queries/keys.test.ts` pins down how
 far each prefix reaches.
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
 ## The workbench
 
 The whole app is one workbench (`routes/Workbench.tsx`, drawn by `Layout`): a 52px
@@ -186,8 +191,14 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
   drawer, opened by a menu button at the left of the tab strip; the divider and the
   status bar are hidden, and the strip scrolls sideways.
 - **Status bar.** The project and title of the active tab; for a chat, its model,
+<<<<<<< Updated upstream
   context tokens and connection, which `Chat` publishes to `useChatStatus`.
 
+=======
+  the context ring and the connection, which `Chat` publishes to `useChatStatus`.
+
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 ## Live updates
 
 Two hooks in `live.ts` keep the UI current. Both use `EventSource` and reconnect
@@ -345,11 +356,27 @@ agent choices, which the backend saves.
 **Pickers.** `ModelPicker` lists the models llama-server offers with their load
 status and asks the router to load one; `ReasoningPicker` shows the effort levels
 the selected model's template supports; the agent picker lists the agents the
+<<<<<<< Updated upstream
 session may use. The chat page has no header of its own: the tab shows the title
 (rename a chat from its menu in the tree or the Sessions table), and the status bar
 shows the model, the context tokens and the connection. `ContextMeter` (the ring
 with the prompt and completion split against the model's context size) and
 `CopyDebugButton` are not shown on the chat page now.
+=======
+<<<<<<< Updated upstream
+session may use. `ContextMeter` shows how full the context is: the latest model
+call's prompt plus completion tokens against the model's context size.
+=======
+session may use. The chat page has no header of its own: the tab shows the title
+(rename a chat from its menu in the tree or the Sessions table), and the status bar
+shows the model, the context ring and the connection. `ContextMeter` is the ring:
+the latest model call's prompt plus completion tokens against the model's context
+size, live while a reply streams, with the prompt and output split on hover; in the
+status bar it is drawn small (`compact`). `CopyDebugButton` is on the Debug view,
+next to Refresh: _Copy_ puts the linear view on the clipboard as text, and _Export_,
+in its menu, puts the whole export there as JSON.
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ### Answering the model
 

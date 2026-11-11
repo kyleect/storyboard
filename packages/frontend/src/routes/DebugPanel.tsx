@@ -57,7 +57,8 @@ const FORMATS: Record<CopyFormat, (debug: SessionDebug) => string> = {
 
 /**
  * Copies the session's debugging export to the clipboard: the linear view as
- * text by default, or the whole export as JSON from the menu.
+ * text (Copy), or the whole export as JSON (Export, in the menu). It sits next
+ * to Refresh on the chat's Debug view.
  */
 export function CopyDebugButton({ sessionId }: { sessionId: string }) {
   const [busy, setBusy] = useState(false);
@@ -91,7 +92,7 @@ export function CopyDebugButton({ sessionId }: { sessionId: string }) {
         onClick={() => copy("text")}
         title="Copy the linear view as text: system prompts, messages, tool calls and events in order"
       >
-        Copy debug
+        Copy
       </Button>
       <Menu position="bottom-end">
         <Menu.Target>
@@ -106,8 +107,12 @@ export function CopyDebugButton({ sessionId }: { sessionId: string }) {
           </Button>
         </Menu.Target>
         <Menu.Dropdown>
-          <Menu.Item onClick={() => copy("text")}>Copy as text</Menu.Item>
-          <Menu.Item onClick={() => copy("json")}>Copy as JSON</Menu.Item>
+          <Menu.Item
+            onClick={() => copy("json")}
+            title="Copy the whole export as JSON"
+          >
+            Export
+          </Menu.Item>
         </Menu.Dropdown>
       </Menu>
     </Button.Group>
@@ -223,14 +228,17 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
             { value: "requests", label: `Requests (${debug.runs.length})` },
           ]}
         />
-        <Button
-          size="xs"
-          variant="default"
-          loading={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
-          Refresh
-        </Button>
+        <Group gap="xs">
+          <CopyDebugButton sessionId={sessionId} />
+          <Button
+            size="xs"
+            variant="default"
+            loading={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            Refresh
+          </Button>
+        </Group>
       </Group>
 
       {view === "linear" ? (
