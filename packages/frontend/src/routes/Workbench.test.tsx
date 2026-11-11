@@ -577,9 +577,6 @@ describe("the chats tree", () => {
     );
   });
 
-<<<<<<< Updated upstream
-  it("shows the chat in the status bar with its model and context", async () => {
-=======
   it("shows the chat in the status bar with its model, and the context ring", async () => {
     mockApi();
     vi.spyOn(api, "contextSize").mockResolvedValue({ contextSize: 2000 });
@@ -640,7 +637,6 @@ describe("the chats tree", () => {
   });
 
   it("shows no ring before the first model call", async () => {
->>>>>>> Stashed changes
     mockApi();
     await show("/sessions/s1");
     await screen.findByText("chat page s1");
@@ -648,16 +644,6 @@ describe("the chats tree", () => {
       useChatStatus.getState().publish({
         sessionId: "s1",
         model: "qwen",
-<<<<<<< Updated upstream
-        contextTokens: 1234,
-        connected: true,
-      }),
-    );
-    const bar = screen.getByRole("status");
-    expect(within(bar).getByText("qwen")).toBeTruthy();
-    expect(within(bar).getByText("1,234 tokens")).toBeTruthy();
-    expect(within(bar).getByText(/Alpha chat/)).toBeTruthy();
-=======
         usage: undefined,
         subagentUsage: null,
         connected: true,
@@ -666,7 +652,6 @@ describe("the chats tree", () => {
     expect(
       within(screen.getByRole("status")).queryByLabelText("Context used"),
     ).toBeNull();
->>>>>>> Stashed changes
   });
 });
 

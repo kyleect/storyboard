@@ -1,7 +1,4 @@
-<<<<<<< Updated upstream
-=======
 import type { Usage } from "@harness/core";
->>>>>>> Stashed changes
 import { create } from "zustand";
 
 /*
@@ -13,15 +10,10 @@ export interface ChatStatus {
   sessionId: string;
   /** The model in use; undefined when the server decides. */
   model: string | undefined;
-<<<<<<< Updated upstream
-  /** Tokens in the context after the latest call. */
-  contextTokens: number | undefined;
-=======
   /** The latest model call's tokens, live while a reply streams. */
   usage: Usage | undefined;
   /** Tokens used by finished subagent runs, for the meter's tooltip. */
   subagentUsage: Usage | null;
->>>>>>> Stashed changes
   connected: boolean;
 }
 

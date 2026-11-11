@@ -1,7 +1,6 @@
 import {
   Anchor,
   Badge,
-  Group,
   Loader,
   Popover,
   Stack,
@@ -100,22 +99,10 @@ export function GlobalRunIndicator({
       <Popover width={280} position="bottom-start" shadow="md" withArrow>
         <Popover.Target>
           <UnstyledButton aria-label="Agent activity">
-<<<<<<< Updated upstream
-            <Group gap={6} wrap="nowrap">
-              {showWorking && <Spinner label={workingText} />}
-              {waiting > 0 && (
-                <Group gap={4} wrap="nowrap">
-                  <WaitingBadge />
-                  <Text size="xs">{waiting} waiting</Text>
-                </Group>
-              )}
-            </Group>
-=======
             <Stack gap={6} p="xs" align="center" flex={1}>
               {showWorking && <Spinner label={workingText} />}
               {waiting > 0 && <WaitingBadge />}
             </Stack>
->>>>>>> Stashed changes
           </UnstyledButton>
         </Popover.Target>
         <Popover.Dropdown>
