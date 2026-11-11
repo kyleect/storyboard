@@ -17,7 +17,11 @@ packages/frontend/src
   api.ts                 token handling, typed API client, stream URLs
   queries/               query-key factories, one file per feature
   live.ts                live run state (Zustand) and the two event-stream hooks
-  picked.ts              the project picked in the navbar
+  workbench.ts           the workbench's tabs: address ⇄ tab, the New chat target, what closing a tab shows
+  workbenchStore.ts      the open tabs, open folders and sidebar width (Zustand, saved)
+  drafts.ts              the message being written in each session (Zustand)
+  dirty.ts               which tabs have unsaved edits
+  chatStatus.ts          what the status bar says about the chat on screen
   sessionsPrefs.ts       the Sessions page's sort direction and page size
   linear.ts, debug.ts    debug export → linear view; clipboard helpers
   schema-builder.ts      JSON Schema ⇄ editable field tree
@@ -28,7 +32,9 @@ packages/frontend/src
   files-explorer.ts      the Files view's logic: its tree, new files, folder renames
   structured-explorer.ts the Structured Data view's logic: its tree of schemas and data, tabs
   routes/
-    Layout.tsx           navbar, project picker, session list, and the Home page
+    Layout.tsx           the app-wide stream, and the workbench
+    Workbench.tsx        the workbench: rail, chats tree, tab strip, tab hosting, status bar
+    Rail.tsx, ChatsTree.tsx   its icon rail and its chats tree
     Sessions.tsx         the Sessions page: a paged, sortable table of sessions
     SessionActions.tsx   rename, trash and restore sessions and projects
     Chat.tsx             a session: transcript, composer, tabs
@@ -43,7 +49,6 @@ packages/frontend/src
     StructuredExplorer.tsx   the Structured Data view: schemas and data as a tree and tabs
     StructuredTree.tsx, StructuredTabs.tsx   its tree, its schema and data tabs (form and JSON)
     StructuredDataPages.tsx  the global and project pages for Structured Data
-    LeaveGuard.tsx       asks before leaving the page with unsaved edits
     Agents.tsx, Skills.tsx   management pages
     Schemas.tsx, Data.tsx    the schema builder and data forms (used by the explorer and the agent page)
     Workspaces.tsx       workspaces and what they search
@@ -89,14 +94,17 @@ reopen the backend's link.
 
 ## Routes
 
-Defined in `main.tsx`; every page renders inside `Layout`.
+Defined in `main.tsx`. The routes are the addresses of the workbench's tabs (see
+[The workbench](#the-workbench)): `Layout` draws the workbench, and the routes
+render nothing themselves.
 
 | Path                                                        | Page                                                          |
 | ----------------------------------------------------------- | ------------------------------------------------------------- |
-| `/`                                                         | Home                                                          |
-| `/sessions`                                                 | Sessions: a table of the picked project's sessions            |
+| `/`                                                         | No tab: the saved active tab is shown, else an empty state    |
+| `/sessions`                                                 | Sessions: a table of the standalone sessions                  |
 | `/sessions/$sessionId`                                      | Chat                                                          |
 | `/projects/$projectId`                                      | Project page (name, description, its sessions)                |
+| `/projects/$projectId/sessions`                             | Sessions: a table of the project's sessions                   |
 | `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files and notes, agents, skills, schemas and data |
 | `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                 |
 | `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants     |
@@ -105,13 +113,14 @@ Defined in `main.tsx`; every page renders inside `Layout`.
 
 ## Where state lives
 
-| Kind of state             | Held in                                      | Examples                                                                                                                                                     |
-| ------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Server state (fetched)    | TanStack Query cache                         | `["session", id]`, `["sessions", projectId]`, `["projects"]`, `["agents", …]`, `["skills", …]`, `["data", …]`, `["errors", …]`, `["models"]`, `["settings"]` |
-| In-flight runs (streamed) | Zustand store `useLive`                      | The message being written, open approvals and forms, live token count, subagent runs                                                                         |
-| Connection status         | `useLive.connected[sessionId]`               |                                                                                                                                                              |
-| Picked project            | Zustand `usePicked`, saved in `localStorage` | Which project the navbar shows                                                                                                                               |
-| Local UI state            | React `useState`                             | The draft message, the active tab                                                                                                                            |
+| Kind of state             | Held in                                         | Examples                                                                                                                                                     |
+| ------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Server state (fetched)    | TanStack Query cache                            | `["session", id]`, `["sessions", projectId]`, `["projects"]`, `["agents", …]`, `["skills", …]`, `["data", …]`, `["errors", …]`, `["models"]`, `["settings"]` |
+| In-flight runs (streamed) | Zustand store `useLive`                         | The message being written, open approvals and forms, live token count, subagent runs                                                                         |
+| Connection status         | `useLive.connected[sessionId]`                  |                                                                                                                                                              |
+| Workbench tabs            | Zustand `useWorkbench`, saved in `localStorage` | The open tabs, the folders open in the chats tree, the sidebar width                                                                                         |
+| Message being written     | Zustand `useDrafts`                             | Each session's text and attachments, kept while its tab is not shown                                                                                         |
+| Local UI state            | React `useState`                                | The active view of a chat, an edit in progress                                                                                                               |
 
 The central idea: **the cache holds what is stored; `useLive` holds what is
 happening right now.** When something finishes, the cache is updated (or
@@ -126,6 +135,47 @@ for example `["sessions", "list", { projectId }]` and
 exactly what it changed: `sessionKeys.lists()` for every session list,
 `sessionKeys.detail(id)` for one session. `queries/keys.test.ts` pins down how
 far each prefix reaches.
+
+## The workbench
+
+The whole app is one workbench (`routes/Workbench.tsx`, drawn by `Layout`): a 52px
+icon rail (`Rail.tsx`), a resizable chats tree (`ChatsTree.tsx`), a strip of tabs
+with the active tab's page below it, and a status bar. It uses the frame the Files
+and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
+`explorer.ts`. `workbench.ts` is the pure part: the kinds of tab, `tabForPath` and
+`pathForTab` (an address and its tab), `newChatTarget`, and `closeTarget`.
+
+- **The address decides the active tab.** Clicking a tab navigates; an address that
+  is opened (a link, the address bar, Back, or the saved tab at `/`) opens or
+  activates its tab. A tab opened by a single click in the tree is in italics and is
+  replaced by the next single click; a double click, the rail, the new-chat button
+  and an address keep it. `/settings` is one tab, and returns to the section last
+  used.
+- **Which tabs are mounted.** The active tab, and any tab with unsaved edits, which
+  stays mounted but hidden. The rest are unmounted, so only the active chat holds an
+  event stream (the browser allows about six HTTP/1.1 connections to a host). A chat
+  in another tab still shows a spinner or the waiting badge, from the app-wide
+  stream, but its transcript is not updated until it is shown again.
+- **Drafts.** The text and attachments of the message being written are in
+  `useDrafts`, so they survive the chat being unmounted. They are dropped, and the
+  previews released, when the chat's tab is closed or the session is trashed.
+- **Unsaved edits.** A page reports them with `useReportDirty` (the Chat page, for
+  its Files and Structured Data views; the global and project Files and Structured
+  Data pages). Closing such a tab asks first, and the browser asks before the page is
+  reloaded while any tab has them. There is no router blocker.
+- **New chat** goes to the project of the row last used in the tree, else the
+  project of the active tab, else it is a standalone chat.
+- **Trash.** Moving a session or a project to the trash closes its tabs
+  (`closeTabsAndGo`), and a tab whose chat is gone closes itself.
+- **The tree** lists each project, most recently used first, with its chats and its
+  pages, and "No project". A project's chats are read only while it is open. The
+  filter matches project names and the chats already loaded. Which projects are open
+  is saved with the tabs.
+- **Small screens.** Below Mantine's `sm` breakpoint the rail and the tree are in a
+  drawer, opened by a menu button at the left of the tab strip; the divider and the
+  status bar are hidden, and the strip scrolls sideways.
+- **Status bar.** The project and title of the active tab; for a chat, its model,
+  context tokens and connection, which `Chat` publishes to `useChatStatus`.
 
 ## Live updates
 
@@ -175,14 +225,14 @@ other window.
 ### Activity indicators
 
 `runs.changed` invalidates `runKeys.active()`, the query for
-`GET /api/runs/active`: every run in progress in any session. `Layout` reads it
+`GET /api/runs/active`: every run in progress in any session. The workbench reads it
 once through `useActiveRuns()` (`src/runs.ts`) and shows it two ways
 (`routes/RunIndicator.tsx`):
 
-- **In the header**, a summary ("N agents working", "N waiting") with a popover
-  that lists the runs and links to their sessions. It covers sessions the
-  navbar's list does not show, such as those of other projects.
-- **On each session row**, a spinner while a run works there, or a yellow badge
+- **At the top of the rail**, a summary ("N agents working", "N waiting") with a
+  popover that lists the runs and links to their sessions. It covers sessions the
+  tree does not show, such as those of projects that are closed.
+- **On each chat row** of the tree, a spinner while a run works there, or a yellow badge
   while one waits for an approval or a form.
 
 A run that waits is shown at once, because the user is needed. The spinner goes
@@ -192,7 +242,8 @@ in the query cache rather than in `useLive`.
 
 ## The Chat page
 
-`routes/Chat.tsx` is the main screen. It has six tabs:
+`routes/Chat.tsx` is the main screen, shown in a workbench tab. A segmented control
+at the top of the page chooses one of six views:
 
 | Tab        | Content                                                                |
 | ---------- | ---------------------------------------------------------------------- |
@@ -342,8 +393,9 @@ Ctrl/Cmd+S, writes it. Saving a file in a root _higher_ than the page's own
 scope (global above project above session) asks first. Closing a tab with a
 draft asks too, and a draft whose file has changed since it was started warns and
 keeps the text until the user chooses to drop it. Drafts live in the component, so
-the view is kept mounted when the Chat page moves to another tab, and
-`LeaveGuard` asks before the page is left or reloaded while there is a draft.
+the view is kept mounted when the Chat page moves to another view, and the page
+reports them with `useReportDirty`, so the workbench keeps the chat's tab mounted
+and asks before it is closed or the page is reloaded.
 
 **Read-only.** While a run is in progress, or the session is in the trash, no
 root can be changed. A trashed project makes its root read-only. A deleted file
@@ -439,15 +491,16 @@ are disabled while a run is active.
 
 ## The Sessions page
 
-`routes/Sessions.tsx` (`/sessions`) lists the sessions of the project picked in the
-navbar, or the standalone ones when none is picked, in a table: title, creation
+`routes/Sessions.tsx` lists the sessions of one project (`/projects/$projectId/sessions`),
+or the standalone ones (`/sessions`), in a table. The tree opens it from the
+"All chats" row of a project or of "No project". It is a table: title, creation
 time, context use and agents. The server pages and sorts it
 (`GET /api/sessions-page`): the user chooses newest or oldest first and 10, 25, 50
 or 100 rows, and `sessionsPrefs.ts` remembers both in `localStorage`. Rows can be
 selected, across pages; the header checkbox asks the server for every session id
 (`GET /api/sessions-page/ids`) and selects the ones with no run in progress, since
 a running session cannot be trashed. _Move to trash_ sends the ids to
-`POST /api/sessions/trash`. Picking another project starts the page over.
+`POST /api/sessions/trash`. Each project's table is its own tab, so another project starts over.
 
 ## Settings
 

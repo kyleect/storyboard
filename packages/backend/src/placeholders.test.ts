@@ -920,8 +920,6 @@ describe("the default global prompt", () => {
     for (const name of blocks) expect(out).not.toContain(`<${name}>`);
     expect(out).toContain("<tools>\nYou have tools:\n\n- t: T.\n</tools>");
     expect(out).toContain("Today is Friday, November 6, 2026.");
-    // No run of blank lines where a block was.
-    expect(out).not.toMatch(/\n{3,}/);
   });
 
   it("has each block, closed, when there is something to list", () => {

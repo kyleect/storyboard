@@ -1,10 +1,10 @@
 import { Alert, Anchor, Box, Loader, Stack, Text, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../api";
+import { useReportDirty } from "../dirty";
 import { projectKeys } from "../queries";
-import { LeaveGuard } from "./LeaveGuard";
 import { StructuredExplorer } from "./StructuredExplorer";
 
 /*
@@ -21,6 +21,7 @@ function Explorer({
   readOnly?: string | undefined;
 }) {
   const [dirty, setDirty] = useState(false);
+  useReportDirty(dirty);
   return (
     <>
       <Box h="calc(100vh - 14rem)" mih={420}>
@@ -30,7 +31,6 @@ function Explorer({
           onDirtyChange={setDirty}
         />
       </Box>
-      {dirty && <LeaveGuard label="Structured Data" />}
     </>
   );
 }
@@ -49,8 +49,11 @@ export function GlobalStructuredDataPage() {
 }
 
 /** A project's structured data (decision 44). */
-export function ProjectStructuredDataPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/data" });
+export function ProjectStructuredDataPage({
+  projectId,
+}: {
+  projectId: string;
+}) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),

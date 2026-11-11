@@ -19,7 +19,6 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../api";
 import { sessionKeys } from "../queries";
-import { usePicked } from "../picked";
 import { PAGE_SIZES, useSessionsPrefs } from "../sessionsPrefs";
 import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useSessionActions } from "./SessionActions";
@@ -31,10 +30,9 @@ import { SessionMenu, showError, useSessionActions } from "./SessionActions";
  * to move them to the trash.
  */
 
-export function SessionsPage() {
-  const picked = usePicked((s) => s.projectId);
+export function SessionsPage({ projectId }: { projectId: string | null }) {
   // A different project starts over: page 1, nothing selected (D12).
-  return <SessionsTable key={picked ?? "none"} projectId={picked} />;
+  return <SessionsTable key={projectId ?? "none"} projectId={projectId} />;
 }
 
 function SessionsTable({ projectId }: { projectId: string | null }) {

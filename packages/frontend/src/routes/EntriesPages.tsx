@@ -9,13 +9,13 @@ import {
   Title,
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type EntryScope } from "../api";
+import { useReportDirty } from "../dirty";
 import { projectKeys } from "../queries";
 import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
-import { LeaveGuard } from "./LeaveGuard";
 
 /*
  * The global and project pages for files and memory notes (files and memory
@@ -33,6 +33,7 @@ function EntriesTabs({
 }) {
   const [tab, setTab] = useState<string>("files");
   const [dirty, setDirty] = useState(false);
+  useReportDirty(dirty);
   return (
     <Tabs value={tab} onChange={(v) => v && setTab(v)}>
       <Tabs.List mb="md">
@@ -52,7 +53,6 @@ function EntriesTabs({
       <Tabs.Panel value="memory">
         <NotesPanel scope={scope} readOnly={readOnly} />
       </Tabs.Panel>
-      {dirty && <LeaveGuard />}
     </Tabs>
   );
 }
@@ -71,8 +71,7 @@ export function GlobalEntriesPage() {
 }
 
 /** A project's files and memory (decision 32). */
-export function ProjectEntriesPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/files" });
+export function ProjectEntriesPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),

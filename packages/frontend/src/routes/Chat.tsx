@@ -9,14 +9,14 @@ import {
   ScrollArea,
   Spoiler,
   Stack,
-  Tabs,
+  SegmentedControl,
   Text,
   Textarea,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ASK_USER,
@@ -66,10 +66,12 @@ import {
   useAttachmentDraft,
 } from "./Attachments";
 import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
-import { ContextMeter, latestUsage } from "./ContextMeter";
+import { ContextMeter, latestUsage, used } from "./ContextMeter";
 import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
-import { LeaveGuard } from "./LeaveGuard";
+import { useChatStatus } from "../chatStatus";
+import { useReportDirty } from "../dirty";
+import { useDraft, useDrafts } from "../drafts";
 import { StructuredExplorer } from "./StructuredExplorer";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
 import {
@@ -155,8 +157,28 @@ interface ShownMessage {
   branches?: StoredMessage["branches"] | undefined;
 }
 
-export function Chat() {
-  const { sessionId } = useParams({ from: "/sessions/$sessionId" });
+/** Tells the workbench's status bar about this chat, while it is shown. */
+function PublishStatus({
+  sessionId,
+  model,
+  tokens,
+  connected,
+}: {
+  sessionId: string;
+  model: string | undefined;
+  tokens: number | undefined;
+  connected: boolean;
+}) {
+  const publish = useChatStatus((s) => s.publish);
+  const clear = useChatStatus((s) => s.clear);
+  useEffect(() => {
+    publish({ sessionId, model, contextTokens: tokens, connected });
+  }, [publish, sessionId, model, tokens, connected]);
+  useEffect(() => () => clear(sessionId), [clear, sessionId]);
+  return null;
+}
+
+export function Chat({ sessionId }: { sessionId: string }) {
   const detail = useQuery({
     queryKey: sessionKeys.detail(sessionId),
     queryFn: () => api.getSession(sessionId),
@@ -176,7 +198,12 @@ export function Chat() {
   // The session's runs in progress: the top-level one, then its subagents'.
   const runs = liveRuns(live);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
-  const [draft, setDraft] = useState("");
+  // The message being written; kept in a store so it survives a visit to
+  // another tab (this chat is not mounted while another tab is active).
+  const draft = useDraft(sessionId).text;
+  const patchDraft = useDrafts((s) => s.patch);
+  const setDraft = (text: string) =>
+    patchDraft(sessionId, (d) => ({ ...d, text }));
   // Images and audio attached to the message being written.
   const files = useAttachmentDraft(sessionId);
   // The newest draft and files, for a send that waits for an upload.
@@ -200,6 +227,9 @@ export function Chat() {
   // survive a visit to another tab.
   const [dataOpened, setDataOpened] = useState(false);
   const [dataDirty, setDataDirty] = useState(false);
+  // The workbench keeps this tab mounted, and asks before closing it, while
+  // Files or Structured Data hold edits not yet saved.
+  useReportDirty(filesDirty || dataDirty);
   if (tab === "data" && !dataOpened) setDataOpened(true);
 
   // "Show in transcript" (error reporting plan, P7): scrolls to a message,
@@ -587,7 +617,13 @@ export function Chat() {
     <SessionFilesContext.Provider
       value={{ sessionId, projectId: detail.data.session.project_id }}
     >
-      <Stack h="calc(100vh - 2 * var(--mantine-spacing-md))" gap="sm">
+      <Stack h="100%" gap="sm">
+        <PublishStatus
+          sessionId={sessionId}
+          model={levelsModel}
+          tokens={contextUsage ? used(contextUsage) : undefined}
+          connected={connected}
+        />
         <Group justify="space-between" wrap="nowrap">
           <Stack gap={0} style={{ minWidth: 0 }}>
             <EditableTitle
@@ -639,16 +675,25 @@ export function Chat() {
           </Alert>
         )}
 
-        <Tabs value={tab} onChange={(v) => v && setTab(v)}>
-          <Tabs.List>
-            <Tabs.Tab value="chat">Chat</Tabs.Tab>
-            <Tabs.Tab value="files">Files</Tabs.Tab>
-            <Tabs.Tab value="memory">Memory</Tabs.Tab>
-            <Tabs.Tab value="data">Structured Data</Tabs.Tab>
-            <Tabs.Tab value="workspaces">Workspaces</Tabs.Tab>
-            <Tabs.Tab value="debug">Debug</Tabs.Tab>
-          </Tabs.List>
-        </Tabs>
+        <SegmentedControl
+          size="xs"
+          value={tab}
+          onChange={setTab}
+          aria-label="Session view"
+          data={[
+            { value: "chat", label: "Chat" },
+            { value: "files", label: "Files" },
+            { value: "memory", label: "Memory" },
+            { value: "data", label: "Structured Data" },
+            { value: "workspaces", label: "Workspaces" },
+            { value: "debug", label: "Debug" },
+          ]}
+          style={{
+            alignSelf: "flex-start",
+            maxWidth: "100%",
+            overflowX: "auto",
+          }}
+        />
 
         {filesOpened && (
           <div
@@ -672,7 +717,6 @@ export function Chat() {
             />
           </div>
         )}
-        {filesDirty && <LeaveGuard />}
 
         {dataOpened && (
           <div
@@ -696,7 +740,6 @@ export function Chat() {
             />
           </div>
         )}
-        {dataDirty && <LeaveGuard label="Structured Data" />}
 
         {tab !== "chat" && tab !== "files" && tab !== "data" && (
           <ScrollArea style={{ flex: 1 }}>

@@ -12,7 +12,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useRef } from "react";
 import { mediaKindOf, parseRef, type MediaKind } from "@harness/core";
 import { api, type EntryScope, type UploadedFile } from "../api";
 import {
@@ -21,6 +21,7 @@ import {
   attachmentMediaType,
   MAX_ATTACHMENT_BYTES,
 } from "../attachments";
+import { useDraft, useDrafts, revokePreview } from "../drafts";
 import { blobKeys, entryKeys, sessionKeys, workspaceKeys } from "../queries";
 
 /*
@@ -68,30 +69,13 @@ const warn = (message: string) =>
  */
 export function useAttachmentDraft(sessionId: string) {
   const queryClient = useQueryClient();
-  const [state, setState] = useState<{
-    sessionId: string;
-    items: DraftAttachment[];
-  }>({ sessionId, items: [] });
-  const items = state.sessionId === sessionId ? state.items : [];
-  const [uploading, setUploading] = useState(0);
-
-  // The latest items, for the clean-up when the composer goes away.
-  const latest = useRef<DraftAttachment[]>([]);
-  useEffect(() => {
-    latest.current = items;
-  });
-  useEffect(
-    () => () => {
-      for (const i of latest.current) revoke(i);
-    },
-    [],
-  );
+  const { items, uploading } = useDraft(sessionId);
+  const patch = useDrafts((s) => s.patch);
 
   const update = (change: (items: DraftAttachment[]) => DraftAttachment[]) =>
-    setState((prev) => ({
-      sessionId,
-      items: change(prev.sessionId === sessionId ? prev.items : []),
-    }));
+    patch(sessionId, (d) => ({ ...d, items: change(d.items) }));
+  const uploads = (by: number) =>
+    patch(sessionId, (d) => ({ ...d, uploading: d.uploading + by }));
 
   /** Uploads files; returns the ones that were uploaded. */
   const add = async (files: readonly File[]): Promise<DraftAttachment[]> => {
@@ -109,7 +93,7 @@ export function useAttachmentDraft(sessionId: string) {
         );
         continue;
       }
-      setUploading((n) => n + 1);
+      uploads(1);
       try {
         const made: UploadedFile = await api.uploadFile(
           { scope: "session", id: sessionId },
@@ -132,7 +116,7 @@ export function useAttachmentDraft(sessionId: string) {
       } catch (err) {
         warn(`${label}: ${(err as Error).message}`);
       } finally {
-        setUploading((n) => n - 1);
+        uploads(-1);
       }
     }
     return uploaded;
@@ -146,19 +130,15 @@ export function useAttachmentDraft(sessionId: string) {
     /** Takes a file off the message. It stays among the session's files. */
     remove: (ref: string) =>
       update((prev) => {
-        for (const i of prev) if (i.ref === ref) revoke(i);
+        for (const i of prev) if (i.ref === ref) revokePreview(i);
         return prev.filter((i) => i.ref !== ref);
       }),
     clear: () =>
       update((prev) => {
-        for (const i of prev) revoke(i);
+        for (const i of prev) revokePreview(i);
         return [];
       }),
   };
-}
-
-function revoke(item: DraftAttachment) {
-  if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
 }
 
 /** The button that opens the file picker. */

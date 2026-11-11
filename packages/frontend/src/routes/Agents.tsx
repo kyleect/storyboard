@@ -22,7 +22,7 @@ import {
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   api,
@@ -1165,8 +1165,7 @@ export function DefaultAgentSelect({
 }
 
 /** A project's agents (decision 31). */
-export function ProjectAgentsPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/agents" });
+export function ProjectAgentsPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),

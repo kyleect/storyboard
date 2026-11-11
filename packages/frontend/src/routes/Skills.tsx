@@ -18,7 +18,7 @@ import {
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   api,
@@ -521,8 +521,7 @@ export function GlobalSkillsPage() {
 }
 
 /** A project's skills (decision 26). */
-export function ProjectSkillsPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/skills" });
+export function ProjectSkillsPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),

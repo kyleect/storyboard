@@ -10,7 +10,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type Project } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
@@ -24,8 +24,7 @@ import { SessionMenu, showError, useProjectActions } from "./SessionActions";
  * A project's page (sessions and projects design, Q13b): its name and
  * description, editable here; its sessions; New session; Move to trash.
  */
-export function ProjectPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId" });
+export function ProjectPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const actions = useProjectActions();

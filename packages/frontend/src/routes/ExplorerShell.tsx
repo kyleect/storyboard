@@ -42,6 +42,9 @@ export function ExplorerShell({
   statusRight,
   tabListLabel,
   resizeLabel,
+  leading,
+  hideSidebar = false,
+  hideStatus = false,
 }: {
   width: number;
   onWidthChange: (width: number) => void;
@@ -59,6 +62,11 @@ export function ExplorerShell({
   statusRight: ReactNode;
   tabListLabel: string;
   resizeLabel: string;
+  /** Before the first tab, such as the button that opens a drawer. */
+  leading?: ReactNode;
+  /** On a small screen the sidebar is elsewhere: no sidebar, no divider. */
+  hideSidebar?: boolean;
+  hideStatus?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -82,47 +90,53 @@ export function ExplorerShell({
       }}
     >
       <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        <Box
-          style={{
-            width,
-            flexShrink: 0,
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-            background: CHROME,
-          }}
-        >
-          {sidebar}
-        </Box>
+        {!hideSidebar && (
+          <>
+            <Box
+              style={{
+                width,
+                flexShrink: 0,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                background: CHROME,
+              }}
+            >
+              {sidebar}
+            </Box>
 
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={resizeLabel}
-          aria-valuenow={width}
-          tabIndex={0}
-          style={{
-            width: 5,
-            flexShrink: 0,
-            cursor: "col-resize",
-            background: BORDER,
-            touchAction: "none",
-          }}
-          onPointerDown={(e) => {
-            dragging.current = true;
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (dragging.current) resizeTo(e.clientX);
-          }}
-          onPointerUp={() => {
-            dragging.current = false;
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowLeft") onWidthChange(clampWidth(width - 16));
-            if (e.key === "ArrowRight") onWidthChange(clampWidth(width + 16));
-          }}
-        />
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={resizeLabel}
+              aria-valuenow={width}
+              tabIndex={0}
+              style={{
+                width: 5,
+                flexShrink: 0,
+                cursor: "col-resize",
+                background: BORDER,
+                touchAction: "none",
+              }}
+              onPointerDown={(e) => {
+                dragging.current = true;
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (dragging.current) resizeTo(e.clientX);
+              }}
+              onPointerUp={() => {
+                dragging.current = false;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft")
+                  onWidthChange(clampWidth(width - 16));
+                if (e.key === "ArrowRight")
+                  onWidthChange(clampWidth(width + 16));
+              }}
+            />
+          </>
+        )}
 
         <Box
           style={{
@@ -144,6 +158,7 @@ export function ExplorerShell({
               background: CHROME,
             }}
           >
+            {leading}
             {tabs.map((t) => {
               const isActive = t.id === active;
               return (
@@ -249,27 +264,29 @@ export function ExplorerShell({
         </Box>
       </Box>
 
-      <Box
-        role="status"
-        px="sm"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexShrink: 0,
-          minHeight: 24,
-          alignItems: "center",
-          borderTop: `1px solid ${BORDER}`,
-          background: CHROME,
-        }}
-      >
-        <Text size="xs" c="dimmed" truncate>
-          {statusLeft}
-        </Text>
-        <Box style={{ display: "flex", gap: 12, flexShrink: 0 }}>
-          {statusRight}
+      {!hideStatus && (
+        <Box
+          role="status"
+          px="sm"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexShrink: 0,
+            minHeight: 24,
+            alignItems: "center",
+            borderTop: `1px solid ${BORDER}`,
+            background: CHROME,
+          }}
+        >
+          <Text size="xs" c="dimmed" truncate>
+            {statusLeft}
+          </Text>
+          <Box style={{ display: "flex", gap: 12, flexShrink: 0 }}>
+            {statusRight}
+          </Box>
         </Box>
-      </Box>
+      )}
     </Box>
   );
 }

@@ -15,88 +15,84 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { token } from "./api";
-import { GlobalAgentsPage, ProjectAgentsPage } from "./routes/Agents";
-import { Chat } from "./routes/Chat";
-import {
-  GlobalStructuredDataPage,
-  ProjectStructuredDataPage,
-} from "./routes/StructuredDataPages";
-import { GlobalEntriesPage, ProjectEntriesPage } from "./routes/EntriesPages";
-import { ErrorsPage } from "./routes/Errors";
-import { Home, Layout } from "./routes/Layout";
-import { ProjectPage } from "./routes/ProjectPage";
-import { SessionsPage } from "./routes/Sessions";
-import { Settings } from "./routes/Settings";
-import { GlobalSkillsPage, ProjectSkillsPage } from "./routes/Skills";
-import { WorkspacesPage } from "./routes/Workspaces";
+import { Layout } from "./routes/Layout";
+
+// The routes are the addresses of the workbench's tabs. The workbench, drawn
+// by the root route, shows the tab; the routes themselves render nothing.
+const Page = () => null;
 
 const rootRoute = createRootRoute({ component: Layout });
 const routeTree = rootRoute.addChildren([
-  createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/", component: Page }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/sessions",
-    component: SessionsPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/sessions/$sessionId",
-    component: Chat,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId",
-    component: ProjectPage,
+    component: Page,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/projects/$projectId/sessions",
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/files",
-    component: ProjectEntriesPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/agents",
-    component: ProjectAgentsPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/skills",
-    component: ProjectSkillsPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/projects/$projectId/data",
-    component: ProjectStructuredDataPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/files",
-    component: GlobalEntriesPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/data",
-    component: GlobalStructuredDataPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/agents",
-    component: GlobalAgentsPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/skills",
-    component: GlobalSkillsPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/workspaces",
-    component: WorkspacesPage,
+    component: Page,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/errors",
-    component: ErrorsPage,
+    component: Page,
   }),
   // The tabs are in the address: /settings/<area>/<section>. Every page is
   // this one route, so changing tabs does not remount the page.
@@ -114,7 +110,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/settings/$",
-    component: Settings,
+    component: Page,
   }),
 ]);
 const router = createRouter({ routeTree });
