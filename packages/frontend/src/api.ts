@@ -162,6 +162,18 @@ export interface SessionTableItem extends SessionListItem {
   running: boolean;
 }
 
+/** A run in progress in any session, for the activity indicators. */
+export interface ActiveRun {
+  runId: string;
+  sessionId: string;
+  sessionTitle: string;
+  /** For a subagent's run: the run that started it; null: a top-level run. */
+  parentRunId: string | null;
+  agentName: string | null;
+  /** True while the run waits for an approval or a form. */
+  waiting: boolean;
+}
+
 /** One page of the Sessions page's table. */
 export interface SessionPage {
   items: SessionTableItem[];
@@ -1074,6 +1086,9 @@ export const api = {
         projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""
       }`,
     ),
+  /** Every run in progress in any session, subagents' included. */
+  listActiveRuns: () =>
+    request<{ runs: ActiveRun[] }>("GET", "/api/runs/active"),
   /** Moves several sessions to the trash; the ones that cannot move are listed. */
   trashSessions: (ids: readonly string[]) =>
     request<TrashSessionsResult>("POST", "/api/sessions/trash", { ids }),

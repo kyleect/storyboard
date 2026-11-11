@@ -1172,6 +1172,12 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return { cancelled: runs.cancel(id) };
   });
 
+  /**
+   * Every run in progress in any session, subagents' included: what the
+   * activity indicators show. Windows refetch it on `runs.changed`.
+   */
+  app.get("/api/runs/active", async () => ({ runs: runs.activeRuns() }));
+
   /*
    * App-wide server-sent events (agents plan, P7): not stored, so there is
    * no replay; a client refetches when the stream opens. Sends a keepalive

@@ -80,7 +80,11 @@ async function setup(
     now,
   });
   const seen: AppEvent[] = [];
-  runs.events.subscribe((e) => seen.push(e));
+  // Not `runs.changed` (active-runs.test.ts): it comes with every run, and
+  // these tests look for the events a tool's change announces.
+  runs.events.subscribe((e) => {
+    if (e.type !== "runs.changed") seen.push(e);
+  });
   const app = buildServer({ store, runs, entries, token: TOKEN, env: {} });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());

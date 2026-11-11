@@ -8,7 +8,7 @@ import { act, render, screen } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
-import { projectKeys, sessionKeys } from "./queries";
+import { projectKeys, runKeys, sessionKeys } from "./queries";
 import { useAppEvents, useLive, useSessionEvents } from "./live";
 import { EditableTitle } from "./routes/EditableTitle";
 
@@ -183,6 +183,42 @@ describe("projects.changed", () => {
       }),
     );
     expect(invalidate).toHaveBeenCalledWith({ queryKey: projectKeys.list() });
+  });
+});
+
+describe("runs.changed", () => {
+  function mountEvents() {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    function Events() {
+      useAppEvents();
+      return null;
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Events />
+      </QueryClientProvider>,
+    );
+    invalidate.mockClear();
+    return invalidate;
+  }
+
+  it("refreshes the active runs", () => {
+    const invalidate = mountEvents();
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        type: "runs.changed",
+        data: { sessionId: "s1", runId: "r1" },
+      }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: runKeys.active() });
+  });
+
+  it("refreshes them when the stream opens, since events are not replayed", () => {
+    const invalidate = mountEvents();
+    act(() => FakeEventSource.last?.onopen?.());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: runKeys.active() });
   });
 });
 

@@ -24,6 +24,8 @@ import { api } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
 import { useAppEvents } from "../live";
 import { usePicked } from "../picked";
+import { useActiveRuns } from "../runs";
+import { GlobalRunIndicator, SessionRunBadge } from "./RunIndicator";
 import { SessionMenu, showError, useProjectActions } from "./SessionActions";
 import { useDisclosure } from "@mantine/hooks";
 
@@ -50,6 +52,8 @@ export function Layout() {
     useDisclosure(false);
   // Agent changes from any window (agents plan, P7).
   useAppEvents();
+  // Runs in progress in any session, for the activity indicators.
+  const activity = useActiveRuns();
 
   const projects = useQuery({
     queryKey: projectKeys.list(),
@@ -102,6 +106,7 @@ export function Layout() {
         <Stack gap="xs" h="100%">
           <Group justify="space-between">
             <Title order={3}>🤖</Title>
+            <GlobalRunIndicator summary={activity.data} />
           </Group>
           {/* Above the picker; where there is no picker it joins the links below. */}
           {showPicker && sessionsLink}
@@ -177,6 +182,9 @@ export function Layout() {
                     active={params.sessionId === s.id}
                     rightSection={
                       <Group gap={4} wrap="nowrap">
+                        <SessionRunBadge
+                          state={activity.data?.bySession[s.id]}
+                        />
                         <SessionMenu session={s} />
                       </Group>
                     }

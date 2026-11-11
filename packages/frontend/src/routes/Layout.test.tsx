@@ -1,10 +1,15 @@
 import { MantineProvider } from "@mantine/core";
 import { ModalsProvider } from "@mantine/modals";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type Project, type SessionListItem } from "../api";
+import {
+  api,
+  type ActiveRun,
+  type Project,
+  type SessionListItem,
+} from "../api";
 import { usePicked } from "../picked";
 import { Layout } from "./Layout";
 
@@ -58,6 +63,7 @@ beforeEach(() => {
   usePicked.setState({ projectId: null });
   vi.spyOn(api, "listProjects").mockResolvedValue([]);
   vi.spyOn(api, "listSessions").mockResolvedValue([session]);
+  vi.spyOn(api, "listActiveRuns").mockResolvedValue({ runs: [] });
 });
 
 afterEach(() => {
@@ -235,5 +241,117 @@ describe("the navbar: the project links", () => {
     renderLayout();
     await vi.waitFor(() => expect(api.listProjects).toHaveBeenCalled());
     expect(projectLinks()).toBeNull();
+  });
+});
+
+const run = (over: Partial<ActiveRun> = {}): ActiveRun => ({
+  runId: "r1",
+  sessionId: "s1",
+  sessionTitle: "Lighthouse",
+  parentRunId: null,
+  agentName: "Editor",
+  waiting: false,
+  ...over,
+});
+
+const activeRuns = (...runs: ActiveRun[]) =>
+  vi.spyOn(api, "listActiveRuns").mockResolvedValue({ runs });
+
+/** The session's row in the list; its name includes what the row shows. */
+const row = () => screen.getByRole("link", { name: /Lighthouse/ });
+
+describe("the navbar: activity indicators", () => {
+  it("shows nothing when no run is in progress", async () => {
+    pathname = "/sessions";
+    renderLayout();
+    await screen.findByText("Lighthouse");
+    await vi.waitFor(() => expect(api.listActiveRuns).toHaveBeenCalled());
+    expect(screen.queryByLabelText("Agent activity")).toBeNull();
+    expect(
+      screen.queryByRole("img", { name: "An agent is working" }),
+    ).toBeNull();
+    expect(screen.queryByRole("img", { name: "Waiting for you" })).toBeNull();
+  });
+
+  it("puts a spinner on the row of a session with a run working", async () => {
+    activeRuns(run());
+    pathname = "/sessions";
+    renderLayout();
+    // The spinner is debounced, so it appears a moment after the run does.
+    const spinner = await within(
+      await screen.findByRole("link", { name: /Lighthouse/ }),
+    ).findByRole("img", { name: "An agent is working" });
+    expect(spinner).toBeTruthy();
+  });
+
+  it("puts the waiting badge on the row at once, with no spinner", async () => {
+    activeRuns(run({ waiting: true }));
+    pathname = "/sessions";
+    renderLayout();
+    await screen.findByText("Lighthouse");
+    const badge = await within(row()).findByRole("img", {
+      name: "Waiting for you",
+    });
+    expect(badge).toBeTruthy();
+    expect(
+      within(row()).queryByRole("img", { name: "An agent is working" }),
+    ).toBeNull();
+  });
+
+  it("marks only the session that has a run", async () => {
+    vi.spyOn(api, "listSessions").mockResolvedValue([
+      session,
+      { ...session, id: "s2", title: "Quiet one" },
+    ]);
+    activeRuns(run({ waiting: true }));
+    pathname = "/sessions";
+    renderLayout();
+    await within(
+      await screen.findByRole("link", { name: /Lighthouse/ }),
+    ).findByRole("img", { name: "Waiting for you" });
+    const quiet = screen.getByRole("link", { name: /Quiet one/ });
+    expect(within(quiet).queryByRole("img")).toBeNull();
+  });
+
+  it("counts the runs in the header, subagents included", async () => {
+    activeRuns(
+      run(),
+      run({ runId: "r2", parentRunId: "r1", agentName: "Proofreader" }),
+    );
+    pathname = "/sessions";
+    renderLayout();
+    const button = await screen.findByLabelText("Agent activity");
+    expect(await within(button).findByText("2 agents working")).toBeTruthy();
+    // Announced to screen readers too.
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "2 agents working",
+    );
+  });
+
+  it("counts a run in a session the list does not show, and lists it", async () => {
+    activeRuns(
+      run({
+        sessionId: "elsewhere",
+        sessionTitle: "Other project",
+        runId: "r9",
+      }),
+    );
+    pathname = "/sessions";
+    renderLayout();
+    const button = await screen.findByLabelText("Agent activity");
+    expect(await within(button).findByText("1 agent working")).toBeTruthy();
+
+    button.click();
+    expect(await screen.findByText("Other project")).toBeTruthy();
+    expect(screen.getByText(/Editor/)).toBeTruthy();
+  });
+
+  it("shows how many runs wait for the user in the header", async () => {
+    activeRuns(run({ waiting: true }));
+    pathname = "/sessions";
+    renderLayout();
+    const button = await screen.findByLabelText("Agent activity");
+    expect(within(button).getByText("1 waiting")).toBeTruthy();
+    expect(within(button).queryByText(/working/)).toBeNull();
   });
 });

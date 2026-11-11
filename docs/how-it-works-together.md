@@ -235,7 +235,7 @@ exponential backoff. The server writes the backlog and registers the live
 listener in the same synchronous step, so nothing is dropped or duplicated.
 
 **App events** are not replayed, so `useAppEvents` refetches agents, skills, data,
-projects and errors each time its stream opens.
+projects, errors and the active runs each time its stream opens.
 
 ## Crash and shutdown recovery
 

@@ -154,10 +154,28 @@ update that child's state without touching the parent's.
 
 Mounted once in `Layout`. It subscribes to `/api/events` and invalidates the
 matching query families on `agents.changed`, `skills.changed`, `data.changed`,
-`projects.changed`, `workspaces.changed` and `errors.changed`. Since these events are not replayed, it
-also refetches agents, skills, errors, projects and data **every time the stream
+`projects.changed`, `workspaces.changed`, `runs.changed` and `errors.changed`. Since these events are not replayed, it
+also refetches agents, skills, errors, projects, data and the active runs **every time the stream
 opens**. This is how a change made in one window, or by a tool, appears in every
 other window.
+
+### Activity indicators
+
+`runs.changed` invalidates `runKeys.active()`, the query for
+`GET /api/runs/active`: every run in progress in any session. `Layout` reads it
+once through `useActiveRuns()` (`src/runs.ts`) and shows it two ways
+(`routes/RunIndicator.tsx`):
+
+- **In the header**, a summary ("N agents working", "N waiting") with a popover
+  that lists the runs and links to their sessions. It covers sessions the
+  navbar's list does not show, such as those of other projects.
+- **On each session row**, a spinner while a run works there, or a yellow badge
+  while one waits for an approval or a form.
+
+A run that waits is shown at once, because the user is needed. The spinner goes
+through `useDebouncedFlag`: it shows after 300 ms and stays at least 600 ms, so
+short or back-to-back runs do not flicker. The data is server data, so it lives
+in the query cache rather than in `useLive`.
 
 ## The Chat page
 

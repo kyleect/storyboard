@@ -8,6 +8,7 @@ import {
   mcpKeys,
   modelKeys,
   projectKeys,
+  runKeys,
   schemaKeys,
   sessionKeys,
   skillKeys,
@@ -297,5 +298,17 @@ describe("tool, model and error keys", () => {
         .filter((k) => k !== "agents")
         .sort(),
     );
+  });
+});
+
+describe("run keys", () => {
+  it("one prefix reaches the active runs and nothing else", async () => {
+    const keys: Keys = {
+      active: runKeys.active(),
+      sessions: sessionKeys.list(null),
+      detail: sessionKeys.detail("s1"),
+    };
+    expect(await reach(runKeys.all, keys)).toEqual(["active"]);
+    expect(await reach(runKeys.active(), keys)).toEqual(["active"]);
   });
 });

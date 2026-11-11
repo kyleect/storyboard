@@ -464,6 +464,7 @@ writer of run-related state.
 - Record user edits to session files and data as edit messages.
 - Give a new session a title.
 - Describe active runs for reconnecting clients (snapshots).
+- List every active run across sessions (`activeRuns()`) and announce each change on the app stream as `runs.changed`: a run starting or ending, or beginning or ending a wait for an approval or a form.
 
 ### One active top-level run per session
 
@@ -1034,6 +1035,7 @@ request also lists the `issues`.
 | `POST /api/runs/:id/approvals/:requestId`                    | Answer an approval: `choice`, optional `note`, optional `selection`.                                              |
 | `POST /api/runs/:id/approvals/:requestId/check`, `…/refresh` | Validate a selection; recompute a review.                                                                         |
 | `POST /api/runs/:id/inputs/:requestId`                       | Answer or skip a form.                                                                                            |
+| `GET /api/runs/active`                                       | Every run in progress in any session, with its agent and whether it waits for the user.                           |
 
 ### Streams
 
@@ -1104,6 +1106,7 @@ Sends `AppEvent`s, not stored and not replayed:
 | `data.changed`       | Global, project or agent schemas or data changed.                                                            |
 | `projects.changed`   | A project was created by a tool.                                                                             |
 | `errors.changed`     | An error was recorded, or errors were cleared.                                                               |
+| `runs.changed`       | A run started or ended, or began or stopped waiting for an approval or a form (the activity indicators).     |
 
 Because they are not replayed, a client refetches what it shows whenever the
 stream opens or reopens.

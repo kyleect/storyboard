@@ -84,7 +84,11 @@ async function setup(scripts: ScriptStep[][]) {
   });
   const app = buildServer({ store, runs, token: TOKEN, env: {}, now });
   const events: AppEvent[] = [];
-  runs.events.subscribe((e) => events.push(e));
+  // Only the error events: `runs.changed` (active-runs.test.ts) comes with
+  // every run and is not what these tests are about.
+  runs.events.subscribe((e) => {
+    if (e.type === "errors.changed") events.push(e);
+  });
   cleanups.push(t.cleanup, () => app.close());
   return { t, store, runs, app, model, events };
 }

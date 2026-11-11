@@ -12,6 +12,7 @@ export { entryKeys } from "./entries";
 export { errorKeys } from "./errors";
 export { modelKeys } from "./models";
 export { projectKeys } from "./projects";
+export { runKeys } from "./runs";
 export { sessionKeys, trashKeys } from "./sessions";
 export { settingsKeys } from "./settings";
 export { skillKeys } from "./skills";

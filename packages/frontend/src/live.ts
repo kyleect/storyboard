@@ -26,6 +26,7 @@ import {
   mcpKeys,
   modelKeys,
   projectKeys,
+  runKeys,
   sessionKeys,
   skillKeys,
   workspaceKeys,
@@ -575,13 +576,18 @@ type AppEvent =
       /** A workspace, attachment or grant changed (files unification design). */
       type: "workspaces.changed";
       data: Record<string, never>;
+    }
+  | {
+      /** A run started, ended, or began or stopped waiting for the user. */
+      type: "runs.changed";
+      data: { sessionId: string; runId: string };
     };
 
 /**
  * Listens to the app-wide stream for the whole app. Its events are not
  * replayed, so agent data and errors are refetched whenever the stream
  * opens or reopens, then on each `agents.changed`, `projects.changed`,
- * `skills.changed`, `mcp.changed` or
+ * `skills.changed`, `mcp.changed`, `runs.changed` or
  * `errors.changed`.
  */
 export function useAppEvents() {
@@ -603,6 +609,8 @@ export function useAppEvents() {
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
     const refreshData = () =>
       void queryClient.invalidateQueries({ queryKey: dataKeys.all });
+    const refreshRuns = () =>
+      void queryClient.invalidateQueries({ queryKey: runKeys.active() });
     // A server's tools come and go with its connection, so the tool lists
     // (settings, agent editor) change with it.
     const refreshMcp = () => {
@@ -628,9 +636,14 @@ export function useAppEvents() {
         refreshData();
         refreshMcp();
         refreshWorkspaces();
+        refreshRuns();
       };
       source.onmessage = (msg: MessageEvent<string>) => {
         const event = JSON.parse(msg.data) as AppEvent;
+        if (event.type === "runs.changed") {
+          refreshRuns();
+          return;
+        }
         if (event.type === "errors.changed") {
           // Every list: the global one shows every session's errors.
           refreshErrors();

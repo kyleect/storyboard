@@ -148,6 +148,42 @@ interface ActiveRun {
   done: Promise<void>;
 }
 
+/**
+ * A map that calls `onChange` after each entry is added, replaced or removed.
+ * A run's open approvals and forms use it, so every change to them reaches the
+ * activity indicators without each call site having to say so.
+ */
+class WatchedMap<K, V> extends Map<K, V> {
+  constructor(private readonly onChange: () => void) {
+    super();
+  }
+
+  override set(key: K, value: V): this {
+    super.set(key, value);
+    this.onChange();
+    return this;
+  }
+
+  override delete(key: K): boolean {
+    const deleted = super.delete(key);
+    if (deleted) this.onChange();
+    return deleted;
+  }
+}
+
+/** One run in progress, as the activity indicators show it. */
+export interface ActiveRunSummary {
+  runId: string;
+  sessionId: string;
+  sessionTitle: string;
+  /** For a subagent's run: the run that started it; null: a top-level run. */
+  parentRunId: string | null;
+  /** The name the run's agent has in the version it uses; null: no agent. */
+  agentName: string | null;
+  /** True while the run waits for an approval or a form. */
+  waiting: boolean;
+}
+
 /** One active run as a reconnecting client sees it. */
 export interface RunSnapshot {
   runId: string;
@@ -1164,6 +1200,27 @@ export class RunManager {
     return this.active.has(runId);
   }
 
+  /**
+   * Every run in progress in any session, subagents' included, oldest first:
+   * what the activity indicators show. A run that waits for an approval or a
+   * form is in progress but not working, so it is marked `waiting`.
+   */
+  activeRuns(): ActiveRunSummary[] {
+    return [...this.active.values()].map((run) => ({
+      runId: run.runId,
+      sessionId: run.sessionId,
+      sessionTitle: this.store.getSession(run.sessionId)?.title ?? "",
+      parentRunId: run.parent?.runId ?? null,
+      agentName: run.agent?.name ?? null,
+      waiting: run.approvals.size + run.inputs.size > 0,
+    }));
+  }
+
+  /** Tells every window the active runs changed (not stored, not replayed). */
+  private runsChanged(sessionId: string, runId: string) {
+    this.events.publish({ type: "runs.changed", data: { sessionId, runId } });
+  }
+
   /** Stops all runs; they end as interrupted. */
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
@@ -1845,8 +1902,11 @@ export class RunManager {
           once: true,
         });
     }
-    const approvals = new Map<string, OpenApproval>();
-    const inputs = new Map<string, OpenInput>();
+    // Whether a run waits for the user shows in the activity indicators, so
+    // a change to either map tells every window.
+    const waitingChanged = () => this.runsChanged(sessionId, runId);
+    const approvals = new WatchedMap<string, OpenApproval>(waitingChanged);
+    const inputs = new WatchedMap<string, OpenInput>(waitingChanged);
     const userMessages: string[] = [];
     const emit = (event: HarnessEvent) => {
       // Runs stopped by shutdown end as interrupted, not cancelled.
@@ -2208,6 +2268,8 @@ export class RunManager {
         }
       } finally {
         this.active.delete(runId);
+        // After the delete, so a window that refetches no longer sees it.
+        this.runsChanged(sessionId, runId);
       }
       return loopResult;
     };
@@ -2226,6 +2288,8 @@ export class RunManager {
       done: Promise.resolve(),
     };
     this.active.set(runId, run);
+    // After the set and before the run starts, so a refetch sees the run.
+    this.runsChanged(sessionId, runId);
     const finished = execute();
     run.done = finished.then(() => undefined);
     return { runId, finished };

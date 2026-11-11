@@ -70,6 +70,15 @@ export type AppEvent =
         /** The session whose errors changed; null: a global Clear. */
         sessionId: string | null;
       };
+    }
+  | {
+      /**
+       * A run started or ended, or began or stopped waiting for an approval
+       * or a form. Windows refetch the active runs (GET /api/runs/active)
+       * for the activity indicators.
+       */
+      type: "runs.changed";
+      data: { sessionId: string; runId: string };
     };
 
 type Listener = (event: AppEvent) => void;
