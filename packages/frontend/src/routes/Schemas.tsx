@@ -360,7 +360,7 @@ function SchemaView({
 }
 
 /** Every version's JSON Schema, view only. */
-function VersionsModal({
+export function VersionsModal({
   schema,
   onClose,
 }: {
@@ -398,7 +398,7 @@ function VersionsModal({
 }
 
 /** Copies the latest version to global, a project or an agent (decision 12). */
-function CopyModal({
+export function CopyModal({
   owner,
   schema,
   onClose,
@@ -667,14 +667,17 @@ function SchemaEditor({
 }
 
 /** Layout A: the field tree on the left, the selected field on the right. */
-function Builder({
+export function Builder({
   root,
   onChange,
   problems,
+  readOnly = false,
 }: {
   root: BuilderNode;
   onChange: (root: BuilderNode) => void;
   problems: Record<string, string>;
+  /** Fields can be looked at, not changed. */
+  readOnly?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const rows = flatten(root);
@@ -695,6 +698,7 @@ function Builder({
           <Select
             size="xs"
             label="The data is"
+            disabled={readOnly}
             data={[
               { value: "group", label: "A group of fields" },
               ...FIELD_TYPES.filter((t) => t.value !== "group").map((t) => ({
@@ -752,7 +756,7 @@ function Builder({
                   </Group>
                 </UnstyledButton>
               ))}
-              <Group gap="xs">
+              <Group gap="xs" hidden={readOnly}>
                 <Button
                   size="compact-xs"
                   variant="subtle"
@@ -773,7 +777,12 @@ function Builder({
             </>
           )}
         </Stack>
-        <Stack gap="xs" style={{ flex: 1.3, minWidth: 0 }}>
+        <Stack
+          gap="xs"
+          style={{ flex: 1.3, minWidth: 0 }}
+          // A disabled fieldset turns off every input and button inside it.
+          {...(readOnly ? { component: "fieldset", disabled: true } : {})}
+        >
           {shown ? (
             <FieldSettings
               key={shown.id}

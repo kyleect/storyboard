@@ -1,6 +1,5 @@
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Code,
@@ -12,7 +11,6 @@ import {
   Select,
   Stack,
   Switch,
-  Tabs,
   Text,
   Textarea,
   TextInput,
@@ -20,7 +18,6 @@ import {
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   applyDefaults,
@@ -42,10 +39,9 @@ import {
   type DataOwner,
   type DataVersion,
 } from "../api";
-import { dataKeys, projectKeys, schemaKeys } from "../queries";
+import { dataKeys, schemaKeys } from "../queries";
 import { AskUserForm } from "./AskUserForm";
 import { DataValue } from "./DataValue";
-import { SchemasPanel } from "./Schemas";
 import { showError } from "./SessionActions";
 
 /*
@@ -57,7 +53,7 @@ import { showError } from "./SessionActions";
  * (plan P3), and their problems show next to the fields.
  */
 
-const when = (iso: string | null) =>
+export const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString() : "";
 
 function useRefresh() {
@@ -68,7 +64,7 @@ function useRefresh() {
 }
 
 /** The form for a schema version, titled for what is being done. */
-const formOf = (body: unknown, submitLabel: string): Form => ({
+export const formOf = (body: unknown, submitLabel: string): Form => ({
   ...readSchemaForm(body as SchemaNode),
   submitLabel,
   skipLabel: "Cancel",
@@ -97,7 +93,7 @@ export function errorsFromMessage(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function Badges({ d }: { d: DataItem }) {
+export function Badges({ d }: { d: DataItem }) {
   return (
     <>
       {d.deleted && (
@@ -612,7 +608,7 @@ function DataItemView({
 }
 
 /** A piece of data's saved states; one can be made current (decision 24). */
-function VersionsModal({
+export function VersionsModal({
   owner,
   item,
   readOnly,
@@ -700,78 +696,5 @@ function VersionsModal({
         )}
       </Group>
     </Modal>
-  );
-}
-
-/** "Schemas & data" for a scope: a Data tab and a Schemas tab (decision 44). */
-export function SchemasAndData({
-  owner,
-  readOnly,
-}: {
-  owner: DataOwner;
-  readOnly?: string | undefined;
-}) {
-  return (
-    <Tabs defaultValue="schemas" keepMounted={false}>
-      <Tabs.List>
-        <Tabs.Tab value="schemas">Schemas</Tabs.Tab>
-        <Tabs.Tab value="data">Data</Tabs.Tab>
-      </Tabs.List>
-      <Tabs.Panel value="schemas" pt="md">
-        <SchemasPanel owner={owner} readOnly={readOnly} />
-      </Tabs.Panel>
-      <Tabs.Panel value="data" pt="md">
-        <DataPanel owner={owner} readOnly={readOnly} />
-      </Tabs.Panel>
-    </Tabs>
-  );
-}
-
-/** Global schemas and data (decision 44). */
-export function GlobalDataPage() {
-  return (
-    <Stack gap="md">
-      <Title order={3}>Schemas & data</Title>
-      <Text size="sm" c="dimmed">
-        Global: every session can use these.
-      </Text>
-      <SchemasAndData owner={{ scope: "global" }} />
-    </Stack>
-  );
-}
-
-/** A project's schemas and data (decision 44). */
-export function ProjectDataPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/data" });
-  const project = useQuery({
-    queryKey: projectKeys.detail(projectId),
-    queryFn: () => api.getProject(projectId),
-  });
-  if (project.isPending) return <Loader />;
-  if (project.isError)
-    return <Alert color="red">{project.error.message}</Alert>;
-  return (
-    <Stack gap="md">
-      <Title order={3}>Schemas & data</Title>
-      <Text size="sm" c="dimmed">
-        Project{" "}
-        <Anchor
-          renderRoot={(props) => (
-            <Link {...props} to="/projects/$projectId" params={{ projectId }} />
-          )}
-        >
-          {project.data.name}
-        </Anchor>
-        : sessions in this project can use these, as well as the global ones.
-      </Text>
-      <SchemasAndData
-        owner={{ scope: "project", id: projectId }}
-        readOnly={
-          project.data.trashed_at !== null
-            ? "The project is in the trash, so its data can be read but not changed."
-            : undefined
-        }
-      />
-    </Stack>
   );
 }

@@ -24,7 +24,9 @@ packages/frontend/src
   tool-grant.ts          tool grants: allowed tools and the edits a click makes
   mcp-form.ts            parsing and formatting the MCP server form's text fields
   attachments.ts, audio.ts   accepted file types; voice recording to WAV
-  files-explorer.ts      the Files view's logic: roots, tree, tab rules, saved view
+  explorer.ts            what the Files and Structured Data views share: roots, tab rules, saved view
+  files-explorer.ts      the Files view's logic: its tree, new files, folder renames
+  structured-explorer.ts the Structured Data view's logic: its tree of schemas and data, tabs
   routes/
     Layout.tsx           navbar, project picker, session list, and the Home page
     Sessions.tsx         the Sessions page: a paged, sortable table of sessions
@@ -35,10 +37,15 @@ packages/frontend/src
     AskUserForm.tsx      inline forms
     Entries.tsx          memory notes; the pieces for viewing a file (preview, versions)
     EntriesPages.tsx     the global and project pages for files and memory notes
+    ExplorerShell.tsx    the frame both explorers share: tree pane, divider, tab strip, status bar
     FilesExplorer.tsx    the Files view: file tree, tabs, status bar
     FileTree.tsx, FileTab.tsx, TextEditor.tsx   its tree, its tab content, its editor
+    StructuredExplorer.tsx   the Structured Data view: schemas and data as a tree and tabs
+    StructuredTree.tsx, StructuredTabs.tsx   its tree, its schema and data tabs (form and JSON)
+    StructuredDataPages.tsx  the global and project pages for Structured Data
     LeaveGuard.tsx       asks before leaving the page with unsaved edits
-    Agents.tsx, Skills.tsx, Schemas.tsx, Data.tsx   management pages
+    Agents.tsx, Skills.tsx   management pages
+    Schemas.tsx, Data.tsx    the schema builder and data forms (used by the explorer and the agent page)
     Workspaces.tsx       workspaces and what they search
     Errors.tsx           errors console
     Settings.tsx         settings (areas and sections)
@@ -304,7 +311,9 @@ answered against the child run.
 `FilesExplorer.tsx` is the Files tab of a session and of the global and project
 pages. It looks like a code editor: a file tree on the left, the open files as
 tabs on the right, a status bar below. The rules behind it (roots, tree, tabs,
-what is remembered) are in `files-explorer.ts`, which is tested without a DOM.
+what is remembered) are in `files-explorer.ts` and, for what it shares with
+Structured Data, `explorer.ts`; both are tested without a DOM. The frame
+(`ExplorerShell.tsx`) is shared too.
 
 **Roots.** The tree has a root folder for each place files live that the page
 can see: a session shows Session, Project (when it is in a project) and Global; a
@@ -348,10 +357,55 @@ between 180 and 520 px) and Show deleted. Unsaved text is not saved.
 **Live updates.** A `files_*` tool result invalidates every scope's entries, not
 only the session's, because the view shows all three.
 
+## The Structured Data view
+
+`StructuredExplorer.tsx` is the Structured Data tab of a session and the Structured
+Data page of a project and of global. It is built like the Files view: the same
+frame, roots and tab rules, a tree on the left and open items as tabs on the
+right. The rules behind it are in `structured-explorer.ts`.
+
+**Tree.** Each root (Session, Project, Global, as for files) holds a **Schemas**
+folder. The folder holds a row for every schema the root can make data from; each
+schema holds the data the root's scope has made from it. Data whose schema is not
+available here goes under **Unknown schema**, last. A schema from a higher scope
+than the root is **inherited**: it is shown with a link icon and a blue name, and
+a tooltip says where it comes from. (The built-in schemas are the Global root's
+own.) Each root is fetched with the ordinary `data` and `schemas` routes of its
+scope: the schemas it can make data from, its own schemas, and its data.
+
+**Tabs.** A schema or a piece of data opens in a tab (a click opens a replaceable
+italic tab, a double click keeps it). A schema's tab belongs to the scope it
+lives in, so one schema is one tab however many roots show it. A tab shows a
+**Form | JSON** toggle: a schema's form is the builder, a piece of data's form is
+the one generated from its schema; JSON is a CodeMirror editor. Switching keeps
+one draft; JSON that cannot be read stays in JSON with the reason. Name and
+description are fields in both views.
+
+**Editing.** Edits are in place. What was typed and not saved is the tab's draft,
+kept by the view so it survives switching tabs: a dot on the tab, Save and Revert
+on the toolbar. Saving something in a higher scope than the page asks first, as
+for files. Saving a schema whose fields changed makes a new version, and says how
+much data stays on the earlier one; out-of-date data has a **Migrate to vN**
+button that fills the form against the latest version. **Versions** (and, for
+schemas, **Copy…**) are on the toolbar.
+
+**Making things.** New schema (header, or right-click on a root) and New data
+(right-click a schema, or pick one and use the header) take a name in the tree
+and open a tab for the rest; nothing is made until Create. Such a tab has no
+saved form to come back to, so it is not remembered between visits.
+
+**Read-only.** As in Files, every root is read-only while a run is in progress, the
+project root when the project is in the trash, and a root the backend reports as
+read-only. Built-in schemas and data without a schema can be looked at, not
+changed.
+
+The agent page still manages an agent's own schemas and data with the older
+`SchemasPanel` and `DataPanel`.
+
 ## Management pages
 
 Each follows the same layout: a list on the left, the selected item on the right,
-one page per scope. (The Files view is the exception; see [The Files view](#the-files-view).)
+one page per scope. (The Files and Structured Data views are the exception; see [The Files view](#the-files-view) and [The Structured Data view](#the-structured-data-view).)
 
 | Page                        | Edits        | Notes                                                                                                                                                                                                                           |
 | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

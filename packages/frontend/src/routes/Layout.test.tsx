@@ -165,7 +165,7 @@ describe("the navbar: the project picker and the Sessions link", () => {
         "Agents",
         "Skills",
         "Files/Memory",
-        "Structural Data",
+        "Structured Data",
         "Errors",
         "Settings",
       ]) {

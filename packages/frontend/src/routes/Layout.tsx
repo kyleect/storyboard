@@ -321,7 +321,7 @@ export function Layout() {
               py="xs"
               fw="bold"
               renderRoot={(props) => <Link {...props} to="/data" />}
-              label="Structural Data"
+              label="Structured Data"
             />
             <NavLink
               px="md"

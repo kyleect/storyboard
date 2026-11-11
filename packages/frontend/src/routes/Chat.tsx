@@ -57,7 +57,6 @@ import {
 } from "../live";
 import { AgentBadge, AgentPicker } from "./Agents";
 import { ApprovalDialog } from "./ApprovalDialog";
-import { SchemasAndData } from "./Data";
 import { AskUserForm, type AskUserState } from "./AskUserForm";
 import {
   AttachButton,
@@ -71,6 +70,7 @@ import { ContextMeter, latestUsage } from "./ContextMeter";
 import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
 import { LeaveGuard } from "./LeaveGuard";
+import { StructuredExplorer } from "./StructuredExplorer";
 import { messageAnchor, SessionErrorsPanel } from "./Errors";
 import {
   BranchSwitcher,
@@ -196,6 +196,11 @@ export function Chat() {
   const [filesOpened, setFilesOpened] = useState(false);
   const [filesDirty, setFilesDirty] = useState(false);
   if (tab === "files" && !filesOpened) setFilesOpened(true);
+  // Like Files, Structured Data stays mounted once opened, so unsaved edits
+  // survive a visit to another tab.
+  const [dataOpened, setDataOpened] = useState(false);
+  const [dataDirty, setDataDirty] = useState(false);
+  if (tab === "data" && !dataOpened) setDataOpened(true);
 
   // "Show in transcript" (error reporting plan, P7): scrolls to a message,
   // from the errors panel, or from the address (#message-<id>) when opened
@@ -639,7 +644,7 @@ export function Chat() {
             <Tabs.Tab value="chat">Chat</Tabs.Tab>
             <Tabs.Tab value="files">Files</Tabs.Tab>
             <Tabs.Tab value="memory">Memory</Tabs.Tab>
-            <Tabs.Tab value="data">Data</Tabs.Tab>
+            <Tabs.Tab value="data">Structured Data</Tabs.Tab>
             <Tabs.Tab value="workspaces">Workspaces</Tabs.Tab>
             <Tabs.Tab value="debug">Debug</Tabs.Tab>
           </Tabs.List>
@@ -669,7 +674,31 @@ export function Chat() {
         )}
         {filesDirty && <LeaveGuard />}
 
-        {tab !== "chat" && tab !== "files" && (
+        {dataOpened && (
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: tab === "data" ? "block" : "none",
+            }}
+          >
+            <StructuredExplorer
+              key={sessionId}
+              page={{ scope: "session", id: sessionId }}
+              projectId={detail.data.session.project_id}
+              readOnly={entriesReadOnly}
+              projectReadOnly={
+                detail.data.project?.trashed_at
+                  ? "The project is in the trash, so its data can be read but not changed."
+                  : undefined
+              }
+              onDirtyChange={setDataDirty}
+            />
+          </div>
+        )}
+        {dataDirty && <LeaveGuard label="Structured Data" />}
+
+        {tab !== "chat" && tab !== "files" && tab !== "data" && (
           <ScrollArea style={{ flex: 1 }}>
             {tab === "debug" ? (
               <DebugPanel sessionId={sessionId} />
@@ -678,11 +707,6 @@ export function Chat() {
                 owner="sessions"
                 id={sessionId}
                 disabled={trashed}
-              />
-            ) : tab === "data" ? (
-              <SchemasAndData
-                owner={{ scope: "session", id: sessionId }}
-                readOnly={entriesReadOnly}
               />
             ) : (
               <NotesPanel

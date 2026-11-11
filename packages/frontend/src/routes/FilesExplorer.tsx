@@ -1,9 +1,9 @@
-import { Alert, Box, Loader, Text } from "@mantine/core";
+import { Alert, Loader, Text } from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
-import { IconBook, IconX } from "@tabler/icons-react";
+import { IconBook } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fileNameProblem, joinPath } from "@harness/core";
 import { api, type Entry, type EntryScope } from "../api";
 import {
@@ -14,7 +14,6 @@ import {
 import {
   baseName,
   buildTree,
-  clampWidth,
   closeTab,
   dirName,
   emptyValueFor,
@@ -35,6 +34,7 @@ import {
   type TabState,
 } from "../files-explorer";
 import { entryKeys } from "../queries";
+import { ExplorerShell, type ShellTab } from "./ExplorerShell";
 import { FileIcon, FileTree } from "./FileTree";
 import { FileTab, PreviewTab, type Draft } from "./FileTab";
 import { showError } from "./SessionActions";
@@ -48,8 +48,6 @@ import type { Cursor } from "./TextEditor";
  * Kylee's decisions of 2026-11-11 (see the plan); the rules for roots, the
  * tree and the tabs are in `files-explorer.ts`.
  */
-
-const BORDER = "var(--mantine-color-default-border)";
 
 /** Lists and folders of every root, as one stable value each. */
 const combineResults = (
@@ -127,7 +125,6 @@ export function FilesExplorer({
   } | null>(null);
   const cursor = cursorAt?.tab === tabsState.active ? cursorAt.cursor : null;
   const [busy, setBusy] = useState(0);
-  const container = useRef<HTMLDivElement>(null);
 
   // What is remembered between visits (not the unsaved text).
   useEffect(() => {
@@ -358,13 +355,6 @@ export function FilesExplorer({
     }
   };
 
-  // ---- the divider between the tree and the tabs
-  const dragging = useRef(false);
-  const resizeTo = (clientX: number) => {
-    const left = container.current?.getBoundingClientRect().left ?? 0;
-    setWidth(clampWidth(clientX - left));
-  };
-
   const activeRef: NodeRef | null = activeTab
     ? { root: activeTab.root, kind: "file", path: activeTab.key }
     : null;
@@ -384,345 +374,158 @@ export function FilesExplorer({
 
   const scopeOf = (t: TabState) => rootScope(t.root);
 
-  return (
-    <Box
-      ref={container}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-        overflow: "hidden",
-        border: `1px solid ${BORDER}`,
-        borderRadius: "var(--mantine-radius-sm)",
-        background: "var(--mantine-color-body)",
-      }}
-    >
-      <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        <Box
-          style={{
-            width,
-            flexShrink: 0,
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-            background:
-              "light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))",
-          }}
-        >
-          {loading ? (
-            <Loader size="sm" m="sm" aria-label="Loading the files" />
-          ) : (
-            <>
-              {loadError && (
-                <Alert color="red" m="xs" p="xs">
-                  {loadError.message}
-                </Alert>
-              )}
-              <FileTree
-                data={tree.data}
-                info={tree.info}
-                roots={roots}
-                reasons={reasons}
-                pageRoot={pageRoot}
-                initialExpanded={{
-                  ...Object.fromEntries(
-                    roots.map((r) => [
-                      nodeValue({ root: r.id, kind: "root", path: "" }),
-                      true,
-                    ]),
-                  ),
-                  ...expanded,
-                }}
-                onExpandedChange={setExpanded}
-                activeValue={activeRef ? nodeValue(activeRef) : null}
-                renaming={renaming}
-                showDeleted={showDeleted}
-                uploading={busy > 0}
-                onToggleDeleted={() => setShowDeleted((v) => !v)}
-                onOpenFile={(ref, permanent) =>
-                  open(
-                    { kind: "file", root: ref.root, key: ref.path },
-                    permanent,
-                  )
-                }
-                onStartPending={setPending}
-                onCommitPending={(p, name) => void commitPending(p, name)}
-                onCancelPending={() => setPending(null)}
-                onStartRename={(value) => setRenaming({ value })}
-                onCommitRename={(ref, name) => void commitRename(ref, name)}
-                onCancelRename={() => setRenaming(null)}
-                onDeleteFolder={deleteFolder}
-                onDeleteFile={deleteFile}
-                onUpload={(root, folder, files) =>
-                  void upload(root, folder, files)
-                }
-              />
-            </>
-          )}
-        </Box>
-
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the file tree"
-          aria-valuenow={width}
-          tabIndex={0}
-          style={{
-            width: 5,
-            flexShrink: 0,
-            cursor: "col-resize",
-            background: BORDER,
-            touchAction: "none",
-          }}
-          onPointerDown={(e) => {
-            dragging.current = true;
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (dragging.current) resizeTo(e.clientX);
-          }}
-          onPointerUp={() => {
-            dragging.current = false;
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowLeft") setWidth((w) => clampWidth(w - 16));
-            if (e.key === "ArrowRight") setWidth((w) => clampWidth(w + 16));
-          }}
-        />
-
-        <Box
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <Box
-            role="tablist"
-            aria-label="Open files"
-            style={{
-              display: "flex",
-              overflowX: "auto",
-              flexShrink: 0,
-              minHeight: 34,
-              borderBottom: `1px solid ${BORDER}`,
-              background:
-                "light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))",
-            }}
-          >
-            {tabsState.tabs.map((t) => {
-              const id = tabId(t);
-              const active = id === tabsState.active;
-              const info = tree.info.get(
-                nodeValue({ root: t.root, kind: "file", path: t.key }),
-              );
-              const name = baseName(t.key);
-              const label =
-                t.kind === "preview"
-                  ? `Preview ${name}`
-                  : `${name} · ${rootLabel(t.root)}`;
-              return (
-                <div
-                  key={id}
-                  role="tab"
-                  aria-selected={active}
-                  tabIndex={0}
-                  title={`${rootLabel(t.root)}/${t.key}`}
-                  onClick={() => setActive(id)}
-                  onDoubleClick={() => setTabsState((s) => keepTab(s, id))}
-                  onAuxClick={(e) => {
-                    if (e.button === 1) {
-                      e.preventDefault();
-                      requestClose(id);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") setActive(id);
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "0 8px 0 10px",
-                    flexShrink: 0,
-                    maxWidth: 240,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontStyle: t.transient ? "italic" : undefined,
-                    borderRight: `1px solid ${BORDER}`,
-                    borderTop: `2px solid ${active ? "var(--mantine-primary-color-filled)" : "transparent"}`,
-                    background: active
-                      ? "var(--mantine-color-body)"
-                      : undefined,
-                    color: active ? undefined : "var(--mantine-color-dimmed)",
-                  }}
-                >
-                  {t.kind === "preview" ? (
-                    <IconBook size={14} />
-                  ) : (
-                    <FileIcon mediaType={info?.mediaType} size={14} />
-                  )}
-                  <span
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {label}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Close ${label}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      requestClose(id);
-                    }}
-                    style={{
-                      all: "unset",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 16,
-                      height: 16,
-                      borderRadius: 3,
-                    }}
-                  >
-                    {drafts[id] ? (
-                      <span
-                        role="img"
-                        aria-label="Unsaved changes"
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: "currentColor",
-                        }}
-                      />
-                    ) : (
-                      <IconX size={14} />
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </Box>
-
-          <Box style={{ flex: 1, minHeight: 0 }}>
-            {activeTab && scopeOf(activeTab) ? (
-              activeTab.kind === "preview" ? (
-                <PreviewTab
-                  key={tabId(activeTab)}
-                  scope={scopeOf(activeTab) as EntryScope}
-                  fileKey={activeTab.key}
-                  draft={drafts[tabId({ ...activeTab, kind: "file" })]}
-                />
-              ) : (
-                <FileTab
-                  key={tabId(activeTab)}
-                  scope={scopeOf(activeTab) as EntryScope}
-                  root={activeTab.root}
-                  fileKey={activeTab.key}
-                  readOnly={reasons[activeTab.root]}
-                  higher={isHigherScope(
-                    scopeOf(activeTab) as EntryScope,
-                    stablePage,
-                  )}
-                  draft={drafts[tabId(activeTab)]}
-                  onDraft={(draft) =>
-                    setDrafts((d) => {
-                      const id = tabId(activeTab);
-                      if (draft) return { ...d, [id]: draft };
-                      return Object.fromEntries(
-                        Object.entries(d).filter(([k]) => k !== id),
-                      );
-                    })
-                  }
-                  onKeep={() =>
-                    setTabsState((s) => keepTab(s, tabId(activeTab)))
-                  }
-                  onCursor={(c) =>
-                    setCursorAt({ tab: tabsState.active, cursor: c })
-                  }
-                  onPreview={() =>
-                    open(
-                      {
-                        kind: "preview",
-                        root: activeTab.root,
-                        key: activeTab.key,
-                      },
-                      true,
-                    )
-                  }
-                />
-              )
-            ) : (
-              <Box
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Text size="sm" c="dimmed">
-                  Open a file from the tree.
-                </Text>
-              </Box>
-            )}
-          </Box>
-        </Box>
-      </Box>
-
-      <Box
-        role="status"
-        px="sm"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexShrink: 0,
-          minHeight: 24,
-          alignItems: "center",
-          borderTop: `1px solid ${BORDER}`,
-          background:
-            "light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))",
+  const sidebar = loading ? (
+    <Loader size="sm" m="sm" aria-label="Loading the files" />
+  ) : (
+    <>
+      {loadError && (
+        <Alert color="red" m="xs" p="xs">
+          {loadError.message}
+        </Alert>
+      )}
+      <FileTree
+        data={tree.data}
+        info={tree.info}
+        roots={roots}
+        reasons={reasons}
+        pageRoot={pageRoot}
+        initialExpanded={{
+          ...Object.fromEntries(
+            roots.map((r) => [
+              nodeValue({ root: r.id, kind: "root", path: "" }),
+              true,
+            ]),
+          ),
+          ...expanded,
         }}
-      >
-        <Text size="xs" c="dimmed" truncate>
-          {activeTab
-            ? `${rootLabel(activeTab.root)} › ${activeTab.key.split("/").join(" › ")}`
-            : "No file open"}
-        </Text>
-        <Box style={{ display: "flex", gap: 12, flexShrink: 0 }}>
-          {activeTab && (
-            <>
-              {activeIsText && cursor && (
-                <Text size="xs" c="dimmed">
-                  Ln {cursor.line}, Col {cursor.column}
-                </Text>
-              )}
-              {activeInfo?.mediaType && (
-                <Text size="xs" c="dimmed">
-                  {activeInfo.mediaType}
-                </Text>
-              )}
-              {activeTab.kind === "file" && (
-                <Text size="xs" c={activeDirty ? "yellow" : "dimmed"}>
-                  {activeReason
-                    ? "Read-only"
-                    : activeDirty
-                      ? "Unsaved changes"
-                      : "Saved"}
-                </Text>
-              )}
-            </>
-          )}
-        </Box>
-      </Box>
-    </Box>
+        onExpandedChange={setExpanded}
+        activeValue={activeRef ? nodeValue(activeRef) : null}
+        renaming={renaming}
+        showDeleted={showDeleted}
+        uploading={busy > 0}
+        onToggleDeleted={() => setShowDeleted((v) => !v)}
+        onOpenFile={(ref, permanent) =>
+          open({ kind: "file", root: ref.root, key: ref.path }, permanent)
+        }
+        onStartPending={setPending}
+        onCommitPending={(p, name) => void commitPending(p, name)}
+        onCancelPending={() => setPending(null)}
+        onStartRename={(value) => setRenaming({ value })}
+        onCommitRename={(ref, name) => void commitRename(ref, name)}
+        onCancelRename={() => setRenaming(null)}
+        onDeleteFolder={deleteFolder}
+        onDeleteFile={deleteFile}
+        onUpload={(root, folder, files) => void upload(root, folder, files)}
+      />
+    </>
+  );
+
+  const shellTabs: ShellTab[] = tabsState.tabs.map((t) => {
+    const info = tree.info.get(
+      nodeValue({ root: t.root, kind: "file", path: t.key }),
+    );
+    const name = baseName(t.key);
+    return {
+      id: tabId(t),
+      label:
+        t.kind === "preview"
+          ? `Preview ${name}`
+          : `${name} · ${rootLabel(t.root)}`,
+      title: `${rootLabel(t.root)}/${t.key}`,
+      icon:
+        t.kind === "preview" ? (
+          <IconBook size={14} />
+        ) : (
+          <FileIcon mediaType={info?.mediaType} size={14} />
+        ),
+      transient: t.transient,
+      dirty: drafts[tabId(t)] !== undefined,
+    };
+  });
+
+  const content =
+    activeTab && scopeOf(activeTab) ? (
+      activeTab.kind === "preview" ? (
+        <PreviewTab
+          key={tabId(activeTab)}
+          scope={scopeOf(activeTab) as EntryScope}
+          fileKey={activeTab.key}
+          draft={drafts[tabId({ ...activeTab, kind: "file" })]}
+        />
+      ) : (
+        <FileTab
+          key={tabId(activeTab)}
+          scope={scopeOf(activeTab) as EntryScope}
+          root={activeTab.root}
+          fileKey={activeTab.key}
+          readOnly={reasons[activeTab.root]}
+          higher={isHigherScope(scopeOf(activeTab) as EntryScope, stablePage)}
+          draft={drafts[tabId(activeTab)]}
+          onDraft={(draft) =>
+            setDrafts((d) => {
+              const id = tabId(activeTab);
+              if (draft) return { ...d, [id]: draft };
+              return Object.fromEntries(
+                Object.entries(d).filter(([k]) => k !== id),
+              );
+            })
+          }
+          onKeep={() => setTabsState((s) => keepTab(s, tabId(activeTab)))}
+          onCursor={(c) => setCursorAt({ tab: tabsState.active, cursor: c })}
+          onPreview={() =>
+            open(
+              { kind: "preview", root: activeTab.root, key: activeTab.key },
+              true,
+            )
+          }
+        />
+      )
+    ) : null;
+
+  return (
+    <ExplorerShell
+      width={width}
+      onWidthChange={setWidth}
+      sidebar={sidebar}
+      tabs={shellTabs}
+      active={tabsState.active}
+      onActivate={setActive}
+      onKeep={(id) => setTabsState((s) => keepTab(s, id))}
+      onRequestClose={requestClose}
+      content={content}
+      empty="Open a file from the tree."
+      tabListLabel="Open files"
+      resizeLabel="Resize the file tree"
+      statusLeft={
+        activeTab
+          ? `${rootLabel(activeTab.root)} › ${activeTab.key.split("/").join(" › ")}`
+          : "No file open"
+      }
+      statusRight={
+        activeTab && (
+          <>
+            {activeIsText && cursor && (
+              <Text size="xs" c="dimmed">
+                Ln {cursor.line}, Col {cursor.column}
+              </Text>
+            )}
+            {activeInfo?.mediaType && (
+              <Text size="xs" c="dimmed">
+                {activeInfo.mediaType}
+              </Text>
+            )}
+            {activeTab.kind === "file" && (
+              <Text size="xs" c={activeDirty ? "yellow" : "dimmed"}>
+                {activeReason
+                  ? "Read-only"
+                  : activeDirty
+                    ? "Unsaved changes"
+                    : "Saved"}
+              </Text>
+            )}
+          </>
+        )
+      }
+    />
   );
 }

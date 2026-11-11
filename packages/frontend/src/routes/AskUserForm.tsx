@@ -240,6 +240,8 @@ export function AskUserForm({
   extraErrors,
   initial,
   heading = true,
+  hideActions = false,
+  onEdit,
 }: {
   form: Form;
   state: AskUserState;
@@ -255,6 +257,10 @@ export function AskUserForm({
    * says what they are, such as a data form.
    */
   heading?: boolean;
+  /** True: no Skip and Submit buttons; the page has its own Save. */
+  hideActions?: boolean;
+  /** Called with the answers as they stand, unchecked, after each edit. */
+  onEdit?: (answers: Answers) => void;
 }) {
   const open = state.mode === "open";
   const answers =
@@ -282,8 +288,22 @@ export function AskUserForm({
     if (requestId) ref.current?.scrollIntoView?.({ block: "nearest" });
   }, [requestId]);
 
+  const given = (from: Record<string, FieldState>): Answers => {
+    const out: Answers = {};
+    for (const f of form.fields) {
+      const a = answerOf(f, from[f.name] ?? EMPTY);
+      if (a !== undefined) out[f.name] = a;
+    }
+    return out;
+  };
+
   const set = (name: string, change: Partial<FieldState>) => {
-    setValues((v) => ({ ...v, [name]: { ...(v[name] ?? EMPTY), ...change } }));
+    const next = {
+      ...values,
+      [name]: { ...(values[name] ?? EMPTY), ...change },
+    };
+    setValues(next);
+    onEdit?.(given(next));
     // A change clears the question's problems, and those inside it.
     setErrors((e) =>
       Object.fromEntries(
@@ -296,12 +316,7 @@ export function AskUserForm({
 
   const submit = () => {
     if (!open) return;
-    const given: Answers = {};
-    for (const f of form.fields) {
-      const a = answerOf(f, values[f.name] ?? EMPTY);
-      if (a !== undefined) given[f.name] = a;
-    }
-    const checked = checkAnswers(form, given);
+    const checked = checkAnswers(form, given(values));
     if (!checked.ok) {
       setErrors(checked.errors);
       return;
@@ -360,7 +375,7 @@ export function AskUserForm({
               {errors[""]}
             </Text>
           )}
-          {open && (
+          {open && !hideActions && (
             <Group gap="xs" justify="flex-end">
               <Button
                 variant="default"
