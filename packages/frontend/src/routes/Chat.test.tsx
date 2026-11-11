@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { notifications } from "@mantine/notifications";
 import { api, type SessionDetail } from "../api";
+import { useDrafts } from "../drafts";
 import { Chat } from "./Chat";
 import type { RecordingMode } from "./VoiceButtons";
 
@@ -113,6 +114,7 @@ let send: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   liveRun = undefined;
+  useDrafts.setState({ drafts: {} });
   vi.spyOn(api, "getSession").mockResolvedValue(detail);
   vi.spyOn(api, "getSettings").mockResolvedValue({
     effective: { model: "" },
@@ -139,7 +141,7 @@ async function show() {
       }
     >
       <MantineProvider>
-        <Chat />
+        <Chat sessionId="s1" />
       </MantineProvider>
     </QueryClientProvider>,
   );
@@ -211,5 +213,18 @@ describe("recording in the composer", () => {
     await show();
     await act(async () => voice.onRecorded(recording(), "send"));
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("the chat page", () => {
+  it("has no header: the tab and the status bar say what the chat is", async () => {
+    await show();
+    // No title to edit, and none of what the header held.
+    expect(screen.queryByLabelText("Session title")).toBeNull();
+    expect(screen.queryByText("Test")).toBeNull();
+    expect(screen.queryByText("live")).toBeNull();
+    expect(screen.queryByText("offline")).toBeNull();
+    // The views are still there.
+    expect(screen.getByRole("radio", { name: "Files" })).toBeTruthy();
   });
 });

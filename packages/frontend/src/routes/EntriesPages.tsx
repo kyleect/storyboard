@@ -9,13 +9,13 @@ import {
   Title,
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type EntryScope } from "../api";
+import { useReportDirty } from "../dirty";
 import { projectKeys } from "../queries";
 import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
-import { LeaveGuard } from "./LeaveGuard";
 
 /*
  * The global and project pages for files and memory notes (files and memory
@@ -27,12 +27,16 @@ import { LeaveGuard } from "./LeaveGuard";
 function EntriesTabs({
   scope,
   readOnly,
+  height = "calc(100vh - 16rem)",
 }: {
   scope: EntryScope;
   readOnly?: string | undefined;
+  /** How tall the Files view is; less is taken off with no page header. */
+  height?: string;
 }) {
   const [tab, setTab] = useState<string>("files");
   const [dirty, setDirty] = useState(false);
+  useReportDirty(dirty);
   return (
     <Tabs value={tab} onChange={(v) => v && setTab(v)}>
       <Tabs.List mb="md">
@@ -41,7 +45,7 @@ function EntriesTabs({
       </Tabs.List>
       {/* Kept mounted, so unsaved edits survive a visit to Memory. */}
       <Tabs.Panel value="files" keepMounted>
-        <Box h="calc(100vh - 16rem)" mih={420}>
+        <Box h={height} mih={420}>
           <FilesExplorer
             page={scope}
             readOnly={readOnly}
@@ -52,27 +56,22 @@ function EntriesTabs({
       <Tabs.Panel value="memory">
         <NotesPanel scope={scope} readOnly={readOnly} />
       </Tabs.Panel>
-      {dirty && <LeaveGuard />}
     </Tabs>
   );
 }
 
-/** Global files and memory (decision 31). */
+/**
+ * Global files and memory (decision 31). The tab says what the page is, so it
+ * has no heading or help text: just Files and Memory.
+ */
 export function GlobalEntriesPage() {
   return (
-    <Stack gap="md">
-      <Title order={3}>Files & memory</Title>
-      <Text size="sm" c="dimmed">
-        Global: every session sees these.
-      </Text>
-      <EntriesTabs scope={{ scope: "global" }} />
-    </Stack>
+    <EntriesTabs scope={{ scope: "global" }} height="calc(100vh - 11rem)" />
   );
 }
 
 /** A project's files and memory (decision 32). */
-export function ProjectEntriesPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/files" });
+export function ProjectEntriesPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),

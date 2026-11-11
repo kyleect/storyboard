@@ -13,7 +13,6 @@ import {
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type SessionTableItem } from "../api";
-import { usePicked } from "../picked";
 import { sessionKeys } from "../queries";
 import { useSessionsPrefs } from "../sessionsPrefs";
 import { SessionsPage } from "./Sessions";
@@ -41,7 +40,6 @@ vi.mock("@tanstack/react-router", () => ({
 
 beforeEach(() => {
   localStorage.clear();
-  usePicked.setState({ projectId: null });
   useSessionsPrefs.setState({ direction: "desc", pageSize: 10 });
 });
 
@@ -68,20 +66,24 @@ const item = (
   ...over,
 });
 
-function renderPage() {
+function renderPage(projectId: string | null = null) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  render(
+  const page = (id: string | null) => (
     <MantineProvider>
       <ModalsProvider>
         <QueryClientProvider client={queryClient}>
-          <SessionsPage />
+          <SessionsPage projectId={id} />
         </QueryClientProvider>
       </ModalsProvider>
-    </MantineProvider>,
+    </MantineProvider>
   );
-  return queryClient;
+  const { rerender } = render(page(projectId));
+  return {
+    queryClient,
+    showProject: (id: string | null) => rerender(page(id)),
+  };
 }
 
 const box = (name: string) =>
@@ -323,7 +325,7 @@ describe("the Sessions page: paging", () => {
       items: [item(1)],
       total: 15,
     });
-    const queryClient = renderPage();
+    const { queryClient } = renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(screen.getByRole("button", { name: "2" }));
     await waitFor(() => expect(lastRequest(spy)).toMatchObject({ page: 2 }));
@@ -474,14 +476,14 @@ describe("the Sessions page: selecting", () => {
       items: [item(1)],
       total: 25,
     });
-    renderPage();
+    const { showProject } = renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(screen.getByRole("button", { name: "2" }));
     await waitFor(() => expect(lastRequest(spy)).toMatchObject({ page: 2 }));
     fireEvent.click(box("Select Session 1"));
     expect(screen.getByText("1 selected")).toBeTruthy();
 
-    act(() => usePicked.getState().pick("p1"));
+    act(() => showProject("p1"));
     await waitFor(() =>
       expect(lastRequest(spy)).toEqual({
         projectId: "p1",
@@ -494,7 +496,6 @@ describe("the Sessions page: selecting", () => {
   });
 
   it("selects the project's sessions, not the standalone ones", async () => {
-    usePicked.setState({ projectId: "p1" });
     vi.spyOn(api, "listSessionsPage").mockResolvedValue({
       items: [item(1)],
       total: 1,
@@ -502,7 +503,7 @@ describe("the Sessions page: selecting", () => {
     const ids = vi.spyOn(api, "listSessionIds").mockResolvedValue({
       sessions: [{ id: "s1", running: false }],
     });
-    renderPage();
+    renderPage("p1");
     await screen.findByText("Session 1");
     fireEvent.click(box("Select all sessions"));
     await screen.findByText("1 selected");

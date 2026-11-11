@@ -180,7 +180,7 @@ Today is {{date}}. The time is {{time}}.
 
 {{#schemas}}
 <schemas>
-{{schema_instruction}}
+{{schemas_instruction}}
 
 {{schemas}}
 </schemas>

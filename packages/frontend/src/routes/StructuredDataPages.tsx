@@ -1,10 +1,10 @@
 import { Alert, Anchor, Box, Loader, Stack, Text, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../api";
+import { useReportDirty } from "../dirty";
 import { projectKeys } from "../queries";
-import { LeaveGuard } from "./LeaveGuard";
 import { StructuredExplorer } from "./StructuredExplorer";
 
 /*
@@ -16,41 +16,40 @@ import { StructuredExplorer } from "./StructuredExplorer";
 function Explorer({
   scope,
   readOnly,
+  height = "calc(100vh - 14rem)",
 }: {
   scope: { scope: "global" } | { scope: "project"; id: string };
   readOnly?: string | undefined;
+  /** How tall the view is; less is taken off with no page header. */
+  height?: string;
 }) {
   const [dirty, setDirty] = useState(false);
+  useReportDirty(dirty);
   return (
-    <>
-      <Box h="calc(100vh - 14rem)" mih={420}>
-        <StructuredExplorer
-          page={scope}
-          readOnly={readOnly}
-          onDirtyChange={setDirty}
-        />
-      </Box>
-      {dirty && <LeaveGuard label="Structured Data" />}
-    </>
+    <Box h={height} mih={420}>
+      <StructuredExplorer
+        page={scope}
+        readOnly={readOnly}
+        onDirtyChange={setDirty}
+      />
+    </Box>
   );
 }
 
-/** Global structured data (decision 44). */
+/**
+ * Global structured data (decision 44). The tab says what the page is, so it
+ * has no heading or help text.
+ */
 export function GlobalStructuredDataPage() {
-  return (
-    <Stack gap="md">
-      <Title order={3}>Structured Data</Title>
-      <Text size="sm" c="dimmed">
-        Global: every session can use these.
-      </Text>
-      <Explorer scope={{ scope: "global" }} />
-    </Stack>
-  );
+  return <Explorer scope={{ scope: "global" }} height="calc(100vh - 8rem)" />;
 }
 
 /** A project's structured data (decision 44). */
-export function ProjectStructuredDataPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId/data" });
+export function ProjectStructuredDataPage({
+  projectId,
+}: {
+  projectId: string;
+}) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => api.getProject(projectId),

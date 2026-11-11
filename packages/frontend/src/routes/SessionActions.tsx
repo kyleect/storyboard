@@ -15,7 +15,9 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type Project, type Session } from "../api";
 import { projectKeys, sessionKeys, trashKeys } from "../queries";
-import { usePicked } from "../picked";
+import { dropDraft } from "../drafts";
+import { closeTabsAndGo, useWorkbench } from "../workbenchStore";
+import { tabsForProject, tabsForSession } from "../workbench";
 
 /*
  * Session and project actions shared by the navbar, the chat view, the
@@ -82,7 +84,12 @@ export function useSessionActions() {
         api
           .trashSession(session.id)
           .then(async () => {
-            if (params.sessionId === session.id) await navigate({ to: "/" });
+            dropDraft(session.id);
+            const closed = closeTabsAndGo(
+              tabsForSession(useWorkbench.getState().tabs, session.id),
+            );
+            if (!closed && params.sessionId === session.id)
+              await navigate({ to: "/" });
             await refresh(session.id);
           })
           .catch(showError("Could not move to trash"));
@@ -114,6 +121,12 @@ export function useSessionActions() {
         api
           .trashSessions(ids)
           .then(async (result) => {
+            const refused = new Set(result.refused.map((r) => r.id));
+            for (const id of ids) {
+              if (refused.has(id)) continue;
+              dropDraft(id);
+              closeTabsAndGo(tabsForSession(useWorkbench.getState().tabs, id));
+            }
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
               queryClient.invalidateQueries({ queryKey: trashKeys.all }),
@@ -206,6 +219,7 @@ export function useSessionActions() {
 
 export function useProjectActions() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { refreshProjects } = useSessionActions();
 
   /** Opens the New project dialog; `onCreated` gets the new project. */
@@ -242,9 +256,19 @@ export function useProjectActions() {
         api
           .trashProject(project.id)
           .then(async () => {
-            const picked = usePicked.getState();
-            if (picked.projectId === project.id) picked.pick(null);
-            await navigate({ to: "/" });
+            // Its pages close, and so do the chats of its sessions.
+            const projectOfSession = (id: string) =>
+              queryClient.getQueryData<{
+                session: { project_id: string | null };
+              }>(sessionKeys.detail(id))?.session.project_id ?? null;
+            const tabs = useWorkbench.getState().tabs;
+            for (const t of tabs)
+              if (t.kind === "chat" && projectOfSession(t.key) === project.id)
+                dropDraft(t.key);
+            const closed = closeTabsAndGo(
+              tabsForProject(tabs, project.id, projectOfSession),
+            );
+            if (!closed) await navigate({ to: "/" });
             await refreshProjects();
           })
           .catch(showError("Could not move to trash"));
@@ -275,7 +299,8 @@ export function SessionMenu({ session }: { session: Session }) {
           ⋯
         </ActionIcon>
       </Menu.Target>
-      <Menu.Dropdown>
+      {/* The menu is drawn elsewhere, but its clicks still reach the row. */}
+      <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
         <Menu.Item onClick={() => actions.openRename(session)}>
           Rename
         </Menu.Item>
