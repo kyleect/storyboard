@@ -378,6 +378,26 @@ export class Store {
   }
 
   /**
+   * The ids of the sessions not in the trash that have a reply the user has
+   * not seen (see UNREAD), newest first. The open tabs and the rail read it,
+   * and they cannot read it from a list: a tab may belong to a project the
+   * chats tree has not opened.
+   */
+  listUnreadSessionIds(): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id FROM (
+             SELECT id, created_at, ${UNREAD} FROM sessions
+             WHERE trashed_at IS NULL)
+           WHERE unread = 1
+           ORDER BY created_at DESC, id DESC`,
+        )
+        .all() as { id: string }[]
+    ).map((r) => r.id);
+  }
+
+  /**
    * Sessions trashed on their own (not with their project), most recently
    * trashed first.
    */

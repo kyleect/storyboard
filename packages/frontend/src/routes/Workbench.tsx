@@ -33,6 +33,7 @@ import { useChatStatus } from "../chatStatus";
 import { tabId } from "../explorer";
 import { projectKeys, sessionKeys } from "../queries";
 import { useActiveRuns } from "../runs";
+import { useUnreadSessions } from "../unread";
 import {
   newChatTarget,
   pathForTab,
@@ -158,6 +159,7 @@ export function Workbench() {
   });
   const projectActions = useProjectActions();
   const chatStatus = useChatStatus((s) => s.status);
+  const unreadSessions = useUnreadSessions();
 
   const tabs = useWorkbench((s) => s.tabs);
   const width = useWorkbench((s) => s.width);
@@ -276,6 +278,7 @@ export function Workbench() {
   const shellTabs: ShellTab[] = tabs.map((t) => {
     const id = tabId(t);
     const { prefix, label } = partsOf(t);
+
     return {
       id,
       label,
@@ -284,6 +287,9 @@ export function Workbench() {
       icon: ICONS[t.kind],
       transient: t.transient,
       dirty: dirty[id] === true,
+      // Not the tab on screen: its reply is marked seen as it arrives.
+      unread:
+        t.kind === "chat" && id !== activeId && unreadSessions.ids.has(t.key),
     };
   });
 

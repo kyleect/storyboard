@@ -133,6 +133,7 @@ function mockApi() {
     if (!s) throw new ApiError("not found", 404);
     return { session: s, project: null } as unknown as SessionDetail;
   });
+  vi.spyOn(api, "listUnreadSessions").mockResolvedValue({ ids: [] });
   vi.spyOn(api, "listActiveRuns").mockResolvedValue({ runs: [] });
   return vi
     .spyOn(api, "createSession")
@@ -206,6 +207,23 @@ describe("the workbench: tabs and addresses", () => {
     expect(await screen.findByText("chat page s1")).toBeTruthy();
     await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
     expect(tabNamed("Alpha chat").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("marks a chat tab that has a reply not yet seen, unless it is on screen", async () => {
+    mockApi();
+    vi.spyOn(api, "listUnreadSessions").mockResolvedValue({
+      ids: ["s1", "s2"],
+    });
+    const { go } = await show("/sessions/s1");
+    await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
+    await go("/sessions/s2");
+    await waitFor(() => expect(tabNamed("Beta chat")).toBeTruthy());
+
+    const dot = (name: string) =>
+      within(tabNamed(name)).queryByRole("img", { name: "New reply" });
+    // Alpha is in the background; Beta is on screen and is marked seen.
+    await waitFor(() => expect(dot("Alpha chat")).not.toBeNull());
+    expect(dot("Beta chat")).toBeNull();
   });
 
   it("shows the empty state at an address with no tab", async () => {

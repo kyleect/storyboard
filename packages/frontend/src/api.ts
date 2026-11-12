@@ -1080,6 +1080,9 @@ export const api = {
     if (q.projectId) params.set("projectId", q.projectId);
     return request<SessionPage>("GET", `/api/sessions-page?${params}`);
   },
+  /** The ids of every session with a reply the user has not seen, in any project. */
+  listUnreadSessions: () =>
+    request<{ ids: string[] }>("GET", "/api/sessions-unread/ids"),
   /** Every session of a project (or the standalone ones), and whether it is running. */
   listSessionIds: (projectId: string | null) =>
     request<{ sessions: { id: string; running: boolean }[] }>(

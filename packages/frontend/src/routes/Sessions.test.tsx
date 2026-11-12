@@ -683,3 +683,33 @@ describe("the Sessions page: moving to the trash", () => {
     expect(screen.getByText("1 selected")).toBeTruthy();
   });
 });
+
+describe("the Sessions page: new replies", () => {
+  const row = (title: string) =>
+    within(screen.getByText(title).closest("tr") as HTMLElement);
+  const dot = (title: string) =>
+    row(title).queryByRole("img", { name: "New reply" });
+
+  it("marks a session that has a reply the user has not seen", async () => {
+    vi.spyOn(api, "listSessionsPage").mockResolvedValue({
+      items: [item(1, { unread: true }), item(2)],
+      total: 2,
+    });
+    renderPage();
+    await screen.findByText("Session 1");
+
+    expect(dot("Session 1")).not.toBeNull();
+    expect(dot("Session 2")).toBeNull();
+  });
+
+  it("leaves the dot off while a run is still writing the reply", async () => {
+    vi.spyOn(api, "listSessionsPage").mockResolvedValue({
+      items: [item(1, { unread: true, running: true })],
+      total: 1,
+    });
+    renderPage();
+    await screen.findByText("Session 1");
+
+    expect(dot("Session 1")).toBeNull();
+  });
+});
