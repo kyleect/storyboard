@@ -1,3 +1,4 @@
+import { useFaviconIndicator } from "../favicon";
 import { useAppEvents } from "../live";
 import { Workbench } from "./Workbench";
 
@@ -8,5 +9,7 @@ import { Workbench } from "./Workbench";
 export function Layout() {
   // Agent changes from any window (agents plan, P7).
   useAppEvents();
+  // A blue dot on the tab icon while a chat has a reply not yet seen.
+  useFaviconIndicator();
   return <Workbench />;
 }

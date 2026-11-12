@@ -15,6 +15,7 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { token } from "./api";
+import { useAppearance } from "./appearance";
 import { Layout } from "./routes/Layout";
 
 import "@gfazioli/mantine-led/styles.css";
@@ -125,9 +126,11 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (!root) throw new Error("No #root element");
 
-createRoot(root).render(
-  <StrictMode>
-    <MantineProvider defaultColorScheme="auto">
+/** The app, in the theme colour chosen in Settings (Look & Feel). */
+function App() {
+  const primaryColor = useAppearance((s) => s.primaryColor);
+  return (
+    <MantineProvider defaultColorScheme="auto" theme={{ primaryColor }}>
       <Notifications />
       <ModalsProvider>
         {token ? (
@@ -142,5 +145,11 @@ createRoot(root).render(
         )}
       </ModalsProvider>
     </MantineProvider>
+  );
+}
+
+createRoot(root).render(
+  <StrictMode>
+    <App />
   </StrictMode>,
 );

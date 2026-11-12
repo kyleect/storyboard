@@ -1,4 +1,4 @@
-import { Box, Text } from "@mantine/core";
+import { Box, Text, ThemeIcon } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import { useRef, useState, type ReactNode } from "react";
 import { clampWidth } from "../explorer";
@@ -254,7 +254,9 @@ export function ExplorerShell({
                     color: isActive ? undefined : "var(--mantine-color-dimmed)",
                   }}
                 >
-                  {t.icon}
+                  <ThemeIcon size="xs" variant="filled" radius="xs">
+                    {t.icon}
+                  </ThemeIcon>
                   {t.prefix && (
                     <span
                       style={{

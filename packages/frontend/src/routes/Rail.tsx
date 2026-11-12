@@ -1,4 +1,10 @@
-import { ActionIcon, Box, Stack, Tooltip } from "@mantine/core";
+import {
+  ActionIcon,
+  Box,
+  Stack,
+  Tooltip,
+  useMantineTheme,
+} from "@mantine/core";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -63,29 +69,33 @@ export function Rail({
   activity: RunSummary | undefined;
   unread: number | undefined;
 }) {
+  const theme = useMantineTheme();
+
   const button = (
     item: Item,
     active: boolean,
     onClick: () => void,
     expanded?: boolean,
-  ) => (
-    <Tooltip key={item.kind} label={item.label} position="right" withArrow>
-      <ActionIcon
-        size={40}
-        variant={active ? "light" : "subtle"}
-        color={active ? "blue" : "gray"}
-        aria-label={item.label}
-        {...(expanded === undefined
-          ? active
-            ? { "aria-current": "page" as const }
-            : {}
-          : { "aria-expanded": expanded })}
-        onClick={onClick}
-      >
-        {item.icon}
-      </ActionIcon>
-    </Tooltip>
-  );
+  ) => {
+    return (
+      <Tooltip key={item.kind} label={item.label} position="right" withArrow>
+        <ActionIcon
+          size={40}
+          variant={active ? "light" : "subtle"}
+          color={active ? theme.primaryColor : "gray"}
+          aria-label={item.label}
+          {...(expanded === undefined
+            ? active
+              ? { "aria-current": "page" as const }
+              : {}
+            : { "aria-expanded": expanded })}
+          onClick={onClick}
+        >
+          {item.icon}
+        </ActionIcon>
+      </Tooltip>
+    );
+  };
 
   return (
     <Box

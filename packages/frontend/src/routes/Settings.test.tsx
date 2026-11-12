@@ -180,8 +180,15 @@ describe("Settings tabs", () => {
         .getByRole("tab", { name: "General" })
         .getAttribute("aria-selected"),
     ).toBe("true");
-    expect(siblingsOf("Models")).toEqual(["Models", "Server"]);
+    expect(siblingsOf("Models")).toEqual(["Models", "Server", "Look & Feel"]);
     expect(await screen.findByText("Default model")).toBeTruthy();
+  });
+
+  it("has the theme colour under Look & Feel, with no Save", async () => {
+    await renderSettings();
+    fireEvent.click(screen.getByRole("tab", { name: "Look & Feel" }));
+    expect(await screen.findByLabelText("Theme color")).toBeTruthy();
+    expect(router.calls.at(-1)?.params._splat).toBe("general/look");
   });
 
   it.each([

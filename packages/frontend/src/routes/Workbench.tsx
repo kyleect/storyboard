@@ -73,18 +73,14 @@ import { WorkspacesPage } from "./Workspaces";
  * edits, which stay mounted, hidden (D5).
  */
 
-// What a project's tabs are marked with, so they are not mistaken for a
-// chat or a global page of the same name.
-const PROJECT_COLOR = "var(--mantine-color-blue-6)";
-
 const ICONS: Record<WorkbenchKind, ReactNode> = {
   chat: <IconMessage size={14} />,
   sessions: <IconInbox size={14} />,
-  project: <IconFolder size={14} color={PROJECT_COLOR} />,
-  "project-files": <IconFiles size={14} color={PROJECT_COLOR} />,
-  "project-agents": <IconRobot size={14} color={PROJECT_COLOR} />,
-  "project-skills": <IconBolt size={14} color={PROJECT_COLOR} />,
-  "project-data": <IconDatabase size={14} color={PROJECT_COLOR} />,
+  project: <IconFolder size={14} />,
+  "project-files": <IconFiles size={14} />,
+  "project-agents": <IconRobot size={14} />,
+  "project-skills": <IconBolt size={14} />,
+  "project-data": <IconDatabase size={14} />,
   agents: <IconRobot size={14} />,
   skills: <IconBolt size={14} />,
   files: <IconFiles size={14} />,

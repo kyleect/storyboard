@@ -6,6 +6,7 @@ import {
   Stack,
   Text,
   UnstyledButton,
+  useMantineTheme,
   VisuallyHidden,
 } from "@mantine/core";
 import { useReducedMotion } from "@mantine/hooks";
@@ -28,6 +29,7 @@ import { Led } from "@gfazioli/mantine-led";
 /** A spinner, or a still dot when the user prefers reduced motion. */
 function Spinner({ label }: { label: string }) {
   const reduced = useReducedMotion();
+  const theme = useMantineTheme();
   return (
     <span
       role="img"
@@ -40,7 +42,7 @@ function Spinner({ label }: { label: string }) {
           ●
         </Text>
       ) : (
-        <Loader color="blue" type="dots" size="sm" />
+        <Loader color={theme.primaryColor} type="dots" size="sm" />
       )}
     </span>
   );
@@ -93,8 +95,9 @@ export function SessionRunBadge({
   // Either state keeps the spinner flag on, so waiting then working again
   // goes straight back to the spinner.
   const shown = useDebouncedFlag(state !== undefined);
+  const theme = useMantineTheme();
   if (state === "waiting") return <WaitingBadge />;
-  if (shown) return <Loader color="blue" type="dots" size="xs" />;
+  if (shown) return <Loader color={theme.primaryColor} type="dots" size="xs" />;
   // A run is working but the spinner has not shown yet (it is debounced).
   // Show nothing, not the dot, or the dot would flash before the spinner.
   if (state !== undefined) return null;

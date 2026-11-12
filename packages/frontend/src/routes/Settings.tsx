@@ -35,6 +35,7 @@ import { blobKeys, projectKeys, settingsKeys, trashKeys } from "../queries";
 import { ModelPicker } from "./ModelPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
+import { LookAndFeel } from "./LookAndFeel";
 import { McpServers } from "./McpServers";
 import { ToolSettings } from "./ToolSettings";
 
@@ -45,7 +46,7 @@ import { ToolSettings } from "./ToolSettings";
  * groups of settings splits them again under horizontal tabs. The tabs are
  * in the address: /settings/<area>/<section>.
  *
- *   General  Models · Server
+ *   General  Models · Server · Look & Feel
  *   Chat     System prompt · Instructions · Session titles · Editing · Media
  *   Agents   Subagents · Limits
  *   Tools    Permissions · MCP servers
@@ -190,6 +191,7 @@ const AREAS: readonly Area[] = [
         label: "Server",
         render: (view) => <ServerSettings view={view} />,
       },
+      { value: "look", label: "Look & Feel", render: () => <LookAndFeel /> },
     ],
   },
   {
