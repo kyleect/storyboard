@@ -477,7 +477,9 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
+    expect(migrate(db, all)).toEqual([
+      22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+    ]);
 
     const cols = (table: string) =>
       (
@@ -744,5 +746,37 @@ describe("migration 0030 (workspace indexing)", () => {
     db.prepare(
       "INSERT INTO workspace_index_files (workspace_id, path, mtime_ms, size) VALUES ('w1', 'a.md', 1.5, 3)",
     ).run();
+  });
+});
+
+describe("migration 0032 (session seen marker)", () => {
+  it("starts existing sessions as seen and leaves empty ones null", () => {
+    db = new Database(":memory:");
+
+    db.pragma("foreign_keys = OFF");
+
+    const all = loadMigrations(MIGRATIONS_DIR);
+
+    migrate(
+      db,
+      all.filter((m) => m.version <= 31),
+    );
+
+    db.prepare(
+      "INSERT INTO sessions (id, title, created_at, tip_id) VALUES ('a', 't', 'T', 'm1')",
+    ).run();
+
+    db.prepare(
+      "INSERT INTO sessions (id, title, created_at) VALUES ('b', 't', 'T')",
+    ).run();
+
+    expect(migrate(db, all)).toEqual([32]);
+
+    expect(
+      db.prepare("SELECT id, seen_tip_id FROM sessions ORDER BY id").all(),
+    ).toEqual([
+      { id: "a", seen_tip_id: "m1" },
+      { id: "b", seen_tip_id: null },
+    ]);
   });
 });

@@ -16,6 +16,7 @@ import {
   type RunSummary,
   type SessionRunState,
 } from "../runs";
+import { Led } from "@gfazioli/mantine-led";
 
 /*
  * The activity indicators in the navbar: a spinner on each session that has a
@@ -63,17 +64,38 @@ function WaitingBadge() {
   );
 }
 
+/** A reply in the session the user has not seen yet. */
+function UnreadDot() {
+  const reduced = useReducedMotion();
+  return (
+    <span
+      role="img"
+      aria-label="New reply"
+      title="New reply"
+      style={{ display: "inline-flex", alignItems: "center" }}
+    >
+      <Led color="green" size="xs" animate={!reduced} animationType="pulse" />
+    </span>
+  );
+}
+
 /** What a session row shows: nothing, a spinner, or the waiting badge. */
 export function SessionRunBadge({
   state,
+  unread,
 }: {
   state: SessionRunState | undefined;
+  unread?: boolean;
 }) {
   // Either state keeps the spinner flag on, so waiting then working again
   // goes straight back to the spinner.
   const shown = useDebouncedFlag(state !== undefined);
   if (state === "waiting") return <WaitingBadge />;
-  return shown ? <Loader color="blue" type="dots" size="xs" /> : null;
+  if (shown) return <Loader color="blue" type="dots" size="xs" />;
+  // A run is working but the spinner has not shown yet (it is debounced).
+  // Show nothing, not the dot, or the dot would flash before the spinner.
+  if (state !== undefined) return null;
+  return unread ? <UnreadDot /> : null;
 }
 
 /** The summary at the top of the navbar; a popover lists the runs. */

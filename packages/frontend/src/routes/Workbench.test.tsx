@@ -97,6 +97,7 @@ const session = (id: string, title: string, project: string | null) =>
     trashed_with_project: 0,
     agent_id: null,
     usage: null,
+    unread: false,
   }) satisfies SessionListItem;
 
 const project = (id: string, name: string, used: string) =>

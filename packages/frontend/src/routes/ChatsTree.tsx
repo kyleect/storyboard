@@ -22,7 +22,7 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { api, type Project, type Session } from "../api";
+import { api, type Project, type SessionListItem } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
 import type { RunSummary } from "../runs";
 import { useWorkbench } from "../workbenchStore";
@@ -158,7 +158,7 @@ function ChatRow({
   depth,
   h,
 }: {
-  session: Session;
+  session: SessionListItem;
   depth: number;
   h: Handlers;
 }) {
@@ -180,7 +180,10 @@ function ChatRow({
       onDoubleClick={() => h.onOpen(tab, true)}
       right={
         <Group gap={4} wrap="nowrap">
-          <SessionRunBadge state={h.activity?.bySession[session.id]} />
+          <SessionRunBadge
+            state={h.activity?.bySession[session.id]}
+            unread={session.unread}
+          />
           <SessionMenu session={session} />
         </Group>
       }
@@ -200,7 +203,7 @@ function ChatList({
   h,
 }: {
   projectId: string | null;
-  sessions: readonly Session[];
+  sessions: readonly SessionListItem[];
   depth: number;
   h: Handlers;
 }) {

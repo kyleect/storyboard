@@ -1,5 +1,9 @@
 import { Box, Drawer, Text, UnstyledButton } from "@mantine/core";
-import { useDisclosure, useMediaQuery } from "@mantine/hooks";
+import {
+  useDisclosure,
+  useDocumentVisibility,
+  useMediaQuery,
+} from "@mantine/hooks";
 import { modals } from "@mantine/modals";
 import {
   useMutation,
@@ -327,6 +331,22 @@ export function Workbench() {
     },
     onError: showError("Could not create a session"),
   });
+  // ---- the chat on screen has been seen
+  const { mutate: markSeen } = useMutation({
+    mutationFn: (sessionId: string) => api.markSessionSeen(sessionId),
+    // The lists carry `unread`, so they change with it. No error message:
+    // this is bookkeeping, and a chat that is gone closes its tab above.
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
+  });
+  const visible = useDocumentVisibility() === "visible";
+  const seenId = current?.kind === "chat" ? current.key : null;
+  const working =
+    seenId !== null && activity.data?.bySession[seenId] !== undefined;
+  useEffect(() => {
+    if (seenId === null || working || !visible) return;
+    markSeen(seenId);
+  }, [seenId, working, visible, markSeen]);
   const activeTab = tabs.find((t) => tabId(t) === activeId) ?? null;
   const newChat = (projectId?: string) =>
     create.mutate(

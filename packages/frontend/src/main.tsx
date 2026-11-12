@@ -17,6 +17,8 @@ import { createRoot } from "react-dom/client";
 import { token } from "./api";
 import { Layout } from "./routes/Layout";
 
+import "@gfazioli/mantine-led/styles.css";
+
 // The routes are the addresses of the workbench's tabs. The workbench, drawn
 // by the root route, shows the tab; the routes themselves render nothing.
 const Page = () => null;

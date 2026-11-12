@@ -152,6 +152,8 @@ export interface Session {
 export interface SessionListItem extends Session {
   /** The usage of its latest model call that reported one; null: none. */
   usage: Usage | null;
+  /** The latest message is an assistant reply the user has not seen. */
+  unread: boolean;
 }
 
 /** A session in the Sessions page's table. */
@@ -1101,6 +1103,8 @@ export const api = {
     request<Session>("PATCH", `/api/sessions/${id}`, { title }),
   trashSession: (id: string) =>
     request<Session>("POST", `/api/sessions/${id}/trash`),
+  markSessionSeen: (id: string) =>
+    request<Session>("POST", `/api/sessions/${id}/seen`),
   /**
    * When the session's project is in the trash, `project` says whether the
    * project comes back with all the sessions trashed with it, or only this

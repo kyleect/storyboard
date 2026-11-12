@@ -934,6 +934,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return runs.endReasoning(id);
   });
 
+  app.post("/api/sessions/:id/seen", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+
+    if (!store.getSession(id))
+      return reply.code(404).send({ error: "Session not found." });
+
+    store.markSeen(id);
+
+    return store.getSession(id);
+  });
+
   /**
    * Answers an approval request: once, session, always or deny
    * (tools design 6.5), with an optional note for once or deny (approval

@@ -63,6 +63,7 @@ const item = (
   usage: null,
   agents: [],
   running: false,
+  unread: false,
   ...over,
 });
 
