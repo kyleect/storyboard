@@ -452,6 +452,20 @@ export class Store {
     return count;
   }
 
+  listUnreadSessions(): { id: string; projectId: string | null }[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, project_id FROM (
+       SELECT id, project_id, created_at, ${UNREAD} FROM sessions
+       WHERE trashed_at IS NULL)
+     WHERE unread = 1
+     ORDER BY created_at DESC, id DESC`,
+        )
+        .all() as { id: string; project_id: string | null }[]
+    ).map((r) => ({ id: r.id, projectId: r.project_id }));
+  }
+
   /**
    * Renames the session only while its title is still the default, so a
    * rename by the user wins (auto-rename plan, decision 10). True when it

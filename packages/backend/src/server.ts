@@ -292,8 +292,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
    * The ids of every session not in the trash that has a reply the user has
    * not seen, in any project: what the open tabs and the rail need.
    */
-  app.get("/api/sessions-unread/ids", async () => ({
-    ids: store.listUnreadSessionIds(),
+  app.get("/api/sessions-unread/list", async () => ({
+    sessions: store.listUnreadSessions(),
   }));
 
   /**

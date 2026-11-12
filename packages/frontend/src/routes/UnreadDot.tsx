@@ -1,5 +1,4 @@
 import { Led } from "@gfazioli/mantine-led";
-import { useReducedMotion } from "@mantine/hooks";
 
 /*
  * The dot for a reply the user has not seen yet: on open tabs and beside the
@@ -8,7 +7,6 @@ import { useReducedMotion } from "@mantine/hooks";
  */
 
 export function UnreadDot({ label = "New reply" }: { label?: string }) {
-  const reduced = useReducedMotion();
   return (
     <span
       role="img"
@@ -16,7 +14,7 @@ export function UnreadDot({ label = "New reply" }: { label?: string }) {
       title={label}
       style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}
     >
-      <Led color="green" size="xs" animate={!reduced} animationType="pulse" />
+      <Led color="green" size="xs" />
     </span>
   );
 }

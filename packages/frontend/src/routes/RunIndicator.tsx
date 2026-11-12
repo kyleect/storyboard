@@ -66,7 +66,6 @@ function WaitingBadge() {
 
 /** A reply in the session the user has not seen yet. */
 function UnreadDot({ label = "New reply" }: { label?: string }) {
-  const reduced = useReducedMotion();
   return (
     <span
       role="img"
@@ -78,7 +77,7 @@ function UnreadDot({ label = "New reply" }: { label?: string }) {
         cursor: "pointer",
       }}
     >
-      <Led color="green" size="xs" animate={!reduced} animationType="pulse" />
+      <Led color="green" size="xs" />
     </span>
   );
 }

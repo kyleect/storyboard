@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, type UnreadSession } from "./api";
 import { unreadKeys } from "./queries";
 
 /*
@@ -14,6 +14,7 @@ import { unreadKeys } from "./queries";
  */
 
 export interface UnreadSessions {
+  sessions: readonly UnreadSession[]; // the full list: id + projectId
   /** The ids of the sessions with a reply not yet seen. */
   ids: ReadonlySet<string>;
   /** How many there are. */
@@ -21,11 +22,12 @@ export interface UnreadSessions {
 }
 
 /** What the hook returns until the first answer arrives. */
-const NONE: UnreadSessions = { ids: new Set(), count: 0 };
+const NONE: UnreadSessions = { sessions: [], ids: new Set(), count: 0 };
 
-const select = (data: { ids: string[] }): UnreadSessions => ({
-  ids: new Set(data.ids),
-  count: data.ids.length,
+const select = (data: { sessions: UnreadSession[] }): UnreadSessions => ({
+  sessions: data.sessions,
+  ids: new Set(data.sessions.map((s) => s.id)),
+  count: data.sessions.length,
 });
 
 export function useUnreadSessions(): UnreadSessions {
