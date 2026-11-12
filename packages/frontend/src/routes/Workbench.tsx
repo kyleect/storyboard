@@ -151,6 +151,11 @@ export function Workbench() {
   const small = useMediaQuery("(max-width: 48em)") ?? false;
   const [drawer, drawerHandlers] = useDisclosure(false);
   const activity = useActiveRuns();
+  const unread = useQuery({
+    queryKey: sessionKeys.unreadCount(),
+    queryFn: api.unreadSessionCount,
+    select: (data) => data.count,
+  });
   const projectActions = useProjectActions();
   const chatStatus = useChatStatus((s) => s.status);
 
@@ -438,6 +443,7 @@ export function Workbench() {
     <Rail
       activeKind={activeTab?.kind ?? null}
       activity={activity.data}
+      unread={unread.data}
       chatsOpen={small ? drawer : sidebarOpen}
       onChats={() => {
         if (small) drawerHandlers.toggle();

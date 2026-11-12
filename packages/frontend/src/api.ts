@@ -1105,6 +1105,8 @@ export const api = {
     request<Session>("POST", `/api/sessions/${id}/trash`),
   markSessionSeen: (id: string) =>
     request<Session>("POST", `/api/sessions/${id}/seen`),
+  unreadSessionCount: () =>
+    request<{ count: number }>("GET", "/api/sessions-unread"),
   /**
    * When the session's project is in the trash, `project` says whether the
    * project comes back with all the sessions trashed with it, or only this

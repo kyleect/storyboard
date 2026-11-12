@@ -112,3 +112,34 @@ describe("POST /api/sessions/:id/seen", () => {
     expect(second.body).toEqual(first.body);
   });
 });
+
+describe("GET /api/sessions-unread", () => {
+  it("counts the sessions with a reply not yet seen", async () => {
+    const { app, store } = setup();
+    store.createSession("a", "A", "T0");
+    store.addMessage("a", "a-u", user("hi"), "T1");
+    store.addMessage("a", "a-r", asst("hello"), "T2");
+    store.createSession("b", "B", "T3");
+    store.addMessage("b", "b-u", user("hi"), "T4");
+
+    const count = async () =>
+      (await api(app, "GET", "/api/sessions-unread")).body;
+    expect(await count()).toEqual({ count: 1 });
+
+    await api(app, "POST", "/api/sessions/a/seen");
+    expect(await count()).toEqual({ count: 0 });
+  });
+
+  it("leaves out sessions in the trash", async () => {
+    const { app, store } = setup();
+    store.createSession("a", "A", "T0");
+    store.addMessage("a", "a-u", user("hi"), "T1");
+    store.addMessage("a", "a-r", asst("hello"), "T2");
+    store.db
+      .prepare("UPDATE sessions SET trashed_at = 'T' WHERE id = 'a'")
+      .run();
+
+    const res = await api(app, "GET", "/api/sessions-unread");
+    expect(res.body).toEqual({ count: 0 });
+  });
+});

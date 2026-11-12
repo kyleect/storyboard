@@ -42,11 +42,13 @@ export const DEFAULT_TITLE = "New session";
 const SESSION_COLUMNS =
   "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id, tip_id, seen_tip_id, forked_from_id, forked_from_title";
 
-const UNREAD = `EXISTS (
+const UNREAD_CONDITION = `EXISTS (
   SELECT 1 FROM messages m
   WHERE m.id = sessions.tip_id
     AND json_extract(m.message, '$.role') = 'assistant'
-    AND sessions.tip_id IS NOT sessions.seen_tip_id) AS unread`;
+    AND sessions.tip_id IS NOT sessions.seen_tip_id)`;
+
+const UNREAD = `${UNREAD_CONDITION} AS unread`;
 
 /**
  * The usage of the nearest message that reported one, walking up the line
@@ -417,6 +419,17 @@ export class Store {
     this.db
       .prepare("UPDATE sessions SET seen_tip_id = tip_id WHERE id = ?")
       .run(sessionId);
+  }
+
+  /** How many sessions not in the trash have a reply the user has not seen. */
+  countUnread(): number {
+    const { count } = this.db
+      .prepare(
+        `SELECT count(*) AS count FROM sessions
+         WHERE trashed_at IS NULL AND ${UNREAD_CONDITION}`,
+      )
+      .get() as { count: number };
+    return count;
   }
 
   /**

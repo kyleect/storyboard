@@ -65,14 +65,18 @@ function WaitingBadge() {
 }
 
 /** A reply in the session the user has not seen yet. */
-function UnreadDot() {
+function UnreadDot({ label = "New reply" }: { label?: string }) {
   const reduced = useReducedMotion();
   return (
     <span
       role="img"
-      aria-label="New reply"
-      title="New reply"
-      style={{ display: "inline-flex", alignItems: "center" }}
+      aria-label={label}
+      title={label}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        cursor: "pointer",
+      }}
     >
       <Led color="green" size="xs" animate={!reduced} animationType="pulse" />
     </span>
@@ -166,5 +170,30 @@ export function GlobalRunIndicator({
           .join(", ")}
       </VisuallyHidden>
     </>
+  );
+}
+
+/** The rail's summary of the chats with a reply the user has not seen. */
+export function GlobalUnreadIndicator({
+  count,
+}: {
+  count: number | undefined;
+}) {
+  const unread = count ?? 0;
+  // Debounced like the spinner. A reply the user watches arrive is marked
+  // seen a moment later, and the dot should not flash for it.
+  const shown = useDebouncedFlag(unread > 0);
+
+  // Keep the last count while the dot lingers after the last one clears.
+  const [last, setLast] = useState(0);
+  if (unread > 0 && unread !== last) setLast(unread);
+
+  if (!shown) return null;
+  const label =
+    last === 1 ? "1 chat has a new reply" : `${last} chats have new replies`;
+  return (
+    <Stack p="xs" align="center">
+      <UnreadDot label={label} />
+    </Stack>
   );
 }

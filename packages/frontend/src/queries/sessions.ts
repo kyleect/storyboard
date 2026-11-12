@@ -19,6 +19,12 @@ export const sessionKeys = {
   /** The sessions of a project, or those outside any project (`null`). */
   list: (projectId: string | null) =>
     [...sessionKeys.lists(), { projectId }] as const,
+  /**
+   * How many sessions have a reply the user has not seen. Part of `lists()`:
+   * whatever changes a session list can change it, so whatever refreshes the
+   * lists refreshes it too.
+   */
+  unreadCount: () => [...sessionKeys.lists(), "unread-count"] as const,
   /** Every page of the Sessions page's table; part of `lists()`. */
   pages: () => [...sessionKeys.lists(), "page"] as const,
   /** One page of a project's sessions (or the standalone ones). */

@@ -12,7 +12,7 @@ import {
 import type { ReactNode } from "react";
 import type { RunSummary } from "../runs";
 import type { WorkbenchKind } from "../workbench";
-import { GlobalRunIndicator } from "./RunIndicator";
+import { GlobalRunIndicator, GlobalUnreadIndicator } from "./RunIndicator";
 
 /*
  * The icon rail at the left of the workbench: the pages that are not about
@@ -52,6 +52,7 @@ export function Rail({
   onChats,
   onOpen,
   activity,
+  unread,
 }: {
   /** The kind of the active tab, to mark its item. */
   activeKind: WorkbenchKind | null;
@@ -60,6 +61,7 @@ export function Rail({
   onChats: () => void;
   onOpen: (kind: WorkbenchKind) => void;
   activity: RunSummary | undefined;
+  unread: number | undefined;
 }) {
   const button = (
     item: Item,
@@ -108,6 +110,7 @@ export function Rail({
           chatsOpen,
         )}
         <GlobalRunIndicator summary={activity} />
+        <GlobalUnreadIndicator count={unread} />
         {PAGES.map((p) =>
           button(p, activeKind === p.kind, () => onOpen(p.kind)),
         )}

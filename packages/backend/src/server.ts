@@ -946,6 +946,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
+   * How many sessions not in the trash have a reply the user has not seen:
+   * the rail's indicator.
+   */
+  app.get("/api/sessions-unread", async () => ({
+    count: store.countUnread(),
+  }));
+
+  /**
    * Answers an approval request: once, session, always or deny
    * (tools design 6.5), with an optional note for once or deny (approval
    * notes design). 409 when the run is not active, 404 when the request is
