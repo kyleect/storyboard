@@ -9,7 +9,7 @@ import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
 import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
 
-/* GET /api/sessions-unread/ids: which sessions have a reply not yet seen. */
+/* GET /api/sessions-unread/list: which sessions have a reply not yet seen. */
 
 const TOKEN = "t".repeat(64);
 
@@ -76,7 +76,11 @@ const asst = (text: string): Message => ({
 });
 
 const unreadIds = async (app: FastifyInstance) =>
-  (await api(app, "GET", "/api/sessions-unread/ids")).body.ids;
+  (
+    (await api(app, "GET", "/api/sessions-unread/list")).body.sessions as {
+      id: string;
+    }[]
+  ).map((s) => s.id);
 
 /** A session whose latest message is the assistant's reply. */
 function replied(store: Store, id: string, now: string, projectId?: string) {
@@ -85,7 +89,7 @@ function replied(store: Store, id: string, now: string, projectId?: string) {
   store.addMessage(id, `${id}-a`, asst("hello"), now);
 }
 
-describe("GET /api/sessions-unread/ids", () => {
+describe("GET /api/sessions-unread/list", () => {
   it("lists the sessions with a reply not yet seen, in any project, newest first", async () => {
     const { app, store } = setup();
     const project = (await api(app, "POST", "/api/projects", { name: "P" }))

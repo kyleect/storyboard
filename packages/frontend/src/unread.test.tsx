@@ -29,7 +29,12 @@ describe("useUnreadSessions", () => {
   });
 
   it("gives the ids and how many there are", async () => {
-    vi.spyOn(api, "listUnreadSessions").mockResolvedValue({ ids: ["a", "b"] });
+    vi.spyOn(api, "listUnreadSessions").mockResolvedValue({
+      sessions: [
+        { id: "a", projectId: "p1" },
+        { id: "b", projectId: "p1" },
+      ],
+    });
     const { result } = renderHook(() => useUnreadSessions(), {
       wrapper: wrapper(),
     });
