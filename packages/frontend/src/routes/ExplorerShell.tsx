@@ -1,7 +1,8 @@
-import { Box, Text } from "@mantine/core";
+import { Box, Text, ThemeIcon } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import { useRef, useState, type ReactNode } from "react";
 import { clampWidth } from "../explorer";
+import { UnreadDot } from "./UnreadDot";
 
 /*
  * The frame of an editor-style explorer: a sidebar (the tree), a divider
@@ -27,6 +28,8 @@ export interface ShellTab {
   transient: boolean;
   /** Has unsaved changes: a dot takes the place of the close button. */
   dirty: boolean;
+  /** Has a reply the user has not seen: a dot after the label. */
+  unread?: boolean;
 }
 
 export function ExplorerShell({
@@ -251,7 +254,9 @@ export function ExplorerShell({
                     color: isActive ? undefined : "var(--mantine-color-dimmed)",
                   }}
                 >
-                  {t.icon}
+                  <ThemeIcon size="xs" variant="filled" radius="xs">
+                    {t.icon}
+                  </ThemeIcon>
                   {t.prefix && (
                     <span
                       style={{
@@ -275,6 +280,7 @@ export function ExplorerShell({
                   >
                     {t.label}
                   </span>
+                  {t.unread && <UnreadDot />}
                   <button
                     type="button"
                     aria-label={`Close ${t.label}`}

@@ -29,6 +29,8 @@ export interface SessionRow {
   agent_id: string | null;
   /** The last message of the line the session shows; null: no messages. */
   tip_id: string | null;
+  /** The tip the user last saw; Null: never seen. */
+  seen_tip_id: string | null;
   /** For a forked session: the session it was copied from, and its title then. */
   forked_from_id: string | null;
   forked_from_title: string | null;
@@ -38,7 +40,15 @@ export interface SessionRow {
 export const DEFAULT_TITLE = "New session";
 
 const SESSION_COLUMNS =
-  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id, tip_id, forked_from_id, forked_from_title";
+  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id, tip_id, seen_tip_id, forked_from_id, forked_from_title";
+
+const UNREAD_CONDITION = `EXISTS (
+  SELECT 1 FROM messages m
+  WHERE m.id = sessions.tip_id
+    AND json_extract(m.message, '$.role') = 'assistant'
+    AND sessions.tip_id IS NOT sessions.seen_tip_id)`;
+
+const UNREAD = `${UNREAD_CONDITION} AS unread`;
 
 /**
  * The usage of the nearest message that reported one, walking up the line
@@ -61,6 +71,8 @@ export interface SessionListRow extends SessionRow {
    * header does); null when none has.
    */
   usage: Usage | null;
+  /** The tip is an assistant message the user has not seen (see UNREAD). */
+  unread: boolean;
 }
 
 /** A session in the Sessions page's table. */
@@ -251,6 +263,7 @@ export class Store {
       trashed_with_project: 0,
       agent_id: null,
       tip_id: null,
+      seen_tip_id: null,
       forked_from_id: null,
       forked_from_title: null,
     };
@@ -263,13 +276,21 @@ export class Store {
   listSessions(projectId: string | null = null): SessionListRow[] {
     const rows = this.db
       .prepare(
-        `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}
+        `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}, ${UNREAD}
          FROM sessions
          WHERE trashed_at IS NULL AND project_id IS ?
          ORDER BY created_at DESC`,
       )
-      .all(projectId) as (SessionRow & { usage: string | null })[];
-    return rows.map((r) => ({ ...r, usage: parseUsage(r.usage) }));
+      .all(projectId) as (SessionRow & {
+      usage: string | null;
+      unread: number;
+    })[];
+
+    return rows.map((r) => ({
+      ...r,
+      usage: parseUsage(r.usage),
+      unread: r.unread === 1,
+    }));
   }
 
   /**
@@ -288,7 +309,7 @@ export class Store {
     const order = options.direction === "asc" ? "ASC" : "DESC";
     const rows = this.db
       .prepare(
-        `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}
+        `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}, ${UNREAD}
          FROM sessions
          WHERE trashed_at IS NULL AND project_id IS ?
          ORDER BY created_at ${order}, id ${order}
@@ -296,6 +317,7 @@ export class Store {
       )
       .all(options.projectId, options.limit, options.offset) as (SessionRow & {
       usage: string | null;
+      unread: number;
     })[];
     const { total } = this.db
       .prepare(
@@ -308,6 +330,7 @@ export class Store {
       items: rows.map((r) => ({
         ...r,
         usage: parseUsage(r.usage),
+        unread: r.unread === 1,
         agents: agents.get(r.id) ?? [],
       })),
       total,
@@ -355,6 +378,26 @@ export class Store {
   }
 
   /**
+   * The ids of the sessions not in the trash that have a reply the user has
+   * not seen (see UNREAD), newest first. The open tabs and the rail read it,
+   * and they cannot read it from a list: a tab may belong to a project the
+   * chats tree has not opened.
+   */
+  listUnreadSessionIds(): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id FROM (
+             SELECT id, created_at, ${UNREAD} FROM sessions
+             WHERE trashed_at IS NULL)
+           WHERE unread = 1
+           ORDER BY created_at DESC, id DESC`,
+        )
+        .all() as { id: string }[]
+    ).map((r) => r.id);
+  }
+
+  /**
    * Sessions trashed on their own (not with their project), most recently
    * trashed first.
    */
@@ -390,6 +433,37 @@ export class Store {
     this.db
       .prepare("UPDATE sessions SET title = ? WHERE id = ?")
       .run(title, id);
+  }
+
+  markSeen(sessionId: string) {
+    this.db
+      .prepare("UPDATE sessions SET seen_tip_id = tip_id WHERE id = ?")
+      .run(sessionId);
+  }
+
+  /** How many sessions not in the trash have a reply the user has not seen. */
+  countUnread(): number {
+    const { count } = this.db
+      .prepare(
+        `SELECT count(*) AS count FROM sessions
+         WHERE trashed_at IS NULL AND ${UNREAD_CONDITION}`,
+      )
+      .get() as { count: number };
+    return count;
+  }
+
+  listUnreadSessions(): { id: string; projectId: string | null }[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, project_id FROM (
+       SELECT id, project_id, created_at, ${UNREAD} FROM sessions
+       WHERE trashed_at IS NULL)
+     WHERE unread = 1
+     ORDER BY created_at DESC, id DESC`,
+        )
+        .all() as { id: string; project_id: string | null }[]
+    ).map((r) => ({ id: r.id, projectId: r.project_id }));
   }
 
   /**

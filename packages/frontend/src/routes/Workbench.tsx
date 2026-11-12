@@ -1,5 +1,9 @@
 import { Box, Drawer, Text, UnstyledButton } from "@mantine/core";
-import { useDisclosure, useMediaQuery } from "@mantine/hooks";
+import {
+  useDisclosure,
+  useDocumentVisibility,
+  useMediaQuery,
+} from "@mantine/hooks";
 import { modals } from "@mantine/modals";
 import {
   useMutation,
@@ -29,6 +33,7 @@ import { useChatStatus } from "../chatStatus";
 import { tabId } from "../explorer";
 import { projectKeys, sessionKeys } from "../queries";
 import { useActiveRuns } from "../runs";
+import { useUnreadSessions } from "../unread";
 import {
   newChatTarget,
   pathForTab,
@@ -68,18 +73,14 @@ import { WorkspacesPage } from "./Workspaces";
  * edits, which stay mounted, hidden (D5).
  */
 
-// What a project's tabs are marked with, so they are not mistaken for a
-// chat or a global page of the same name.
-const PROJECT_COLOR = "var(--mantine-color-blue-6)";
-
 const ICONS: Record<WorkbenchKind, ReactNode> = {
   chat: <IconMessage size={14} />,
   sessions: <IconInbox size={14} />,
-  project: <IconFolder size={14} color={PROJECT_COLOR} />,
-  "project-files": <IconFiles size={14} color={PROJECT_COLOR} />,
-  "project-agents": <IconRobot size={14} color={PROJECT_COLOR} />,
-  "project-skills": <IconBolt size={14} color={PROJECT_COLOR} />,
-  "project-data": <IconDatabase size={14} color={PROJECT_COLOR} />,
+  project: <IconFolder size={14} />,
+  "project-files": <IconFiles size={14} />,
+  "project-agents": <IconRobot size={14} />,
+  "project-skills": <IconBolt size={14} />,
+  "project-data": <IconDatabase size={14} />,
   agents: <IconRobot size={14} />,
   skills: <IconBolt size={14} />,
   files: <IconFiles size={14} />,
@@ -147,8 +148,14 @@ export function Workbench() {
   const small = useMediaQuery("(max-width: 48em)") ?? false;
   const [drawer, drawerHandlers] = useDisclosure(false);
   const activity = useActiveRuns();
+  const unread = useQuery({
+    queryKey: sessionKeys.unreadCount(),
+    queryFn: api.unreadSessionCount,
+    select: (data) => data.count,
+  });
   const projectActions = useProjectActions();
   const chatStatus = useChatStatus((s) => s.status);
+  const unreadSessions = useUnreadSessions();
 
   const tabs = useWorkbench((s) => s.tabs);
   const width = useWorkbench((s) => s.width);
@@ -267,6 +274,7 @@ export function Workbench() {
   const shellTabs: ShellTab[] = tabs.map((t) => {
     const id = tabId(t);
     const { prefix, label } = partsOf(t);
+
     return {
       id,
       label,
@@ -275,6 +283,9 @@ export function Workbench() {
       icon: ICONS[t.kind],
       transient: t.transient,
       dirty: dirty[id] === true,
+      // Not the tab on screen: its reply is marked seen as it arrives.
+      unread:
+        t.kind === "chat" && id !== activeId && unreadSessions.ids.has(t.key),
     };
   });
 
@@ -327,6 +338,22 @@ export function Workbench() {
     },
     onError: showError("Could not create a session"),
   });
+  // ---- the chat on screen has been seen
+  const { mutate: markSeen } = useMutation({
+    mutationFn: (sessionId: string) => api.markSessionSeen(sessionId),
+    // The lists carry `unread`, so they change with it. No error message:
+    // this is bookkeeping, and a chat that is gone closes its tab above.
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
+  });
+  const visible = useDocumentVisibility() === "visible";
+  const seenId = current?.kind === "chat" ? current.key : null;
+  const working =
+    seenId !== null && activity.data?.bySession[seenId] !== undefined;
+  useEffect(() => {
+    if (seenId === null || working || !visible) return;
+    markSeen(seenId);
+  }, [seenId, working, visible, markSeen]);
   const activeTab = tabs.find((t) => tabId(t) === activeId) ?? null;
   const newChat = (projectId?: string) =>
     create.mutate(
@@ -418,6 +445,7 @@ export function Workbench() {
     <Rail
       activeKind={activeTab?.kind ?? null}
       activity={activity.data}
+      unread={unread.data}
       chatsOpen={small ? drawer : sidebarOpen}
       onChats={() => {
         if (small) drawerHandlers.toggle();

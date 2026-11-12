@@ -220,6 +220,23 @@ describe("runs.changed", () => {
     act(() => FakeEventSource.last?.onopen?.());
     expect(invalidate).toHaveBeenCalledWith({ queryKey: runKeys.active() });
   });
+
+  it("refreshes the session lists, which say which sessions are unread", () => {
+    const invalidate = mountEvents();
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        type: "runs.changed",
+        data: { sessionId: "s1", runId: "r1" },
+      }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionKeys.lists() });
+  });
+
+  it("refreshes the session lists when the stream opens too", () => {
+    const invalidate = mountEvents();
+    act(() => FakeEventSource.last?.onopen?.());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionKeys.lists() });
+  });
 });
 
 describe("a subagent's run", () => {

@@ -1,4 +1,10 @@
-import { ActionIcon, Box, Stack, Tooltip } from "@mantine/core";
+import {
+  ActionIcon,
+  Box,
+  Stack,
+  Tooltip,
+  useMantineTheme,
+} from "@mantine/core";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -12,7 +18,7 @@ import {
 import type { ReactNode } from "react";
 import type { RunSummary } from "../runs";
 import type { WorkbenchKind } from "../workbench";
-import { GlobalRunIndicator } from "./RunIndicator";
+import { GlobalRunIndicator, GlobalUnreadIndicator } from "./RunIndicator";
 
 /*
  * The icon rail at the left of the workbench: the pages that are not about
@@ -52,6 +58,7 @@ export function Rail({
   onChats,
   onOpen,
   activity,
+  unread,
 }: {
   /** The kind of the active tab, to mark its item. */
   activeKind: WorkbenchKind | null;
@@ -60,30 +67,35 @@ export function Rail({
   onChats: () => void;
   onOpen: (kind: WorkbenchKind) => void;
   activity: RunSummary | undefined;
+  unread: number | undefined;
 }) {
+  const theme = useMantineTheme();
+
   const button = (
     item: Item,
     active: boolean,
     onClick: () => void,
     expanded?: boolean,
-  ) => (
-    <Tooltip key={item.kind} label={item.label} position="right" withArrow>
-      <ActionIcon
-        size={40}
-        variant={active ? "light" : "subtle"}
-        color={active ? "blue" : "gray"}
-        aria-label={item.label}
-        {...(expanded === undefined
-          ? active
-            ? { "aria-current": "page" as const }
-            : {}
-          : { "aria-expanded": expanded })}
-        onClick={onClick}
-      >
-        {item.icon}
-      </ActionIcon>
-    </Tooltip>
-  );
+  ) => {
+    return (
+      <Tooltip key={item.kind} label={item.label} position="right" withArrow>
+        <ActionIcon
+          size={40}
+          variant={active ? "light" : "subtle"}
+          color={active ? theme.primaryColor : "gray"}
+          aria-label={item.label}
+          {...(expanded === undefined
+            ? active
+              ? { "aria-current": "page" as const }
+              : {}
+            : { "aria-expanded": expanded })}
+          onClick={onClick}
+        >
+          {item.icon}
+        </ActionIcon>
+      </Tooltip>
+    );
+  };
 
   return (
     <Box
@@ -108,6 +120,7 @@ export function Rail({
           chatsOpen,
         )}
         <GlobalRunIndicator summary={activity} />
+        <GlobalUnreadIndicator count={unread} />
         {PAGES.map((p) =>
           button(p, activeKind === p.kind, () => onOpen(p.kind)),
         )}

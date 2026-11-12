@@ -17,4 +17,5 @@ export { sessionKeys, trashKeys } from "./sessions";
 export { settingsKeys } from "./settings";
 export { skillKeys } from "./skills";
 export { mcpKeys, toolKeys } from "./tools";
+export { unreadKeys } from "./unread";
 export { workspaceKeys } from "./workspaces";

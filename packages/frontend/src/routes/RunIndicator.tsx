@@ -6,6 +6,7 @@ import {
   Stack,
   Text,
   UnstyledButton,
+  useMantineTheme,
   VisuallyHidden,
 } from "@mantine/core";
 import { useReducedMotion } from "@mantine/hooks";
@@ -16,6 +17,7 @@ import {
   type RunSummary,
   type SessionRunState,
 } from "../runs";
+import { Led } from "@gfazioli/mantine-led";
 
 /*
  * The activity indicators in the navbar: a spinner on each session that has a
@@ -27,6 +29,7 @@ import {
 /** A spinner, or a still dot when the user prefers reduced motion. */
 function Spinner({ label }: { label: string }) {
   const reduced = useReducedMotion();
+  const theme = useMantineTheme();
   return (
     <span
       role="img"
@@ -39,7 +42,7 @@ function Spinner({ label }: { label: string }) {
           ●
         </Text>
       ) : (
-        <Loader color="blue" type="dots" size="sm" />
+        <Loader color={theme.primaryColor} type="dots" size="sm" />
       )}
     </span>
   );
@@ -63,17 +66,42 @@ function WaitingBadge() {
   );
 }
 
+/** A reply in the session the user has not seen yet. */
+function UnreadDot({ label = "New reply" }: { label?: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        cursor: "pointer",
+      }}
+    >
+      <Led color="green" size="xs" />
+    </span>
+  );
+}
+
 /** What a session row shows: nothing, a spinner, or the waiting badge. */
 export function SessionRunBadge({
   state,
+  unread,
 }: {
   state: SessionRunState | undefined;
+  unread?: boolean;
 }) {
   // Either state keeps the spinner flag on, so waiting then working again
   // goes straight back to the spinner.
   const shown = useDebouncedFlag(state !== undefined);
+  const theme = useMantineTheme();
   if (state === "waiting") return <WaitingBadge />;
-  return shown ? <Loader color="blue" type="dots" size="xs" /> : null;
+  if (shown) return <Loader color={theme.primaryColor} type="dots" size="xs" />;
+  // A run is working but the spinner has not shown yet (it is debounced).
+  // Show nothing, not the dot, or the dot would flash before the spinner.
+  if (state !== undefined) return null;
+  return unread ? <UnreadDot /> : null;
 }
 
 /** The summary at the top of the navbar; a popover lists the runs. */
@@ -144,5 +172,30 @@ export function GlobalRunIndicator({
           .join(", ")}
       </VisuallyHidden>
     </>
+  );
+}
+
+/** The rail's summary of the chats with a reply the user has not seen. */
+export function GlobalUnreadIndicator({
+  count,
+}: {
+  count: number | undefined;
+}) {
+  const unread = count ?? 0;
+  // Debounced like the spinner. A reply the user watches arrive is marked
+  // seen a moment later, and the dot should not flash for it.
+  const shown = useDebouncedFlag(unread > 0);
+
+  // Keep the last count while the dot lingers after the last one clears.
+  const [last, setLast] = useState(0);
+  if (unread > 0 && unread !== last) setLast(unread);
+
+  if (!shown) return null;
+  const label =
+    last === 1 ? "1 chat has a new reply" : `${last} chats have new replies`;
+  return (
+    <Stack p="xs" align="center">
+      <UnreadDot label={label} />
+    </Stack>
   );
 }

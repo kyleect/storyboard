@@ -15,7 +15,10 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { token } from "./api";
+import { useAppearance } from "./appearance";
 import { Layout } from "./routes/Layout";
+
+import "@gfazioli/mantine-led/styles.css";
 
 // The routes are the addresses of the workbench's tabs. The workbench, drawn
 // by the root route, shows the tab; the routes themselves render nothing.
@@ -123,9 +126,11 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (!root) throw new Error("No #root element");
 
-createRoot(root).render(
-  <StrictMode>
-    <MantineProvider defaultColorScheme="auto">
+/** The app, in the theme colour chosen in Settings (Look & Feel). */
+function App() {
+  const primaryColor = useAppearance((s) => s.primaryColor);
+  return (
+    <MantineProvider defaultColorScheme="auto" theme={{ primaryColor }}>
       <Notifications />
       <ModalsProvider>
         {token ? (
@@ -140,5 +145,11 @@ createRoot(root).render(
         )}
       </ModalsProvider>
     </MantineProvider>
+  );
+}
+
+createRoot(root).render(
+  <StrictMode>
+    <App />
   </StrictMode>,
 );

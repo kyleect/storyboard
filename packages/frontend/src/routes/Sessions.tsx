@@ -22,6 +22,7 @@ import { sessionKeys } from "../queries";
 import { PAGE_SIZES, useSessionsPrefs } from "../sessionsPrefs";
 import { UsageBadge } from "./ContextMeter";
 import { SessionMenu, showError, useSessionActions } from "./SessionActions";
+import { UnreadDot } from "./UnreadDot";
 
 /*
  * The Sessions page (Sessions page plan): the sessions of the project picked
@@ -189,18 +190,22 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
                   />
                 </Table.Td>
                 <Table.Td>
-                  <Anchor
-                    size="sm"
-                    renderRoot={(props) => (
-                      <Link
-                        {...props}
-                        to="/sessions/$sessionId"
-                        params={{ sessionId: s.id }}
-                      />
-                    )}
-                  >
-                    {s.title}
-                  </Anchor>
+                  <Group gap={6} wrap="nowrap">
+                    <Anchor
+                      size="sm"
+                      renderRoot={(props) => (
+                        <Link
+                          {...props}
+                          to="/sessions/$sessionId"
+                          params={{ sessionId: s.id }}
+                        />
+                      )}
+                    >
+                      {s.title}
+                    </Anchor>
+                    {/* While a run works, the reply is still being written. */}
+                    {s.unread && !s.running && <UnreadDot />}
+                  </Group>
                 </Table.Td>
                 <Table.Td>{new Date(s.created_at).toLocaleString()}</Table.Td>
                 <Table.Td>

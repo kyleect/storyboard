@@ -152,6 +152,8 @@ export interface Session {
 export interface SessionListItem extends Session {
   /** The usage of its latest model call that reported one; null: none. */
   usage: Usage | null;
+  /** The latest message is an assistant reply the user has not seen. */
+  unread: boolean;
 }
 
 /** A session in the Sessions page's table. */
@@ -1010,6 +1012,11 @@ export interface McpServerView extends McpServerInput {
   };
 }
 
+export interface UnreadSession {
+  id: string;
+  projectId: string | null;
+}
+
 export const api = {
   listErrors: (filter: ErrorFilter = {}) => {
     const q = new URLSearchParams(
@@ -1078,6 +1085,9 @@ export const api = {
     if (q.projectId) params.set("projectId", q.projectId);
     return request<SessionPage>("GET", `/api/sessions-page?${params}`);
   },
+  /** The ids of every session with a reply the user has not seen, in any project. */
+  listUnreadSessions: () =>
+    request<{ sessions: UnreadSession[] }>("GET", "/api/sessions-unread/list"),
   /** Every session of a project (or the standalone ones), and whether it is running. */
   listSessionIds: (projectId: string | null) =>
     request<{ sessions: { id: string; running: boolean }[] }>(
@@ -1101,6 +1111,10 @@ export const api = {
     request<Session>("PATCH", `/api/sessions/${id}`, { title }),
   trashSession: (id: string) =>
     request<Session>("POST", `/api/sessions/${id}/trash`),
+  markSessionSeen: (id: string) =>
+    request<Session>("POST", `/api/sessions/${id}/seen`),
+  unreadSessionCount: () =>
+    request<{ count: number }>("GET", "/api/sessions-unread"),
   /**
    * When the session's project is in the trash, `project` says whether the
    * project comes back with all the sessions trashed with it, or only this

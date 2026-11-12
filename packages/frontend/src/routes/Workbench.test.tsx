@@ -97,6 +97,7 @@ const session = (id: string, title: string, project: string | null) =>
     trashed_with_project: 0,
     agent_id: null,
     usage: null,
+    unread: false,
   }) satisfies SessionListItem;
 
 const project = (id: string, name: string, used: string) =>
@@ -132,6 +133,7 @@ function mockApi() {
     if (!s) throw new ApiError("not found", 404);
     return { session: s, project: null } as unknown as SessionDetail;
   });
+  vi.spyOn(api, "listUnreadSessions").mockResolvedValue({ sessions: [] });
   vi.spyOn(api, "listActiveRuns").mockResolvedValue({ runs: [] });
   return vi
     .spyOn(api, "createSession")
@@ -205,6 +207,26 @@ describe("the workbench: tabs and addresses", () => {
     expect(await screen.findByText("chat page s1")).toBeTruthy();
     await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
     expect(tabNamed("Alpha chat").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("marks a chat tab that has a reply not yet seen, unless it is on screen", async () => {
+    mockApi();
+    vi.spyOn(api, "listUnreadSessions").mockResolvedValue({
+      sessions: [
+        { id: "s1", projectId: "p1" },
+        { id: "s2", projectId: "p1" },
+      ],
+    });
+    const { go } = await show("/sessions/s1");
+    await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
+    await go("/sessions/s2");
+    await waitFor(() => expect(tabNamed("Beta chat")).toBeTruthy());
+
+    const dot = (name: string) =>
+      within(tabNamed(name)).queryByRole("img", { name: "New reply" });
+    // Alpha is in the background; Beta is on screen and is marked seen.
+    await waitFor(() => expect(dot("Alpha chat")).not.toBeNull());
+    expect(dot("Beta chat")).toBeNull();
   });
 
   it("shows the empty state at an address with no tab", async () => {
@@ -651,6 +673,51 @@ describe("the chats tree", () => {
     );
     expect(
       within(screen.getByRole("status")).queryByLabelText("Context used"),
+    ).toBeNull();
+  });
+
+  it("marks a project, open or not, that has a chat with a reply not yet seen", async () => {
+    mockApi();
+    vi.spyOn(api, "listUnreadSessions").mockResolvedValue({
+      sessions: [
+        { id: "x1", projectId: "p1" },
+        { id: "x2", projectId: null },
+      ],
+    });
+    await show("/");
+    const dot = (name: string) =>
+      within(screen.getByRole("group", { name })).queryByRole("img", {
+        name: "Has a chat with a new reply",
+      });
+    await waitFor(() => expect(dot("Novel")).not.toBeNull());
+    expect(dot("No project")).not.toBeNull();
+    expect(dot("Poems")).toBeNull();
+  });
+
+  it("does not mark a project whose only unread chat is running", async () => {
+    mockApi();
+    vi.spyOn(api, "listUnreadSessions").mockResolvedValue({
+      sessions: [{ id: "x1", projectId: "p1" }],
+    });
+    vi.spyOn(api, "listActiveRuns").mockResolvedValue({
+      runs: [
+        {
+          runId: "r1",
+          sessionId: "x1",
+          sessionTitle: "X",
+          parentRunId: null,
+          agentName: null,
+          waiting: false,
+        },
+      ],
+    });
+    await show("/");
+    await screen.findByRole("group", { name: "Novel" });
+    await waitFor(() => expect(api.listActiveRuns).toHaveBeenCalled());
+    expect(
+      within(screen.getByRole("group", { name: "Novel" })).queryByRole("img", {
+        name: "Has a chat with a new reply",
+      }),
     ).toBeNull();
   });
 });

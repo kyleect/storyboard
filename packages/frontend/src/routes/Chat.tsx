@@ -13,6 +13,7 @@ import {
   Text,
   Textarea,
   UnstyledButton,
+  useMantineTheme,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1214,6 +1215,8 @@ function SubagentPanel({
   notes: Notes;
   asks: Asks;
 }) {
+  const theme = useMantineTheme();
+
   const view = asks.subagents.get(callId);
   // Null until the user chooses; then what they chose.
   const [chosen, setChosen] = useState<boolean | null>(null);
@@ -1253,7 +1256,7 @@ function SubagentPanel({
           </Text>
         )}
         <UnstyledButton onClick={() => setChosen(!expanded)}>
-          <Text size="xs" c="blue">
+          <Text size="xs" c={theme.primaryColor}>
             {expanded ? "Hide its work" : "Show its work"}
           </Text>
         </UnstyledButton>
@@ -1491,6 +1494,7 @@ function LiveReasoning({
   usage: Usage | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const theme = useMantineTheme();
   const latest =
     text
       .split("\n")
@@ -1505,7 +1509,7 @@ function LiveReasoning({
           {usage ? ` ${usage.completionTokens} tokens` : ""}
         </Text>
         <UnstyledButton onClick={() => setOpen((o) => !o)}>
-          <Text size="xs" c="blue">
+          <Text size="xs" c={theme.primaryColor}>
             {open ? "Hide" : "Show all"}
           </Text>
         </UnstyledButton>

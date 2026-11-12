@@ -46,6 +46,7 @@ describe("session and project keys", () => {
       page: 2,
       pageSize: 25,
     }),
+    unreadCount: sessionKeys.unreadCount(),
     detail: sessionKeys.detail("s1"),
     otherDetail: sessionKeys.detail("s2"),
     debug: sessionKeys.debug("s1"),
@@ -61,6 +62,13 @@ describe("session and project keys", () => {
       "listWithoutProject",
       "otherPage",
       "page",
+      "unreadCount",
+    ]);
+  });
+
+  it("unreadCount() reaches only the count", async () => {
+    expect(await reach(sessionKeys.unreadCount(), keys)).toEqual([
+      "unreadCount",
     ]);
   });
 

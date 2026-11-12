@@ -289,6 +289,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
+   * The ids of every session not in the trash that has a reply the user has
+   * not seen, in any project: what the open tabs and the rail need.
+   */
+  app.get("/api/sessions-unread/list", async () => ({
+    sessions: store.listUnreadSessions(),
+  }));
+
+  /**
    * One page of the sessions not in the trash, for the Sessions page (its
    * plan, P1): the project's with `?projectId=`, else the standalone ones,
    * ordered by creation time in `direction`. Each carries `running`, true
@@ -933,6 +941,25 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       return reply.code(404).send({ error: "Run not found." });
     return runs.endReasoning(id);
   });
+
+  app.post("/api/sessions/:id/seen", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+
+    if (!store.getSession(id))
+      return reply.code(404).send({ error: "Session not found." });
+
+    store.markSeen(id);
+
+    return store.getSession(id);
+  });
+
+  /**
+   * How many sessions not in the trash have a reply the user has not seen:
+   * the rail's indicator.
+   */
+  app.get("/api/sessions-unread", async () => ({
+    count: store.countUnread(),
+  }));
 
   /**
    * Answers an approval request: once, session, always or deny

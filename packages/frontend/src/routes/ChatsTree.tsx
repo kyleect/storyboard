@@ -22,7 +22,7 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { api, type Project, type Session } from "../api";
+import { api, type Project, type SessionListItem } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
 import type { RunSummary } from "../runs";
 import { useWorkbench } from "../workbenchStore";
@@ -30,6 +30,8 @@ import { tabId as idOf } from "../explorer";
 import type { NewWorkbenchTab } from "../workbench";
 import { SessionRunBadge } from "./RunIndicator";
 import { SessionMenu, useProjectActions } from "./SessionActions";
+import { useUnreadSessions, type UnreadSessions } from "../unread";
+import { UnreadDot } from "./UnreadDot";
 
 /*
  * The chats tree in the workbench's sidebar (chat workbench design, 4.1):
@@ -59,6 +61,7 @@ interface Handlers {
   activity: RunSummary | undefined;
   /** Lower-case text the names must contain; empty shows everything. */
   filter: string;
+  unread: UnreadSessions;
 }
 
 function Row({
@@ -153,12 +156,18 @@ function Row({
 const matches = (text: string, filter: string) =>
   filter === "" || text.toLowerCase().includes(filter);
 
+const groupHasUnread = (h: Handlers, projectId: string | null) =>
+  h.unread.sessions.some(
+    (s) =>
+      s.projectId === projectId && h.activity?.bySession[s.id] === undefined,
+  );
+
 function ChatRow({
   session,
   depth,
   h,
 }: {
-  session: Session;
+  session: SessionListItem;
   depth: number;
   h: Handlers;
 }) {
@@ -180,7 +189,10 @@ function ChatRow({
       onDoubleClick={() => h.onOpen(tab, true)}
       right={
         <Group gap={4} wrap="nowrap">
-          <SessionRunBadge state={h.activity?.bySession[session.id]} />
+          <SessionRunBadge
+            state={h.activity?.bySession[session.id]}
+            unread={session.unread}
+          />
           <SessionMenu session={session} />
         </Group>
       }
@@ -200,7 +212,7 @@ function ChatList({
   h,
 }: {
   projectId: string | null;
-  sessions: readonly Session[];
+  sessions: readonly SessionListItem[];
   depth: number;
   h: Handlers;
 }) {
@@ -328,13 +340,18 @@ function ProjectGroup({
         onToggle={() => setExpanded(node, !open)}
         onDoubleClick={() => h.onOpen(tab, true)}
         right={
-          <ProjectMenu
-            project={project}
-            onNewChat={onNewChat}
-            onOpenPage={(kind) =>
-              h.onOpen({ kind, root: "project", key: project.id }, false)
-            }
-          />
+          <Group gap={4} wrap="nowrap">
+            {groupHasUnread(h, project.id) && (
+              <UnreadDot label="Has a chat with a new reply" />
+            )}
+            <ProjectMenu
+              project={project}
+              onNewChat={onNewChat}
+              onOpenPage={(kind) =>
+                h.onOpen({ kind, root: "project", key: project.id }, false)
+              }
+            />
+          </Group>
         }
       />
       {open && (
@@ -382,6 +399,11 @@ function NoProjectGroup({ h }: { h: Handlers }) {
         }}
         onDoubleClick={() => h.onOpen(tab, true)}
         onToggle={() => setExpanded(NO_PROJECT_NODE, !open)}
+        right={
+          groupHasUnread(h, null) ? (
+            <UnreadDot label="Has a chat with a new reply" />
+          ) : null
+        }
       />
       {open && (
         <>
@@ -425,12 +447,14 @@ export function ChatsTree({
     queryKey: projectKeys.list(),
     queryFn: api.listProjects,
   });
+  const unread = useUnreadSessions();
   const h: Handlers = {
     activeId,
     onOpen,
     onFocusRow,
     activity,
     filter: filter.trim().toLowerCase(),
+    unread,
   };
   // The most recently used first; a project never used sorts by creation.
   const sorted = [...(projects.data ?? [])].sort((a, b) =>
