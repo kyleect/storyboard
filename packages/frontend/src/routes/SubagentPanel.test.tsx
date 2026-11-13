@@ -99,7 +99,7 @@ function view(
         reasoningEffort={null}
         agent={null}
         streaming={false}
-        notes={new Map()}
+        decisionComments={new Map()}
         asks={{
           results: new Map(),
           opens,

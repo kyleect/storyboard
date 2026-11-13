@@ -18,7 +18,7 @@ packages/core/src
   loop.ts                runLoop: the agent loop
   tools.ts               Tool, defineTool, ToolContext, TOOL_GROUPS, access interfaces
   forms.ts               input forms: reading, validating, describing
-  entries.ts             files and memory notes: access API, replay
+  files.ts             files: access API, replay
   file-names.ts          rules for file and folder names
   file-refs.ts           file references: session://, project://, global://, workspace://
   workspaces.ts          WorkspaceAccess, the interface for workspace folders
@@ -26,12 +26,12 @@ packages/core/src
   schemas-data.ts        schemas and data: access API, replay
   schema-features.ts     the JSON Schema subset schemas may use
   review.ts, changes.ts  describing and applying proposed changes
-  notes.ts               approval notes folded into user messages
+  decision-comments.ts   decision comments folded into user messages
   chunking.ts            splitting file text for search
   control.ts             RunControl: act on a streaming response
   message-state.ts       rebuild a message from events
   fake-model.ts          ScriptedModel for tests
-  fake-shared-entries.ts in-memory SharedEntries for tests (exported by testing.ts)
+  fake-shared-files.ts in-memory SharedFiles for tests (exported by testing.ts)
   llama-server/          adapter, models, props, embeddings, SSE reader, fake server
   testing.ts             test helpers exported as @harness/core/testing
 ```
@@ -41,13 +41,13 @@ packages/core/src
 `messages.ts` defines the provider-neutral transcript format. Model adapters
 translate to and from it.
 
-| Role        | Shape                            | Meaning                                                                                                                                                                                                           |
-| ----------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system`    | `{ content }`                    | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                                    |
-| `user`      | `{ content, files?, source? }`   | What the user typed, with references to any images or audio sent with it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
-| `assistant` | `{ content: ContentBlock[] }`    | What the model produced.                                                                                                                                                                                          |
-| `tool`      | see below                        | The outcome of one tool call.                                                                                                                                                                                     |
-| `edit`      | `{ content, entries, dataOps? }` | The user edited session files, notes, schemas or data.                                                                                                                                                            |
+| Role        | Shape                          | Meaning                                                                                                                                                                                                           |
+| ----------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system`    | `{ content }`                  | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                                    |
+| `user`      | `{ content, files?, source? }` | What the user typed, with references to any images or audio sent with it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
+| `assistant` | `{ content: ContentBlock[] }`  | What the model produced.                                                                                                                                                                                          |
+| `tool`      | see below                      | The outcome of one tool call.                                                                                                                                                                                     |
+| `edit`      | `{ content, files, dataOps? }` | The user edited session files, schemas or data.                                                                                                                                                                   |
 
 **Content blocks** of an assistant message:
 
@@ -59,17 +59,17 @@ translate to and from it.
 
 **Tool result** (`role: "tool"`) fields:
 
-| Field            | Sent to the model? | Purpose                                                                  |
-| ---------------- | ------------------ | ------------------------------------------------------------------------ |
-| `callId`, `name` | yes (id)           | Which call this answers.                                                 |
-| `content`        | yes                | The serialized result text.                                              |
-| `isError`        | no                 | Marks a failed call. The run continues.                                  |
-| `data`           | no                 | The tool's structured result.                                            |
-| `state`          | no                 | State the tool saved; the latest one is returned to it on its next call. |
-| `entries`        | no                 | Changes the call made to session-scoped files and notes.                 |
-| `dataOps`        | no                 | Changes the call made to session-scoped schemas and data.                |
-| `note`           | yes, indirectly    | The text the user typed on the approval prompt.                          |
-| `prompt`         | no                 | The form the tool showed and how it was answered.                        |
+| Field             | Sent to the model? | Purpose                                                                  |
+| ----------------- | ------------------ | ------------------------------------------------------------------------ |
+| `callId`, `name`  | yes (id)           | Which call this answers.                                                 |
+| `content`         | yes                | The serialized result text.                                              |
+| `isError`         | no                 | Marks a failed call. The run continues.                                  |
+| `data`            | no                 | The tool's structured result.                                            |
+| `state`           | no                 | State the tool saved; the latest one is returned to it on its next call. |
+| `files`           | no                 | Changes the call made to session-scoped files.                           |
+| `dataOps`         | no                 | Changes the call made to session-scoped schemas and data.                |
+| `decisionComment` | yes, indirectly    | The comment the user typed on the approval prompt (a decision comment).  |
+| `prompt`          | no                 | The form the tool showed and how it was answered.                        |
 
 `ModelMessage` is `Message` without `edit`. Before a request is sent, edit
 messages are converted to user text (see below).
@@ -107,21 +107,22 @@ _turn_ is a user message and everything the agent does until the next one
 
 `ChatRequest.media` carries the policy; without it messages are unchanged.
 
-### Folding edits and notes into user text
+### Folding edits and decision comments into user text
 
 Models should not see two user messages in a row because of harness
 bookkeeping. Before sending, the adapter applies two transforms:
 
-- `foldNotes` (`notes.ts`): the approval notes attached to one turn's tool
-  results become one user message after the last result, headed "Notes on this
-  turn's tool calls:", with one line per note. If a user message follows, the
-  notes go at the start of it instead.
-- `foldEdits` (`entries.ts`): a run of consecutive `user` and `edit` messages
+- `foldDecisionComments` (`decision-comments.ts`): the decision comments
+  attached to one turn's tool results become one user message after the last
+  result, headed "The user's comments on this turn's tool calls:", with one line
+  per comment. If a user message follows, the comments go at the start of it
+  instead.
+- `foldEdits` (`files.ts`): a run of consecutive `user` and `edit` messages
   containing at least one edit becomes a single user message. An edit's text is
   a notice such as `[The user changed session file chapter1.md in the app.]`.
 
 Both keep the `files` of the user messages they fold, in order, so a
-message that was joined to an edit or to notes does not lose its files.
+message that was joined to an edit or to decision comments does not lose its files.
 
 ## Events
 
@@ -149,7 +150,7 @@ Session events have `runId: null`.
 | Tool    | `tool.called`                      | `messageId`, `contentIndex`, `callId`, `name`, `arguments`                                                         |
 |         | `tool.malformed`                   | `callId`, `name`, `error`, and (in a loop) `contentIndex`, raw `arguments`                                         |
 |         | `tool.approval_requested`          | `requestId`, `callId`, `name`, `arguments`, `alwaysAsks?`, `agentSetting?`, `review?`                              |
-|         | `tool.approval_resolved`           | `requestId`, `choice`, `note?`                                                                                     |
+|         | `tool.approval_resolved`           | `requestId`, `choice`, `decisionComment?`                                                                          |
 |         | `input.requested`                  | `requestId`, `callId`, `form`                                                                                      |
 |         | `input.resolved`                   | `requestId`, `outcome` (`answered` or `skipped`)                                                                   |
 |         | `request.cancel`                   | `requestId`, `reason`. Withdraws an open approval or form.                                                         |
@@ -176,7 +177,7 @@ Rules that make the stream reliable:
 | Event                        | Data                                                                      | Emitted when                                                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `session.trashed`            | (empty)                                                                   | The session was moved to the trash.                                                                             |
-| `session.entries_changed`    | `messageId`                                                               | The user edited session files or notes (an edit message was added).                                             |
+| `session.files_changed`      | `messageId`                                                               | The user edited session files (an edit message was added).                                                      |
 | `session.data_changed`       | `messageId`                                                               | The user edited session schemas or data.                                                                        |
 | `session.transcript_changed` | `reason` (`edit`, `move`, `delete_branch`, `restore_branch`), `messageId` | The shown line of the transcript changed: an in-place edit, the tip moved, or a branch was deleted or restored. |
 | `session.renamed`            | `title`, `source` (`user`, `model`, `message`), `model`, `usage`          | The title changed.                                                                                              |
@@ -274,7 +275,7 @@ Other llama-server helpers in `llama-server/`:
 
 `ScriptedModel` (`fake-model.ts`) replays scripted responses, one per request,
 including `throw` and `wait` steps, and records every request it receives.
-`@harness/core/testing` exports a fake llama-server and fake shared entries.
+`@harness/core/testing` exports a fake llama-server and fake shared files.
 
 ## Running a model call: `streamMessage`
 
@@ -368,7 +369,7 @@ usage?)` is called with each assistant message just before its
    - `tool.approval_requested` is emitted, then the loop waits on
      `ctx.approve(...)` for as long as it takes (it stops waiting if the run is
      cancelled, emitting `request.cancel`).
-   - `tool.approval_resolved` is emitted. A note (kept only with _once_ or
+   - `tool.approval_resolved` is emitted. A decision comment (kept only with _once_ or
      _deny_) is stored on the result. _Deny_ produces the error result "The user
      denied this tool call."
    - For a call with a review, the answer may include a `selection` of
@@ -378,9 +379,9 @@ usage?)` is called with each assistant message just before its
    - `data` is serialized for the model: a string as is, anything else as JSON.
    - Error text longer than 2,000 characters (`errorLimit`) is truncated for the
      model; the full text is kept in the `tool.result` event.
-   - Session-scoped file, note, schema and data changes are recorded on the
+   - Session-scoped file, schema and data changes are recorded on the
      message **only if the tool succeeded**.
-   - `state`, the approval `note` and the shown form are recorded too.
+   - `state`, the decision comment and the shown form are recorded too.
 7. **Ending the run.** A result with `handback` ends a subagent's run. A thrown
    `ToolRunError` ends the run as failed. Any other thrown error becomes an
    error result `"<tool> failed: <message>"` and the run continues. If the
@@ -433,7 +434,7 @@ the transcript. Without the hook, nothing is taken.
 | `projectId`, `projectName`                                             | The session's project, if any.                                                                         |
 | `mediaSupport`, `blobs`                                                | What the model reads (images, audio); where a tool stores bytes it makes.                              |
 | `workspaces`                                                           | `WorkspaceAccess`: the workspace folders the session can use.                                          |
-| `sharedEntries`, `searchEntries`, `newNoteId`                          | Project and global files and notes; search; id generation.                                             |
+| `sharedFiles`, `searchFiles`                                           | Project and global files; search.                                                                      |
 | `sharedData`, `schemaChecker`                                          | Global, project and agent schemas and data; JSON Schema validation.                                    |
 | `projects`, `agents`, `subagents`                                      | Access for the project, agent and subagent tools.                                                      |
 | `skills`, `copyLimit`                                                  | The skills in scope; the maximum keys per copy or move call.                                           |
@@ -466,7 +467,7 @@ const tool = defineTool({
 ```
 
 `TOOL_GROUPS` lists the groups a tool can belong to, in display order (`files`,
-`workspaces`, `memory`, `structured-data`, `projects`, `agents`, `subagents`,
+`workspaces`, `structured-data`, `projects`, `agents`, `subagents`,
 `sessions`, `skills`, `web`, `mcp`, `utilities`). `RunFacts` describes the run a
 tool would be offered in: `hasSkills`, `isChild`, `canStartSubagent` and
 `hasWorkspaces`. What these fields mean
@@ -500,7 +501,7 @@ What a tool's `execute` receives:
 | `update(partial)`                        | Emits a `tool.update` event.                                                              |
 | `state`                                  | The latest state this tool saved in the transcript.                                       |
 | `projectId`, `projectName`               | The session's project.                                                                    |
-| `entries`                                | `EntryAccess`: files and notes across scopes.                                             |
+| `files`                                  | `FileAccess`: files across scopes.                                                        |
 | `data`                                   | `DataAccess`: schemas and data across scopes.                                             |
 | `projects`                               | `ProjectAccess`: list, current, create, push.                                             |
 | `agents`                                 | `AgentAccess`: list agents, current agent.                                                |
@@ -539,18 +540,18 @@ the plain form with or without brackets. `parseRef`, `plainRef`, `formatRef` and
 `findRefs` read and write them. It is not a URL parser: a name with spaces is
 valid, and a name containing `>` cannot be written inside brackets.
 
-## Files and memory notes (`entries.ts`)
+## Files (`files.ts`)
 
-Files and memory notes (together _entries_) exist in three scopes.
+Files exist in three scopes.
 
-- **session**: stored only in the transcript. `replaySessionEntries(messages)`
-  starts empty and applies every `EntryOp` (`put` or `delete`, with kind, key,
-  value, and file type) found on tool results and edit messages, in order.
-  It also remembers every key ever used so that note ids are never reused.
+- **session**: stored only in the transcript. `replaySessionFiles(messages)`
+  starts empty and applies every `FileOp` (`put` or `delete`, with key,
+  value, and media type) found on tool results and edit messages, in order.
+  It also remembers every key ever used.
 - **project** and **global**: stored by the backend. Core sees them through
-  the `SharedEntries` interface (`list`, `get`, `exists`, `put`, `delete`).
+  the `SharedFiles` interface (`list`, `get`, `put`, `delete`).
 
-`createEntryAccess(...)` builds the `EntryAccess` a tool gets for one call. It
+`createFileAccess(...)` builds the `FileAccess` a tool gets for one call. It
 combines the replayed session state with the shared scopes, only offers the
 `project` scope when the session is in a project, and appends every
 session-scoped change to a list that the loop records on the call's result.
@@ -558,7 +559,7 @@ session-scoped change to a list that the loop records on the call's result.
 [File names and references](#file-names-and-references))
 and `checkFileValue` enforce the name rules and that `json` files parse.
 
-Search is a function supplied by the caller (`EntrySearch`); without it,
+Search is a function supplied by the caller (`FileSearch`); without it,
 search tools fail with "Search is not available."
 
 `chunking.ts` splits file text for search: pieces of at most 1,500 characters,
@@ -568,7 +569,7 @@ inside a sentence only as a last resort; small neighbours are packed together.
 ## Schemas and data (`schemas-data.ts`)
 
 A **schema** is a named JSON Schema with versions; **data** is a JSON value
-made from one schema version. They follow the same pattern as entries.
+made from one schema version. They follow the same pattern as files.
 
 - Four scopes: `global`, `project`, `agent`, `session`; schemas also have a
   read-only `builtin` scope.

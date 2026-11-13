@@ -314,14 +314,14 @@ describe("renderLinearText", () => {
       reasoningEffort: "low",
       usage: { promptTokens: 120, completionTokens: 30 },
     };
-    // A tool result with the user's approval note and a form.
+    // A tool result with the user's decision comment and a form.
     s.messages[2] = msg("tr1", 4, "A", {
       role: "tool",
       callId: "c1",
       name: "echo",
       content: "result text",
       isError: false,
-      note: { text: "ok but be careful", choice: "once" },
+      decisionComment: { text: "ok but be careful", choice: "once" },
       data: { structured: true },
     });
     s.runs[0] = run("A", {
@@ -367,7 +367,7 @@ describe("renderLinearText", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("does not shorten anything: events, tools, notes", () => {
+  it("does not shorten anything: events, tools, decision comments", () => {
     const text = renderLinearText(detailed());
     // A long error is whole, not cut at the table's width.
     expect(text).toContain(LONG);
@@ -380,7 +380,7 @@ describe("renderLinearText", () => {
     expect(text).toContain(
       "model qwen · reasoning low · tokens in 120 / out 30",
     );
-    // The approval note and the structured result, which the content lacks.
+    // The decision comment and the structured result, which the content lacks.
     expect(text).toContain("[details]");
     expect(text).toContain("ok but be careful");
     expect(text).toContain('"structured": true');

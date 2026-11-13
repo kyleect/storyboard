@@ -95,13 +95,7 @@ function Body({ item }: { item: LinearItem }) {
   );
 }
 
-function Entry({
-  item,
-  runs,
-}: {
-  item: LinearItem;
-  runs: Map<string, string>;
-}) {
+function File({ item, runs }: { item: LinearItem; runs: Map<string, string> }) {
   const [json, setJson] = useState(false);
   const color =
     item.isError === true && item.kind !== "event" ? "red" : COLORS[item.kind];
@@ -218,7 +212,7 @@ export function LinearView({ debug }: { debug: SessionDebug }) {
 
       {items.length === 0 && <Text c="dimmed">Nothing has happened yet.</Text>}
       {shown.map((item) => (
-        <Entry key={item.key} item={item} runs={runNumbers} />
+        <File key={item.key} item={item} runs={runNumbers} />
       ))}
     </Stack>
   );

@@ -171,7 +171,7 @@ export const workspaceList = defineTool({
           folder: at.path,
           entries,
           ...(entries.length >= 2000
-            ? { note: "The list was cut at 2,000 entries." }
+            ? { guidance: "The list was cut at 2,000 entries." }
             : {}),
         },
       };
@@ -224,7 +224,7 @@ export const workspaceRead = defineTool({
           data: {
             ...base,
             size: read.size,
-            note: "This is a binary file, so there is no text to read.",
+            guidance: "This is a binary file, so there is no text to read.",
           },
         };
       }
@@ -232,7 +232,7 @@ export const workspaceRead = defineTool({
         const kind = mediaKindOf(read.mediaType);
         if (!kind) {
           return {
-            data: { ...base, note: "This file cannot be shown to you." },
+            data: { ...base, guidance: "This file cannot be shown to you." },
           };
         }
         if (ctx.mediaSupport && !ctx.mediaSupport[kind]) {
@@ -241,7 +241,7 @@ export const workspaceRead = defineTool({
               ...base,
               mediaType: read.mediaType,
               size: read.size,
-              note: `The model in use cannot take ${kind} files, so it cannot be read.`,
+              guidance: `The model in use cannot take ${kind} files, so it cannot be read.`,
             },
           };
         }
@@ -250,7 +250,7 @@ export const workspaceRead = defineTool({
             ...base,
             mediaType: read.mediaType,
             size: read.size,
-            note: `This is ${kind === "image" ? "an image" : "an audio file"}. It follows this result.`,
+            guidance: `This is ${kind === "image" ? "an image" : "an audio file"}. It follows this result.`,
           },
           media: [
             {
@@ -274,7 +274,7 @@ export const workspaceRead = defineTool({
           length: read.total,
           ...(end < read.total
             ? {
-                note: `Characters ${read.offset} to ${end} of ${read.total}. Read on with offset ${end}.`,
+                guidance: `Characters ${read.offset} to ${end} of ${read.total}. Read on with offset ${end}.`,
               }
             : {}),
         },
@@ -321,7 +321,8 @@ export const workspaceSearch = defineTool({
         ...(found.notice ? { notice: found.notice } : {}),
         ...(files === 0
           ? {
-              note: "Nothing in these workspaces is indexed: the user chooses what to search on the Workspaces page. workspace_list and workspace_read still reach every file.",
+              guidance:
+                "Nothing in these workspaces is indexed: the user chooses what to search on the Workspaces page. workspace_list and workspace_read still reach every file.",
             }
           : {}),
       },

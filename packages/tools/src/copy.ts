@@ -12,11 +12,11 @@ import {
   type ToolContext,
   type ToolOutput,
 } from "@harness/core";
-import { scopeLabel } from "./entries.js";
+import { scopeLabel } from "./files.js";
 import { fail, guarded, notDone } from "./results.js";
 
 /*
- * Copy and move for files and memory notes (agent tools design, 3.2).
+ * Copy and move for files (agent tools design, 3.2).
  *
  * - Within the session's own scopes (session, project, global), any
  *   direction. To another project, only from the session or project scope:
@@ -26,8 +26,7 @@ import { fail, guarded, notDone } from "./results.js";
  *   form (tool prompts D10) with the model's suggestions preselected (Q8). The
  *   form warns when the suggested destination already has a file with that key
  *   (Q9); a key that is there when the call runs is skipped (bulk conflicts).
- * - A copied note always gets a new id (Q10). A move deletes the original only
- *   for what was copied (point 1).
+ * - A move deletes the original only for what was copied (point 1).
  */
 
 const SCOPES = ["session", "project", "global"] as const;
@@ -42,18 +41,18 @@ type Destination =
   | { kind: "scope"; scope: Scope }
   | { kind: "project"; project: ProjectSummary };
 
-/** What a file or note holds; a binary file has `blob` and no value. */
+/** What a file holds; a binary file has `blob` and no value. */
 interface Item {
   mediaType?: MediaType;
   value: string;
   blob?: BlobRef;
 }
 
-/** What differs between files and notes. */
+/** How files are listed, read, written and removed. */
 interface Adapter {
-  noun: "file" | "note";
+  noun: "file";
   plural: string;
-  /** Keys or ids in a scope. */
+  /** Keys in a scope. */
   list(ctx: ToolContext, scope: Scope): string[];
   /** The item, undefined when it is not there. */
   read(ctx: ToolContext, scope: Scope, name: string): Item | undefined;
@@ -61,7 +60,7 @@ interface Adapter {
   writeScope(ctx: ToolContext, scope: Scope, name: string, item: Item): string;
   /** Sends to another project; returns the name it has there. */
   writeProject(push: ProjectPush, name: string, item: Item): string;
-  /** Whether the destination already has the name (files only). */
+  /** Whether the destination already has the name. */
   hasScope(ctx: ToolContext, scope: Scope, name: string): boolean;
   hasProject(push: ProjectPush, name: string): boolean;
   remove(ctx: ToolContext, scope: Scope, name: string): void;
@@ -70,9 +69,9 @@ interface Adapter {
 const fileAdapter: Adapter = {
   noun: "file",
   plural: "files",
-  list: (ctx, scope) => ctx.entries.listFiles(scope).map((f) => f.key),
+  list: (ctx, scope) => ctx.files.listFiles(scope).map((f) => f.key),
   read: (ctx, scope, name) => {
-    const file = ctx.entries.readFile(scope, name);
+    const file = ctx.files.readFile(scope, name);
     return file
       ? {
           mediaType: file.mediaType,
@@ -83,14 +82,14 @@ const fileAdapter: Adapter = {
   },
   writeScope: (ctx, scope, name, item) => {
     if (item.blob) {
-      ctx.entries.putBlob(
+      ctx.files.putBlob(
         scope,
         name,
         item.mediaType ?? "text/markdown",
         item.blob,
       );
     } else {
-      ctx.entries.writeFile(
+      ctx.files.writeFile(
         scope,
         name,
         item.mediaType ?? "text/markdown",
@@ -108,35 +107,15 @@ const fileAdapter: Adapter = {
     );
     return name;
   },
-  hasScope: (ctx, scope, name) =>
-    ctx.entries.readFile(scope, name) !== undefined,
+  hasScope: (ctx, scope, name) => ctx.files.readFile(scope, name) !== undefined,
   hasProject: (push, name) => push.hasFile(name),
   remove: (ctx, scope, name) => {
-    ctx.entries.deleteFile(scope, name);
-  },
-};
-
-const noteAdapter: Adapter = {
-  noun: "note",
-  plural: "notes",
-  list: (ctx, scope) => ctx.entries.listNotes(scope).map((n) => n.id),
-  read: (ctx, scope, name) => {
-    const note = ctx.entries.listNotes(scope).find((n) => n.id === name);
-    return note ? { value: note.text } : undefined;
-  },
-  writeScope: (ctx, scope, _name, item) =>
-    ctx.entries.addNote(scope, item.value),
-  writeProject: (push, _name, item) => push.addNote(item.value),
-  // A copied note gets a new id, so it never clashes (Q10).
-  hasScope: () => false,
-  hasProject: () => false,
-  remove: (ctx, scope, name) => {
-    ctx.entries.deleteNote(scope, name);
+    ctx.files.deleteFile(scope, name);
   },
 };
 
 interface Input {
-  /** Keys or ids. Left out when `all` is true. */
+  /** Keys. Left out when `all` is true. */
   names: string[] | undefined;
   all: boolean | undefined;
   from: Scope | undefined;
@@ -202,7 +181,7 @@ async function transfer(
   // The destinations: the session's own scopes, and other projects.
   const others = ctx.projects.list().filter((p) => p.id !== ctx.projectId);
   let suggestedTo: string | undefined =
-    input.to && ctx.entries.scopes.includes(input.to) ? input.to : undefined;
+    input.to && ctx.files.scopes.includes(input.to) ? input.to : undefined;
   if (input.toProject !== undefined) {
     if (input.toProject === ctx.projectId && ctx.projectId !== null) {
       suggestedTo = "project";
@@ -218,7 +197,7 @@ async function transfer(
   }
 
   // The source: the suggestion, else the one scope that has everything named.
-  const scopes = ctx.entries.scopes;
+  const scopes = ctx.files.scopes;
   let suggestedFrom: Scope | undefined =
     input.from && scopes.includes(input.from) ? input.from : undefined;
   if (suggestedFrom === undefined && names) {
@@ -291,7 +270,7 @@ async function transfer(
       move
         ? "The originals are deleted after they are copied."
         : "The originals are kept.",
-      "Only session and project entries can be sent to another project.",
+      "Only session and project files can be sent to another project.",
       ...warnings,
     ].join(" "),
     fields: [
@@ -339,7 +318,7 @@ async function transfer(
   }
   if (dest.kind === "project" && from === "global") {
     return fail(
-      `Nothing was ${move ? "moved" : "copied"}: only session and project entries can be sent to another project.`,
+      `Nothing was ${move ? "moved" : "copied"}: only session and project files can be sent to another project.`,
       "rejected",
       target,
     );
@@ -367,31 +346,32 @@ async function transfer(
       skipped.push(name);
       continue;
     }
-    const written =
-      dest.kind === "project" && push
-        ? adapter.writeProject(push, name, item)
-        : adapter.writeScope(
-            ctx,
-            (dest as { kind: "scope"; scope: Scope }).scope,
-            name,
-            item,
-          );
-    done.push(noun === "note" ? { id: name, newId: written } : name);
+    if (dest.kind === "project" && push) {
+      adapter.writeProject(push, name, item);
+    } else {
+      adapter.writeScope(
+        ctx,
+        (dest as { kind: "scope"; scope: Scope }).scope,
+        name,
+        item,
+      );
+    }
+    done.push(name);
     if (move) adapter.remove(ctx, from, name);
   }
 
-  const notes: string[] = [];
+  const choices: string[] = [];
   const chosenTo =
     dest.kind === "project"
       ? `${PROJECT_PREFIX}${dest.project.id}`
       : dest.scope;
   if (suggestedFrom && from !== suggestedFrom) {
-    notes.push(
+    choices.push(
       `The user chose the ${from} scope as the source instead of your suggestion (${suggestedFrom}).`,
     );
   }
   if (suggestedTo && chosenTo !== suggestedTo) {
-    notes.push("The user chose a different destination than you suggested.");
+    choices.push("The user chose a different destination than you suggested.");
   }
   return {
     data: {
@@ -408,10 +388,7 @@ async function transfer(
           }
         : {}),
       ...(notFound.length > 0 ? { notFound } : {}),
-      ...(noun === "note" && done.length > 0
-        ? { note: "Each copied note has a new id (newId)." }
-        : {}),
-      ...(notes.length > 0 ? { userChoice: notes.join(" ") } : {}),
+      ...(choices.length > 0 ? { userChoice: choices.join(" ") } : {}),
     },
   };
 }
@@ -433,14 +410,14 @@ const ToProject = z
   .min(1)
   .optional()
   .describe(
-    "The id (from projects_list) of another project to send them to. Only session and project entries can be sent.",
+    "The id (from projects_list) of another project to send them to. Only session and project files can be sent.",
   );
 const All = z
   .boolean()
   .optional()
-  .describe("true: every entry in the source scope, instead of naming them.");
+  .describe("true: every file in the source scope, instead of naming them.");
 
-/** The keys or ids a call names; its length is also checked against the setting. */
+/** The keys a call names; its length is also checked against the setting. */
 const names = (what: string) =>
   z
     .array(z.string().min(1))
@@ -451,39 +428,24 @@ const names = (what: string) =>
       `The ${what} to name. At most the copy limit (20 unless the user changed it); use all for more.`,
     );
 
-function build(
-  adapter: Adapter,
-  move: boolean,
-  field: "keys" | "ids",
-  describe: string,
-): Tool {
+function build(adapter: Adapter, move: boolean, describe: string): Tool {
   const verb = move ? "move" : "copy";
-  const schema =
-    field === "keys"
-      ? z.object({
-          keys: names("file keys"),
-          all: All,
-          from: From,
-          to: To,
-          toProject: ToProject,
-        })
-      : z.object({
-          ids: names("note ids"),
-          all: All,
-          from: From,
-          to: To,
-          toProject: ToProject,
-        });
+  const schema = z.object({
+    keys: names("file keys"),
+    all: All,
+    from: From,
+    to: To,
+    toProject: ToProject,
+  });
   return defineTool({
-    name: `${adapter.noun === "file" ? "files" : "memory"}_${verb}`,
+    name: `files_${verb}`,
     description: describe,
     input: schema,
     approval: "always",
-    group: adapter.noun === "file" ? "files" : "memory",
+    group: "files",
     execute: (raw, ctx) => {
       const i = raw as {
         keys?: string[];
-        ids?: string[];
         all?: boolean;
         from?: Scope;
         to?: Scope;
@@ -494,7 +456,7 @@ function build(
           adapter,
           move,
           {
-            names: i.keys ?? i.ids,
+            names: i.keys,
             all: i.all,
             from: i.from,
             to: i.to,
@@ -508,31 +470,16 @@ function build(
 }
 
 const COMMON =
-  "Name them, or set all to true for every one in the source scope. Suggest where from and to; the user decides in a form. To send them to another project, give its id from projects_list in toProject; only session and project entries can be sent, never pulled from another project. The user must approve each call.";
+  "Name them, or set all to true for every one in the source scope. Suggest where from and to; the user decides in a form. To send them to another project, give its id from projects_list in toProject; only session and project files can be sent, never pulled from another project. The user must approve each call.";
 
 export const filesCopy = build(
   fileAdapter,
   false,
-  "keys",
   `Copies files to another scope or project and keeps the originals. ${COMMON} Files whose key already exists in the destination are skipped.`,
 );
 export const filesMove = build(
   fileAdapter,
   true,
-  "keys",
   `Moves files to another scope or project: copies them, then deletes the originals that were copied. ${COMMON} Files whose key already exists in the destination are skipped and stay where they are.`,
 );
-export const memoryCopy = build(
-  noteAdapter,
-  false,
-  "ids",
-  `Copies memory notes to another scope or project and keeps the originals. ${COMMON} Each copy gets a new id.`,
-);
-export const memoryMove = build(
-  noteAdapter,
-  true,
-  "ids",
-  `Moves memory notes to another scope or project: copies them, then deletes the originals. ${COMMON} Each copy gets a new id.`,
-);
-
-export const copyTools = [filesCopy, memoryCopy, filesMove, memoryMove];
+export const copyTools = [filesCopy, filesMove];

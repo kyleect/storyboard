@@ -8,7 +8,7 @@ import { act, render, screen } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "./api";
-import { entryKeys, projectKeys, runKeys, sessionKeys } from "./queries";
+import { fileKeys, projectKeys, runKeys, sessionKeys } from "./queries";
 import { useAppEvents, useLive, useSessionEvents } from "./live";
 import { EditableTitle } from "./routes/EditableTitle";
 
@@ -468,14 +468,6 @@ describe("tool.result of a files tool", () => {
 
   it("refreshes every scope's files, since the Files view shows project and global files too", () => {
     const invalidate = pushResult("files_write");
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: entryKeys.all });
-  });
-
-  it("refreshes only the session's notes for a memory tool", () => {
-    const invalidate = pushResult("memory_write");
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: entryKeys.inScope({ scope: "session", id: "s1" }),
-    });
-    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: entryKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: fileKeys.all });
   });
 });

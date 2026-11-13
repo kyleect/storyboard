@@ -1,7 +1,7 @@
 import type { ControlResult } from "../control.js";
-import { foldEdits } from "../entries.js";
+import { foldEdits } from "../files.js";
 import { foldMedia } from "../media.js";
-import { foldNotes } from "../notes.js";
+import { foldDecisionComments } from "../decision-comments.js";
 import type { ModelMessage, TokenInfo } from "../messages.js";
 import type { ResolvedFile } from "../model.js";
 import type {
@@ -71,7 +71,7 @@ export class LlamaServerAdapter implements ModelAdapter {
   ): AsyncGenerator<ModelChunk> {
     const body: Record<string, unknown> = {
       messages: foldEdits(
-        foldNotes(foldMedia(request.messages, request.media)),
+        foldDecisionComments(foldMedia(request.messages, request.media)),
       ).map((m) => toOpenAiMessage(m, request.resolveFile)),
       stream: true,
       stream_options: { include_usage: true },

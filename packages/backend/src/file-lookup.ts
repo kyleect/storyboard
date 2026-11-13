@@ -1,14 +1,14 @@
 import {
   mediaKindOf,
   parseRef,
-  replaySessionEntries,
+  replaySessionFiles,
   type BlobRef,
   type MediaType,
   type ResolvedFile,
-  type SessionEntries,
+  type SessionFiles,
 } from "@harness/core";
 import { getBlob } from "./blobs.js";
-import type { EntryStore } from "./entries-store.js";
+import type { FileStore } from "./files-store.js";
 import type { Store } from "./store.js";
 
 /*
@@ -38,11 +38,11 @@ export type WorkspaceMedia = (
  */
 export function fileLookup(
   store: Store,
-  entries: EntryStore | undefined,
+  files: FileStore | undefined,
   sessionId: string,
   workspaces?: WorkspaceMedia,
 ): (ref: string) => FoundFile | undefined {
-  let state: SessionEntries | undefined;
+  let state: SessionFiles | undefined;
   let seen = "";
   // A switch between branches changes the tip and no row count; a run adds
   // rows. Either means the transcript must be read again.
@@ -65,11 +65,11 @@ export function fileLookup(
       const n = (version.get(sessionId) as { v: string } | undefined)?.v ?? "";
       if (!state || n !== seen) {
         seen = n;
-        state = replaySessionEntries(
+        state = replaySessionFiles(
           store.listMessages(sessionId).map((m) => m.message),
         );
       }
-      const file = state.file.get(parsed.path);
+      const file = state.files.get(parsed.path);
       return file
         ? {
             mediaType: file.mediaType ?? "text/plain",
@@ -77,13 +77,13 @@ export function fileLookup(
           }
         : undefined;
     }
-    if (!entries) return undefined;
+    if (!files) return undefined;
     const projectId =
       parsed.location === "global"
         ? null
         : (store.getSession(sessionId)?.project_id ?? undefined);
     if (projectId === undefined) return undefined;
-    const row = entries.get("file", projectId, parsed.path);
+    const row = files.get(projectId, parsed.path);
     if (!row || row.deleted_at !== null || row.media_type === null) {
       return undefined;
     }
@@ -99,11 +99,11 @@ export function fileLookup(
 /** The file's kind, media type and bytes as base64, for a model request. */
 export function fileResolver(
   store: Store,
-  entries: EntryStore | undefined,
+  files: FileStore | undefined,
   sessionId: string,
   workspaces?: WorkspaceMedia,
 ): (ref: string) => ResolvedFile | undefined {
-  const find = fileLookup(store, entries, sessionId, workspaces);
+  const find = fileLookup(store, files, sessionId, workspaces);
   return (ref) => {
     const found = find(ref);
     const kind = found && mediaKindOf(found.mediaType);

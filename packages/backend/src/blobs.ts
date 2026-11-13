@@ -46,8 +46,8 @@ export function sweepBlobs(db: Database): number {
   const candidates = db
     .prepare(
       `SELECT hash FROM blobs
-       WHERE hash NOT IN (SELECT blob_hash FROM entries WHERE blob_hash IS NOT NULL)
-         AND hash NOT IN (SELECT blob_hash FROM entry_versions WHERE blob_hash IS NOT NULL)`,
+       WHERE hash NOT IN (SELECT blob_hash FROM files WHERE blob_hash IS NOT NULL)
+         AND hash NOT IN (SELECT blob_hash FROM file_versions WHERE blob_hash IS NOT NULL)`,
     )
     .all() as { hash: string }[];
   const used = db.prepare(

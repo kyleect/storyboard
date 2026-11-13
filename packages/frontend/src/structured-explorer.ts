@@ -1,5 +1,5 @@
 import type { SchemaInfo, SchemaScope } from "@harness/core";
-import type { DataItem, EntryScope } from "./api";
+import type { DataItem, FileScope } from "./api";
 import {
   loadViewIn,
   nodeValue,
@@ -245,8 +245,8 @@ export type SavedView = SavedViewOf<TabState>;
 
 const KINDS = ["schema", "data"] as const;
 
-export const loadView = (page: EntryScope): SavedView =>
+export const loadView = (page: FileScope): SavedView =>
   loadViewIn("structured", page, KINDS);
 
-export const saveView = (page: EntryScope, view: SavedView): void =>
+export const saveView = (page: FileScope, view: SavedView): void =>
   saveViewIn("structured", page, view);

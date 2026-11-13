@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Entry } from "./api";
+import type { StoredFile } from "./api";
 import {
   buildTree,
   closeTab,
@@ -26,7 +26,7 @@ const must = <T>(v: T | undefined): T => {
 const nth = (nodes: TreeNode[] | undefined, i: number): TreeNode =>
   must(nodes?.[i]);
 
-const file = (key: string, extra: Partial<Entry> = {}): Entry => ({
+const file = (key: string, extra: Partial<StoredFile> = {}): StoredFile => ({
   key,
   mediaType: "text/plain",
   value: "",

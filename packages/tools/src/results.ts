@@ -1,4 +1,4 @@
-import { EntryError, type ToolOutput } from "@harness/core";
+import { FileError, type ToolOutput } from "@harness/core";
 
 /*
  * Results shared by the projects, agents and copy tools. The errors console
@@ -35,7 +35,7 @@ export const notDone = (text: string): ToolOutput => ({
   isError: true,
 });
 
-/** An `EntryError` (a bad key, no project scope) becomes an error result. */
+/** A `FileError` (a bad key, no project scope) becomes an error result. */
 export async function guarded(
   target: Target,
   run: () => Promise<ToolOutput>,
@@ -43,7 +43,7 @@ export async function guarded(
   try {
     return await run();
   } catch (err) {
-    if (err instanceof EntryError) return fail(err.message, "rejected", target);
+    if (err instanceof FileError) return fail(err.message, "rejected", target);
     throw err;
   }
 }

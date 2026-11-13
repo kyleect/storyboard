@@ -1,4 +1,4 @@
-import type { EntryScope } from "./api";
+import type { FileScope } from "./api";
 
 /*
  * What the editor-style explorers share: the Files view
@@ -13,7 +13,7 @@ export type RootId = "session" | "project" | "global";
 
 export interface Root {
   id: RootId;
-  scope: EntryScope;
+  scope: FileScope;
   label: string;
 }
 
@@ -35,7 +35,7 @@ export const rootLabel = (id: RootId): string => LABEL[id];
  * ones.
  */
 export function rootsFor(
-  page: EntryScope,
+  page: FileScope,
   projectId: string | null | undefined,
 ): Root[] {
   const roots: Root[] = [];
@@ -60,7 +60,7 @@ export function rootsFor(
 }
 
 /** True when `target` is a higher scope than the page it is edited from. */
-export const isHigherScope = (target: EntryScope, page: EntryScope): boolean =>
+export const isHigherScope = (target: FileScope, page: FileScope): boolean =>
   RANK[target.scope] > RANK[page.scope];
 
 export const isRootId = (v: unknown): v is RootId =>
@@ -215,7 +215,7 @@ export const MAX_WIDTH = 520;
 export const clampWidth = (w: number): number =>
   Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(w)));
 
-const storageKey = (namespace: string, page: EntryScope): string =>
+const storageKey = (namespace: string, page: FileScope): string =>
   `harness.${namespace}.${page.scope}.${"id" in page ? page.id : "-"}`;
 
 function parseTab<K extends string>(
@@ -241,7 +241,7 @@ function parseTab<K extends string>(
  */
 export function loadViewIn<K extends string>(
   namespace: string,
-  page: EntryScope,
+  page: FileScope,
   kinds: readonly K[],
 ): SavedViewOf<ExplorerTab<K>> {
   const empty: SavedViewOf<ExplorerTab<K>> = {
@@ -284,7 +284,7 @@ export function loadViewIn<K extends string>(
 
 export function saveViewIn<T extends ExplorerTab<string>>(
   namespace: string,
-  page: EntryScope,
+  page: FileScope,
   view: SavedViewOf<T>,
 ): void {
   try {

@@ -45,7 +45,7 @@ export interface LinearItem {
   /** For an assistant message: calls that started a subagent, by call id. */
   calls?: Record<string, string>;
   /**
-   * What the message holds besides its text: a tool result's approval note,
+   * What the message holds besides its text: a tool result's decision comment,
    * form answers, file and data changes and saved state; an edit's changes.
    */
   extras?: Record<string, unknown>;
@@ -72,7 +72,7 @@ const ANCHORS: ReadonlySet<string> = new Set([
   "message.finished",
   "tool.result",
   "user.message",
-  "session.entries_changed",
+  "session.files_changed",
   "session.data_changed",
   "session.transcript_changed",
 ]);
@@ -189,9 +189,9 @@ function messageItem(
       const dataText =
         typeof msg.data === "string" ? msg.data : JSON.stringify(msg.data);
       const extras = present({
-        note: msg.note,
+        decisionComment: msg.decisionComment,
         prompt: msg.prompt,
-        entries: msg.entries,
+        files: msg.files,
         dataOps: msg.dataOps,
         state: msg.state,
         data:
@@ -209,7 +209,7 @@ function messageItem(
       };
     }
     case "edit": {
-      const extras = present({ entries: msg.entries, dataOps: msg.dataOps });
+      const extras = present({ files: msg.files, dataOps: msg.dataOps });
       return {
         ...base,
         kind: "edit",
@@ -374,7 +374,7 @@ export function filterLinear(
 const READING_NOTES = [
   "Items are in the order they happened. Each run starts with the system prompt and tools it was given.",
   "A subagent's items are marked and sit where it ran; a top-level run's own request does not include its subagents' messages.",
-  "The model is sent edit messages merged into neighbouring user messages, and a tool result's note as a user message after that turn's results.",
+  "The model is sent edit messages merged into neighbouring user messages, and the comments in a tool result's decision comment as a user message after that turn's results.",
   "Streaming deltas and tool progress updates are left out. Messages are complete, and every event is given in full as JSON.",
 ];
 

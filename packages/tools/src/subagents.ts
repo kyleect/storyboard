@@ -91,8 +91,8 @@ export const startSubagent = defineTool({
       const found =
         ref &&
         ref.location !== "workspace" &&
-        ctx.entries.scopes.includes(ref.location)
-          ? ctx.entries.readFile(ref.location, ref.path)
+        ctx.files.scopes.includes(ref.location)
+          ? ctx.files.readFile(ref.location, ref.path)
           : undefined;
       if (!ref || ref.location === "workspace" || !found) {
         return fail(`There is no file ${given} to attach.`, "not_found", {

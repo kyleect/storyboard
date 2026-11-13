@@ -32,11 +32,11 @@ src/
   run.ts, loop.ts      streamMessage / runSingleCall, and runLoop (the agent loop)
   tools.ts             Tool, defineTool, ToolContext, TOOL_GROUPS, access interfaces
   forms.ts             input forms (JSON Schema subset): read, validate, describe
-  entries.ts           files and memory notes: access API and replay
+  files.ts           files: access API and replay
   schemas-data.ts      schemas and data: access API and replay
   schema-features.ts   the JSON Schema subset schemas may use
   review.ts, changes.ts  describing and applying proposed changes
-  notes.ts, media.ts   approval notes and media folded into model requests
+  decision-comments.ts, media.ts   decision comments and media folded into model requests
   message-state.ts     rebuild a message from events (shared with the frontend)
   fake-model.ts        ScriptedModel for tests
   llama-server/        adapter, models, props, embeddings, SSE reader, fake server
@@ -50,10 +50,10 @@ src/
   the event tables in `docs/core.md`. Keep the reliability rules: `*.end` and
   `message.finished` carry the full authoritative content and replace what was
   built from deltas.
-- **Messages.** A tool result's `isError`, `data`, `state`, `entries`,
-  `dataOps`, `note` and `prompt` fields are not sent to the model; only
+- **Messages.** A tool result's `isError`, `data`, `state`, `files`,
+  `dataOps`, `decisionComment` and `prompt` fields are not sent to the model; only
   `content` is. Models must never see two user messages in a row because of
-  harness bookkeeping: `foldNotes` and `foldEdits` exist for that.
+  harness bookkeeping: `foldDecisionComments` and `foldEdits` exist for that.
 - **Tools.** Define them with `defineTool` and a Zod input. Report expected
   failures as results (`isError: true`), not exceptions. Adding a field to
   `ToolContext` means every test that builds one needs it; many tests build the
@@ -71,8 +71,8 @@ src/
 ## Testing
 
 - Tests run in the Vitest `node` project (`packages/*/src/**/*.test.ts`).
-- Use `ScriptedModel` (`fake-model.ts`) to script a run, `FakeSharedEntries`
-  (`fake-shared-entries.ts`) for shared files, and the fake llama-server for
+- Use `ScriptedModel` (`fake-model.ts`) to script a run, `FakeSharedFiles`
+  (`fake-shared-files.ts`) for shared files, and the fake llama-server for
   adapter tests. Do not call a real llama-server from a test.
 - `loop.test.ts` and `run.test.ts` show the pattern for driving `runLoop` and
   checking the emitted events.

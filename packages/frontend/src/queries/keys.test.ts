@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentKeys,
   dataKeys,
-  entryKeys,
+  fileKeys,
   errorKeys,
   mcpKeys,
   modelKeys,
@@ -171,37 +171,27 @@ describe("skill keys", () => {
   });
 });
 
-describe("entry keys", () => {
+describe("file keys", () => {
   const session = { scope: "session", id: "s1" } as const;
   const other = { scope: "session", id: "s2" } as const;
   const keys: Keys = {
-    fileList: entryKeys.list(session, "file", false),
-    fileDetail: entryKeys.detail(session, "file", "a.md"),
-    noteList: entryKeys.list(session, "note", false),
-    noteDetail: entryKeys.detail(session, "note", "n1"),
-    otherFileList: entryKeys.list(other, "file", false),
-    globalFileList: entryKeys.list({ scope: "global" }, "file", false),
+    fileList: fileKeys.list(session, false),
+    fileDetail: fileKeys.detail(session, "a.md"),
+    otherFileList: fileKeys.list(other, false),
+    globalFileList: fileKeys.list({ scope: "global" }, false),
   };
 
-  it("inScope(scope) reaches that scope's files and notes only", async () => {
-    expect(await reach(entryKeys.inScope(session), keys)).toEqual([
+  it("inScope(scope) reaches that scope's files only", async () => {
+    expect(await reach(fileKeys.inScope(session), keys)).toEqual([
       "fileDetail",
       "fileList",
-      "noteDetail",
-      "noteList",
     ]);
   });
 
-  it("ofKind, lists and details narrow it down", async () => {
-    expect(await reach(entryKeys.ofKind(session, "file"), keys)).toEqual([
+  it("lists and details narrow it down", async () => {
+    expect(await reach(fileKeys.lists(session), keys)).toEqual(["fileList"]);
+    expect(await reach(fileKeys.details(session), keys)).toEqual([
       "fileDetail",
-      "fileList",
-    ]);
-    expect(await reach(entryKeys.lists(session, "file"), keys)).toEqual([
-      "fileList",
-    ]);
-    expect(await reach(entryKeys.details(session, "note"), keys)).toEqual([
-      "noteDetail",
     ]);
   });
 });

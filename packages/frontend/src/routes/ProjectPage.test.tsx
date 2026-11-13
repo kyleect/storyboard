@@ -70,7 +70,7 @@ describe("a project's page", () => {
     await screen.findByText("sessions table p1");
     const href = (name: string) =>
       screen.getByRole("link", { name }).getAttribute("href");
-    expect(href("Files & memory")).toBe("/projects/$projectId/files");
+    expect(href("Files")).toBe("/projects/$projectId/files");
     expect(href("Agents")).toBe("/projects/$projectId/agents");
     expect(href("Skills")).toBe("/projects/$projectId/skills");
     expect(href("Structured Data")).toBe("/projects/$projectId/data");

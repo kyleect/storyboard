@@ -340,7 +340,7 @@ export class Store {
   /**
    * The agents that ran in each of the sessions, subagents' runs included,
    * by their current name, in the order each first ran. Sessions where no
-   * agent ran have no entry.
+   * agent ran have no file.
    */
   private sessionAgents(
     sessionIds: readonly string[],
@@ -532,10 +532,10 @@ export class Store {
    */
   purgeSession(id: string) {
     this.db.transaction(() => {
-      // Project and global entry versions it made are kept, unlinked.
+      // Project and global file versions it made are kept, unlinked.
       this.db
         .prepare(
-          "UPDATE entry_versions SET session_id = NULL, run_id = NULL WHERE session_id = ?",
+          "UPDATE file_versions SET session_id = NULL, run_id = NULL WHERE session_id = ?",
         )
         .run(id);
       // So are the data versions it made (schemas and data design, 24).
@@ -749,10 +749,10 @@ export class Store {
       for (const s of ids) this.purgeSession(s.id);
       this.db
         .prepare(
-          "DELETE FROM entry_versions WHERE entry_id IN (SELECT id FROM entries WHERE project_id = ?)",
+          "DELETE FROM file_versions WHERE file_id IN (SELECT id FROM files WHERE project_id = ?)",
         )
         .run(id);
-      this.db.prepare("DELETE FROM entries WHERE project_id = ?").run(id);
+      this.db.prepare("DELETE FROM files WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM folders WHERE project_id = ?").run(id);
       this.db
         .prepare("DELETE FROM chunks WHERE scope = 'project' AND owner_id = ?")

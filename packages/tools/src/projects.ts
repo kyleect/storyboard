@@ -23,7 +23,7 @@ import { fail, guarded, notDone } from "./results.js";
 export const projectsList = defineTool({
   name: "projects_list",
   description:
-    "Lists projects (not those in the trash) with their id, name and description. Use an id as the destination of files_copy, memory_copy, files_move or memory_move.",
+    "Lists projects (not those in the trash) with their id, name and description. Use an id as the destination of files_copy or files_move.",
   input: z.object({}),
   approval: "never",
   group: "projects",
@@ -50,19 +50,19 @@ export const projectView = defineTool({
               systemPrompt: project.systemPrompt,
             },
           }
-        : { project: null, note: "This session is not in a project." },
+        : { project: null, guidance: "This session is not in a project." },
     };
   },
 });
 
-/** Where a field's checkbox says how many entries it covers. */
+/** Where a field's checkbox says how many files it covers. */
 const countText = (n: number, noun: string) =>
   `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 export const projectCreate = defineTool({
   name: "project_create",
   description:
-    "Creates a new project from this session. Suggest a name, description and system prompt, leaving out what you don't know; the user edits them in a form and chooses what is copied into the new project: this session's files, memory notes, schemas and data, and the agent this session is using (offered unless it is the built-in Dispatcher or there is none). A copied agent can be started as a subagent, and a note is added to the end of the project's system prompt telling the Dispatcher to hand the project's work to it, so do not write that yourself. The project can then be opened and used at once. The session itself is not changed. The user must approve each call.",
+    "Creates a new project from this session. Suggest a name, description and system prompt, leaving out what you don't know; the user edits them in a form and chooses what is copied into the new project: this session's files, schemas and data, and the agent this session is using (offered unless it is the built-in Dispatcher or there is none). A copied agent can be started as a subagent, and a note is added to the end of the project's system prompt telling the Dispatcher to hand the project's work to it, so do not write that yourself. The project can then be opened and used at once. The session itself is not changed. The user must approve each call.",
   input: z.object({
     name: z.string().optional().describe("A name to suggest."),
     description: z.string().optional().describe("A description to suggest."),
@@ -77,8 +77,7 @@ export const projectCreate = defineTool({
   group: "projects",
   execute: ({ name, description, systemPrompt }, ctx) =>
     guarded({}, async () => {
-      const files = ctx.entries.listFiles("session");
-      const notes = ctx.entries.listNotes("session");
+      const files = ctx.files.listFiles("session");
       const plan = planDataCopy(ctx);
       const hasData = plan.schemas.length > 0 || plan.data.length > 0;
       const agent = copyableAgent(ctx);
@@ -131,14 +130,6 @@ export const projectCreate = defineTool({
               ),
             ]
           : []),
-        ...(notes.length > 0
-          ? [
-              tick(
-                "copyNotes",
-                `Copy this session's memory notes (${countText(notes.length, "note")})`,
-              ),
-            ]
-          : []),
         ...(hasData
           ? [
               tick(
@@ -182,11 +173,9 @@ export const projectCreate = defineTool({
       });
 
       const wantFiles = a["copyFiles"] === true;
-      const wantNotes = a["copyNotes"] === true;
       const wantData = hasData && a["copyData"] === true;
       const wantAgent = agent !== null && a["copyAgent"] === true;
       let filesCopied = 0;
-      let notesCopied = 0;
       let schemasCopied = 0;
       let dataCopied = 0;
       let copiedAgent: ReturnType<ProjectPush["putAgent"]> | undefined;
@@ -203,16 +192,10 @@ export const projectCreate = defineTool({
         }
         if (wantFiles) {
           for (const info of files) {
-            const file = ctx.entries.readFile("session", info.key);
+            const file = ctx.files.readFile("session", info.key);
             if (!file) continue;
             push.putFile(file.key, file.mediaType, file.value, file.blob);
             filesCopied++;
-          }
-        }
-        if (wantNotes) {
-          for (const note of notes) {
-            push.addNote(note.text);
-            notesCopied++;
           }
         }
         if (wantData) {
@@ -228,7 +211,6 @@ export const projectCreate = defineTool({
         const done = [
           ...(wantAgent ? [copiedAgent ? "the agent" : "no agent"] : []),
           countText(filesCopied, "file"),
-          countText(notesCopied, "note"),
           ...(wantData
             ? [
                 countText(schemasCopied, "schema"),
@@ -246,7 +228,6 @@ export const projectCreate = defineTool({
         data: {
           project: { id: project.id, name: project.name },
           filesCopied,
-          notesCopied,
           ...(wantData
             ? {
                 schemasCopied,
@@ -259,7 +240,7 @@ export const projectCreate = defineTool({
           ...(copiedAgent
             ? {
                 agent: copiedAgent,
-                note: `The agent was copied into the project, with its own skills, schemas and data, and can be started as a subagent. A note was added to the project's system prompt telling the Dispatcher to hand the project's work to it${dispatcherSet ? ", and new sessions in the project start with the Dispatcher" : ""}.`,
+                guidance: `The agent was copied into the project, with its own skills, schemas and data, and can be started as a subagent. A note was added to the project's system prompt telling the Dispatcher to hand the project's work to it${dispatcherSet ? ", and new sessions in the project start with the Dispatcher" : ""}.`,
               }
             : {}),
         },

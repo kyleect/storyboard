@@ -67,9 +67,9 @@ vi.mock("./Workspaces", () => ({ WorkspacesPage: () => null }));
 vi.mock("./Errors", () => ({ ErrorsPage: () => <div>errors page</div> }));
 vi.mock("./Settings", () => ({ Settings: () => <div>settings page</div> }));
 // The Files page reports unsaved edits when its button is pressed.
-vi.mock("./EntriesPages", () => ({
-  ProjectEntriesPage: () => null,
-  GlobalEntriesPage: function Files() {
+vi.mock("./FilesPages", () => ({
+  ProjectFilesPage: () => null,
+  GlobalFilesPage: function Files() {
     return <FilesStub />;
   },
 }));
@@ -580,7 +580,7 @@ describe("the chats tree", () => {
     await screen.findByText("Alpha chat");
     const novel = screen.getByRole("group", { name: "Novel" });
     for (const name of [
-      "Files & memory",
+      "Files",
       "Agents",
       "Skills",
       "Structured Data",
@@ -739,12 +739,12 @@ describe("the tab strip", () => {
     const byTitle = (title: string) =>
       screen.getAllByRole("tab").find((t) => t.title === title);
     expect(byTitle("Project: Novel")?.textContent).toBe("Novel");
-    const page = byTitle("Project page: Novel › Files & memory");
+    const page = byTitle("Project page: Novel › Files");
     expect(page?.textContent).toContain("Novel ›");
-    expect(page?.textContent).toContain("Files & memory");
+    expect(page?.textContent).toContain("Files");
     expect(byTitle("Chat: Alpha chat")).toBeTruthy();
-    const global = byTitle("Files & memory (all projects)");
-    expect(global?.textContent).toBe("Files & memory");
+    const global = byTitle("Files (all projects)");
+    expect(global?.textContent).toBe("Files");
   });
 
   // jsdom has no DataTransfer.

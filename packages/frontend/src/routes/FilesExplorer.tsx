@@ -5,7 +5,7 @@ import { IconBook } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { fileNameProblem, joinPath } from "@harness/core";
-import { api, type Entry, type EntryScope } from "../api";
+import { api, type StoredFile, type FileScope } from "../api";
 import {
   ACCEPTED_DESCRIPTION,
   attachmentMediaType,
@@ -33,7 +33,7 @@ import {
   type RootId,
   type TabState,
 } from "../files-explorer";
-import { entryKeys } from "../queries";
+import { fileKeys } from "../queries";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
 import { FileIcon, FileTree } from "./FileTree";
 import { FileTab, PreviewTab, type Draft } from "./FileTab";
@@ -66,7 +66,7 @@ export function FilesExplorer({
   onDirtyChange,
 }: {
   /** The scope of the page: where its own files live. */
-  page: EntryScope;
+  page: FileScope;
   /** The session's project, if it has one. */
   projectId?: string | null | undefined;
   /** Why no root can be changed, when that is so. */
@@ -81,7 +81,7 @@ export function FilesExplorer({
   // this one, which changes only with the page.
   const pageScope = page.scope;
   const pageId = "id" in page ? page.id : "";
-  const stablePage = useMemo<EntryScope>(
+  const stablePage = useMemo<FileScope>(
     () =>
       pageScope === "global"
         ? { scope: "global" }
@@ -92,7 +92,7 @@ export function FilesExplorer({
     () => rootsFor(stablePage, projectId),
     [stablePage, projectId],
   );
-  const rootScope = (id: RootId): EntryScope | undefined =>
+  const rootScope = (id: RootId): FileScope | undefined =>
     roots.find((r) => r.id === id)?.scope;
   const pageRoot: RootId = pageScope;
 
@@ -145,14 +145,14 @@ export function FilesExplorer({
   // ---- data: the files and folders of every root
   const lists = useQueries({
     queries: roots.map((r) => ({
-      queryKey: entryKeys.list(r.scope, "file", showDeleted),
-      queryFn: () => api.listEntries(r.scope, "file", showDeleted),
+      queryKey: fileKeys.list(r.scope, showDeleted),
+      queryFn: () => api.listFiles(r.scope, showDeleted),
     })),
     combine: combineResults,
   });
   const folders = useQueries({
     queries: roots.map((r) => ({
-      queryKey: entryKeys.folders(r.scope),
+      queryKey: fileKeys.folders(r.scope),
       queryFn: () => api.listFolders(r.scope),
     })),
     combine: combineResults,
@@ -162,7 +162,7 @@ export function FilesExplorer({
       buildTree(
         roots.map((root, i) => ({
           root,
-          files: (lists.data[i] as Entry[] | undefined) ?? [],
+          files: (lists.data[i] as StoredFile[] | undefined) ?? [],
           folders: (folders.data[i] as string[] | undefined) ?? [],
         })),
         pending,
@@ -178,7 +178,7 @@ export function FilesExplorer({
   const refreshRoot = (id: RootId) => {
     const scope = rootScope(id);
     return scope
-      ? queryClient.invalidateQueries({ queryKey: entryKeys.inScope(scope) })
+      ? queryClient.invalidateQueries({ queryKey: fileKeys.inScope(scope) })
       : Promise.resolve();
   };
 
@@ -316,7 +316,7 @@ export function FilesExplorer({
       confirmProps: { color: "red" },
       onConfirm: () =>
         api
-          .deleteEntry(scope, "file", ref.path)
+          .deleteFile(scope, ref.path)
           .then(() => refreshRoot(ref.root))
           .catch(showError("Could not delete the file")),
     });
@@ -448,18 +448,18 @@ export function FilesExplorer({
       activeTab.kind === "preview" ? (
         <PreviewTab
           key={tabId(activeTab)}
-          scope={scopeOf(activeTab) as EntryScope}
+          scope={scopeOf(activeTab) as FileScope}
           fileKey={activeTab.key}
           draft={drafts[tabId({ ...activeTab, kind: "file" })]}
         />
       ) : (
         <FileTab
           key={tabId(activeTab)}
-          scope={scopeOf(activeTab) as EntryScope}
+          scope={scopeOf(activeTab) as FileScope}
           root={activeTab.root}
           fileKey={activeTab.key}
           readOnly={reasons[activeTab.root]}
-          higher={isHigherScope(scopeOf(activeTab) as EntryScope, stablePage)}
+          higher={isHigherScope(scopeOf(activeTab) as FileScope, stablePage)}
           draft={drafts[tabId(activeTab)]}
           onDraft={(draft) =>
             setDrafts((d) => {

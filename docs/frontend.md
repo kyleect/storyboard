@@ -41,8 +41,8 @@ packages/frontend/src
     TranscriptScroll.tsx keeps the transcript pinned to the bottom
     ApprovalDialog.tsx   tool approval prompt
     AskUserForm.tsx      inline forms
-    Entries.tsx          memory notes; the pieces for viewing a file (preview, versions)
-    EntriesPages.tsx     the global and project pages for files and memory notes
+    Files.tsx          the pieces for viewing a file (preview, versions)
+    FilesPages.tsx     the global and project pages for files
     ExplorerShell.tsx    the frame both explorers share: tree pane, divider, tab strip, status bar
     FilesExplorer.tsx    the Files view: file tree, tabs, status bar
     FileTree.tsx, FileTab.tsx, TextEditor.tsx   its tree, its tab content, its editor
@@ -104,7 +104,7 @@ render nothing themselves.
 | `/sessions`                                                 | Chats with no project: a table                                             |
 | `/sessions/$sessionId`                                      | Chat                                                                       |
 | `/projects/$projectId`                                      | Project page (name, description, links to its pages, its chats as a table) |
-| `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files and notes, agents, skills, schemas and data              |
+| `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files, agents, skills, schemas and data                        |
 | `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                              |
 | `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants                  |
 | `/errors`                                                   | Errors console across all sessions                                         |
@@ -123,10 +123,10 @@ render nothing themselves.
 
 The central idea: **the cache holds what is stored; `useLive` holds what is
 happening right now.** When something finishes, the cache is updated (or
-invalidated and refetched) and the live entry is cleared.
+invalidated and refetched) and the live file is cleared.
 
 Query keys come from the factories in `queries/` (`sessionKeys`, `agentKeys`,
-`entryKeys`, and so on), one per feature, following
+`fileKeys`, and so on), one per feature, following
 [Effective React Query Keys](https://tkdodo.eu/blog/effective-react-query-keys).
 Never write a key inline. Keys go from the most generic to the most specific,
 for example `["sessions", "list", { projectId }]` and
@@ -152,8 +152,8 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
   used.
 - **What a tab says.** A chat is its title with a chat icon; a project is its name
   with a blue folder icon; a page of a project is the project's name, then the page
-  (`Novel › Files & memory`), with a blue icon; a global page is its name. The hover
-  text spells the kind out ("Project: …", "Chat: …", "Files & memory (all
+  (`Novel › Files`), with a blue icon; a global page is its name. The hover
+  text spells the kind out ("Project: …", "Chat: …", "Files (all
   projects)").
 - **Reordering.** Tabs are dragged to a new place, or moved with Alt and the left or
   right arrow (`moveTab` in `explorer.ts`); the order is saved with the tabs.
@@ -200,26 +200,26 @@ Started by the Chat page after the session detail has loaded **from the
 server** (not from a stale cache, so the snapshot's last event id is current).
 
 1. **Seed from the snapshot.** `GET /api/sessions/:id` returned `activeRun` and
-   `childRuns`. These become the `useLive` entry: the run, its in-flight message,
+   `childRuns`. These become the `useLive` file: the run, its in-flight message,
    open approvals and forms, and its subagent runs.
 2. **Open the stream** at `lastEventId` from the snapshot.
 3. **Apply each event.** The handler is a switch on `event.type`:
 
-| Event                                                                                         | Effect                                                                                                                                                                                                                                  |
-| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run.started`                                                                                 | Create the live run. A run with `parentRunId` and `parentCallId` is added as a **child** of the top-level run instead of replacing it.                                                                                                  |
-| `message.started`                                                                             | Set the run's in-flight message (starting from the stored content if it continues a message).                                                                                                                                           |
-| `text.delta`, `reasoning.delta`, `text.end`, `reasoning.end`, `tool.called`, `tool.malformed` | Apply to the in-flight message with core's `applyMessageEvent`. Update the live token count from `usage`. The first delta of a run also refreshes model information (a model is loaded by its first request).                           |
-| `message.finished`                                                                            | Write the stored message into the session cache and clear the in-flight message.                                                                                                                                                        |
-| `tool.result`                                                                                 | Invalidate the session (the result message is already stored). Also invalidate the data queries for `schema*`/`data*` tools, the session's file and note lists for `files_*`/`memory_*` tools, and the session's errors on failure.     |
-| `tool.approval_requested`, `input.requested`                                                  | Append to the run's open approvals or forms.                                                                                                                                                                                            |
-| `user.message`                                                                                | The run read the oldest message the user had sent it: drop it from the run's waiting messages and refetch the session (the message is already stored).                                                                                  |
-| `tool.approval_resolved`, `input.resolved`, `request.cancel`                                  | Remove the matching open request.                                                                                                                                                                                                       |
-| `run.finished`, `run.failed`, `run.interrupted`                                               | A child run: show a notification if it still had unread messages from the user, refetch, then remove the child. A top-level run: refetch the session and session lists, then clear the live entry. A failure also shows a notification. |
-| `session.renamed`                                                                             | Update the title in the cache and refetch lists.                                                                                                                                                                                        |
-| `session.entries_changed`, `session.data_changed`, `session.agent_changed`                    | Invalidate the session and the relevant lists.                                                                                                                                                                                          |
-| `session.transcript_changed`                                                                  | Invalidate the session, its files and data, and the lists (and the trash unless the reason is `edit`).                                                                                                                                  |
-| `session.trashed`                                                                             | Invalidate lists and navigate home.                                                                                                                                                                                                     |
+| Event                                                                                         | Effect                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run.started`                                                                                 | Create the live run. A run with `parentRunId` and `parentCallId` is added as a **child** of the top-level run instead of replacing it.                                                                                                 |
+| `message.started`                                                                             | Set the run's in-flight message (starting from the stored content if it continues a message).                                                                                                                                          |
+| `text.delta`, `reasoning.delta`, `text.end`, `reasoning.end`, `tool.called`, `tool.malformed` | Apply to the in-flight message with core's `applyMessageEvent`. Update the live token count from `usage`. The first delta of a run also refreshes model information (a model is loaded by its first request).                          |
+| `message.finished`                                                                            | Write the stored message into the session cache and clear the in-flight message.                                                                                                                                                       |
+| `tool.result`                                                                                 | Invalidate the session (the result message is already stored). Also invalidate the data queries for `schema*`/`data*` tools, the session's file lists for `files_*` tools, and the session's errors on failure.                        |
+| `tool.approval_requested`, `input.requested`                                                  | Append to the run's open approvals or forms.                                                                                                                                                                                           |
+| `user.message`                                                                                | The run read the oldest message the user had sent it: drop it from the run's waiting messages and refetch the session (the message is already stored).                                                                                 |
+| `tool.approval_resolved`, `input.resolved`, `request.cancel`                                  | Remove the matching open request.                                                                                                                                                                                                      |
+| `run.finished`, `run.failed`, `run.interrupted`                                               | A child run: show a notification if it still had unread messages from the user, refetch, then remove the child. A top-level run: refetch the session and session lists, then clear the live file. A failure also shows a notification. |
+| `session.renamed`                                                                             | Update the title in the cache and refetch lists.                                                                                                                                                                                       |
+| `session.files_changed`, `session.data_changed`, `session.agent_changed`                      | Invalidate the session and the relevant lists.                                                                                                                                                                                         |
+| `session.transcript_changed`                                                                  | Invalidate the session, its files and data, and the lists (and the trash unless the reason is `edit`).                                                                                                                                 |
+| `session.trashed`                                                                             | Invalidate lists and navigate home.                                                                                                                                                                                                    |
 
 Because `useLive.update` addresses a run by id, events from a **subagent** run
 update that child's state without touching the parent's.
@@ -260,7 +260,6 @@ at the top of the page chooses one of six views:
 | ---------- | ---------------------------------------------------------------------- |
 | Chat       | The transcript, the composer, and the live run.                        |
 | Files      | An editor-style view of every file the session can use (see below).    |
-| Memory     | The session's memory notes.                                            |
 | Data       | The session's schemas and data.                                        |
 | Workspaces | The workspaces attached to the session (and its project's, read-only). |
 | Debug      | The linear view, an event table, and each run's request.               |
@@ -285,7 +284,7 @@ controls appear only while the session is idle.
 
 The requests are in `useBranchActions`; each refreshes the session afterwards.
 `session.transcript_changed` (from this or another window) invalidates the session
-and its files, notes and data, since they follow the line shown.
+and its files and data, since they follow the line shown.
 
 **Loading.** `["session", id]` fetches the session detail: session, project, the
 messages of the line shown (with model, effort, agent version, usage, run id,
@@ -301,7 +300,7 @@ new text arrives unless the user has scrolled away.
 
 **Message rendering.** `MessageView` renders each role: user text, assistant
 blocks (Markdown text, collapsible reasoning, tool calls), tool results
-(including saved approval notes and the form the tool showed), and edit notices.
+(including saved decision comments and the form the tool showed), and edit notices.
 `Markdown.tsx` renders Markdown safely: raw HTML is shown as text, images are
 never loaded (shown as their alt text), and links open in a new tab and only for
 `http`, `https` and `mailto`.
@@ -361,7 +360,7 @@ answered, and both are re-created after a page reload from the snapshot.
 
 - **Approval** (`ApprovalDialog`). Shows the tool name and arguments. Offers
   _Allow once_, _Allow for this session_, _Always allow this tool_, and _Deny_;
-  an optional note can be typed with _once_ or _deny_. An always-asks tool offers
+  an optional comment can be typed with _once_ or _deny_. An always-asks tool offers
   only _once_ and _deny_. If the call has a **review**, the dialog lists each item
   with its field-level changes as checkboxes; the chosen subset is sent as the
   `selection`. It can validate the selection (`…/check`) and refresh a stale review
@@ -387,7 +386,7 @@ Structured Data, `explorer.ts`; both are tested without a DOM. The frame
 can see: a session shows Session, Project (when it is in a project) and Global; a
 project page shows Project and Global; the global page shows Global. Each root
 holds its folders (folders first) and files. Every root is fetched with the
-ordinary `entries` routes of its scope; there is nothing special on the backend.
+ordinary `files` routes of its scope; there is nothing special on the backend.
 
 **Tree.** Mantine's `Tree`, with a header (New file, New folder, Upload, Show
 deleted) and a right-click menu on roots, folders and files. A new file or
@@ -423,7 +422,7 @@ Versions dialog restores it.
 which folders are open, the width of the tree (dragged, or with the arrow keys,
 between 180 and 520 px) and Show deleted. Unsaved text is not saved.
 
-**Live updates.** A `files_*` tool result invalidates every scope's entries, not
+**Live updates.** A `files_*` tool result invalidates every scope's files, not
 only the session's, because the view shows all three.
 
 ## The Structured Data view
@@ -476,15 +475,14 @@ The agent page still manages an agent's own schemas and data with the older
 Each follows the same layout: a list on the left, the selected item on the right,
 one page per scope. (The Files and Structured Data views are the exception; see [The Files view](#the-files-view) and [The Structured Data view](#the-structured-data-view).)
 
-| Page                        | Edits        | Notes                                                                                                                                                                                                                           |
-| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Entries.tsx`               | Memory notes | Notes as cards. Version history (shared with the Files view) opens in a dialog, where an older version can be made current.                                                                                                     |
-| `Agents.tsx`                | Agents       | Prompt, tool grant (see below), per-tool approval, subagent settings, import and export, version history, and a read-only view of the agent version a message was written with.                                                 |
-| `Skills.tsx`                | Skills       | Display name, description, body.                                                                                                                                                                                                |
-| `Schemas.tsx`               | Schemas      | A **builder** (a field tree and the selected field's settings) or a JSON editor (CodeMirror); earlier versions can be viewed. The builder only offers features the schema subset supports, so what it produces is always valid. |
-| `Data.tsx`, `DataValue.tsx` | Data         | Forms generated from the schema; the backend's validation is final and its problems are shown next to the fields. `DataValue` renders data read-only, laid out by its schema.                                                   |
-| `Errors.tsx`                | (read)       | Every recorded tool error and failed run, with a link to the message in the transcript. Also shown as a panel under each chat.                                                                                                  |
-| `Settings.tsx`              | Settings     | All settings, global system prompt, title settings, and the tools section (see below). Shows which settings an environment variable overrides.                                                                                  |
+| Page                        | Edits    | Notes                                                                                                                                                                                                                           |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Agents.tsx`                | Agents   | Prompt, tool grant (see below), per-tool approval, subagent settings, import and export, version history, and a read-only view of the agent version a message was written with.                                                 |
+| `Skills.tsx`                | Skills   | Display name, description, body.                                                                                                                                                                                                |
+| `Schemas.tsx`               | Schemas  | A **builder** (a field tree and the selected field's settings) or a JSON editor (CodeMirror); earlier versions can be viewed. The builder only offers features the schema subset supports, so what it produces is always valid. |
+| `Data.tsx`, `DataValue.tsx` | Data     | Forms generated from the schema; the backend's validation is final and its problems are shown next to the fields. `DataValue` renders data read-only, laid out by its schema.                                                   |
+| `Errors.tsx`                | (read)   | Every recorded tool error and failed run, with a link to the message in the transcript. Also shown as a panel under each chat.                                                                                                  |
+| `Settings.tsx`              | Settings | All settings, global system prompt, title settings, and the tools section (see below). Shows which settings an environment variable overrides.                                                                                  |
 
 **The agent's tools.** `ToolGrantEditor` shows tools under their group. Each group
 has its own on/off box and approval choice (each tool's setting, ask for all, or
@@ -502,7 +500,7 @@ header sets all three for the group. Changes are saved as they are made. A tool
 that always asks keeps its approval fixed, and the page names the agents that
 allow a tool before it is switched off.
 
-In the session context, edits to session-scoped files, notes and data go through
+In the session context, edits to session-scoped files and data go through
 `…/sessions/:id/…` routes and become **edit messages** in the transcript. They
 are disabled while a run is active.
 

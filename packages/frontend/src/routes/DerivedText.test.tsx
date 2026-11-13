@@ -9,7 +9,7 @@ import {
   type MediaDescriberInfo,
   type SettingsView,
 } from "../api";
-import { DerivedTextField } from "./Entries";
+import { DerivedTextField } from "./FileViews";
 import { MediaDescriptions } from "./Settings";
 
 afterEach(() => vi.restoreAllMocks());

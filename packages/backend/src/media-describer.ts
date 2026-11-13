@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import {
   mediaKindOf,
-  replaySessionEntries,
+  replaySessionFiles,
   type ChatRequest,
   type Message,
   type ModelAdapter,
@@ -262,17 +262,15 @@ export function reindexBlob(
   const text = indexedText(getDerived(db, hash));
   const shared = db
     .prepare(
-      `SELECT kind, project_id, key FROM entries
+      `SELECT project_id, key FROM files
        WHERE blob_hash = ? AND deleted_at IS NULL`,
     )
     .all(hash) as {
-    kind: "file" | "note";
     project_id: string | null;
     key: string;
   }[];
   for (const e of shared) {
-    index.indexEntry(
-      e.kind,
+    index.indexFile(
       e.project_id === null ? "global" : "project",
       e.project_id,
       e.key,
@@ -285,12 +283,11 @@ export function reindexBlob(
     )
     .all(hash) as { session_id: string }[];
   for (const { session_id: id } of sessions) {
-    const state = replaySessionEntries(
+    const state = replaySessionFiles(
       activeMessageJson(db, id).map((m) => JSON.parse(m) as Message),
     );
-    for (const [key, file] of state.file) {
-      if (file.blob?.hash === hash)
-        index.indexEntry("file", "session", id, key, text);
+    for (const [key, file] of state.files) {
+      if (file.blob?.hash === hash) index.indexFile("session", id, key, text);
     }
   }
 }

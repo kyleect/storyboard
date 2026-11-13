@@ -233,7 +233,7 @@ describe("buildTree", () => {
 });
 
 describe("mergeSchemas", () => {
-  it("gives one entry per schema, the root's own list winning", () => {
+  it("gives one file per schema, the root's own list winning", () => {
     const merged = mergeSchemas(
       [schema("a", { deleted: true })],
       [schema("a"), schema("b")],

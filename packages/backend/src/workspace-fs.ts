@@ -111,7 +111,7 @@ export function resolveIn(
 
 const iso = (s: Stats) => s.mtime.toISOString();
 
-function entryOf(
+function fileOf(
   path: string,
   name: string,
   abs: string,
@@ -316,7 +316,7 @@ export function createWorkspaceAccess(
           if (out.length >= LIST_LIMIT) return;
           const abs = join(dirAbs, name);
           const rel = dirRel === "" ? name : `${dirRel}/${name}`;
-          const entry = entryOf(rel, name, abs);
+          const entry = fileOf(rel, name, abs);
           if (!entry) continue;
           out.push(entry);
           // A link to a folder is shown but not followed.

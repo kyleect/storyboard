@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  createEntryAccess,
+  createFileAccess,
   NO_AGENTS,
   NO_SUBAGENTS,
   NO_DATA,
   NO_PROJECTS,
-  replaySessionEntries,
+  replaySessionFiles,
   type RunSkill,
   type ToolContext,
 } from "@harness/core";
@@ -36,8 +36,8 @@ const ctx = (skills: RunSkill[]): ToolContext => ({
   subagents: NO_SUBAGENTS,
   data: NO_DATA,
   copyLimit: 20,
-  entries: createEntryAccess({
-    session: replaySessionEntries([]),
+  files: createFileAccess({
+    session: replaySessionFiles([]),
     sessionOps: [],
     inProject: false,
     author: { by: "model", sessionId: "s", runId: "r" },

@@ -114,7 +114,7 @@ export function registerWorkspaceRoutes(
   };
 
   /** The entries of a folder as paths, folders first, for the tree. */
-  const entriesOf = (root: string, folder: string) => {
+  const filesOf = (root: string, folder: string) => {
     let abs: string;
     try {
       abs = resolveIn(root, folder);
@@ -152,7 +152,7 @@ export function registerWorkspaceRoutes(
     const folder = path.replace(/^\/+|\/+$/g, "");
     return {
       path: folder,
-      entries: entriesOf(w.path, folder).map((e) => ({
+      entries: filesOf(w.path, folder).map((e) => ({
         ...e,
         state: tickState(w.ticks, e.path),
       })),
@@ -195,7 +195,7 @@ export function registerWorkspaceRoutes(
     let next: string[];
     try {
       next = toggleTick(w.ticks, path, on, (folder) =>
-        entriesOf(w.path, folder).map((e) => e.path),
+        filesOf(w.path, folder).map((e) => e.path),
       );
     } catch (err) {
       if (err instanceof WorkspaceStoreError) throw err;

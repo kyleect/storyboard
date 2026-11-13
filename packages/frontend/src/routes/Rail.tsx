@@ -38,7 +38,7 @@ interface Item {
 const PAGES: Item[] = [
   { kind: "agents", label: "Agents", icon: <IconRobot size={22} /> },
   { kind: "skills", label: "Skills", icon: <IconBolt size={22} /> },
-  { kind: "files", label: "Files & memory", icon: <IconFiles size={22} /> },
+  { kind: "files", label: "Files", icon: <IconFiles size={22} /> },
   {
     kind: "data",
     label: "Structured data",

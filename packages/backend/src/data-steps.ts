@@ -1,12 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { randomUUID } from "node:crypto";
-import {
-  editNotice,
-  fileNameProblem,
-  replaySessionEntries,
-  type EntryOp,
-  type Message,
-} from "@harness/core";
+import { editNotice, fileNameProblem, type FileOp } from "@harness/core";
 import { sha256 } from "./blobs.js";
 
 /*
@@ -25,6 +19,36 @@ export interface DataStep {
 }
 
 type Json = Record<string, unknown>;
+
+/*
+ * The steps before `files-rename` work on the stored shape of their time:
+ * a message's file changes are in `entries`, and each change has a `kind`.
+ * They do not use the types of `@harness/core`, which describe the shape
+ * after `files-rename`.
+ */
+type OldFileOp = Json & { op: string; kind?: string; key?: string };
+
+/** The change without its `kind`. */
+function withoutKind(op: Json): Json {
+  return Object.fromEntries(Object.entries(op).filter(([k]) => k !== "kind"));
+}
+
+/** Every key of a file ever used by the messages' changes, deleted or not. */
+function oldUsedFileKeys(messages: Json[]): Set<string> {
+  const used = new Set<string>();
+  for (const m of messages) {
+    if (!Array.isArray(m["entries"])) continue;
+    for (const op of m["entries"] as OldFileOp[]) {
+      if (op.kind === "file" && typeof op.key === "string") used.add(op.key);
+    }
+  }
+  return used;
+}
+
+/** The edit notice of old-shape changes (it names a change by `op` and `key`). */
+function oldEditNotice(ops: OldFileOp[]): string {
+  return editNotice(ops.map(withoutKind) as unknown as FileOp[]);
+}
 
 /** Rewrites every message with `rewrite`; it returns true when it changed one. */
 export function rewriteMessages(
@@ -165,9 +189,7 @@ export function attachmentsToFiles(db: Database): number {
     const parsed = rows.map((r) => ({ ...r, json: JSON.parse(r.message) }));
     // Names already used by files of the session, so a new one never reuses
     // one: every key the transcript has used.
-    const taken = new Set(
-      replaySessionEntries(parsed.map((r) => r.json as Message)).used.file,
-    );
+    const taken = oldUsedFileKeys(parsed.map((r) => r.json));
 
     type Out =
       | { kind: "old"; id: string; message: string | null }
@@ -180,7 +202,7 @@ export function attachmentsToFiles(db: Database): number {
         continue;
       }
       const refs: string[] = [];
-      const ops: EntryOp[] = [];
+      const ops: OldFileOp[] = [];
       for (const a of old) {
         const row = getRow.get(a.id, sessionId) as
           | {
@@ -212,14 +234,14 @@ export function attachmentsToFiles(db: Database): number {
           kind: "file",
           key,
           value: "",
-          mediaType: mediaType as never,
+          mediaType,
           blob: { hash, size: row.data.length },
         });
       }
       if (ops.length > 0) {
-        const edit: Message = {
+        const edit = {
           role: "edit",
-          content: editNotice(ops),
+          content: oldEditNotice(ops),
           entries: ops,
         };
         out.push({
@@ -391,6 +413,179 @@ export function branchesBackfill(db: Database): number {
   return changed;
 }
 
+const MEMORY_TOOLS = new Set([
+  "memory_list",
+  "memory_add",
+  "memory_update",
+  "memory_delete",
+  "memory_search",
+  "memory_copy",
+  "memory_move",
+]);
+
+/**
+ * Takes memory out of stored transcripts (memory removal). In every message:
+ * note changes are dropped from the file changes a message carries, and the
+ * `memory_*` calls are dropped from assistant messages. Messages that are left
+ * with nothing are deleted: the result of a `memory_*` call, an edit message
+ * that only changed notes, and an assistant message that held nothing but
+ * `memory_*` calls (unless a subagent run is anchored to it).
+ *
+ * A deleted message is skipped on every line: the messages that pointed at it
+ * point at the nearest message before it that stays, and the session's tip and
+ * seen tip move the same way. Returns how many messages it changed or deleted.
+ */
+export function removeMemoryFromHistory(db: Database): number {
+  const rows = db.prepare("SELECT id, message FROM messages").all() as {
+    id: string;
+    message: string;
+  }[];
+  const update = db.prepare("UPDATE messages SET message = ? WHERE id = ?");
+  const gone = new Set<string>();
+  /** Assistant messages left with no content, deleted if nothing anchors. */
+  const emptied = new Set<string>();
+  /** Messages whose JSON was rewritten. */
+  const rewritten = new Set<string>();
+
+  for (const row of rows) {
+    const message = JSON.parse(row.message) as Json;
+    let touched = false;
+
+    if (
+      message["role"] === "tool" &&
+      MEMORY_TOOLS.has(String(message["name"]))
+    ) {
+      gone.add(row.id);
+      continue;
+    }
+    if (message["role"] === "assistant" && Array.isArray(message["content"])) {
+      const blocks = message["content"] as Json[];
+      const kept = blocks.filter(
+        (b) =>
+          !(b["type"] === "tool_call" && MEMORY_TOOLS.has(String(b["name"]))),
+      );
+      if (kept.length !== blocks.length) {
+        message["content"] = kept;
+        touched = true;
+        if (kept.length === 0) emptied.add(row.id);
+      }
+    }
+    if (
+      (message["role"] === "tool" || message["role"] === "edit") &&
+      Array.isArray(message["entries"])
+    ) {
+      const ops = message["entries"] as Json[];
+      const kept = ops.filter((op) => op["kind"] !== "note");
+      if (kept.length !== ops.length) {
+        if (message["role"] === "edit") {
+          // An edit message made only of note changes has nothing left; the
+          // data edit messages carry `entries: []` and never get here.
+          if (kept.length === 0) {
+            gone.add(row.id);
+            continue;
+          }
+          message["entries"] = kept;
+          message["content"] = oldEditNotice(kept as OldFileOp[]);
+        } else if (kept.length === 0) {
+          delete message["entries"];
+        } else {
+          message["entries"] = kept;
+        }
+        touched = true;
+      }
+    }
+    if (touched) {
+      update.run(JSON.stringify(message), row.id);
+      rewritten.add(row.id);
+    }
+  }
+
+  // An assistant message left empty goes too, unless a subagent run is
+  // anchored to it: that one stays, empty, so the run keeps its place.
+  const anchored = db.prepare(
+    "SELECT 1 FROM messages WHERE anchor_id = ? LIMIT 1",
+  );
+  for (const id of emptied) if (!anchored.get(id)) gone.add(id);
+
+  if (gone.size === 0) return rewritten.size;
+
+  const parents = new Map<string, string | null>();
+  for (const id of gone) {
+    const r = db
+      .prepare("SELECT parent_id FROM messages WHERE id = ?")
+      .get(id) as { parent_id: string | null } | undefined;
+    parents.set(id, r?.parent_id ?? null);
+  }
+  /** The nearest message before `id` on its line that is not deleted. */
+  const survivor = (id: string | null): string | null => {
+    let at = id;
+    while (at !== null && gone.has(at)) at = parents.get(at) ?? null;
+    return at;
+  };
+
+  const children = db.prepare("SELECT id FROM messages WHERE parent_id = ?");
+  const reparent = db.prepare("UPDATE messages SET parent_id = ? WHERE id = ?");
+  const clearHint = db.prepare(
+    "UPDATE messages SET last_child_id = NULL WHERE last_child_id = ?",
+  );
+  const moveTip = db.prepare("UPDATE sessions SET tip_id = ? WHERE tip_id = ?");
+  const moveSeen = db.prepare(
+    "UPDATE sessions SET seen_tip_id = ? WHERE seen_tip_id = ?",
+  );
+  const dropRunMessages = db.prepare(
+    "DELETE FROM run_messages WHERE message_id = ?",
+  );
+  const dropMessage = db.prepare("DELETE FROM messages WHERE id = ?");
+
+  for (const id of gone) {
+    const to = survivor(parents.get(id) ?? null);
+    for (const child of children.all(id) as { id: string }[]) {
+      if (!gone.has(child.id)) reparent.run(to, child.id);
+    }
+    clearHint.run(id);
+    moveTip.run(to, id);
+    moveSeen.run(to, id);
+  }
+  for (const id of gone) {
+    dropRunMessages.run(id);
+    dropMessage.run(id);
+  }
+  return new Set([...rewritten, ...gone]).size;
+}
+
+/**
+ * The changes a message carries to session-scoped files are stored under
+ * `files`, not `entries`, and a change no longer has a `kind` (every one was
+ * a file once the memory notes were gone). Edit messages and tool results are
+ * the only messages that carry them; a user message's own `files` list is
+ * something else and stays.
+ */
+export function renameEntriesToFiles(db: Database): number {
+  return rewriteMessages(db, (message) => {
+    const role = message["role"];
+    if (role !== "tool" && role !== "edit") return false;
+    if (!Array.isArray(message["entries"])) return false;
+    message["files"] = (message["entries"] as Json[]).map(withoutKind);
+    delete message["entries"];
+    return true;
+  });
+}
+
+/**
+ * The comment a user typed on an approval prompt was stored on a tool result
+ * as `note`; it is now `decisionComment`. A tool result has no other `note`
+ * of its own: what a tool says to the model in a result is inside its
+ * `content`.
+ */
+export function renameNoteToDecisionComment(db: Database): number {
+  return rewriteMessages(db, (message) => {
+    if (message["role"] !== "tool" || !("note" in message)) return false;
+    message["decisionComment"] = message["note"];
+    delete message["note"];
+    return true;
+  });
+}
+
 export const DATA_STEPS: DataStep[] = [
   {
     name: "file-ops-media-types",
@@ -398,6 +593,9 @@ export const DATA_STEPS: DataStep[] = [
   },
   { name: "attachments-to-files", run: attachmentsToFiles },
   { name: "branches-backfill", run: branchesBackfill },
+  { name: "memory-removal", run: removeMemoryFromHistory },
+  { name: "files-rename", run: renameEntriesToFiles },
+  { name: "decision-comment-rename", run: renameNoteToDecisionComment },
 ];
 
 /** Runs the steps that have not run yet; returns each one's name and count. */

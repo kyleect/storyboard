@@ -72,7 +72,7 @@ Four ideas explain most of the code:
 
 - **The transcript is the source of truth.** A session is a tree of messages (see
   [Branches](backend.md#branches)); the line from the first message to the tip is
-  what the model and the files see. Session-scoped files, notes, schemas and data
+  what the model and the files see. Session-scoped files, schemas and data
   are not tables; they are rebuilt by replaying changes recorded on that line.
 - **Everything is an event.** A run only talks by emitting events. The backend
   stores each event, then sends it, so a client that reconnects replays what it
@@ -171,7 +171,7 @@ table when SQLite cannot alter it. Document new tables in
 ### Add an HTTP endpoint
 
 1. Add the route to `backend/src/server.ts`, or to the `register*Routes` function
-   for its area (`agent-routes.ts`, `skill-routes.ts`, `entry-routes.ts`,
+   for its area (`agent-routes.ts`, `skill-routes.ts`, `file-routes.ts`,
    `data-routes.ts`, `mcp-routes.ts`, `workspace-routes.ts`). Validate params, query
    and body with Zod. All `/api/` routes already require the token.
 2. Keep SQL in a store class; keep the route thin. Anything that starts or changes
@@ -210,7 +210,7 @@ table when SQLite cannot alter it. Document new tables in
 
 The system message is composed in `backend/src/runs.ts` from the global prompt, the
 project prompt, the agent's prompt, the skill and schema instructions (settings)
-and the instruction blocks the tools package exports (`entriesInstruction`, …).
+and the instruction blocks the tools package exports (`filesInstruction`, …).
 Prompts are Mustache templates; placeholders such as `{{tools}}` and `{{date}}`
 are expanded in `placeholders.ts`.
 The exact system message and tool definitions of every run are stored on the run
@@ -275,7 +275,7 @@ Tests never call a real llama-server and never touch your real data directory.
 - **Aliases.** In tests and in the Vite dev server, `@harness/core` points at its
   source, so you rarely need to build. `pnpm dev:backend` builds `tools` first
   because the backend uses the built package.
-- **Everything is soft-deleted.** Files, notes, agents, skills, schemas and data
+- **Everything is soft-deleted.** Files, agents, skills, schemas and data
   keep every version; sessions and projects go to the trash first and are purged at
   startup after the retention period.
 - **One active run per session**, and edits to session files or data are refused

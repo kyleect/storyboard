@@ -6,7 +6,7 @@ import {
 } from "@harness/core";
 
 /*
- * What `project_create` copies besides files and notes: the session's schemas
+ * What `project_create` copies besides files: the session's schemas
  * and data, and the agent the session is using, plus the note that tells the
  * Dispatcher to hand work to that agent.
  */

@@ -84,7 +84,7 @@ run.finished            (reason stop, total usage)
 the live message with `applyMessageEvent`, so text appears as it streams.
 On `message.finished` the stored message replaces the live one. On `tool.result`
 the session is refetched so the tool result appears. On `run.finished` the live
-entry is cleared and lists are refreshed.
+file is cleared and lists are refreshed.
 
 **6. Title.** If this was the session's first message and it still has the default
 title, a background job (started in step 2) writes a title and emits
@@ -95,7 +95,7 @@ title, a background job (started in step 2) writes a title and emits
 Inside `runLoop`, one step:
 
 1. `streamMessage` calls `LlamaServerAdapter.stream` with the transcript.
-2. The adapter folds edit messages and approval notes into user text, converts
+2. The adapter folds edit messages and decision comments into user text, converts
    messages to OpenAI shape, and `POST`s to llama-server's `/v1/chat/completions`.
 3. llama-server streams chunks. The adapter yields `reasoning`, `text` and `usage`
    chunks immediately, and collects tool-call fragments.
@@ -144,28 +144,28 @@ If the run is cancelled while the dialog is open, the abort signal makes the loo
 stop waiting, emit `request.cancel`, and answer the call "Not run: the run was
 cancelled."
 
-## Scenario 4: files, memory and the transcript
+## Scenario 4: files and the transcript
 
 How is a **session-scoped** file saved? There is no files table for a session.
 
 1. The model calls `files_write` with scope `session`. The tool calls
-   `ctx.entries.writeFile("session", key, type, value)`.
-2. `createEntryAccess` applies the change to its in-memory copy of the session's
-   files and appends an `EntryOp` (`put`) to a list.
+   `ctx.files.writeFile("session", key, type, value)`.
+2. `createFileAccess` applies the change to its in-memory copy of the session's
+   files and appends an `FileOp` (`put`) to a list.
 3. The tool returns successfully, so the loop stores the tool result message **with
-   `entries: [that op]`**. (If the tool had failed, the op would be discarded.)
-4. The backend notices `message.entries` and updates the search index.
-5. On the next call, `replaySessionEntries(allSessionMessages)` starts empty and
+   `files: [that op]`**. (If the tool had failed, the op would be discarded.)
+4. The backend notices `message.files` and updates the search index.
+5. On the next call, `replaySessionFiles(allSessionMessages)` starts empty and
    applies every op from every message in order. The file exists again.
 
-Project and global files differ: `ctx.entries` calls `SharedEntries.put`, which the
-backend implements as an SQL write to `entries` plus a new row in
-`entry_versions`, with the model as author.
+Project and global files differ: `ctx.files` calls `SharedFiles.put`, which the
+backend implements as an SQL write to `files` plus a new row in
+`file_versions`, with the model as author.
 
 When the **user** edits a session file in the UI, the request goes to
 `PUT /api/sessions/:id/files/:key`. The backend appends an `edit` message with the
 op and a notice such as `[The user changed session file chapter1.md in the app.]`,
-and emits `session.entries_changed`. The next model call sees the notice in a
+and emits `session.files_changed`. The next model call sees the notice in a
 user message, and replay applies the op.
 
 Why this design: a session's state is exactly its transcript, so it can never
@@ -189,7 +189,7 @@ The Dispatcher agent receives "I need a character sheet" and calls
 4. The child run emits events on the **same session stream**; `run.started`
    carries `parentRunId` and `parentCallId`. The parent's loop is suspended,
    awaiting the child's result.
-5. In the UI, `useLive` adds a **child** entry under the top-level run, and the
+5. In the UI, `useLive` adds a **child** file under the top-level run, and the
    transcript shows a panel under the `start_subagent` call with the child's
    messages and any prompts it raises. Approvals and forms the child opens are
    answered against the **child's run id**.
@@ -211,7 +211,7 @@ a user message. The step that was running is not interrupted. If the child would
 stop or hand back while a message waits, it gets one more step to read it. The
 parent does not see the message.
 
-Files, notes, schemas and data the child wrote in the session scope are rebuilt
+Files, schemas and data the child wrote in the session scope are rebuilt
 from the whole session's messages, so the parent sees them.
 
 ## Scenario 6: reconnecting
@@ -266,12 +266,12 @@ system message          composed at launch (global + project + agent prompts,
                         subagent line)
 … the session's messages, in order, with
    edit messages folded into user text,
-   approval notes folded into user text,
+   decision comments folded into user text,
    tool results as role "tool"
 tools                   the run's tool definitions (name, description, JSON Schema)
 ```
 
-Not sent: tool results' `data`, `state`, `entries`, `dataOps` and `prompt` fields,
+Not sent: tool results' `data`, `state`, `files`, `dataOps` and `prompt` fields,
 or any event. Those exist for the harness and the UI. The exact system message and
 tools of every run are saved on the run, and the Debug tab shows them.
 

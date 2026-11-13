@@ -27,7 +27,7 @@ changes: also read `migrations/AGENTS.md`.
   messages (except an in-place edit of the text). A new event field that holds a
   message id or a run id must be added to the lists in `fork.ts`, or forking will
   copy it wrongly; a test in `fork.test.ts` checks every event type.
-- **No hard deletes of versioned records.** Entries, agents, skills, schemas
+- **No hard deletes of versioned records.** Files, agents, skills, schemas
   and data are soft-deleted with a new version flagged `deleted`; sessions and
   projects go to the trash first and are purged at startup after
   `trashRetentionDays`.
@@ -47,12 +47,12 @@ src/
   token.ts             API token file
   settings.ts          every setting: Zod schema, default, env variable
   server.ts            Fastify app: auth, core routes, event streams
-  *-routes.ts          agent, skill, entry (files and notes), data, mcp, workspace routes
+  *-routes.ts          agent, skill, file (files), data, mcp, workspace routes
   runs.ts              RunManager: starts, supervises, answers and records runs
   store.ts             sessions, projects, messages, runs, events (plain SQL)
   transcript.ts        reads the active line of a transcript straight from the database
   branches.ts, fork.ts message branches (a transcript is a tree with a tip) and forking a session
-  *-store.ts           agents, skills, entries, data, errors, mcp, workspaces
+  *-store.ts           agents, skills, files, data, errors, mcp, workspaces
   tool-settings.ts, tool-grants.ts, tool-access.ts   which tools a run gets
   placeholders.ts      prompts as Mustache templates: {{skills}} {{tools}} {{schemas}} {{data}} {{agents}} {{files}} {{*_instruction}} ...
   search-index.ts, search.ts, embedder.ts   keyword and vector search
@@ -68,7 +68,7 @@ src/
 ## Conventions
 
 - **Plain SQL** through `better-sqlite3-multiple-ciphers`, in store classes
-  (`Store`, `EntryStore`, `AgentStore`, `SkillStore`, `DataStore`,
+  (`Store`, `FileStore`, `AgentStore`, `SkillStore`, `DataStore`,
   `McpServerStore`, and so on). There is no ORM. Keep SQL in the stores and
   keep routes thin.
 - **Routes** are registered by `register*Routes(app, deps)` functions called
@@ -76,7 +76,7 @@ src/
   starts with a comment listing its endpoints; keep that list accurate.
   Changes are announced on the app-wide stream (for example `agents.changed`).
 - **Settings** resolve as environment variable, then stored value, then
-  default, and are read each time a run starts. A new setting needs an entry in
+  default, and are read each time a run starts. A new setting needs a file in
   `settings.ts`, its env variable (`HARNESS_*`), the Settings page in the
   frontend, and a row in `docs/backend.md` and `docs/DEVELOPMENT.md` if it has
   an environment variable.

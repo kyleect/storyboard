@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { EntryAccess } from "./entries.js";
+import type { FileAccess } from "./files.js";
 import type { Form, InputAnswer } from "./forms.js";
 import type { Review, Selection } from "./review.js";
 import type { MediaSupport } from "./media.js";
@@ -36,7 +36,6 @@ export type ApprovalDefault = "ask" | "never" | "always";
 export const TOOL_GROUPS = [
   { id: "files", label: "Files" },
   { id: "workspaces", label: "Workspaces" },
-  { id: "memory", label: "Memory" },
   { id: "structured-data", label: "Structured Data" },
   { id: "projects", label: "Projects" },
   { id: "agents", label: "Agents" },
@@ -84,7 +83,7 @@ export interface ProjectInfo extends ProjectSummary {
 }
 
 /**
- * A way to send files, notes, schemas, data and an agent to a project. It can
+ * A way to send files, schemas, data and an agent to a project. It can
  * only write: nothing in the project can be read through it (agent tools
  * design, Q6, Q2 of the plan).
  */
@@ -99,8 +98,6 @@ export interface ProjectPush {
     /** Binary files: the bytes, already stored. `value` is empty then. */
     blob?: BlobRef,
   ): void;
-  /** Adds a note with a new id; returns the id. */
-  addNote(text: string): string;
   /**
    * Creates a schema in the project's scope with every one of `versions`
    * (JSON Schemas, oldest first), so data pinned to an older version stays
@@ -129,7 +126,7 @@ export interface ProjectPush {
    * can be started as a subagent (whatever the original is), with what
    * belongs to it: its own skills, schemas (every version) and data. Data
    * made from a schema that is not global or built-in keeps working because
-   * that schema is copied into the new agent's scope. Throws an `EntryError`
+   * that schema is copied into the new agent's scope. Throws an `FileError`
    * when the run has no agent, or its agent is a built-in one.
    */
   putAgent(): {
@@ -163,7 +160,7 @@ export interface ProjectAccess {
   }): ProjectSummary;
   /**
    * A write-only handle for a project other than the session's own, or one
-   * just created. Throws an `EntryError` when there is no such project or it
+   * just created. Throws an `FileError` when there is no such project or it
    * is in the trash.
    */
   push(projectId: string): ProjectPush;
@@ -293,18 +290,18 @@ export interface ToolContext {
   /** The project's name, for forms; null for a standalone session. */
   projectName: string | null;
   /**
-   * Files and memory notes (files and memory design, decision 21). Changes
-   * to session-scoped entries are recorded with this call's result, and
+   * Files (files and memory design, decision 21). Changes
+   * to session-scoped files are recorded with this call's result, and
    * only when the tool succeeds.
    */
-  entries: EntryAccess;
+  files: FileAccess;
   /**
    * Schemas and data (schemas and data design). Changes to session schemas
    * and data are recorded with this call's result, and only when the tool
    * succeeds.
    */
   data: DataAccess;
-  /** Projects: list, view, create, and send entries to. */
+  /** Projects: list, view, create, and send files to. */
   projects: ProjectAccess;
   /** The session's agents: list, view. */
   agents: AgentAccess;

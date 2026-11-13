@@ -438,10 +438,9 @@ describe("purgeSession with branches", () => {
       {
         role: "edit",
         content: "added a file",
-        entries: [
+        files: [
           {
             op: "put",
-            kind: "file",
             key: "cat.png",
             value: "",
             mediaType: "image/png",
@@ -501,10 +500,9 @@ describe("the other readers", () => {
       ({
         role: "edit",
         content: `added ${key}`,
-        entries: [
+        files: [
           {
             op: "put",
-            kind: "file",
             key,
             value: `text of ${key}`,
             mediaType: "text/plain",
@@ -536,10 +534,9 @@ describe("the other readers", () => {
       ({
         role: "edit",
         content: `added ${key}`,
-        entries: [
+        files: [
           {
             op: "put",
-            kind: "file",
             key,
             value: `text of ${key}`,
             mediaType: "text/plain",
@@ -564,10 +561,9 @@ describe("the other readers", () => {
       ({
         role: "edit",
         content: `added ${key}`,
-        entries: [
+        files: [
           {
             op: "put",
-            kind: "file",
             key,
             value: `text of ${key}`,
             mediaType: "text/plain",
@@ -598,10 +594,9 @@ describe("the other readers", () => {
       ({
         role: "edit",
         content: `added ${key}`,
-        entries: [
+        files: [
           {
             op: "put",
-            kind: "file",
             key,
             value: "",
             mediaType: "image/png",

@@ -22,7 +22,7 @@ export const Settings = z.object({
   /** The most model calls one run makes (design doc 6.17). */
   loopLimit: z.number().int().min(1),
   /**
-   * The most files or notes one copy or move call may name (agent tools
+   * The most files one copy or move call may name (agent tools
    * design, Q11). Asking for everything in a scope is not limited by it.
    */
   copyLimit: z.number().int().min(1).max(COPY_LIMIT_MAX),

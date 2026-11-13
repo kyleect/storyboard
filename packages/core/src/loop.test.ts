@@ -21,7 +21,7 @@ import type {
   UserMessage,
 } from "./messages.js";
 import type { ChatRequest } from "./model.js";
-import { FakeSharedEntries } from "./fake-shared-entries.js";
+import { FakeSharedFiles } from "./fake-shared-files.js";
 import { buildMessageContent } from "./message-state.js";
 import { ASK_USER, DECLINED } from "./forms.js";
 import { defineTool, ToolError, ToolRunError, type Tool } from "./tools.js";
@@ -666,82 +666,87 @@ describe("approval", () => {
     });
   });
 
-  it('keeps a note given with "once" on the result and the event', async () => {
+  it('keeps a decision comment given with "once" on the result and the event', async () => {
     const { events, saved, ctx, model } = setup(
       [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
       {
         tools: [asking()],
         approve: () =>
-          Promise.resolve({ choice: "once", note: "  keep it short \n" }),
+          Promise.resolve({
+            choice: "once",
+            decisionComment: "  keep it short \n",
+          }),
       },
     );
     await runLoop(model, request, ctx);
     expect(results(saved)[0]).toMatchObject({
       isError: false,
-      note: { text: "keep it short", choice: "once" },
+      decisionComment: { text: "keep it short", choice: "once" },
     });
     expect(
       events.find((e) => e.type === "tool.approval_resolved")?.data,
-    ).toMatchObject({ choice: "once", note: "keep it short" });
-    // The next model call sees the result with its note.
+    ).toMatchObject({ choice: "once", decisionComment: "keep it short" });
+    // The next model call sees the result with its decision comment.
     const next = model.requests[1];
     expect(next?.kind === "chat" ? next.messages.at(-1) : undefined).toEqual(
       results(saved)[0],
     );
   });
 
-  it('keeps a note given with "deny" on the denied result', async () => {
+  it('keeps a decision comment given with "deny" on the denied result', async () => {
     const { events, saved, ctx, model } = setup(
       [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
       {
         tools: [asking()],
-        approve: () => Promise.resolve({ choice: "deny", note: "try b" }),
+        approve: () =>
+          Promise.resolve({ choice: "deny", decisionComment: "try b" }),
       },
     );
     await runLoop(model, request, ctx);
     expect(results(saved)[0]).toMatchObject({
       isError: true,
       content: "The user denied this tool call.",
-      note: { text: "try b", choice: "deny" },
+      decisionComment: { text: "try b", choice: "deny" },
     });
     expect(
       events.find((e) => e.type === "tool.approval_resolved")?.data,
-    ).toMatchObject({ choice: "deny", note: "try b" });
+    ).toMatchObject({ choice: "deny", decisionComment: "try b" });
   });
 
   for (const choice of ["session", "always"] as ApprovalChoice[]) {
-    it(`drops a note given with "${choice}"`, async () => {
+    it(`drops a decision comment given with "${choice}"`, async () => {
       const { events, saved, ctx, model } = setup(
         [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
         {
           tools: [asking()],
-          approve: () => Promise.resolve({ choice, note: "x" }),
+          approve: () => Promise.resolve({ choice, decisionComment: "x" }),
         },
       );
       await runLoop(model, request, ctx);
-      expect(results(saved)[0]).not.toHaveProperty("note");
+      expect(results(saved)[0]).not.toHaveProperty("decisionComment");
       expect(
         events.find((e) => e.type === "tool.approval_resolved")?.data,
-      ).not.toHaveProperty("note");
+      ).not.toHaveProperty("decisionComment");
     });
   }
 
-  it("treats an empty or blank note as no note", async () => {
+  it("treats an empty or blank decision comment as no decision comment", async () => {
     const { events, saved, ctx, model } = setup(
       [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
       {
         tools: [asking()],
-        approve: () => Promise.resolve({ choice: "once", note: " \n " }),
+        approve: () =>
+          Promise.resolve({ choice: "once", decisionComment: " \n " }),
       },
     );
     await runLoop(model, request, ctx);
-    expect(results(saved)[0]).not.toHaveProperty("note");
+    expect(results(saved)[0]).not.toHaveProperty("decisionComment");
     expect(
       events.find((e) => e.type === "tool.approval_resolved")?.data,
-    ).not.toHaveProperty("note");
+    ).not.toHaveProperty("decisionComment");
   });
 
-  it("keeps a note given earlier in a turn when the run is cancelled", async () => {
+  it("keeps a decision comment given earlier in a turn when the run is cancelled", async () => {
     const controller = new AbortController();
     let asked = 0;
     let second!: () => void;
@@ -757,7 +762,10 @@ describe("approval", () => {
         tools: [asking()],
         approve: () => {
           if (++asked === 1)
-            return Promise.resolve({ choice: "deny", note: "not that" });
+            return Promise.resolve({
+              choice: "deny",
+              decisionComment: "not that",
+            });
           second();
           return new Promise<ApprovalAnswer>(() => {});
         },
@@ -769,10 +777,10 @@ describe("approval", () => {
     controller.abort();
     expect((await running).reason).toBe("cancelled");
     expect(results(saved)).toMatchObject([
-      { callId: "c1", note: { text: "not that", choice: "deny" } },
+      { callId: "c1", decisionComment: { text: "not that", choice: "deny" } },
       { callId: "c2", content: "Not run: the run was cancelled." },
     ]);
-    expect(results(saved)[1]).not.toHaveProperty("note");
+    expect(results(saved)[1]).not.toHaveProperty("decisionComment");
   });
 
   it("asks according to needsApproval, not only the tool's default", async () => {
@@ -1339,16 +1347,16 @@ describe("reporting errors (error reporting plan, P2)", () => {
   });
 });
 
-describe("runLoop with files and memory", () => {
+describe("runLoop with files", () => {
   const writer = defineTool({
     name: "writer",
-    description: "Writes a session file and a global note.",
+    description: "Writes a session file and a global file.",
     input: z.object({ fail: z.boolean() }),
     approval: "never",
     group: "utilities" as const,
     execute: (input, ctx) => {
-      ctx.entries.writeFile("session", "a", "text/plain", "v");
-      ctx.entries.addNote("global", "fact");
+      ctx.files.writeFile("session", "a", "text/plain", "v");
+      ctx.files.writeFile("global", "g.md", "text/plain", "fact");
       return input.fail
         ? { data: "nope", isError: true }
         : { data: { ok: ctx.projectId } };
@@ -1361,12 +1369,12 @@ describe("runLoop with files and memory", () => {
     approval: "never",
     group: "utilities" as const,
     execute: (_input, ctx) => ({
-      data: ctx.entries.readFile("session", "a")?.value ?? null,
+      data: ctx.files.readFile("session", "a")?.value ?? null,
     }),
   });
 
   it("records session changes with the result and passes the project", async () => {
-    const shared = new FakeSharedEntries();
+    const shared = new FakeSharedFiles();
     const { saved, ctx, model } = setup(
       [
         [
@@ -1382,16 +1390,14 @@ describe("runLoop with files and memory", () => {
       {
         tools: [writer, reader],
         projectId: "p1",
-        sharedEntries: shared,
-        newNoteId: () => "n1",
+        sharedFiles: shared,
       },
     );
     await runLoop(model, request, ctx);
     const [first, second] = results(saved);
-    expect(first?.entries).toEqual([
+    expect(first?.files).toEqual([
       {
         op: "put",
-        kind: "file",
         key: "a",
         value: "v",
         mediaType: "text/plain",
@@ -1400,12 +1406,11 @@ describe("runLoop with files and memory", () => {
     expect(first?.content).toBe('{"ok":"p1"}');
     // The next call sees the change, rebuilt from the transcript.
     expect(second?.content).toBe("v");
-    expect(second?.entries).toBeUndefined();
+    expect(second?.files).toBeUndefined();
     expect(shared.changes).toEqual([
       {
-        kind: "note",
         scope: "global",
-        key: "n1",
+        key: "g.md",
         op: "put",
         author: { by: "model", sessionId: "s-1", runId: "run-1" },
       },
@@ -1424,10 +1429,10 @@ describe("runLoop with files and memory", () => {
           { type: "finish", reason: "stop" },
         ],
       ],
-      { tools: [writer], sharedEntries: new FakeSharedEntries() },
+      { tools: [writer], sharedFiles: new FakeSharedFiles() },
     );
     await runLoop(model, request, ctx);
-    expect(results(saved)[0]?.entries).toBeUndefined();
+    expect(results(saved)[0]?.files).toBeUndefined();
   });
 });
 
@@ -1697,7 +1702,7 @@ describe("runLoop as a subagent", () => {
     });
   });
 
-  it("replays session entries from sessionMessages instead of the transcript", async () => {
+  it("replays session files from sessionMessages instead of the transcript", async () => {
     const seen: number[] = [];
     const { ctx, model } = setup(
       [[call("c1", "probe", "{}"), ...done], [{ type: "text", text: "x" }]],

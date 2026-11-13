@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  createEntryAccess,
-  replaySessionEntries,
+  createFileAccess,
+  replaySessionFiles,
   type Form,
   type InputAnswer,
   type ToolContext,
@@ -29,8 +29,8 @@ function context(answer: InputAnswer) {
     data: NO_DATA,
     copyLimit: 20,
     skills: [],
-    entries: createEntryAccess({
-      session: replaySessionEntries([]),
+    files: createFileAccess({
+      session: replaySessionFiles([]),
       sessionOps: [],
       inProject: false,
       author: { by: "model", sessionId: "s", runId: "r" },

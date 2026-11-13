@@ -1,9 +1,9 @@
 import {
-  createEntryAccess,
-  replaySessionEntries,
-  type EntrySearch,
-  type SharedEntries,
-} from "./entries.js";
+  createFileAccess,
+  replaySessionFiles,
+  type FileSearch,
+  type SharedFiles,
+} from "./files.js";
 import type { ApprovalAnswer, InputRequest } from "./events.js";
 import type { Review, Selection } from "./review.js";
 import {
@@ -25,7 +25,7 @@ import type {
   AssistantMessage,
   ContentBlock,
   DataOp,
-  EntryOp,
+  FileOp,
   MediaRef,
   Message,
   ToolResultMessage,
@@ -133,8 +133,8 @@ export interface LoopContext extends RunContext {
   /**
    * Waits for the user's answer to an approval request, for as long as it
    * takes (6.5). When `signal` aborts, the loop stops waiting on its own;
-   * the implementation should drop the request then. A note is kept only
-   * with "once" and "deny".
+   * the implementation should drop the request then. A decision comment is
+   * kept only with "once" and "deny".
    */
   approve: (
     request: ApprovalRequest,
@@ -185,20 +185,18 @@ export interface LoopContext extends RunContext {
   /** The project's name, for forms tools show; null when there is none. */
   projectName?: string | null;
   /**
-   * Project and global files and notes. Left out: tools see session scope
+   * Project and global files. Left out: tools see session scope
    * only.
    */
-  sharedEntries?: SharedEntries;
+  sharedFiles?: SharedFiles;
   /** What the model can read; left out when not known (attempts allowed). */
   mediaSupport?: MediaSupport;
   /** Stores bytes as blobs, for tools that make binary files. */
   blobs?: ToolContext["blobs"];
   /** The workspaces the session can use. Left out: none. */
   workspaces?: WorkspaceAccess;
-  /** Generates memory note ids. Default: 16 random hex digits. */
-  newNoteId?: () => string;
-  /** Searches files and notes. Left out: the search tools fail. */
-  searchEntries?: EntrySearch;
+  /** Searches files. Left out: the search tool fails. */
+  searchFiles?: FileSearch;
   /**
    * Global, project and agent schemas and data. Left out: session scope
    * only.
@@ -236,7 +234,7 @@ export interface LoopContext extends RunContext {
   takeUserMessages?: () => string[];
   /**
    * All the session's messages, read when a tool runs, to rebuild the
-   * session's files, notes, schemas and data (decision 30). A run's request
+   * session's files, schemas and data (decision 30). A run's request
    * can leave out other runs' messages; what they changed still counts.
    * Left out: the run's own transcript.
    */
@@ -362,10 +360,10 @@ export async function runLoop(
       isError: boolean;
       data?: unknown;
       state?: unknown;
-      entries?: EntryOp[];
+      files?: FileOp[];
       dataOps?: DataOp[];
       media?: MediaRef[];
-      note?: ToolResultMessage["note"];
+      decisionComment?: ToolResultMessage["decisionComment"];
       prompt?: PromptRecord | undefined;
       error?: string;
       durationMs?: number;
@@ -380,10 +378,12 @@ export async function runLoop(
       isError: result.isError,
       ...(result.data !== undefined ? { data: result.data } : {}),
       ...(result.state !== undefined ? { state: result.state } : {}),
-      ...(result.entries?.length ? { entries: result.entries } : {}),
+      ...(result.files?.length ? { files: result.files } : {}),
       ...(result.dataOps?.length ? { dataOps: result.dataOps } : {}),
       ...(result.media?.length ? { media: result.media } : {}),
-      ...(result.note ? { note: result.note } : {}),
+      ...(result.decisionComment
+        ? { decisionComment: result.decisionComment }
+        : {}),
       ...(result.prompt ? { prompt: result.prompt } : {}),
     };
     ctx.onMessage?.(messageId, message);
@@ -411,7 +411,7 @@ export async function runLoop(
     call: ToolCall,
     text: string,
     durationMs?: number,
-    note?: ToolResultMessage["note"],
+    decisionComment?: ToolResultMessage["decisionComment"],
     prompt?: PromptRecord,
   ) => {
     const content = truncate(text, errorLimit);
@@ -420,7 +420,7 @@ export async function runLoop(
       isError: true,
       ...(content !== text ? { error: text } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
-      ...(note ? { note } : {}),
+      ...(decisionComment ? { decisionComment } : {}),
       ...(prompt ? { prompt } : {}),
     });
   };
@@ -628,7 +628,7 @@ export async function runLoop(
       text: string,
       extra: {
         durationMs?: number;
-        note?: ToolResultMessage["note"];
+        decisionComment?: ToolResultMessage["decisionComment"];
         prompt?: PromptRecord | undefined;
         details?: Record<string, unknown> | undefined;
         stack?: string | undefined;
@@ -639,7 +639,7 @@ export async function runLoop(
         call,
         text,
         extra.durationMs,
-        extra.note,
+        extra.decisionComment,
         extra.prompt,
       );
       report(kind, messageId, text, extra);
@@ -672,8 +672,8 @@ export async function runLoop(
       return;
     }
     const tool = ctx.tools.find((t) => t.name === call.name);
-    // The user's note from the approval prompt, kept on the call's result.
-    let note: ToolResultMessage["note"];
+    // The user's comment from the approval prompt, kept on the call's result.
+    let decisionComment: ToolResultMessage["decisionComment"];
     if (!tool) {
       addReported("unknown_tool", `Unknown tool "${call.name}".`);
       return;
@@ -687,12 +687,12 @@ export async function runLoop(
       return;
     }
 
-    /** The messages the session's files, notes, schemas and data come from. */
+    /** The messages the session's files, schemas and data come from. */
     const sessionMessages = (): readonly Message[] =>
       ctx.sessionMessages?.() ?? transcript;
     /** The context a tool gets: for its review, then for its run. */
     const toolContext = (
-      sessionOps: EntryOp[],
+      sessionOps: FileOp[],
       dataOps: DataOp[],
       requestInput: (form: Form) => Promise<InputAnswer>,
       approval?: ToolContext["approval"],
@@ -709,17 +709,16 @@ export async function runLoop(
       state: latestToolState(transcript, tool.name),
       projectId: ctx.projectId ?? null,
       projectName: ctx.projectName ?? null,
-      entries: createEntryAccess({
-        session: replaySessionEntries(sessionMessages()),
+      files: createFileAccess({
+        session: replaySessionFiles(sessionMessages()),
         sessionOps,
-        ...(ctx.sharedEntries ? { shared: ctx.sharedEntries } : {}),
+        ...(ctx.sharedFiles ? { shared: ctx.sharedFiles } : {}),
         inProject: (ctx.projectId ?? null) !== null,
         author: { by: "model", sessionId: ctx.sessionId, runId: ctx.runId },
-        ...(ctx.newNoteId ? { newNoteId: ctx.newNoteId } : {}),
-        ...(ctx.searchEntries
+        ...(ctx.searchFiles
           ? {
               search: (q) =>
-                (ctx.searchEntries as EntrySearch)({
+                (ctx.searchFiles as FileSearch)({
                   ...q,
                   signal: ctx.signal,
                 }),
@@ -860,14 +859,30 @@ export async function runLoop(
       }
       const { choice } = answer;
       const text =
-        choice === "once" || choice === "deny" ? answer.note?.trim() : "";
+        choice === "once" || choice === "deny"
+          ? answer.decisionComment?.trim()
+          : "";
       emit({
         type: "tool.approval_resolved",
-        data: { requestId, choice, ...(text ? { note: text } : {}) },
+        data: {
+          requestId,
+          choice,
+          ...(text ? { decisionComment: text } : {}),
+        },
       });
-      if (text) note = { text, choice: choice === "deny" ? "deny" : "once" };
+      if (text) {
+        decisionComment = {
+          text,
+          choice: choice === "deny" ? "deny" : "once",
+        };
+      }
       if (choice === "deny") {
-        addError(call, "The user denied this tool call.", undefined, note);
+        addError(
+          call,
+          "The user denied this tool call.",
+          undefined,
+          decisionComment,
+        );
         return;
       }
       if (plan) {
@@ -880,7 +895,7 @@ export async function runLoop(
 
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
-    const sessionOps: EntryOp[] = [];
+    const sessionOps: FileOp[] = [];
     const dataOps: DataOp[] = [];
     // The form a tool showed (at most one per call, tool prompts D10) and
     // whether the user skipped it.
@@ -908,12 +923,12 @@ export async function runLoop(
         data: output.data,
         ...(output.state !== undefined ? { state: output.state } : {}),
         // Session-scoped changes count only when the tool succeeded.
-        ...(output.isError ? {} : { entries: sessionOps, dataOps }),
+        ...(output.isError ? {} : { files: sessionOps, dataOps }),
         ...(!output.isError && output.media?.length
           ? { media: output.media }
           : {}),
         ...(content !== text ? { error: text } : {}),
-        ...(note ? { note } : {}),
+        ...(decisionComment ? { decisionComment } : {}),
         prompt,
         durationMs: elapsed(),
       });
@@ -934,7 +949,7 @@ export async function runLoop(
       const message = err instanceof Error ? err.message : String(err);
       const thrown = {
         durationMs: elapsed(),
-        note,
+        decisionComment,
         prompt,
         details: err instanceof ToolError ? err.details : undefined,
         stack: err instanceof Error ? err.stack : undefined,
@@ -944,7 +959,7 @@ export async function runLoop(
         return { failed: message };
       }
       if (ctx.signal.aborted) {
-        addError(call, notRun(), elapsed(), note, prompt);
+        addError(call, notRun(), elapsed(), decisionComment, prompt);
         return;
       }
       addReported("tool_threw", `${tool.name} failed: ${message}`, thrown);

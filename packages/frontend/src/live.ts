@@ -21,7 +21,7 @@ import {
 import {
   agentKeys,
   dataKeys,
-  entryKeys,
+  fileKeys,
   errorKeys,
   mcpKeys,
   modelKeys,
@@ -38,7 +38,7 @@ import {
  * The in-flight run of each session, built from streamed events. A run can
  * write several messages (tools design, section 4): each finished message
  * goes into the cached transcript, tool results are refetched, and when the
- * run ends the transcript is refetched and the live entry cleared.
+ * run ends the transcript is refetched and the live file cleared.
  */
 
 export interface LiveMessage {
@@ -219,13 +219,13 @@ export function useSessionEvents(
           });
           void navigate({ to: "/" });
           break;
-        case "session.entries_changed":
-          // An edit to session-scoped files or notes added a message.
+        case "session.files_changed":
+          // An edit to session-scoped files added a message.
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
           void queryClient.invalidateQueries({
-            queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
+            queryKey: fileKeys.inScope({ scope: "session", id: sessionId }),
           });
           break;
         case "session.data_changed":
@@ -238,12 +238,12 @@ export function useSessionEvents(
         case "session.transcript_changed":
           // A message was edited, or the session moved to another branch or
           // had one deleted or restored, here or in another window. The
-          // files, notes, data and subagents follow the line shown.
+          // files, data and subagents follow the line shown.
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
           void queryClient.invalidateQueries({
-            queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
+            queryKey: fileKeys.inScope({ scope: "session", id: sessionId }),
           });
           void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
@@ -368,15 +368,11 @@ export function useSessionEvents(
           if (/^(schemas?|data)_/.test(event.data.name)) {
             void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           }
-          // The session's Files and Memory tabs update live (decision 35).
+          // The session's Files tab updates live (decision 35).
           // The Files view also shows the project's and the global files, so
           // a files tool can have changed any of them.
           if (/^files_/.test(event.data.name)) {
-            void queryClient.invalidateQueries({ queryKey: entryKeys.all });
-          } else if (/^memory_/.test(event.data.name)) {
-            void queryClient.invalidateQueries({
-              queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
-            });
+            void queryClient.invalidateQueries({ queryKey: fileKeys.all });
           }
           // The session's errors panel (error reporting plan, P6).
           if (event.data.isError) {

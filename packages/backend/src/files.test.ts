@@ -6,8 +6,8 @@ import {
   type Message,
   type ScriptStep,
 } from "@harness/core";
-import { allTools, entriesInstruction } from "@harness/tools";
-import { EntryStore } from "./entries-store.js";
+import { allTools, filesInstruction } from "@harness/tools";
+import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -34,9 +34,8 @@ async function setup(scripts: ScriptStep[][] = []) {
     new Date(Date.UTC(2026, 10, 1, 0, 0, ++clock))
       .toISOString()
       .replace(".000Z", "Z");
-  const entries = new EntryStore(t.db, now);
+  const files = new FileStore(t.db, now);
   const model = new ScriptedModel(scripts);
-  let note = 0;
   const runs = new RunManager({
     store,
     settings: () => ({
@@ -45,15 +44,14 @@ async function setup(scripts: ScriptStep[][] = []) {
     }),
     model: () => model,
     tools: allTools,
-    entries,
-    systemPrompt: (s) => entriesInstruction(s.project_id !== null),
-    newNoteId: () => `n${++note}`,
+    files,
+    systemPrompt: (s) => filesInstruction(s.project_id !== null),
     now,
   });
-  const app = buildServer({ store, runs, entries, token: TOKEN, env: {} });
+  const app = buildServer({ store, runs, files, token: TOKEN, env: {} });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
-  return { t, store, runs, app, model, entries };
+  return { t, store, runs, app, model, files };
 }
 
 async function api(
@@ -266,10 +264,6 @@ describe("the model's tools", () => {
           mediaType: "text/plain",
           value: "terse",
         }),
-        call("c3", "memory_add", {
-          scope: "project",
-          text: "Alice fears water",
-        }),
         { type: "finish", reason: "tool_calls" },
       ],
       [
@@ -279,11 +273,10 @@ describe("the model's tools", () => {
     ]);
     const p = await newProject(app);
     const id = await newSession(app, p);
-    // The user confirms the scope of each new file and note (tool prompts).
+    // The user confirms the scope of each new file (tool prompts).
     const runId = await send(app, runs, id, [
       { name: "plan.md", scope: "session" },
       { name: "style", scope: "global" },
-      { scope: "project", remember: false },
     ]);
     const prompts = store
       .listMessages(id)
@@ -303,25 +296,12 @@ describe("the model's tools", () => {
           { question: "Save to", answer: "global (suggested)" },
         ],
       },
-      {
-        title: "Save this note where?",
-        answers: [
-          {
-            question: "Save to",
-            answer: "project (P) (suggested)",
-          },
-          {
-            question: "Use this for my notes for the rest of this session",
-            answer: "No",
-          },
-        ],
-      },
     ]);
 
     const first = model.requests[0] as ChatRequest;
     expect(first.messages[0]).toEqual({
       role: "system",
-      content: entriesInstruction(true),
+      content: filesInstruction(true),
     });
 
     const session = await api(app, "GET", `/api/sessions/${id}/files/plan.md`);
@@ -338,10 +318,6 @@ describe("the model's tools", () => {
       { by: "model", sessionId: id, runId },
     ]);
 
-    const notes = await api(app, "GET", `/api/projects/${p}/notes`);
-    expect(notes.body).toMatchObject([
-      { key: "n1", value: "Alice fears water" },
-    ]);
     // The system message is not stored in the transcript.
     const detail = await api(app, "GET", `/api/sessions/${id}`);
     expect(
@@ -362,16 +338,21 @@ describe("the model's tools", () => {
     await send(app, runs, id);
     expect((model.requests[0] as ChatRequest).messages[0]).toEqual({
       role: "system",
-      content: entriesInstruction(false),
+      content: filesInstruction(false),
     });
   });
 });
 
-describe("session files and notes", () => {
+describe("session files", () => {
   it("records the user's edits as edit messages the next run sees", async () => {
     const { app, runs, model, store } = await setup([
       [
-        call("c1", "memory_add", { scope: "session", text: "fact" }),
+        call("c1", "files_write", {
+          scope: "session",
+          key: "b",
+          mediaType: "text/plain",
+          value: "fact",
+        }),
         { type: "finish", reason: "tool_calls" },
       ],
       [
@@ -388,7 +369,7 @@ describe("session files and notes", () => {
       ],
     ]);
     const id = await newSession(app);
-    await send(app, runs, id, [{ scope: "session", remember: false }]);
+    await send(app, runs, id, [{ name: "b", scope: "session" }]);
 
     const put = await api(app, "PUT", `/api/sessions/${id}/files/a`, {
       mediaType: "text/plain",
@@ -398,8 +379,9 @@ describe("session files and notes", () => {
     expect(put.body.versions).toMatchObject([
       { by: "user", sessionId: null, runId: null },
     ]);
-    const patched = await api(app, "PATCH", `/api/sessions/${id}/notes/n1`, {
-      text: "fact, edited",
+    const patched = await api(app, "PUT", `/api/sessions/${id}/files/b`, {
+      mediaType: "text/plain",
+      value: "fact, edited",
     });
     expect(patched.body.versions.map((v: { by: string }) => v.by)).toEqual([
       "model",
@@ -411,10 +393,9 @@ describe("session files and notes", () => {
       {
         role: "edit",
         content: "[The user changed session file a in the app.]",
-        entries: [
+        files: [
           {
             op: "put",
-            kind: "file",
             key: "a",
             value: "from user",
             mediaType: "text/plain",
@@ -423,15 +404,20 @@ describe("session files and notes", () => {
       },
       {
         role: "edit",
-        content: "[The user changed session memory note n1 in the app.]",
-        entries: [
-          { op: "put", kind: "note", key: "n1", value: "fact, edited" },
+        content: "[The user changed session file b in the app.]",
+        files: [
+          {
+            op: "put",
+            key: "b",
+            value: "fact, edited",
+            mediaType: "text/plain",
+          },
         ],
       },
     ]);
     const events = store.eventsAfter(id, 0);
     expect(
-      events.filter((e) => e.type === "session.entries_changed"),
+      events.filter((e) => e.type === "session.files_changed"),
     ).toHaveLength(2);
 
     await send(app, runs, id);
@@ -531,11 +517,11 @@ describe("purge", () => {
       { by: "model", sessionId: null, runId: null },
     ]);
     expect(
-      t.db.prepare("SELECT count(*) AS n FROM entry_versions").get(),
+      t.db.prepare("SELECT count(*) AS n FROM file_versions").get(),
     ).toEqual({ n: 1 });
   });
 
-  it("deletes a purged project's entries and versions", async () => {
+  it("deletes a purged project's files and versions", async () => {
     const { app, t } = await setup();
     const p = await newProject(app);
     await api(app, "PUT", `/api/projects/${p}/files/a`, {
@@ -554,8 +540,8 @@ describe("purge", () => {
           n: number;
         }
       ).n;
-    expect(count("entries")).toBe(1);
-    expect(count("entry_versions")).toBe(1);
+    expect(count("files")).toBe(1);
+    expect(count("file_versions")).toBe(1);
   });
 });
 
@@ -601,7 +587,7 @@ describe("files with folders in their names (files unification design, D6, D37)"
 
 describe("folders", () => {
   it("creates, lists, renames and deletes global folders with their files", async () => {
-    const { app, entries } = await setup();
+    const { app, files } = await setup();
     expect(
       (await api(app, "POST", "/api/global/folders", { path: "empty" })).status,
     ).toBe(201);
@@ -624,20 +610,20 @@ describe("folders", () => {
       newPath: "papers",
     });
     expect(renamed).toMatchObject({ status: 200, body: { path: "papers" } });
-    expect(entries.get("file", null, "papers/a.md")).toMatchObject({
+    expect(files.get(null, "papers/a.md")).toMatchObject({
       value: "A",
       media_type: "text/markdown",
       deleted_at: null,
     });
     // The old name is deleted, its history kept.
-    expect(entries.get("file", null, "docs/a.md")?.deleted_at).not.toBeNull();
+    expect(files.get(null, "docs/a.md")?.deleted_at).not.toBeNull();
 
     expect(
       (await api(app, "POST", "/api/global/folders/delete", { path: "papers" }))
         .status,
     ).toBe(204);
     expect((await api(app, "GET", "/api/global/files")).body).toEqual([]);
-    expect(entries.get("file", null, "papers/a.md")?.deleted_at).not.toBeNull();
+    expect(files.get(null, "papers/a.md")?.deleted_at).not.toBeNull();
     expect((await api(app, "GET", "/api/global/folders")).body).toEqual([
       "empty",
     ]);

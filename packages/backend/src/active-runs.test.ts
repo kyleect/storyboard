@@ -5,7 +5,7 @@ import { defineTool, ScriptedModel, type ScriptStep } from "@harness/core";
 import { allTools } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
 import { AppEvents, type AppEvent } from "./app-events.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { RunManager, type ActiveRunSummary } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -38,7 +38,7 @@ async function setup(scripts: ScriptStep[][]) {
   clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
-  const entries = new EntryStore(t.db);
+  const files = new FileStore(t.db);
   const agents = new AgentStore(t.db);
   const model = new ScriptedModel(scripts);
   // One AppEvents for the manager (which publishes) and the server (which
@@ -53,7 +53,7 @@ async function setup(scripts: ScriptStep[][]) {
     model: () => model,
     tools: [risky, ...allTools],
     agents,
-    entries,
+    files,
     systemPrompt: () => "BASE",
     events,
   });
@@ -61,7 +61,7 @@ async function setup(scripts: ScriptStep[][]) {
     store,
     runs,
     agents,
-    entries,
+    files,
     events,
     token: TOKEN,
     env: {},

@@ -225,7 +225,7 @@ describe("session data routes", () => {
     expect(messages).toMatchObject([
       {
         role: "edit",
-        entries: [],
+        files: [],
         dataOps: [{ op: "data_put", name: "Scene" }],
       },
     ]);

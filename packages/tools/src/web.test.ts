@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  createEntryAccess,
-  replaySessionEntries,
+  createFileAccess,
+  replaySessionFiles,
   ToolError,
   type ToolContext,
   NO_AGENTS,
@@ -35,8 +35,8 @@ const ctx: ToolContext = {
   data: NO_DATA,
   copyLimit: 20,
   skills: [],
-  entries: createEntryAccess({
-    session: replaySessionEntries([]),
+  files: createFileAccess({
+    session: replaySessionFiles([]),
     sessionOps: [],
     inProject: false,
     author: { by: "model", sessionId: "s", runId: "r" },

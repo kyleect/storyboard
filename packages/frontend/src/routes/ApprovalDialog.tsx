@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useState } from "react";
 import {
-  NOTE_CHOICES,
+  COMMENT_CHOICES,
   pointerSteps,
   selectAll,
   type ApprovalAnswer,
@@ -49,7 +49,7 @@ const choiceLabel = (
 
 /**
  * Asks whether a tool call may run (tools design 6.5). Closing it leaves the
- * request open; the run keeps waiting until it is answered. A note typed in
+ * request open; the run keeps waiting until it is answered. A comment typed in
  * the box goes with Allow once or Deny; the other two choices are disabled
  * while there is one (approval notes design, D2 and D6). A tool that always
  * asks offers only Allow once and Deny; one the agent's own setting makes ask
@@ -137,8 +137,8 @@ function ArgumentsDialog({
   onAnswer: (answer: ApprovalAnswer) => void;
   from: string | undefined;
 }) {
-  const [note, setNote] = useState("");
-  const text = note.trim();
+  const [comment, setComment] = useState("");
+  const text = comment.trim();
   // A tool that always asks can only be allowed once or denied.
   const choices = request.alwaysAsks
     ? CHOICES.filter((c) => c.choice === "once" || c.choice === "deny")
@@ -171,14 +171,14 @@ function ArgumentsDialog({
         <Textarea
           autosize
           minRows={2}
-          placeholder="Note for the model (optional)"
-          value={note}
-          onChange={(e) => setNote(e.currentTarget.value)}
+          placeholder="Comment for the model (optional)"
+          value={comment}
+          onChange={(e) => setComment(e.currentTarget.value)}
         />
         <Group gap="xs" justify="flex-end">
           {choices.map((c) => {
-            const takesNote = NOTE_CHOICES.includes(c.choice);
-            const blocked = !takesNote && text !== "";
+            const takesComment = COMMENT_CHOICES.includes(c.choice);
+            const blocked = !takesComment && text !== "";
             const button = (
               <Button
                 key={c.choice}
@@ -187,8 +187,8 @@ function ArgumentsDialog({
                 disabled={busy || blocked}
                 onClick={() =>
                   onAnswer(
-                    takesNote && text
-                      ? { choice: c.choice, note: text }
+                    takesComment && text
+                      ? { choice: c.choice, decisionComment: text }
                       : { choice: c.choice },
                   )
                 }
@@ -197,7 +197,7 @@ function ArgumentsDialog({
               </Button>
             );
             return blocked ? (
-              <Tooltip key={c.choice} label="Clear the note to use this">
+              <Tooltip key={c.choice} label="Clear the comment to use this">
                 {/* A disabled button gets no pointer events. */}
                 <span>{button}</span>
               </Tooltip>
@@ -282,11 +282,11 @@ function ChangesDialog({
 }) {
   const [review, setReview] = useState(shown);
   const [selection, setSelection] = useState<Selection>(() => selectAll(shown));
-  const [note, setNote] = useState("");
+  const [comment, setComment] = useState("");
   const [problems, setProblems] = useState<string[]>([]);
   const [stale, setStale] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const text = note.trim();
+  const text = comment.trim();
 
   useEffect(() => {
     if (!onCheck) return;
@@ -331,7 +331,9 @@ function ChangesDialog({
   };
 
   const withNote = (choice: ApprovalChoice): ApprovalAnswer =>
-    NOTE_CHOICES.includes(choice) && text ? { choice, note: text } : { choice };
+    COMMENT_CHOICES.includes(choice) && text
+      ? { choice, decisionComment: text }
+      : { choice };
   const blocked = busy || stale || refreshing;
   const others: { choice: ApprovalChoice; label: string }[] = [
     ...(request.alwaysAsks
@@ -430,9 +432,9 @@ function ChangesDialog({
         <Textarea
           autosize
           minRows={2}
-          placeholder="Note for the model (optional)"
-          value={note}
-          onChange={(e) => setNote(e.currentTarget.value)}
+          placeholder="Comment for the model (optional)"
+          value={comment}
+          onChange={(e) => setComment(e.currentTarget.value)}
         />
         <Group gap="xs" justify="flex-end">
           <Button
@@ -456,7 +458,7 @@ function ChangesDialog({
           {others.map((c) => (
             <Tooltip
               key={c.choice}
-              label="Clear the note to use this"
+              label="Clear the comment to use this"
               disabled={text === ""}
             >
               <span>

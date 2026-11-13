@@ -7,7 +7,7 @@ serves the HTTP API; and pushes events to the UI over server-sent events (SSE).
 
 ```
 packages/backend
-  migrations/            0001_init.sql … 0031_branches.sql
+  migrations/            0001_init.sql … 0034_files_table.sql
   src/
     main.ts              startup, wiring, shutdown
     config.ts            data directory and file locations
@@ -19,7 +19,7 @@ packages/backend
     server.ts            Fastify app: auth, core routes, event streams
     agent-routes.ts      agent HTTP routes         ┐
     skill-routes.ts      skill HTTP routes         │
-    entry-routes.ts      file, note, folder, blob  │ registered by server.ts
+    file-routes.ts      file, folder, blob       │ registered by server.ts
                          and media-describer routes│
     data-routes.ts       schema and data routes    │
     mcp-routes.ts        MCP server routes         │
@@ -32,7 +32,7 @@ packages/backend
     agents-store.ts      agents and versions
     agent-files.ts       agents as Markdown files (import and export)
     skills-store.ts      skills and versions
-    entries-store.ts     project/global files, folders and notes, versions
+    files-store.ts     project/global files, folders, versions
     data-store.ts        global/project/agent schemas and data, versions
     mcp-store.ts         MCP server rows
     mcp-manager.ts       connects to MCP servers; their tools become harness tools
@@ -71,7 +71,7 @@ packages/backend
 3. Load or create the database key; open the encrypted database.
 4. Apply pending migrations, then run the data steps (see
    [Migrations](#migrations)).
-5. Create the stores (`Store`, `EntryStore`, `AgentStore`, `SkillStore`,
+5. Create the stores (`Store`, `FileStore`, `AgentStore`, `SkillStore`,
    `DataStore`, `McpServerStore`) and the `SearchIndex`.
 6. Create the `McpManager` (it connects in step 11).
 7. Create the `RunManager`, giving it the stores, the settings reader, a factory
@@ -80,7 +80,7 @@ packages/backend
 8. **Recover**: runs still marked `running` from a previous process are closed as
    `interrupted` (see [recovery](#recovery)).
 9. **Purge expired trash** according to `trashRetentionDays`.
-10. **Index** existing files and notes if the search index has not been built.
+10. **Index** existing files if the search index has not been built.
 11. Load or create the API token; start the `Embedder`; build the Fastify server;
     **start the MCP servers**, which connect in the background (the backend does
     not wait for them); listen on `127.0.0.1` at the configured port.
@@ -128,11 +128,16 @@ search) and sets `journal_mode=WAL`, `foreign_keys=ON` and `busy_timeout=5000`.
 
 **Data steps.** Some changes to stored data cannot be written in SQL, for example
 rewriting the JSON inside `messages.message`. `data-steps.ts` holds these as
-named steps (`file-ops-media-types`, `attachments-to-files`, `branches-backfill`). `runDataSteps` runs
+named steps (`file-ops-media-types`, `attachments-to-files`, `branches-backfill`, `memory-removal`, `files-rename`, `decision-comment-rename`). `runDataSteps` runs
 each step once, in its own transaction, right after the migrations; the
 `data_steps` table records which have run, so a second start changes nothing.
 A step's name must never change once released, because the name is the record
 that it ran.
+
+A step works on the shape that stored data had at its time, not on the types
+of `@harness/core`, which describe the current shape. For example the steps
+before `files-rename` read a message's file changes from `entries`, with a
+`kind` on each change.
 
 ### Tables
 
@@ -144,7 +149,7 @@ that it ran.
 | Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments).                                            |
 | Workspaces       | `workspaces`, `workspace_attachments`, `workspace_index_files`                                                 | Folders and what attaches them; see [Workspaces](#workspaces).                                                                                |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                                                                    |
-| Files and memory | `entries`, `entry_versions`, `folders`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`          | Project and global entries, and indexed workspace files (scope `workspace`).                                                                  |
+| Files            | `files`, `file_versions`, `folders`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`             | Project and global files, and indexed workspace files (scope `workspace`).                                                                    |
 | Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                                                               |
 | Skills           | `skills`, `skill_versions`                                                                                     |                                                                                                                                               |
 | Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                                                               |
@@ -170,7 +175,7 @@ run created.
 a nullable `run_id` (session events have none), `session_id`, `time`, `type`, and
 JSON `data`.
 
-**Versioned records.** `entries`, `agents`, `skills`, `schemas` and `data` each
+**Versioned records.** `files`, `agents`, `skills`, `schemas` and `data` each
 have a table of current state and a `*_versions` table of every state they have
 had, oldest first. A delete adds a version flagged `deleted`; nothing is removed.
 
@@ -261,7 +266,7 @@ understanding the run system:
 - **Session approvals**: `allowToolForSession` / `isToolAllowedForSession`.
 - **Trash and purge**: `setSessionTrashed`, `trashProject`, `restoreProject`,
   `purgeSession`, `purgeProject`. A purge deletes the session's events, errors,
-  runs, messages and approvals; entry and data versions it authored are kept with
+  runs, messages and approvals; file and data versions it authored are kept with
   their session link cleared.
 
 ## Binary files and attachments
@@ -397,7 +402,7 @@ purging a session or project drops its attachments.
 - **Stale check:** `write` and `edit` refuse a file that exists unless it was read
   in this session and its modified time and size are unchanged. The read records
   are in memory, per session, so a backend restart asks for a new read.
-- Listing is cut at 2,000 entries and does not enter symlinked folders; deleting
+- Listing is cut at 2,000 files and does not enter symlinked folders; deleting
   a folder does not follow links.
 
 `{{workspaces}}` expands to one line per workspace the run has (name, reference,
@@ -421,8 +426,8 @@ purging a session or project drops its attachments.
 
 The user ticks what is searched; the ticks are a JSON array of paths relative to
 the folder on the workspace row (`index_ticks`). A ticked folder covers everything
-below it, and `""` means the whole folder. Unticking one entry inside a ticked
-folder ticks the folder's other entries instead (`workspace-ticks.ts`). Paths are
+below it, and `""` means the whole folder. Unticking one file inside a ticked
+folder ticks the folder's other files instead (`workspace-ticks.ts`). Paths are
 checked with `resolveIn`, so a tick cannot leave the folder.
 
 `WorkspaceIndexer` (`workspace-index.ts`) keeps the index current. Text files in
@@ -517,7 +522,7 @@ otherwise it is refused.
    top-level run gets `listMessages(sessionId, "top")`; a subagent gets only the
    messages it wrote.
 8. **Call `runLoop`** with a context that wires core to the backend: shared
-   entries, shared data, the schema checker, search, projects, agents,
+   files, shared data, the schema checker, search, projects, agents,
    subagents, approvals, forms, persistence and error reporting.
 9. **When the loop returns**, set the run's final status and record a
    `run_failed` error if it failed without a tool having ended it.
@@ -572,7 +577,7 @@ empty parts dropped and the rest joined by blank lines:
    uses `{{skills}}` or `{{skills_instruction}}`;
 5. the `schemasInstruction` setting and the schemas list, _unless_ a prompt above
    uses `{{schemas}}` or `{{schemas_instruction}}`;
-6. the files and memory instruction (says whether the session is in a project);
+6. the files instruction (says whether the session is in a project);
 7. for a subagent, its closing line (the agent's `childPrompt`, else the global
    one).
 
@@ -660,7 +665,7 @@ stores the open request in the active run and waits. `POST
 - An always-asks tool accepts only `once` and `deny`.
 - If the **agent's own setting** is why it asks, `always` is refused (changing the
   global setting would not change what the agent says).
-- A `note` is accepted only with `once` or `deny`.
+- A `decisionComment` is accepted only with `once` or `deny`.
 - A `selection` of changes is accepted only with `once`, and only if the request
   has a review.
 - For a request with a review, if the underlying data changed since it was shown
@@ -720,7 +725,7 @@ A subagent is a child run.
 Limits: the depth is capped by `subagentDepth` (a top-level run is depth 0), and
 a child run is subject to the same `loopLimit` as any run.
 
-Although a child's request is isolated, **session-scoped files, notes, schemas
+Although a child's request is isolated, **session-scoped files, schemas
 and data are rebuilt from all messages of the session, including subagents'**, so
 what a subagent writes in the session scope is visible to the parent afterward.
 
@@ -731,7 +736,7 @@ the subscribers of that session. Therefore anything a client sees has already
 been saved.
 
 - `onMessage` from the loop → `saveMessage` (upsert) and `linkRunMessage`.
-  Tool results that changed session files or notes also update the search index.
+  Tool results that changed session files also update the search index.
 - When a tool that writes schemas or data succeeds, the backend publishes an app
   event `data.changed`.
 - The loop's `reportError` → the `errors` table and an `errors.changed` app event.
@@ -767,9 +772,9 @@ the open forms. Child runs are listed with their parent ids.
 
 ### Edits made by the user
 
-When the user changes session-scoped files, notes, schemas or data in the UI,
-`editSessionEntries` / `editSessionData` append an **edit message** carrying the
-changes and a one-line notice, and publish `session.entries_changed` /
+When the user changes session-scoped files, schemas or data in the UI,
+`editSessionFiles` / `editSessionData` append an **edit message** carrying the
+changes and a one-line notice, and publish `session.files_changed` /
 `session.data_changed`. These are refused while a run is active. The model sees
 the notice on its next call, and replay picks the change up.
 
@@ -814,7 +819,7 @@ with their subagent messages, the runs that wrote them with their
 `run_messages`, and those runs' events with `messageId` and `parentRunId`
 rewritten (events about messages after the point are dropped). It also copies
 the model, effort, agent and project, media choices, session tool and subject
-approvals and workspace attachments. Files, notes and data belong to the
+approvals and workspace attachments. Files and data belong to the
 project or global scope and are shared, and blobs are shared by hash. The new
 session records `forked_from_id` and the title the source had; the session
 detail returns `forkedFrom` with `state` `live`, `trashed` or `gone`. A new
@@ -831,7 +836,7 @@ project is also trashed requires the caller to say whether the project returns
 with all of its sessions or alone. Only items in the trash can be permanently
 deleted. Items past the retention period are purged at startup.
 
-## Agents, skills, entries, data
+## Agents, skills, files, data
 
 These four stores follow the same pattern, and all are used both by HTTP routes
 (the UI) and by the tools (the model).
@@ -840,7 +845,7 @@ These four stores follow the same pattern, and all are used both by HTTP routes
 | ------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `AgentStore` | global or project                | Name, description, prompt, tool grant, per-tool approval settings, `subagent` flag, per-agent `childReminders` and `childPrompt`. Names are unique per scope. Can be exported to and imported from Markdown with YAML front matter (`agent-files.ts`). |
 | `SkillStore` | built-in, global, project, agent | Display name, a slug (`name`) derived from it, description, body. Slugs are unique per scope and at most 64 characters.                                                                                                                                |
-| `EntryStore` | project or global                | Files (key, type, value) and notes. Session entries are in the transcript. `shared(projectId)` returns the `SharedEntries` view that core uses.                                                                                                        |
+| `FileStore`  | project or global                | Files (key, type, value). Session files are in the transcript. `shared(projectId)` returns the `SharedFiles` view that core uses.                                                                                                                      |
 | `DataStore`  | global, project, agent           | Schemas with versions and data pinned to a schema version. `shared(owner)` returns `SharedData` for one run's project and agent.                                                                                                                       |
 
 Common behaviour:
@@ -848,7 +853,7 @@ Common behaviour:
 - **Versioning.** Each save, delete and restore adds a version. The current-state
   row always holds the latest state.
 - **Soft delete.** Deleted rows remain, and can be restored.
-- **Authorship.** Entry and data versions record who made the change (`user`, or
+- **Authorship.** File and data versions record who made the change (`user`, or
   `model` with session and run ids).
 - **Scope by owner.** A run reaches only its own session's project and its own
   agent's scope. An agent's skills, schemas and data are in scope only while the
@@ -940,14 +945,14 @@ prompts.
 
 ## Search
 
-Files and notes in every scope are searchable by **keywords and by meaning**.
+Files in every scope are searchable by **keywords and by meaning**.
 
-**Index.** Live entries are split into _chunks_ (`chunking.ts`: about 1,500
+**Index.** Live files are split into _chunks_ (`chunking.ts`: about 1,500
 characters, split at headings, then blank lines, then sentences). Chunks go in
 `chunks`, with an FTS5 index (`chunks_fts`, Porter stemming, kept in sync by
-triggers). Session entries are indexed too, although they live in the
+triggers). Session files are indexed too, although they live in the
 transcript; the run manager keeps the index in step with session changes.
-Deleted entries have no chunks. Existing entries are indexed once at startup if
+Deleted files have no chunks. Existing files are indexed once at startup if
 the index has not been built.
 
 **Embeddings.** `chunk_vectors` holds one vector per chunk for the current
@@ -963,7 +968,7 @@ model set it does nothing. Models whose names contain `nomic-embed-text` get the
 (session, its project, global). It runs the FTS5 keyword query and, if an
 embedding model is set, a cosine-distance vector query (sqlite-vec). The two
 rankings are merged with **reciprocal rank fusion** (constant 60), grouped by
-entry, with the best chunk as the excerpt. If there is no embedding model or the
+file, with the best chunk as the excerpt. If there is no embedding model or the
 query cannot be embedded, it returns keyword results with a notice that says why.
 
 ## Errors
@@ -1032,7 +1037,7 @@ request also lists the `issues`.
 | `POST /api/runs/:id/cancel`                                  | Cancel a run (and its children).                                                                                  |
 | `POST /api/runs/:id/end-reasoning`                           | Ask the model to stop thinking and answer.                                                                        |
 | `POST /api/runs/:id/messages`                                | Send a message to a running subagent; it reads it at its next step (`{ text }`; 200 with `{ waiting }`).          |
-| `POST /api/runs/:id/approvals/:requestId`                    | Answer an approval: `choice`, optional `note`, optional `selection`.                                              |
+| `POST /api/runs/:id/approvals/:requestId`                    | Answer an approval: `choice`, optional `decisionComment`, optional `selection`.                                   |
 | `POST /api/runs/:id/approvals/:requestId/check`, `…/refresh` | Validate a selection; recompute a review.                                                                         |
 | `POST /api/runs/:id/inputs/:requestId`                       | Answer or skip a form.                                                                                            |
 | `GET /api/runs/active`                                       | Every run in progress in any session, with its agent and whether it waits for the user.                           |
@@ -1055,14 +1060,14 @@ The same sub-paths exist under each scope prefix:
 | `/api/sessions/:sessionId` | a session                                |
 | `/api/agents/:agentId`     | an agent (schemas and data, skills only) |
 
-| Sub-path                                                          | Available under                 | Purpose                                                                                                            |
-| ----------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/files`, `/files/:key`, `/notes`, `/notes/:id` (plus `/restore`) | global, project, session        | List, read, write, update, delete, restore files and notes. `POST /files` uploads a binary file.                   |
-| `/folders`, `/folders/rename`, `/folders/delete`                  | global, project, session        | List, create, rename and delete explicit folders of files (see [Folders](#folders)).                               |
-| `/data`, `/data/:dataId` (plus `/migrate`, `/restore`)            | global, project, agent, session | Data.                                                                                                              |
-| `/schemas`, `/schemas/:schemaId` (plus `/restore`, `/copy`)       | global, project, agent, session | Schemas.                                                                                                           |
-| `/agents`                                                         | global, project                 | Agents. Also `GET/PUT/DELETE /api/agents/:id`, `…/restore`, `…/versions/:seq`, `…/export`, `POST …/agents/import`. |
-| `/skills`                                                         | global, project, agent          | Skills. Also `GET/PUT/DELETE /api/skills/:id`, `…/restore`.                                                        |
+| Sub-path                                                    | Available under                 | Purpose                                                                                                            |
+| ----------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `/files`, `/files/:key` (plus `/restore`)                   | global, project, session        | List, read, write, update, delete, restore files. `POST /files` uploads a binary file.                             |
+| `/folders`, `/folders/rename`, `/folders/delete`            | global, project, session        | List, create, rename and delete explicit folders of files (see [Folders](#folders)).                               |
+| `/data`, `/data/:dataId` (plus `/migrate`, `/restore`)      | global, project, agent, session | Data.                                                                                                              |
+| `/schemas`, `/schemas/:schemaId` (plus `/restore`, `/copy`) | global, project, agent, session | Schemas.                                                                                                           |
+| `/agents`                                                   | global, project                 | Agents. Also `GET/PUT/DELETE /api/agents/:id`, `…/restore`, `…/versions/:seq`, `…/export`, `POST …/agents/import`. |
+| `/skills`                                                   | global, project, agent          | Skills. Also `GET/PUT/DELETE /api/skills/:id`, `…/restore`.                                                        |
 
 Other agent routes: `GET /api/sessions/:id/agents` (agents the session can pick),
 `GET /api/agent-tools` (every tool with its group, whether it is always on or off,

@@ -432,7 +432,7 @@ function ModelSettings({ view }: { view: SettingsView }) {
           label="Embedding model"
           description={
             envNote("embeddingModel") ??
-            "A dedicated embedding model on the router, for searching files and memory by meaning. Clear it for keyword search only."
+            "A dedicated embedding model on the router, for searching files by meaning. Clear it for keyword search only."
           }
           placeholder="None (keyword search only)"
           value={form.values.embeddingModel || null}
@@ -990,7 +990,7 @@ function Limits({ view }: { view: SettingsView }) {
           label="Copy limit"
           description={
             envNote("copyLimit") ??
-            `The most files or notes one copy or move call may name, 1 to ${COPY_LIMIT_MAX}. Copying everything in a scope is not limited.`
+            `The most files one copy or move call may name, 1 to ${COPY_LIMIT_MAX}. Copying everything in a scope is not limited.`
           }
           allowDecimal={false}
           min={1}

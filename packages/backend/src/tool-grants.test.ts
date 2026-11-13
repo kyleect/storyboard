@@ -18,7 +18,7 @@ const t = (
 const TOOLS = [
   t("files_edit", "files"),
   t("files_kill", "files", true),
-  t("memory_add", "memory"),
+  t("skill_add", "skills"),
   t("web_search", "web"),
   t("read_webpage", "web"),
   t("read_wiki", "web"),
@@ -38,10 +38,10 @@ describe("allowedNames", () => {
     const g = grant({
       groups: ["web"],
       except: ["read_wiki"],
-      extras: ["memory_add"],
+      extras: ["skill_add"],
     });
     expect(allowedNames(g, TOOLS)).toEqual([
-      "memory_add",
+      "skill_add",
       "web_search",
       "read_webpage",
     ]);
@@ -75,7 +75,7 @@ describe("allowedNames", () => {
       ),
     ).toEqual([
       "files_kill",
-      "memory_add",
+      "skill_add",
       "web_search",
       "read_webpage",
       "read_wiki",
@@ -96,7 +96,7 @@ describe("allowedNames", () => {
       mode: "deny",
       groups: ["web"],
       except: ["web_search"],
-      extras: ["memory_add"],
+      extras: ["skill_add"],
     });
     expect(allowedNames(g, TOOLS)).toEqual(["files_edit", "web_search"]);
   });
@@ -110,9 +110,9 @@ describe("allowedNames", () => {
 
 describe("listedTools", () => {
   it("lists the allowed tools for an allow agent", () => {
-    expect(listedTools(grant({ groups: ["memory"] }), TOOLS)).toEqual({
+    expect(listedTools(grant({ groups: ["skills"] }), TOOLS)).toEqual({
       toolMode: "allow",
-      tools: ["memory_add"],
+      tools: ["skill_add"],
     });
   });
 
@@ -129,7 +129,7 @@ describe("listedTools", () => {
 
 describe("newToolNames", () => {
   it("names the tools that are not in the known set", () => {
-    const g = grant({ known: ["files_edit", "memory_add"] });
+    const g = grant({ known: ["files_edit", "skill_add"] });
     expect(newToolNames(g, TOOLS)).toEqual([
       "files_kill",
       "web_search",

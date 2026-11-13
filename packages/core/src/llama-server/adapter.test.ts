@@ -251,7 +251,7 @@ describe("chat completions", () => {
         {
           role: "edit",
           content: "[The user changed session file x in the app.]",
-          entries: [{ op: "put", kind: "file", key: "x", value: "v" }],
+          files: [{ op: "put", key: "x", value: "v" }],
         },
         { role: "user", content: "c" },
       ],
@@ -268,7 +268,7 @@ describe("chat completions", () => {
     ]);
   });
 
-  it("sends a turn's approval notes as a user message after its results", async () => {
+  it("sends a turn's decision comments as a user message after its results", async () => {
     server.reply({ frames: [DONE] });
     await collect({
       kind: "chat",
@@ -286,7 +286,7 @@ describe("chat completions", () => {
           name: "now",
           content: "noon",
           isError: false,
-          note: { text: "use 24-hour time", choice: "once" },
+          decisionComment: { text: "use 24-hour time", choice: "once" },
         },
       ],
     });
@@ -309,7 +309,7 @@ describe("chat completions", () => {
       {
         role: "user",
         content:
-          "Notes on this turn's tool calls:\n- now (allowed): use 24-hour time",
+          "The user's comments on this turn's tool calls:\n- now (allowed): use 24-hour time",
       },
     ]);
   });

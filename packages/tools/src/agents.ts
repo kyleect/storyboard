@@ -60,7 +60,7 @@ export const agentView = defineTool({
               prompt: current.prompt,
             }
           : null,
-        ...(current ? {} : { note: "This run has no agent." }),
+        ...(current ? {} : { guidance: "This run has no agent." }),
       },
     };
   },
