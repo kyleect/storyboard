@@ -307,7 +307,7 @@ describe("approval", () => {
   });
 
   for (const choice of ["once", "deny"] as const) {
-    it(`keeps a note sent with "${choice}" on the result and the event`, async () => {
+    it(`keeps a decision comment sent with "${choice}" on the result and the event`, async () => {
       const rec = recorder("rec", "ask");
       const { app, runs, store, model } = await setup(
         [[call("a")], answer],
@@ -320,7 +320,7 @@ describe("approval", () => {
         app,
         "POST",
         `/api/runs/${runId}/approvals/${approval.requestId}`,
-        { choice, note: "keep it short" },
+        { choice, decisionComment: "keep it short" },
       );
       expect(res).toEqual({ status: 200, body: { ok: true } });
       await waitIdle(runs, runId);
@@ -328,7 +328,7 @@ describe("approval", () => {
       const d = await detail(app, id);
       expect(d.messages[2]?.message).toMatchObject({
         role: "tool",
-        note: { text: "keep it short", choice },
+        decisionComment: { text: "keep it short", choice },
       });
       expect(roles(d).at(-1)).toBe("assistant");
       const resolved = store
@@ -337,17 +337,17 @@ describe("approval", () => {
       expect(resolved?.data).toEqual({
         requestId: approval.requestId,
         choice,
-        note: "keep it short",
+        decisionComment: "keep it short",
       });
-      // The next model call receives the result with its note.
+      // The next model call receives the result with its decision comment.
       expect((model.requests[1] as ChatRequest).messages.at(-1)).toMatchObject({
         role: "tool",
-        note: { text: "keep it short", choice },
+        decisionComment: { text: "keep it short", choice },
       });
     });
   }
 
-  it('rejects a note sent with "session" or "always"', async () => {
+  it('rejects a decision comment sent with "session" or "always"', async () => {
     const rec = recorder("rec", "ask");
     const { app, runs } = await setup([[call("a")], answer], [rec.tool]);
     const id = await newSession(app);
@@ -355,9 +355,9 @@ describe("approval", () => {
     const { approval } = await openApproval(app, id);
     const url = `/api/runs/${runId}/approvals/${approval.requestId}`;
     for (const choice of ["session", "always"]) {
-      expect((await api(app, "POST", url, { choice, note: "x" })).status).toBe(
-        400,
-      );
+      expect(
+        (await api(app, "POST", url, { choice, decisionComment: "x" })).status,
+      ).toBe(400);
     }
     // The request is still open.
     expect(runs.isActive(runId)).toBe(true);

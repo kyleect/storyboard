@@ -202,7 +202,7 @@ function ForkForm({
       <Stack gap="sm">
         <Text size="sm">
           Copies the conversation up to this message into a new session. The
-          files, notes and data are shared with this one, not copied.
+          files and data are shared with this one, not copied.
         </Text>
         <TextInput
           label="Title of the new session"

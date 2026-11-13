@@ -3,8 +3,8 @@ import {
   editNotice,
   RunControl,
   runLoop,
-  type EntryOp,
-  type EntrySearch,
+  type FileOp,
+  type FileSearch,
   type ApprovalAnswer,
   type ApprovalHooks,
   type ApprovalRequest,
@@ -33,7 +33,7 @@ import {
   type Usage,
   dataEditNotice,
   replaySessionData,
-  replaySessionEntries,
+  replaySessionFiles,
   type DataOp,
   type SchemaChecker,
   type SchemaScope,
@@ -46,7 +46,7 @@ import { AppEvents } from "./app-events.js";
 import { ErrorStore, type NewError } from "./errors-store.js";
 import { cleanTitle, requestTitle } from "./auto-title.js";
 import type { Settings } from "./settings.js";
-import type { EntryStore } from "./entries-store.js";
+import type { FileStore } from "./files-store.js";
 import { putBlob } from "./blobs.js";
 import { completePoints, isEditable, regenerableTurn } from "./branches.js";
 import { forkSession } from "./fork.js";
@@ -149,7 +149,7 @@ interface ActiveRun {
 }
 
 /**
- * A map that calls `onChange` after each entry is added, replaced or removed.
+ * A map that calls `onChange` after each file is added, replaced or removed.
  * A run's open approvals and forms use it, so every change to them reaches the
  * activity indicators without each call site having to say so.
  */
@@ -261,10 +261,10 @@ export interface RunManagerOptions {
    */
   skillsList?: (skills: readonly RunSkill[]) => string;
   /**
-   * Project and global files and notes for tools. Left out: tools see
+   * Project and global files for tools. Left out: tools see
    * session scope only.
    */
-  entries?: EntryStore;
+  files?: FileStore;
   /**
    * Global, project and agent schemas and data (schemas and data design).
    * Left out: tools see session scope only.
@@ -304,12 +304,10 @@ export interface RunManagerOptions {
    * prompts design, decisions 1 and 2).
    */
   systemPrompt?: (session: SessionRow) => string | undefined;
-  /** Generates memory note ids. Default: 16 random hex digits. */
-  newNoteId?: () => string;
   /** Kept in step with session-scoped changes, when given. */
   index?: SearchIndex;
   /** The search tools' backend for a session. Left out: search fails. */
-  search?: (session: SessionRow) => EntrySearch;
+  search?: (session: SessionRow) => FileSearch;
   /** Where tool errors and failed runs are recorded. Default: over `store.db`. */
   errors?: ErrorStore;
   /** App-wide events (`errors.changed`). Default: a new one. */
@@ -971,7 +969,7 @@ export class RunManager {
 
   /**
    * Answers an approval request. "session" and "always" are recorded before
-   * the tool runs. A note goes with "once" or "deny" only.
+   * the tool runs. A decision comment goes with "once" or "deny" only.
    */
   answerApproval(runId: string, requestId: string, answer: ApprovalAnswer) {
     const { choice } = answer;
@@ -1364,17 +1362,17 @@ export class RunManager {
   }
 
   /**
-   * Records the user's changes to session-scoped files or notes as an edit
-   * message and emits `session.entries_changed` (files and memory design,
+   * Records the user's changes to session-scoped files as an edit
+   * message and emits `session.files_changed` (files and memory design,
    * decision 11). Refused while a run is in progress (plan P5).
    */
-  editSessionEntries(sessionId: string, ops: EntryOp[]): { messageId: string } {
+  editSessionFiles(sessionId: string, ops: FileOp[]): { messageId: string } {
     this.requireIdle(sessionId);
     const messageId = this.newId();
     this.store.addMessage(
       sessionId,
       messageId,
-      { role: "edit", content: editNotice(ops), entries: ops },
+      { role: "edit", content: editNotice(ops), files: ops },
       this.now(),
     );
     this.indexSessionOps(sessionId, ops);
@@ -1382,7 +1380,7 @@ export class RunManager {
       runId: null,
       sessionId,
       time: this.now(),
-      type: "session.entries_changed",
+      type: "session.files_changed",
       data: { messageId },
     });
     return { messageId };
@@ -1398,7 +1396,7 @@ export class RunManager {
     this.store.addMessage(
       sessionId,
       messageId,
-      { role: "edit", content: dataEditNotice(ops), entries: [], dataOps: ops },
+      { role: "edit", content: dataEditNotice(ops), files: [], dataOps: ops },
       this.now(),
     );
     this.publish({
@@ -1412,11 +1410,10 @@ export class RunManager {
   }
 
   /** Keeps the search index in step with session-scoped changes. */
-  private indexSessionOps(sessionId: string, ops: readonly EntryOp[]) {
+  private indexSessionOps(sessionId: string, ops: readonly FileOp[]) {
     for (const op of ops) {
       if (op.op === "folder") continue;
-      this.options.index?.indexEntry(
-        op.kind,
+      this.options.index?.indexFile(
         "session",
         sessionId,
         op.key,
@@ -1481,11 +1478,11 @@ export class RunManager {
   ): Parameters<typeof filesList>[0] {
     const describe = (blob?: { hash: string }) =>
       blob ? getDerived(this.store.db, blob.hash)?.text : undefined;
-    const shared = this.options.entries?.shared(projectId);
+    const shared = this.options.files?.shared(projectId);
     const sharedFiles = (["global", "project"] as const).flatMap((scope) =>
       scope === "project" && projectId === null
         ? []
-        : (shared?.list("file", scope) ?? []).map((e) => ({
+        : (shared?.list(scope) ?? []).map((e) => ({
             scope,
             key: e.key,
             mediaType: e.mediaType ?? "text/plain",
@@ -1493,9 +1490,9 @@ export class RunManager {
           })),
     );
     const own = [
-      ...replaySessionEntries(
+      ...replaySessionFiles(
         this.store.listMessages(sessionId).map((m) => m.message),
-      ).file,
+      ).files,
     ].map(([key, e]) => ({
       scope: "session" as const,
       key,
@@ -1866,7 +1863,7 @@ export class RunManager {
         ? undefined
         : [instruction, list].filter((t) => t.trim() !== "").join("\n\n");
     // Global, project and agent prompts, then the skill list, then the files
-    // and memory instruction (system prompts design, decisions 1 and 2;
+    // instruction (system prompts design, decisions 1 and 2;
     // skills design 11). Empty ones are left out.
     const system =
       [
@@ -1934,8 +1931,8 @@ export class RunManager {
         anchorId,
       );
       this.store.linkRunMessage(runId, id);
-      if (message.role === "tool" && message.entries) {
-        this.indexSessionOps(sessionId, message.entries);
+      if (message.role === "tool" && message.files) {
+        this.indexSessionOps(sessionId, message.files);
       }
       // Pages showing global, project or agent data refetch (schemas and
       // data design). Session data refreshes from the session's own events.
@@ -1974,7 +1971,7 @@ export class RunManager {
       // request is made.
       resolveFile: fileResolver(
         this.store,
-        this.options.entries,
+        this.options.files,
         sessionId,
         workspaceMedia,
       ),
@@ -2018,7 +2015,7 @@ export class RunManager {
         );
         const find = fileLookup(
           this.store,
-          this.options.entries,
+          this.options.files,
           sessionId,
           workspaceMedia,
         );
@@ -2074,7 +2071,7 @@ export class RunManager {
                 },
               }
             : {}),
-          // Files, notes, schemas and data are rebuilt from every message of
+          // Files, schemas and data are rebuilt from every message of
           // the session, subagents' included (decision 30).
           sessionMessages: () =>
             this.store.listMessages(sessionId).map((m) => m.message),
@@ -2097,15 +2094,12 @@ export class RunManager {
           },
           projectId: session?.project_id ?? null,
           projectName: project?.name ?? null,
-          ...(this.options.entries
+          ...(this.options.files
             ? {
-                sharedEntries: this.options.entries.shared(
+                sharedFiles: this.options.files.shared(
                   session?.project_id ?? null,
                 ),
               }
-            : {}),
-          ...(this.options.newNoteId
-            ? { newNoteId: this.options.newNoteId }
             : {}),
           ...(this.options.data
             ? { sharedData: this.options.data.shared(dataOwner) }
@@ -2114,13 +2108,13 @@ export class RunManager {
             ? { schemaChecker: this.options.schemaChecker }
             : {}),
           ...(this.options.search && session
-            ? { searchEntries: this.options.search(session) }
+            ? { searchFiles: this.options.search(session) }
             : {}),
           ...(session
             ? {
                 projects: projectAccess({
                   store: this.store,
-                  entries: this.options.entries,
+                  files: this.options.files,
                   data: this.options.data,
                   skills: this.options.skills,
                   runAgent: agent,
@@ -2130,7 +2124,6 @@ export class RunManager {
                   author: { by: "model", sessionId, runId },
                   newId: this.newId,
                   now: this.now,
-                  newNoteId: this.options.newNoteId,
                 }),
                 agents: agentAccess({
                   store: this.store,

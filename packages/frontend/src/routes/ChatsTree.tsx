@@ -274,9 +274,7 @@ function ProjectMenu({
       <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
         <Menu.Item onClick={() => onNewChat(project.id)}>New chat</Menu.Item>
         <Menu.Divider />
-        <Menu.Item onClick={() => onOpenPage("project-files")}>
-          Files & memory
-        </Menu.Item>
+        <Menu.Item onClick={() => onOpenPage("project-files")}>Files</Menu.Item>
         <Menu.Item onClick={() => onOpenPage("project-agents")}>
           Agents
         </Menu.Item>

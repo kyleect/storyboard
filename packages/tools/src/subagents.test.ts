@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  createEntryAccess,
-  replaySessionEntries,
+  createFileAccess,
+  replaySessionFiles,
   NO_AGENTS,
   NO_DATA,
   NO_PROJECTS,
@@ -66,8 +66,8 @@ function context(
     data: NO_DATA,
     copyLimit: 20,
     skills: [],
-    entries: createEntryAccess({
-      session: replaySessionEntries([]),
+    files: createFileAccess({
+      session: replaySessionFiles([]),
       sessionOps: [],
       inProject: false,
       author: { by: "model", sessionId: "s", runId: "r" },
@@ -92,11 +92,11 @@ describe("start_subagent", () => {
 
   it("attaches image and audio files to the task, and refuses others", async () => {
     const { ctx, started } = context([agent()], ok);
-    ctx.entries.putBlob("session", "cat.png", "image/png", {
+    ctx.files.putBlob("session", "cat.png", "image/png", {
       hash: "h",
       size: 3,
     });
-    ctx.entries.writeFile("session", "notes.md", "text/markdown", "hi");
+    ctx.files.writeFile("session", "notes.md", "text/markdown", "hi");
     const out = await startSubagent.execute(
       { agentId: "a1", task: "Look", files: ["<session://cat.png>"] },
       ctx,

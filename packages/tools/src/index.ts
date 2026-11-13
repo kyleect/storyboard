@@ -3,7 +3,7 @@ import { agentTools } from "./agents.js";
 import { askUser } from "./ask-user.js";
 import { currentDate, currentTime } from "./clock.js";
 import { copyTools } from "./copy.js";
-import { entryTools } from "./entries.js";
+import { fileTools } from "./files.js";
 import { projectTools } from "./projects.js";
 import { schemaDataTools } from "./schemas-data.js";
 import { skillTools } from "./skills.js";
@@ -12,7 +12,7 @@ import { workspaceTools } from "./workspaces.js";
 import { webSearch, readWebpage, readWiki } from "./web.js";
 
 export { askUser, currentDate, currentTime };
-export * from "./entries.js";
+export * from "./files.js";
 export * from "./copy.js";
 export * from "./projects.js";
 export * from "./agents.js";
@@ -29,7 +29,7 @@ export const allTools: readonly Tool[] = [
   readWebpage,
   askUser,
   readWiki,
-  ...entryTools,
+  ...fileTools,
   ...copyTools,
   ...projectTools,
   ...agentTools,

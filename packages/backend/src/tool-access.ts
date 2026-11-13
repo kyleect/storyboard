@@ -2,10 +2,10 @@ import { randomBytes } from "node:crypto";
 import {
   checkFileName,
   checkFileValue,
-  EntryError,
+  FileError,
   type AgentAccess,
   type AgentSummary,
-  type EntryAuthor,
+  type FileAuthor,
   type ProjectAccess,
   type ProjectPush,
 } from "@harness/core";
@@ -14,7 +14,7 @@ import type { AppEvents } from "./app-events.js";
 import type { DataStore } from "./data-store.js";
 import { BUILTIN_DISPATCHER, defaultAgentFor } from "./default-agent.js";
 import type { SkillStore } from "./skills-store.js";
-import type { EntryStore } from "./entries-store.js";
+import type { FileStore } from "./files-store.js";
 import type { SessionRow, Store } from "./store.js";
 import { listedTools, type GrantTool } from "./tool-grants.js";
 
@@ -26,8 +26,8 @@ import { listedTools, type GrantTool } from "./tool-grants.js";
 
 export interface ProjectAccessDeps {
   store: Store;
-  /** Left out: a tool cannot send entries to a project. */
-  entries: EntryStore | undefined;
+  /** Left out: a tool cannot send files to a project. */
+  files: FileStore | undefined;
   /** Left out: a tool cannot send schemas and data to a project. */
   data?: DataStore | undefined;
   /** Left out: a copied agent's own skills are not copied. */
@@ -42,19 +42,16 @@ export interface ProjectAccessDeps {
   runAgent?: Agent | null | undefined;
   /** For the default agent rule (global default agent setting). */
   env?: NodeJS.ProcessEnv | undefined;
-  /** Who is recorded as the author of entries a tool sends. */
-  author: EntryAuthor;
+  /** Who is recorded as the author of files a tool sends. */
+  author: FileAuthor;
   newId: () => string;
   now: () => string;
-  /** Generates note ids. Default: 16 random hex digits. */
-  newNoteId?: (() => string) | undefined;
 }
 
-const randomNoteId = () => randomBytes(8).toString("hex");
 const randomId = () => randomBytes(8).toString("hex");
 
 export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
-  const { store, entries, session } = deps;
+  const { store, files, session } = deps;
   return {
     list: () =>
       store
@@ -99,18 +96,17 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
     },
     push: (projectId): ProjectPush => {
       const project = store.getProject(projectId);
-      if (!project) throw new EntryError(`There is no project "${projectId}".`);
+      if (!project) throw new FileError(`There is no project "${projectId}".`);
       if (project.trashed_at !== null) {
-        throw new EntryError(`The project "${project.name}" is in the trash.`);
+        throw new FileError(`The project "${project.name}" is in the trash.`);
       }
-      if (!entries) {
-        throw new EntryError("Sending entries to a project is not available.");
+      if (!files) {
+        throw new FileError("Sending files to a project is not available.");
       }
-      const newNoteId = deps.newNoteId ?? randomNoteId;
       /** The project's own schemas and data. Nothing else is reached. */
       const shared = () => {
         if (!deps.data) {
-          throw new EntryError(
+          throw new FileError(
             "Sending schemas and data to a project is not available.",
           );
         }
@@ -197,36 +193,26 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
       };
       return {
         hasFile: (key) => {
-          const row = entries.get("file", projectId, key);
+          const row = files.get(projectId, key);
           return row !== undefined && row.deleted_at === null;
         },
         putFile: (key, mediaType, value, blob) => {
           checkFileName(key);
           checkFileValue(mediaType, value);
-          entries.put(
-            "file",
+          files.put(
             projectId,
             { key, value, mediaType, ...(blob ? { blob } : {}) },
             deps.author,
           );
         },
-        addNote: (text) => {
-          let id = newNoteId();
-          for (let i = 0; entries.get("note", projectId, id); i++) {
-            if (i >= 100) throw new EntryError("Could not generate a note id.");
-            id = newNoteId();
-          }
-          entries.put("note", projectId, { key: id, value: text }, deps.author);
-          return id;
-        },
         putSchema: ({ name, description, copiedFrom, versions }) => {
           const [first, ...later] = versions;
           if (first === undefined) {
-            throw new EntryError(`The schema "${name}" has no version.`);
+            throw new FileError(`The schema "${name}" has no version.`);
           }
           const data = shared();
           if (data.nameTaken("project", name)) {
-            throw new EntryError(
+            throw new FileError(
               `The project already has a schema named "${name}".`,
             );
           }
@@ -243,7 +229,7 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
           const data = shared();
           const schema = data.getSchema(schemaId);
           if (!schema || schema.deleted) {
-            throw new EntryError(
+            throw new FileError(
               `The project cannot use the schema "${schemaId}" for "${name}".`,
             );
           }
@@ -257,15 +243,14 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
         },
         putAgent: () => {
           const agent = deps.runAgent;
-          if (!agent)
-            throw new EntryError("This session has no agent to copy.");
+          if (!agent) throw new FileError("This session has no agent to copy.");
           if (agent.builtin) {
-            throw new EntryError(
+            throw new FileError(
               `The agent "${agent.name}" is built in and available everywhere, so there is nothing to copy.`,
             );
           }
           if (!deps.agents) {
-            throw new EntryError("Copying an agent is not available.");
+            throw new FileError("Copying an agent is not available.");
           }
           try {
             // Startable whatever the original was: the Dispatcher can only
@@ -287,7 +272,7 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
             const copied = copyAgentBelongings(agent, copy);
             return { id: copy.id, name: copy.name, ...copied };
           } catch (err) {
-            if (err instanceof AgentError) throw new EntryError(err.message);
+            if (err instanceof AgentError) throw new FileError(err.message);
             throw err;
           }
         },

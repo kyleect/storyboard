@@ -17,7 +17,7 @@ import {
   type DataDetail,
   type DataItem,
   type DataOwner,
-  type EntryScope,
+  type FileScope,
   type SchemaDetail,
 } from "../api";
 import { StructuredExplorer } from "./StructuredExplorer";
@@ -34,9 +34,9 @@ const must = <T,>(v: T | undefined): T => {
   return v;
 };
 
-const session: EntryScope = { scope: "session", id: "s1" };
-const project: EntryScope = { scope: "project", id: "p1" };
-const global: EntryScope = { scope: "global" };
+const session: FileScope = { scope: "session", id: "s1" };
+const project: FileScope = { scope: "project", id: "p1" };
+const global: FileScope = { scope: "global" };
 
 const schema = (
   id: string,

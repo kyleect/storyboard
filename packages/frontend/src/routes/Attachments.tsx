@@ -14,7 +14,7 @@ import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useRef } from "react";
 import { mediaKindOf, parseRef, type MediaKind } from "@harness/core";
-import { api, type EntryScope, type UploadedFile } from "../api";
+import { api, type FileScope, type UploadedFile } from "../api";
 import {
   ACCEPT,
   ACCEPTED_DESCRIPTION,
@@ -22,7 +22,7 @@ import {
   MAX_ATTACHMENT_BYTES,
 } from "../attachments";
 import { useDraft, useDrafts, revokePreview } from "../drafts";
-import { blobKeys, entryKeys, sessionKeys, workspaceKeys } from "../queries";
+import { blobKeys, fileKeys, sessionKeys, workspaceKeys } from "../queries";
 
 /*
  * Files attached to messages: choosing and uploading them in the composer,
@@ -102,7 +102,7 @@ export function useAttachmentDraft(sessionId: string) {
         );
         // The session's files changed; refresh any list of them.
         void queryClient.invalidateQueries({
-          queryKey: entryKeys.inScope({ scope: "session", id: sessionId }),
+          queryKey: fileKeys.inScope({ scope: "session", id: sessionId }),
         });
         const item: DraftAttachment = {
           ref: made.ref,
@@ -369,7 +369,7 @@ function StoredFile({ refText }: { refText: string }) {
 function ScopeFile({ refText }: { refText: string }) {
   const where = useContext(SessionFilesContext);
   const parsed = parseRef(refText);
-  const scope: EntryScope | undefined =
+  const scope: FileScope | undefined =
     !where || !parsed || parsed.location === "workspace"
       ? undefined
       : parsed.location === "session"
@@ -381,8 +381,8 @@ function ScopeFile({ refText }: { refText: string }) {
           : { scope: "global" };
   const label = parsed && "path" in parsed ? parsed.path : refText;
   const list = useQuery({
-    queryKey: scope ? entryKeys.list(scope, "file", false) : ["no-scope"],
-    queryFn: () => api.listEntries(scope as EntryScope, "file", false),
+    queryKey: scope ? fileKeys.list(scope, false) : ["no-scope"],
+    queryFn: () => api.listFiles(scope as FileScope, false),
     enabled: scope !== undefined,
   });
   const file =

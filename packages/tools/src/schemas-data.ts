@@ -436,7 +436,8 @@ export const schemaUpdate = defineTool({
           ...(outOfDate > 0
             ? {
                 outOfDate,
-                note: "Some data does not pass the new version. Find it with data_list and fix it with data_migrate or data_migrate_many.",
+                guidance:
+                  "Some data does not pass the new version. Find it with data_list and fix it with data_migrate or data_migrate_many.",
               }
             : {}),
         },

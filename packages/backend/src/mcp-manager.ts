@@ -7,7 +7,7 @@ import type {
   Tool as McpTool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
-  EntryError,
+  FileError,
   ToolError,
   truncate,
   type MediaRef,
@@ -476,12 +476,12 @@ export function saveMedia(
   for (let n = 1; n <= 100; n++) {
     const key = `${toolName}-${n}.${found.extension}`;
     // Writing over a live file would replace it, so skip a name in use.
-    if (ctx.entries.readFile("session", key)) continue;
+    if (ctx.files.readFile("session", key)) continue;
     try {
-      ctx.entries.putBlob("session", key, found.mediaType, blob);
+      ctx.files.putBlob("session", key, found.mediaType, blob);
       return `session://${key}`;
     } catch (err) {
-      if (!(err instanceof EntryError)) throw err;
+      if (!(err instanceof FileError)) throw err;
     }
   }
   return undefined;

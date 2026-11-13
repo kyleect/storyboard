@@ -35,7 +35,7 @@ function setup(
     screen.getByRole("button", { name }) as HTMLButtonElement;
   const type = (text: string) =>
     fireEvent.change(
-      screen.getByPlaceholderText("Note for the model (optional)"),
+      screen.getByPlaceholderText("Comment for the model (optional)"),
       { target: { value: text } },
     );
   return { answers, button, type };
@@ -46,15 +46,15 @@ describe("ApprovalDialog", () => {
     ["Allow once", "once"],
     ["Deny", "deny"],
   ] as const) {
-    it(`sends the note with ${label}`, () => {
+    it(`sends the decision comment with ${label}`, () => {
       const { answers, button, type } = setup();
       type("  keep it short ");
       fireEvent.click(button(label));
-      expect(answers).toEqual([{ choice, note: "keep it short" }]);
+      expect(answers).toEqual([{ choice, decisionComment: "keep it short" }]);
     });
   }
 
-  it("sends no note when the box is empty or blank", () => {
+  it("sends no decision comment when the box is empty or blank", () => {
     const { answers, button, type } = setup();
     fireEvent.click(button("Allow once"));
     type("   ");
@@ -62,7 +62,7 @@ describe("ApprovalDialog", () => {
     expect(answers).toEqual([{ choice: "once" }, { choice: "deny" }]);
   });
 
-  it("disables the session and always choices while there is a note", () => {
+  it("disables the session and always choices while there is a comment", () => {
     const { answers, button, type } = setup();
     expect(button("Allow for this session").disabled).toBe(false);
     expect(button("Always allow this tool").disabled).toBe(false);
@@ -85,7 +85,9 @@ describe("ApprovalDialog", () => {
     const wrapper = button("Always allow this tool").parentElement;
     expect(wrapper).not.toBeNull();
     fireEvent.mouseEnter(wrapper as HTMLElement);
-    expect(await screen.findByText("Clear the note to use this")).toBeDefined();
+    expect(
+      await screen.findByText("Clear the comment to use this"),
+    ).toBeDefined();
   });
 
   it("offers only Allow once and Deny for a tool that always asks", () => {

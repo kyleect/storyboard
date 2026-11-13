@@ -2,10 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  replaySessionEntries,
+  replaySessionFiles,
   ScriptedModel,
   type ChatRequest,
-  type EntryOp,
+  type FileOp,
   type ScriptStep,
 } from "@harness/core";
 import { allTools } from "@harness/tools";
@@ -13,9 +13,10 @@ import { getBlob, putBlob, sha256, sweepBlobs } from "./blobs.js";
 import {
   attachmentFileName,
   attachmentsToFiles,
+  renameEntriesToFiles,
   runDataSteps,
 } from "./data-steps.js";
-import { BINARY_VERSIONS_KEPT, EntryStore } from "./entries-store.js";
+import { BINARY_VERSIONS_KEPT, FileStore } from "./files-store.js";
 import { detectMedia, MAX_UPLOAD_BYTES } from "./media-detect.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
@@ -48,7 +49,7 @@ async function setup(scripts: ScriptStep[][] = [reply]) {
     new Date(Date.UTC(2026, 10, 7, 14, 32, ++clock))
       .toISOString()
       .replace(".000Z", "Z");
-  const entries = new EntryStore(t.db, now);
+  const files = new FileStore(t.db, now);
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
     store,
@@ -58,20 +59,20 @@ async function setup(scripts: ScriptStep[][] = [reply]) {
     }),
     model: () => model,
     tools: allTools,
-    entries,
+    files,
     now,
   });
   const app = buildServer({
     store,
     runs,
-    entries,
+    files,
     token: TOKEN,
     env: {},
     now,
   });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
-  return { t, store, runs, app, model, entries };
+  return { t, store, runs, app, model, files };
 }
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
@@ -195,10 +196,10 @@ describe("uploading", () => {
     ).toBe(404);
 
     // The file is in the transcript as an edit message that names the bytes.
-    const state = replaySessionEntries(
+    const state = replaySessionFiles(
       store.listMessages(id).map((m) => m.message),
     );
-    expect(state.file.get("cat.png")).toEqual({
+    expect(state.files.get("cat.png")).toEqual({
       value: "",
       mediaType: "image/png",
       blob: { hash: sha256(PNG), size: PNG.length },
@@ -215,7 +216,7 @@ describe("uploading", () => {
   });
 
   it("keeps project and global files in the tables", async () => {
-    const { app, entries } = await setup();
+    const { app, files } = await setup();
     const p = await newProject(app);
     const a = await upload(
       app,
@@ -234,7 +235,7 @@ describe("uploading", () => {
       "?name=j.jpg",
     );
     expect(g.json()).toMatchObject({ ref: "global://j.jpg" });
-    expect(entries.get("file", p, "a/b.wav")).toMatchObject({
+    expect(files.get(p, "a/b.wav")).toMatchObject({
       media_type: "audio/wav",
       value: "",
       blob_hash: sha256(WAV),
@@ -345,10 +346,9 @@ describe("uploading", () => {
 });
 
 describe("versions and freeing bytes", () => {
-  const put = (e: EntryStore, key: string, data: Buffer) => {
+  const put = (e: FileStore, key: string, data: Buffer) => {
     const blob = putBlob(e.db, "image/png", data, "T");
     e.put(
-      "file",
       null,
       { key, value: "", mediaType: "image/png", blob },
       { by: "user" },
@@ -358,9 +358,9 @@ describe("versions and freeing bytes", () => {
   const png = (n: number) => Buffer.concat([PNG, Buffer.from([n])]);
 
   it("keeps the last three versions of a binary file and frees older bytes", async () => {
-    const { t, entries } = await setup();
-    for (let i = 1; i <= 5; i++) put(entries, "a.png", png(i));
-    const versions = entries.versions("file", null, "a.png");
+    const { t, files } = await setup();
+    for (let i = 1; i <= 5; i++) put(files, "a.png", png(i));
+    const versions = files.versions(null, "a.png");
     expect(BINARY_VERSIONS_KEPT).toBe(3);
     expect(versions.map((v) => v.seq)).toEqual([3, 4, 5]);
     expect(versions.map((v) => v.blob_hash)).toEqual(
@@ -372,13 +372,13 @@ describe("versions and freeing bytes", () => {
   });
 
   it("keeps bytes that another file or version still points at", async () => {
-    const { t, entries } = await setup();
-    put(entries, "a.png", png(1));
-    put(entries, "b.png", png(1));
-    for (let i = 2; i <= 5; i++) put(entries, "a.png", png(i));
+    const { t, files } = await setup();
+    put(files, "a.png", png(1));
+    put(files, "b.png", png(1));
+    for (let i = 2; i <= 5; i++) put(files, "a.png", png(i));
     // a.png no longer has version 1, but b.png still has the bytes.
     expect(getBlob(t.db, sha256(png(1)))).toBeDefined();
-    for (let i = 2; i <= 4; i++) put(entries, "b.png", png(i));
+    for (let i = 2; i <= 4; i++) put(files, "b.png", png(i));
     expect(getBlob(t.db, sha256(png(1)))).toBeUndefined();
   });
 
@@ -428,21 +428,19 @@ describe("versions and freeing bytes", () => {
 
 describe("sweepBlobs", () => {
   it("deletes bytes nothing points at and keeps those a message names", async () => {
-    const { t, store, entries } = await setup();
+    const { t, store, files } = await setup();
     const used = putBlob(t.db, "image/png", PNG, "T");
     const orphan = putBlob(t.db, "image/png", PNG2, "T");
-    const inEntry = putBlob(t.db, "image/jpeg", JPEG, "T");
-    entries.put(
-      "file",
+    const inFile = putBlob(t.db, "image/jpeg", JPEG, "T");
+    files.put(
       null,
-      { key: "j.jpg", value: "", mediaType: "image/jpeg", blob: inEntry },
+      { key: "j.jpg", value: "", mediaType: "image/jpeg", blob: inFile },
       { by: "user" },
     );
     const sid = randomUUID();
     store.createSession(sid, "S", "T");
-    const op: EntryOp = {
+    const op: FileOp = {
       op: "put",
-      kind: "file",
       key: "p.png",
       value: "",
       mediaType: "image/png",
@@ -451,14 +449,14 @@ describe("sweepBlobs", () => {
     store.addMessage(
       sid,
       randomUUID(),
-      { role: "edit", content: "x", entries: [op] },
+      { role: "edit", content: "x", files: [op] },
       "T",
     );
 
     expect(sweepBlobs(t.db)).toBe(1);
     expect(getBlob(t.db, orphan.hash)).toBeUndefined();
     expect(getBlob(t.db, used.hash)).toBeDefined();
-    expect(getBlob(t.db, inEntry.hash)).toBeDefined();
+    expect(getBlob(t.db, inFile.hash)).toBeDefined();
   });
 
   it("frees a session's bytes when it is purged, and a project's when it is", async () => {
@@ -727,9 +725,11 @@ describe("the data step attachments-to-files", () => {
       files: ["session://attachment.wav", "session://lost.png"],
     });
 
-    // The files exist when the transcript is replayed, with their bytes.
-    const state = replaySessionEntries(s.map((m) => m.json));
-    expect([...state.file.keys()]).toEqual([
+    // The files exist when the transcript is replayed, with their bytes, once
+    // the later step `files-rename` has put the changes where the code reads them.
+    renameEntriesToFiles(db);
+    const state = replaySessionFiles(messagesOf(db, "s").map((m) => m.json));
+    expect([...state.files.keys()]).toEqual([
       "cat.png",
       "cat (2).png",
       "attachment.wav",

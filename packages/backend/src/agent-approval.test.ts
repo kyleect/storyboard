@@ -48,20 +48,20 @@ function recorder(
   return { tool, calls };
 }
 
-/** `notes` stands in for an always-on files or memory tool. */
-const ALWAYS_ON = new Set(["notes"]);
+/** `alwaysOn` stands in for an always-on tool. */
+const ALWAYS_ON = new Set(["alwaysOn"]);
 
 function tools() {
   const safe = recorder("safe", "never");
   const risky = recorder("risky", "ask");
   const locked = recorder("locked", "always");
-  const notes = recorder("notes", "never", true);
+  const alwaysOn = recorder("alwaysOn", "never", true);
   return {
-    list: [safe.tool, risky.tool, locked.tool, notes.tool] as Tool[],
+    list: [safe.tool, risky.tool, locked.tool, alwaysOn.tool] as Tool[],
     safe: safe.calls,
     risky: risky.calls,
     locked: locked.calls,
-    notes: notes.calls,
+    alwaysOn: alwaysOn.calls,
   };
 }
 
@@ -228,11 +228,11 @@ describe("the agent's setting decides", () => {
 
   it("works for an always-on tool", async () => {
     const { c, approvals } = await asks(
-      { toolApproval: { notes: true } },
-      "notes",
+      { toolApproval: { alwaysOn: true } },
+      "alwaysOn",
     );
     expect(approvals).toHaveLength(1);
-    expect(c.seen.notes).toEqual(["a"]);
+    expect(c.seen.alwaysOn).toEqual(["a"]);
   });
 
   it("overrides the global setting, which still reaches agents with no setting", async () => {
@@ -415,9 +415,9 @@ describe("saving, versions and restore", () => {
       app,
       "POST",
       "/api/global/agents",
-      body({ toolApproval: { locked: false, gone: true, notes: true } }),
+      body({ toolApproval: { locked: false, gone: true, alwaysOn: true } }),
     );
-    expect(res.body.toolApproval).toEqual({ gone: true, notes: true });
+    expect(res.body.toolApproval).toEqual({ gone: true, alwaysOn: true });
   });
 
   it("refuses a setting that is not true or false", async () => {
@@ -472,8 +472,8 @@ describe("the tools the editor lists", () => {
         fixed: true,
       },
       {
-        name: "notes",
-        description: "The notes tool.",
+        name: "alwaysOn",
+        description: "The alwaysOn tool.",
         group: "utilities",
         alwaysOn: true,
         ask: false,
@@ -484,7 +484,7 @@ describe("the tools the editor lists", () => {
 });
 
 describe("agent files", () => {
-  const known = ["safe", "risky", "locked", "notes"];
+  const known = ["safe", "risky", "locked", "alwaysOn"];
   const all = known.map((name) => ({
     name,
     group: "utilities" as const,
@@ -506,7 +506,7 @@ describe("agent files", () => {
 
   it("round-trips", () => {
     const c = content({
-      toolApproval: { safe: true, risky: false, notes: true },
+      toolApproval: { safe: true, risky: false, alwaysOn: true },
     });
     expect(read(write(c))).toEqual({
       content: {

@@ -12,9 +12,9 @@ import { modals } from "@mantine/modals";
 import { IconHistory, IconMarkdown, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, type EntryScope } from "../api";
+import { api, type FileScope } from "../api";
 import { rootLabel, type RootId } from "../files-explorer";
-import { entryKeys } from "../queries";
+import { fileKeys } from "../queries";
 import {
   confirmDelete,
   TypeBadge,
@@ -22,7 +22,7 @@ import {
   ValueView,
   VersionsModal,
   when,
-} from "./Entries";
+} from "./FileViews";
 import { Markdown } from "./Markdown";
 import { showError } from "./SessionActions";
 import { TextEditor, type Cursor } from "./TextEditor";
@@ -52,7 +52,7 @@ export function FileTab({
   onCursor,
   onPreview,
 }: {
-  scope: EntryScope;
+  scope: FileScope;
   root: RootId;
   fileKey: string;
   /** Why the file cannot be changed, when it cannot. */
@@ -70,21 +70,21 @@ export function FileTab({
   const refresh = useRefresh(scope);
   const [versions, setVersions] = useState(false);
   const file = useQuery({
-    queryKey: entryKeys.detail(scope, "file", fileKey),
-    queryFn: () => api.getEntry(scope, "file", fileKey),
+    queryKey: fileKeys.detail(scope, fileKey),
+    queryFn: () => api.getFile(scope, fileKey),
   });
   const save = useMutation({
     mutationFn: (text: string) =>
       api.writeFile(scope, fileKey, file.data?.mediaType ?? "text/plain", text),
     onSuccess: async (saved) => {
-      queryClient.setQueryData(entryKeys.detail(scope, "file", fileKey), saved);
+      queryClient.setQueryData(fileKeys.detail(scope, fileKey), saved);
       onDraft(undefined);
       await refresh();
     },
     onError: showError("Could not save the file"),
   });
   const remove = useMutation({
-    mutationFn: () => api.deleteEntry(scope, "file", fileKey),
+    mutationFn: () => api.deleteFile(scope, fileKey),
     onSuccess: refresh,
     onError: showError("Could not delete the file"),
   });
@@ -290,8 +290,7 @@ export function FileTab({
       {versions && (
         <VersionsModal
           scope={scope}
-          kind="file"
-          entry={f}
+          file={f}
           readOnly={readOnly !== undefined}
           onClose={() => setVersions(false)}
         />
@@ -306,13 +305,13 @@ export function PreviewTab({
   fileKey,
   draft,
 }: {
-  scope: EntryScope;
+  scope: FileScope;
   fileKey: string;
   draft: Draft | undefined;
 }) {
   const file = useQuery({
-    queryKey: entryKeys.detail(scope, "file", fileKey),
-    queryFn: () => api.getEntry(scope, "file", fileKey),
+    queryKey: fileKeys.detail(scope, fileKey),
+    queryFn: () => api.getFile(scope, fileKey),
   });
   if (file.isPending) return <Loader size="sm" m="md" />;
   if (file.isError) {

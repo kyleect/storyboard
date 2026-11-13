@@ -140,15 +140,10 @@ export const BlobRef = z.object({
 });
 export type BlobRef = z.infer<typeof BlobRef>;
 
-/** A file, or a memory note (whose key is its generated id). */
-export const EntryKind = z.enum(["file", "note"]);
-export type EntryKind = z.infer<typeof EntryKind>;
-
-/** One change to a session-scoped entry, recorded in the transcript. */
-export const EntryOp = z.discriminatedUnion("op", [
+/** One change to a session-scoped file, recorded in the transcript. */
+export const FileOp = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("put"),
-    kind: EntryKind,
     key: z.string(),
     value: z.string(),
     /** Files only. */
@@ -156,7 +151,7 @@ export const EntryOp = z.discriminatedUnion("op", [
     /** Binary files only: the bytes. `value` is empty then. */
     blob: BlobRef.optional(),
   }),
-  z.object({ op: z.literal("delete"), kind: EntryKind, key: z.string() }),
+  z.object({ op: z.literal("delete"), key: z.string() }),
   /** An explicit folder (files unification design, D6). */
   z.object({
     op: z.literal("folder"),
@@ -164,7 +159,7 @@ export const EntryOp = z.discriminatedUnion("op", [
     path: z.string(),
   }),
 ]);
-export type EntryOp = z.infer<typeof EntryOp>;
+export type FileOp = z.infer<typeof FileOp>;
 
 /**
  * One change to a session-scoped schema or piece of data, recorded in the
@@ -230,11 +225,11 @@ export const ToolResultMessage = z.object({
    */
   state: z.unknown().optional(),
   /**
-   * Changes the tool made to session-scoped files and memory notes. Not
-   * sent to the model. Session-scoped entries are rebuilt from these and
+   * Changes the tool made to session-scoped files. Not
+   * sent to the model. Session-scoped files are rebuilt from these and
    * from edit messages (files and memory design, decision 11).
    */
-  entries: z.array(EntryOp).optional(),
+  files: z.array(FileOp).optional(),
   /**
    * Changes the tool made to session-scoped schemas and data. Not sent to
    * the model. Session schemas and data are rebuilt from these (schemas and
@@ -242,11 +237,11 @@ export const ToolResultMessage = z.object({
    */
   dataOps: z.array(DataOp).optional(),
   /**
-   * The note the user typed when allowing the call once or denying it
-   * (approval notes design). Not sent as part of this message: the notes of
+   * The comment the user typed when allowing the call once or denying it
+   * (a decision comment). Not sent as part of this message: the comments of
    * one turn's results are sent as one user message after them.
    */
-  note: z
+  decisionComment: z
     .object({ text: z.string(), choice: z.enum(["once", "deny"]) })
     .optional(),
   /**
@@ -257,14 +252,14 @@ export const ToolResultMessage = z.object({
 });
 
 /**
- * The user changed session-scoped files or notes in the app. The model
+ * The user changed session-scoped files in the app. The model
  * reads `content` (a notice) as part of a user message; adapters join it
  * to a neighbouring user message (files and memory plan, P3 and P4).
  */
 export const EditMessage = z.object({
   role: z.literal("edit"),
   content: z.string(),
-  entries: z.array(EntryOp),
+  files: z.array(FileOp),
   /** Changes to session schemas and data (schemas and data design). */
   dataOps: z.array(DataOp).optional(),
 });

@@ -6,7 +6,7 @@ Read the root `AGENTS.md` first. Background: `docs/tools.md`.
 ## Hard rules
 
 - **Tools never touch the database or the file system directly.** They act only
-  through the interfaces on `ToolContext` (`ctx.entries`, `ctx.data`,
+  through the interfaces on `ToolContext` (`ctx.files`, `ctx.data`,
   `ctx.projects`, `ctx.agents`, `ctx.subagents`, `ctx.skills`, `ctx.requestInput`,
   and the workspace access), which the backend implements. Do not import
   `better-sqlite3`, `fastify` or anything from `@harness/backend` here.
@@ -17,7 +17,7 @@ Read the root `AGENTS.md` first. Background: `docs/tools.md`.
 
 1. Build it with `defineTool` from `@harness/core`. Put it in the file for its
    topic (see below) and register it in `allTools` in `src/index.ts`, through
-   the file's exported list if there is one (for example `entryTools`).
+   the file's exported list if there is one (for example `fileTools`).
 2. Every tool declares:
    - `name` (snake_case), `description` (this is prompt text the model reads;
      write it for the model),
@@ -51,8 +51,8 @@ src/
   clock.ts           current_date, current_time
   web.ts             web_search, read_webpage, read_wiki
   ask-user.ts        ask_user
-  entries.ts         file and memory tools, entriesInstruction
-  copy.ts            files_copy/move, memory_copy/move
+  files.ts         file tools, filesInstruction
+  copy.ts            files_copy/move
   projects.ts        projects_list, project_view, project_create
   project-copy.ts    what project_create copies
   agents.ts          agents_list, agent_view

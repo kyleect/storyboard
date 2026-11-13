@@ -392,12 +392,12 @@ describe("POST /api/sessions/:id/regenerate", () => {
 
     await send(c, id, "hi");
     expect((await view(c, id)).branching.regenerate).not.toBeNull();
-    c.runs.editSessionEntries(id, [
+    c.runs.editSessionFiles(id, [
       {
         op: "put",
-        kind: "note",
+        kind: "file",
         key: "n",
-        value: "a note",
+        value: "a file",
       } as never,
     ]);
     expect((await view(c, id)).branching.regenerate).toBeNull();
@@ -506,8 +506,8 @@ describe("POST /api/sessions/:id/switch", () => {
       messageId: firstId,
     });
     c.model.requests.length = 0;
-    c.runs.editSessionEntries(id, [
-      { op: "put", kind: "note", key: "n", value: "x" } as never,
+    c.runs.editSessionFiles(id, [
+      { op: "put", kind: "file", key: "n", value: "x" } as never,
     ]);
     expect((await texts(c, id)).at(0)).toBe("q");
 
@@ -870,7 +870,7 @@ describe("completePoints and regenerableTurn", () => {
       "r",
     );
   const edit = (id: string) =>
-    stored(id, { role: "edit", content: "e", entries: [] });
+    stored(id, { role: "edit", content: "e", files: [] });
 
   it("allows user, edit and plain assistant messages, and the last result of a group", () => {
     const line = [

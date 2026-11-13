@@ -6,7 +6,6 @@ import type {
   ControlResult,
   DataInfo,
   DataView,
-  EntryKind,
   MediaType,
   InputAnswer,
   InputRequest,
@@ -423,7 +422,7 @@ export interface Settings {
   port: number;
   /** The most model calls one run makes. */
   loopLimit: number;
-  /** The most files or notes one copy or move call may name. */
+  /** The most files one copy or move call may name. */
   copyLimit: number;
   /** Days in the trash before deletion at startup; 0: never. */
   trashRetentionDays: number;
@@ -604,21 +603,21 @@ export interface ModelInfo {
 }
 
 /**
- * Where files and memory notes live (files and memory design, section 3.3).
+ * Where files live (files and memory design, section 3.3).
  */
-export type EntryScope =
+export type FileScope =
   | { scope: "global" }
   | { scope: "project"; id: string }
   | { scope: "session"; id: string };
 
-const entriesBase = (s: EntryScope, kind: EntryKind) =>
+const filesBase = (s: FileScope) =>
   `${
     s.scope === "global"
       ? "/api/global"
       : s.scope === "project"
         ? `/api/projects/${s.id}`
         : `/api/sessions/${s.id}`
-  }/${kind === "file" ? "files" : "notes"}`;
+  }/files`;
 
 /** What an upload made (`POST …/files`). */
 export interface UploadedFile {
@@ -632,12 +631,12 @@ export interface UploadedFile {
   replaced: boolean;
 }
 
-/** A file or note. For a note, `key` is its id. */
-export interface Entry {
+/** A file. */
+export interface StoredFile {
   key: string;
   /** Files only. */
   mediaType?: MediaType;
-  /** For a deleted entry, its last value. Empty for a binary file. */
+  /** For a deleted file, its last value. Empty for a binary file. */
   value: string;
   /** Binary files: where the bytes are (`blobUrl`). */
   blob?: BlobRef;
@@ -645,7 +644,7 @@ export interface Entry {
   deleted: boolean;
 }
 
-export interface EntryVersion {
+export interface FileVersion {
   seq: number;
   mediaType?: MediaType;
   /** For a deletion, the value at the time. */
@@ -659,8 +658,8 @@ export interface EntryVersion {
   createdAt: string;
 }
 
-export interface EntryDetail extends Entry {
-  versions: EntryVersion[];
+export interface FileDetail extends StoredFile {
+  versions: FileVersion[];
 }
 
 /** Sent with a message or continue; they become the session's choices. */
@@ -1227,7 +1226,7 @@ export const api = {
    * that was made.
    */
   uploadFile: (
-    s: EntryScope,
+    s: FileScope,
     file: File,
     mediaType: string,
     options: { name?: string; replace?: boolean } = {},
@@ -1238,7 +1237,7 @@ export const api = {
       ...(options.replace ? ["replace=true"] : []),
     ].join("&");
     return requestFile<UploadedFile>(
-      `${entriesBase(s, "file")}${query ? `?${query}` : ""}`,
+      `${filesBase(s)}${query ? `?${query}` : ""}`,
       file,
       mediaType,
     );
@@ -1418,69 +1417,47 @@ export const api = {
       `/api/tool-groups/${encodeURIComponent(group)}`,
       change,
     ),
-  listEntries: (s: EntryScope, kind: EntryKind, deleted: boolean) =>
-    request<Entry[]>(
+  listFiles: (s: FileScope, deleted: boolean) =>
+    request<StoredFile[]>(
       "GET",
-      `${entriesBase(s, kind)}${deleted ? "?deleted=true" : ""}`,
+      `${filesBase(s)}${deleted ? "?deleted=true" : ""}`,
     ),
-  getEntry: (s: EntryScope, kind: EntryKind, key: string) =>
-    request<EntryDetail>(
-      "GET",
-      `${entriesBase(s, kind)}/${encodeURIComponent(key)}`,
-    ),
+  getFile: (s: FileScope, key: string) =>
+    request<FileDetail>("GET", `${filesBase(s)}/${encodeURIComponent(key)}`),
   /** Creates or replaces a file. */
-  writeFile: (
-    s: EntryScope,
-    key: string,
-    mediaType: MediaType,
-    value: string,
-  ) =>
-    request<EntryDetail>(
-      "PUT",
-      `${entriesBase(s, "file")}/${encodeURIComponent(key)}`,
-      { mediaType, value },
-    ),
+  writeFile: (s: FileScope, key: string, mediaType: MediaType, value: string) =>
+    request<FileDetail>("PUT", `${filesBase(s)}/${encodeURIComponent(key)}`, {
+      mediaType,
+      value,
+    }),
   /** Every folder of a scope, explicit or holding files. */
-  listFolders: (s: EntryScope) =>
-    request<string[]>(
-      "GET",
-      `${entriesBase(s, "file").replace(/files$/, "folders")}`,
-    ),
-  createFolder: (s: EntryScope, path: string) =>
+  listFolders: (s: FileScope) =>
+    request<string[]>("GET", `${filesBase(s).replace(/files$/, "folders")}`),
+  createFolder: (s: FileScope, path: string) =>
     request<{ path: string; created: boolean }>(
       "POST",
-      entriesBase(s, "file").replace(/files$/, "folders"),
+      filesBase(s).replace(/files$/, "folders"),
       { path },
     ),
-  renameFolder: (s: EntryScope, path: string, newPath: string) =>
+  renameFolder: (s: FileScope, path: string, newPath: string) =>
     request<{ path: string }>(
       "POST",
-      `${entriesBase(s, "file").replace(/files$/, "folders")}/rename`,
+      `${filesBase(s).replace(/files$/, "folders")}/rename`,
       { path, newPath },
     ),
-  deleteFolder: (s: EntryScope, path: string) =>
+  deleteFolder: (s: FileScope, path: string) =>
     request<unknown>(
       "POST",
-      `${entriesBase(s, "file").replace(/files$/, "folders")}/delete`,
+      `${filesBase(s).replace(/files$/, "folders")}/delete`,
       { path },
     ),
-  /** Changes a note's text; the user cannot create notes. */
-  editNote: (s: EntryScope, id: string, text: string) =>
-    request<EntryDetail>(
-      "PATCH",
-      `${entriesBase(s, "note")}/${encodeURIComponent(id)}`,
-      { text },
-    ),
-  deleteEntry: (s: EntryScope, kind: EntryKind, key: string) =>
-    request<unknown>(
-      "DELETE",
-      `${entriesBase(s, kind)}/${encodeURIComponent(key)}`,
-    ),
-  /** Makes an earlier version current; also restores a deleted entry. */
-  restoreEntry: (s: EntryScope, kind: EntryKind, key: string, seq: number) =>
-    request<EntryDetail>(
+  deleteFile: (s: FileScope, key: string) =>
+    request<unknown>("DELETE", `${filesBase(s)}/${encodeURIComponent(key)}`),
+  /** Makes an earlier version current; also restores a deleted file. */
+  restoreFile: (s: FileScope, key: string, seq: number) =>
+    request<FileDetail>(
       "POST",
-      `${entriesBase(s, kind)}/${encodeURIComponent(key)}/restore`,
+      `${filesBase(s)}/${encodeURIComponent(key)}/restore`,
       { seq },
     ),
   listAgents: (s: AgentScope, deleted: boolean) =>

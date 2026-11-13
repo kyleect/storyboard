@@ -20,7 +20,7 @@ second UI library, router, or state manager.
   anything core exports at runtime ends up in the browser bundle; that is why
   core must not use Node APIs.
 - **Never write a query key inline.** Build every key with the factories in
-  `src/queries/` (`sessionKeys`, `agentKeys`, `entryKeys`, and so on), one file
+  `src/queries/` (`sessionKeys`, `agentKeys`, `fileKeys`, and so on), one file
   per feature, exported from `queries/index.ts`. Keys go from most generic to
   most specific (`["sessions", "list", { projectId }]`,
   `["sessions", "detail", id]`) so a mutation or stream event can invalidate
@@ -28,7 +28,7 @@ second UI library, router, or state manager.
   `queries/keys.test.ts` pins how far each prefix reaches.
 - **The cache holds what is stored; `useLive` (Zustand, `live.ts`) holds what is
   happening right now.** When something finishes, update or invalidate the
-  cache and clear the live entry. Do not keep server data in `useState` or in
+  cache and clear the live file. Do not keep server data in `useState` or in
   a second store.
 - **All HTTP goes through `src/api.ts`**, which adds the bearer token. EventSource
   cannot set headers, so stream URLs add `?token=`. Do not call `fetch` for
@@ -54,7 +54,7 @@ src/
   schema-builder.ts    JSON Schema <-> editable field tree
   tool-grant.ts        tool grants: which tools a grant allows, and the edits a click makes
   attachments.ts, audio.ts   allowed file types; voice recording to 16 kHz mono WAV
-  routes/              pages and components (Chat, Entries, Agents, Skills, Schemas, Data,
+  routes/              pages and components (Chat, Files, Agents, Skills, Schemas, Data,
                        Errors, Settings, Workspaces, McpServers, ...)
   test-setup.ts        jsdom stand-ins for Mantine
 ```

@@ -18,7 +18,7 @@ import {
 } from "@harness/core";
 import { allTools } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -58,7 +58,7 @@ async function setup(scripts: ScriptStep[][] = [], settings = {}) {
   clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "", ...settings });
   const store = new Store(t.db);
-  const entries = new EntryStore(t.db);
+  const files = new FileStore(t.db);
   const agents = new AgentStore(t.db);
   const workspaces = new WorkspaceStore(t.db);
   const model = new ScriptedModel(scripts);
@@ -71,13 +71,13 @@ async function setup(scripts: ScriptStep[][] = [], settings = {}) {
     model: () => model,
     tools: allTools,
     agents,
-    entries,
+    files,
     workspaces,
   });
   const app = buildServer({
     store,
     runs,
-    entries,
+    files,
     agents,
     workspaces,
     token: TOKEN,
@@ -590,11 +590,11 @@ describe("workspace tools in a run", () => {
     await go(c, id);
     const [first, second, last] = results(c, id);
     expect(first?.data.text).toHaveLength(100);
-    expect(first?.data.note).toBe(
+    expect(first?.data.guidance).toBe(
       "Characters 0 to 100 of 300. Read on with offset 100.",
     );
     expect(second?.data.text).toBe(text.slice(100, 200));
-    expect(last?.data.note).toBeUndefined();
+    expect(last?.data.guidance).toBeUndefined();
     expect(last?.data.text).toBe(text.slice(250));
   });
 
@@ -613,7 +613,7 @@ describe("workspace tools in a run", () => {
     );
     await go(c, id);
     const [r] = results(c, id);
-    expect(r?.data.note).toMatch(/follows this result/);
+    expect(r?.data.guidance).toMatch(/follows this result/);
     const second = c.model.requests[1] as ChatRequest;
     expect(second.resolveFile?.(ref("map.png"))).toMatchObject({
       kind: "image",

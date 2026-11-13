@@ -1,16 +1,11 @@
-import type {
-  EntryKind,
-  EntrySearch,
-  SearchHit,
-  SearchResult,
-} from "@harness/core";
+import type { FileSearch, SearchHit, SearchResult } from "@harness/core";
 import { withTaskPrefix } from "./embed-prefix.js";
 import type { ChunkRow, ScopeFilter, SearchIndex } from "./search-index.js";
 
 /*
- * Searching files and notes for one session (files and memory design,
+ * Searching files for one session (files and memory design,
  * decisions 22, 23, 26 and 30): keyword (FTS5) and vector results merged
- * with reciprocal rank fusion, grouped by entry; the best chunk of a file
+ * with reciprocal rank fusion, grouped by file; the best chunk of a file
  * is its excerpt. Without an embedding model, or when the query cannot be
  * embedded, the search is keyword only and says why.
  */
@@ -50,13 +45,12 @@ export interface FusedHit {
 
 /**
  * Keyword and meaning search over the chunks `filter` covers, fused and
- * reduced to each entry's best chunk, best first. `limit` undefined: every
+ * reduced to each file's best chunk, best first. `limit` undefined: every
  * match.
  */
 export async function fusedSearch(
   engine: SearchEngine,
   filter: ScopeFilter,
-  kind: EntryKind,
   query: string,
   limit: number | undefined,
   signal: AbortSignal | undefined,
@@ -68,7 +62,7 @@ export async function fusedSearch(
   const { index } = engine;
   // With no limit every match is a candidate (-1: no SQL LIMIT).
   const candidates = limit === undefined ? -1 : Math.max(50, limit * 5);
-  const keyword = index.keyword(kind, filter, query, candidates);
+  const keyword = index.keyword(filter, query, candidates);
 
   let nearest: ChunkRow[] = [];
   let notice: string | undefined;
@@ -83,37 +77,37 @@ export async function fusedSearch(
         signal,
       );
       if (vector) {
-        nearest = index.nearest(kind, filter, model, vector, candidates);
+        nearest = index.nearest(filter, model, vector, candidates);
       }
     } catch (err) {
       notice = `The query could not be embedded (${(err as Error).message}), so this was a keyword search only.`;
     }
   }
 
-  // Fuse the two rankings per chunk, then keep each entry's best chunk.
+  // Fuse the two rankings per chunk, then keep each file's best chunk.
   const byChunk = new Map<number, Fused>();
   const add = (rows: ChunkRow[], which: "keyword" | "meaning") =>
     rows.forEach((row, rank) => {
-      const entry = byChunk.get(row.id) ?? {
+      const file = byChunk.get(row.id) ?? {
         row,
         score: 0,
         keyword: false,
         meaning: false,
       };
-      entry.score += 1 / (RRF_K + rank + 1);
-      entry[which] = true;
-      byChunk.set(row.id, entry);
+      file.score += 1 / (RRF_K + rank + 1);
+      file[which] = true;
+      byChunk.set(row.id, file);
     });
   add(keyword, "keyword");
   add(nearest, "meaning");
 
-  const byEntry = new Map<string, Fused>();
+  const byFile = new Map<string, Fused>();
   for (const c of byChunk.values()) {
     const id = `${c.row.scope}\u0000${c.row.ownerId ?? ""}\u0000${c.row.key}`;
-    const best = byEntry.get(id);
-    if (!best || c.score > best.score) byEntry.set(id, c);
+    const best = byFile.get(id);
+    if (!best || c.score > best.score) byFile.set(id, c);
   }
-  const hits: FusedHit[] = [...byEntry.values()]
+  const hits: FusedHit[] = [...byFile.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((c) => ({
@@ -160,7 +154,6 @@ export async function searchWorkspaces(
       global: false,
       workspaceIds: q.workspaceIds,
     },
-    "file",
     q.query,
     q.limit,
     q.signal,
@@ -182,7 +175,7 @@ export async function searchWorkspaces(
   };
 }
 
-export function sessionSearch(options: SessionSearchOptions): EntrySearch {
+export function sessionSearch(options: SessionSearchOptions): FileSearch {
   return async (q): Promise<SearchResult> => {
     const filter = {
       sessionId: q.scopes.includes("session") ? options.sessionId : null,
@@ -195,7 +188,6 @@ export function sessionSearch(options: SessionSearchOptions): EntrySearch {
     const found = await fusedSearch(
       options,
       filter,
-      q.kind,
       q.query,
       q.limit,
       q.signal,

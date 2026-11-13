@@ -77,7 +77,7 @@ pnpm format:check
 
 ## Notes
 
-- `patches/better-sqlite3-multiple-ciphers@13.0.3.patch` adds a `types` entry
+- `patches/better-sqlite3-multiple-ciphers@13.0.3.patch` adds a `types` file
   to the driver's `exports` so TypeScript finds its bundled type definitions.
 - The database driver ships prebuilt binaries (N-API, so any Node version)
   for macOS, Linux and Windows, so its node-gyp build script is skipped

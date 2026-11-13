@@ -7,7 +7,7 @@ the backend passes to the run manager.
 
 Tools are the only way an agent affects anything outside the conversation. They
 never touch the database. They act through the interfaces on `ToolContext`
-(`ctx.entries`, `ctx.data`, `ctx.projects`, `ctx.agents`, `ctx.subagents`,
+(`ctx.files`, `ctx.data`, `ctx.projects`, `ctx.agents`, `ctx.subagents`,
 `ctx.skills`, `ctx.requestInput`), which the backend implements.
 
 ```
@@ -16,8 +16,8 @@ packages/tools/src
   clock.ts           current_date, current_time
   web.ts             web_search, read_webpage, read_wiki
   ask-user.ts        ask_user
-  entries.ts         file and memory tools, entriesInstruction
-  copy.ts            files_copy/move, memory_copy/move
+  files.ts         file tools, filesInstruction
+  copy.ts            files_copy/move
   projects.ts        projects_list, project_view, project_create
   project-copy.ts    what project_create copies: schemas and data, the agent, the delegation note
   agents.ts          agents_list, agent_view
@@ -44,10 +44,16 @@ approval, runs `execute`, and stores the result (see
 details }` for a failure the model should see, or a thrown `ToolError`;
 - optionally `review`, to describe changes before they are approved.
 
+**Guidance.** A tool result's `data` can carry a `guidance` field: one or two
+sentences to the model about what happened that it could not see from the
+result, such as that the user chose a different scope than it suggested or that
+a file is an image that follows the result. It is part of what the model reads,
+unlike the user's _decision comment_, which is stored beside the result.
+
 **Error results.** Tools report expected failures as results, not exceptions.
 `results.ts` provides `fail(message, reason, target)`, which returns an error
 result with `details.reason` of `not_found` or `rejected`. `guarded(...)`
-converts an `EntryError` thrown by core into such a result. `notDone(text)`
+converts an `FileError` thrown by core into such a result. `notDone(text)`
 returns an error result for "the user skipped the form" that the loop does not
 count as an error.
 
@@ -65,7 +71,6 @@ The groups, in display order, are defined by `TOOL_GROUPS` in core:
 | ----------------------------------- | ----------------------------------------------------------------- |
 | Files (`files`)                     | `files_*`, including `files_copy` and `files_move`                |
 | Workspaces (`workspaces`)           | `workspaces_list`, `workspace_*`                                  |
-| Memory (`memory`)                   | `memory_*`, including `memory_copy` and `memory_move`             |
 | Structured Data (`structured-data`) | `schemas_list`, `schema_*`, `data_*`                              |
 | Projects (`projects`)               | `projects_list`, `project_view`, `project_create`                 |
 | Agents (`agents`)                   | `agents_list`, `agent_view`                                       |
@@ -80,8 +85,8 @@ Three more facts are declared on each tool:
 
 - **`alwaysOn`**: the tool is offered to every agent whatever its tool grant says.
   The tool's own value is a default; Settings can change it. In the tools package
-  the always-on tools are `skill_load` and `subagent_handback`. The file and
-  memory tools are in tool groups, so an agent gets them through its grant.
+  the always-on tools are `skill_load` and `subagent_handback`. The file
+  tools are in a tool group, so an agent gets them through its grant.
 - **`needsReview`**: the tool is destructive or changes prompts, so a group grant
   does not cover it; an agent has it only when it is listed on its own. An MCP
   tool sets it unless its server marks it read-only. So do the workspace tools
@@ -108,11 +113,10 @@ agent's page, and per session by choosing _Allow for this session_.
 | `read_wiki`    | never    | Fetches an English Wikipedia article by topic and returns Markdown.                                                                                       |
 | `ask_user`     | never    | Shows the user a form built from a JSON Schema and returns the answers, or an error saying the user declined. See [core.md](core.md#input-forms-formsts). |
 
-### Files and memory
+### Files
 
-Files are named documents; memory notes are short notes the model writes for
-itself. Both live in the **session**, **project** or **global** scope. One tool
-exists per operation. None asks for approval by default, but several show a
+Files are named documents. They live in the **session**, **project** or
+**global** scope. One tool exists per operation. None asks for approval by default, but several show a
 form, because _the model suggests and the user decides_ where things go.
 
 | Tool                                                                  | Approval | What it does                                                                                                                                                       |
@@ -123,11 +127,6 @@ form, because _the model suggests and the user decides_ where things go.
 | `files_delete`                                                        | never    | Deletes a file by key. History is kept and the user can restore it.                                                                                                |
 | `files_folder_create` / `files_folder_rename` / `files_folder_delete` | never    | Create, rename (moves the files inside) or delete a folder (soft-deletes the files inside).                                                                        |
 | `files_search`                                                        | never    | Keyword and meaning search over files; returns the best matches with excerpts.                                                                                     |
-| `memory_list`                                                         | never    | Lists notes (id, text, scope).                                                                                                                                     |
-| `memory_add`                                                          | never    | Saves a note; the user chooses where. Returns the id and scope.                                                                                                    |
-| `memory_update`                                                       | never    | Replaces a note's text by id.                                                                                                                                      |
-| `memory_delete`                                                       | never    | Deletes a note by id.                                                                                                                                              |
-| `memory_search`                                                       | never    | Keyword and meaning search over notes.                                                                                                                             |
 
 Key rules: a key is a path of names separated by `/` (for example
 `characters/alice.md`), so files can sit in folders. Spaces and any letters are
@@ -136,23 +135,22 @@ or a space, be a name Windows reserves (`CON`, `NUL`, …) or be longer than 255
 characters. Keys are case-sensitive. Text file types are `plain`, `markdown` and
 `json` (a `json` file must parse); images and audio are binary files.
 
-The **copy and move** tools move entries between scopes or to another project.
+The **copy and move** tools move files between scopes or to another project.
 They always ask for approval and then show a form with the model's suggested
 source and destination preselected. They warn when the destination already has
 a file with that key, and skip keys that already exist there.
 
-| Tool                          | Approval | What it does                                                                                           |
-| ----------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `files_copy` / `files_move`   | always   | Copy or move files to another scope or project. A move deletes the originals only for what was copied. |
-| `memory_copy` / `memory_move` | always   | The same for notes. Each copy gets a new id.                                                           |
+| Tool                        | Approval | What it does                                                                                           |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `files_copy` / `files_move` | always   | Copy or move files to another scope or project. A move deletes the originals only for what was copied. |
 
 A call may name at most `copyLimit` keys (setting, maximum 200) unless it asks
-for everything in a scope. Entries can be sent to a _different_ project only
+for everything in a scope. Files can be sent to a _different_ project only
 from the session or project scope, and through a write-only handle: nothing in
 another project can be read.
 
-`entriesInstruction(inProject)` produces the fixed system-message paragraph that
-explains files, memory, scopes and the copy tools to the model, ending with
+`filesInstruction(inProject)` produces the fixed system-message paragraph that
+explains files, scopes and the copy tools to the model, ending with
 whether the session is in a project.
 
 ### Workspaces
@@ -168,7 +166,7 @@ allow this tool_ cover that tool in that workspace only.
 | Tool                                                                              | Approval | What it does                                                                                                                                                                                                                                           |
 | --------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `workspaces_list`                                                                 | never    | The workspaces the session has: id, name, whether it can be changed, and its reference.                                                                                                                                                                |
-| `workspace_list`                                                                  | never    | Files and folders in a folder (size, modified time), optionally `recursive` (cut at 2,000 entries).                                                                                                                                                    |
+| `workspace_list`                                                                  | never    | Files and folders in a folder (size, modified time), optionally `recursive` (cut at 2,000 files).                                                                                                                                                      |
 | `workspace_read`                                                                  | never    | Reads a text file in parts: `offset` and `limit` in characters, never more than the read-size setting (default 10,000). An image or audio file is shown to the model like `files_read` does (up to 20 MiB).                                            |
 | `workspace_search`                                                                | never    | Searches the files the user ticked on the Workspaces page, by keywords and by meaning. Returns the best files with a `workspace://` reference and an excerpt; says so when nothing is indexed. `workspace_list` and `workspace_read` reach every file. |
 | `workspace_write`                                                                 | ask      | Creates a text file (and the folders on the way) or replaces one. A file that exists must have been read in this session and not changed since.                                                                                                        |
@@ -183,13 +181,13 @@ remembered, and a change still asks for its own approval.
 
 ### Projects and agents
 
-| Tool             | Approval | What it does                                                                                                                                                                                                             |
-| ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `projects_list`  | never    | Lists projects not in the trash (id, name, description).                                                                                                                                                                 |
-| `project_view`   | always   | Shows the session's project: name, description, default agent, system prompt.                                                                                                                                            |
-| `project_create` | always   | Creates a project from the session. The user edits the name, description and system prompt in a form and chooses what is copied in: the session's files, notes, schemas and data, and the agent it is using (see below). |
-| `agents_list`    | never    | Lists the agents the session can pick (project agents first, then global), including tool selection and whether each can be started as a subagent.                                                                       |
-| `agent_view`     | always   | Shows the agent this run is using, including its system prompt.                                                                                                                                                          |
+| Tool             | Approval | What it does                                                                                                                                                                                                      |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projects_list`  | never    | Lists projects not in the trash (id, name, description).                                                                                                                                                          |
+| `project_view`   | always   | Shows the session's project: name, description, default agent, system prompt.                                                                                                                                     |
+| `project_create` | always   | Creates a project from the session. The user edits the name, description and system prompt in a form and chooses what is copied in: the session's files, schemas and data, and the agent it is using (see below). |
+| `agents_list`    | never    | Lists the agents the session can pick (project agents first, then global), including tool selection and whether each can be started as a subagent.                                                                |
+| `agent_view`     | always   | Shows the agent this run is using, including its system prompt.                                                                                                                                                   |
 
 #### What `project_create` copies
 
@@ -200,7 +198,6 @@ not changed.
 | Offer           | Shown when                                               | What is created in the new project                                                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Files           | the session has files                                    | The files, with their keys and types.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Memory notes    | the session has notes                                    | The notes, each with a new id.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Structured data | the session has schemas or data                          | Each session schema with **every version**, and each piece of session data pinned to the version it was on. Data made from a global or built-in schema keeps using it. Data made from a schema only the session, the old project or the run's agent can see gets that schema copied too. A schema name already used by another copy becomes `Name (2)`. Data whose schema is unavailable is left out, and the result lists it as `dataSkipped`. |
 | Agent           | the run has an agent that is not the built-in Dispatcher | A project agent with the same prompt, tool grant, per-tool approvals and subagent settings, **marked as startable as a subagent** (the Dispatcher can only start such agents). The agent's own skills, schemas (every version) and data come with it; data made from a schema that is not global or built-in gets that schema copied into the new agent's scope. The original is not changed.                                                   |
 

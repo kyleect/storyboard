@@ -15,7 +15,7 @@ import {
   type ScriptStep,
 } from "@harness/core";
 import { allTools } from "@harness/tools";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { SearchIndex } from "./search-index.js";
 import { searchWorkspaces } from "./search.js";
@@ -55,7 +55,7 @@ async function setup(scripts: ScriptStep[][] = []) {
   clearBuiltinAgents(t.db);
   writeSettings(t.db, { systemPrompt: "" });
   const store = new Store(t.db);
-  const entries = new EntryStore(t.db);
+  const files = new FileStore(t.db);
   const workspaces = new WorkspaceStore(t.db);
   const index = new SearchIndex(t.db);
   const indexer = new WorkspaceIndexer({
@@ -77,7 +77,7 @@ async function setup(scripts: ScriptStep[][] = []) {
     }),
     model: () => model,
     tools: allTools,
-    entries,
+    files,
     workspaces,
     workspaceIndex: {
       scanAll: (ids) => indexer.scanAll(ids),
@@ -88,7 +88,7 @@ async function setup(scripts: ScriptStep[][] = []) {
   const app = buildServer({
     store,
     runs,
-    entries,
+    files,
     workspaces,
     workspaceIndexer: indexer,
     token: TOKEN,
@@ -331,7 +331,7 @@ describe("workspace_search in a run", () => {
         matched: "keyword",
       },
     ]);
-    expect(r?.data.note).toBeUndefined();
+    expect(r?.data.guidance).toBeUndefined();
   });
 
   it("says nothing is indexed when nothing is ticked", async () => {
@@ -343,7 +343,7 @@ describe("workspace_search in a run", () => {
     await run(c, id);
     const [r] = results(c, id);
     expect(r?.data.hits).toEqual([]);
-    expect(r?.data.note).toMatch(/Nothing in these workspaces is indexed/);
+    expect(r?.data.guidance).toMatch(/Nothing in these workspaces is indexed/);
   });
 
   it("searches only the workspaces of the session, and only what is ticked", async () => {

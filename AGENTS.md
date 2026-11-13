@@ -8,7 +8,7 @@ you are changing as well as this file.
 
 A harness for running LLM agents against a local llama.cpp `llama-server`. A
 user chats with an agent in a browser UI; the agent can call tools, ask the
-user questions, keep files and notes, work with structured data and hand work
+user questions, keep files, work with structured data and hand work
 to other agents. Everything is stored in one encrypted SQLite database.
 
 ```
@@ -76,7 +76,7 @@ llama-server (`@harness/core/testing`).
 These run through the whole codebase (details in `docs/README.md`).
 
 - **The transcript is the source of truth.** A session's messages are stored.
-  Session-scoped files, notes, schemas and data are rebuilt by replaying
+  Session-scoped files, schemas and data are rebuilt by replaying
   changes recorded on messages, not kept in tables of their own.
 - **Everything is an event.** A run communicates only by emitting events. The
   backend stores each event before sending it, so a client can replay what it
@@ -85,7 +85,7 @@ These run through the whole codebase (details in `docs/README.md`).
   has no database, no HTTP server and no UI code.
 - **The user and the model can do the same things**, through the same stores,
   and every change is versioned and attributed.
-- **Nothing is hard-deleted by accident.** Entries, agents, skills, schemas
+- **Nothing is hard-deleted by accident.** Files, agents, skills, schemas
   and data keep every version and are soft-deleted; sessions and projects go
   to a trash first.
 

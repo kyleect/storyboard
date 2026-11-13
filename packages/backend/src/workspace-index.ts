@@ -346,7 +346,7 @@ export class WorkspaceIndexer {
     }
     // A file that is not text, too big or unreadable has no chunks, but is
     // remembered so it is not read again until it changes.
-    this.options.index.indexEntry("file", "workspace", w.id, rel, text);
+    this.options.index.indexFile("workspace", w.id, rel, text);
     this.db
       .prepare(
         `INSERT INTO workspace_index_files (workspace_id, path, mtime_ms, size)

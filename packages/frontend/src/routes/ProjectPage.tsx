@@ -79,7 +79,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               />
             )}
           >
-            Files & memory
+            Files
           </Button>
           <Button
             size="xs"

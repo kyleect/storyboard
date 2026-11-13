@@ -4,13 +4,13 @@ import { z } from "zod";
 import {
   ApprovalChoice,
   InputAnswer,
-  EntryError,
+  FileError,
   getContextSize,
   getReasoningLevels,
   listLlamaServerModels,
   loadLlamaServerModel,
   mediaKindOf,
-  NOTE_CHOICES,
+  COMMENT_CHOICES,
   Selection,
   type ContextSize,
   type LoadResult,
@@ -31,10 +31,10 @@ import { buildSessionDebug } from "./session-debug.js";
 import { AgentStore } from "./agents-store.js";
 import type { AppEvents, AppEvent } from "./app-events.js";
 import { defaultAgentFor } from "./default-agent.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { DataStore } from "./data-store.js";
 import { registerDataRoutes } from "./data-routes.js";
-import { registerEntryRoutes } from "./entry-routes.js";
+import { registerFileRoutes } from "./file-routes.js";
 import { schemaChecker } from "./json-schema.js";
 import { RunError, type RunManager } from "./runs.js";
 import { registerMcpRoutes } from "./mcp-routes.js";
@@ -70,8 +70,8 @@ export interface ServerOptions {
   token: string;
   /** Called after settings are saved (the embedder restarts). */
   onSettingsSaved?: () => void;
-  /** Project and global files and notes. Default: over `store.db`. */
-  entries?: EntryStore;
+  /** Project and global files. Default: over `store.db`. */
+  files?: FileStore;
   /** Agents. Default: over `store.db`. */
   agents?: AgentStore;
   /** Writes the text of images and audio. Left out: no descriptions. */
@@ -186,7 +186,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (err instanceof RunError) {
       return reply.code(err.statusCode).send({ error: err.message });
     }
-    if (err instanceof EntryError) {
+    if (err instanceof FileError) {
       return reply.code(400).send({ error: err.message });
     }
     if (err instanceof WorkspaceStoreError) {
@@ -207,11 +207,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   app.get("/api/health", async () => ({ ok: true }));
 
-  const entries = options.entries ?? new EntryStore(store.db, now, newId);
-  registerEntryRoutes(app, {
+  const fileStore = options.files ?? new FileStore(store.db, now, newId);
+  registerFileRoutes(app, {
     store,
     runs,
-    entries,
+    files: fileStore,
     now,
     ...(options.describer ? { describer: options.describer } : {}),
   });
@@ -492,7 +492,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const { ref } = z.object({ ref: z.string() }).parse(req.query);
     const found = fileLookup(
       store,
-      entries,
+      fileStore,
       id,
       runs.workspaceMediaFor(id),
     )(ref);
@@ -518,7 +518,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     }
     const found = fileLookup(
       store,
-      entries,
+      fileStore,
       id,
       runs.workspaceMediaFor(id),
     )(ref);
@@ -841,7 +841,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         path: ["content"],
       })
       .parse(req.body);
-    const find = fileLookup(store, entries, id, runs.workspaceMediaFor(id));
+    const find = fileLookup(store, fileStore, id, runs.workspaceMediaFor(id));
     const refs: string[] = [];
     for (const ref of new Set(files ?? [])) {
       const found = find(ref);
@@ -963,30 +963,34 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   /**
    * Answers an approval request: once, session, always or deny
-   * (tools design 6.5), with an optional note for once or deny (approval
-   * notes design). 409 when the run is not active, 404 when the request is
-   * not open, 400 for a note with session or always.
+   * (tools design 6.5), with an optional decision comment for once or deny
+   * (approval notes design). 409 when the run is not active, 404 when the
+   * request is not open, 400 for a comment with session or always.
    */
   app.post("/api/runs/:id/approvals/:requestId", async (req, reply) => {
     const { id, requestId } = IdParams.extend({
       requestId: z.string(),
     }).parse(req.params);
-    const { choice, note, selection } = z
+    const { choice, decisionComment, selection } = z
       .object({
         choice: ApprovalChoice,
-        note: z.string().optional(),
+        decisionComment: z.string().optional(),
         selection: Selection.optional(),
       })
-      .refine((b) => b.note === undefined || NOTE_CHOICES.includes(b.choice), {
-        message: "A note can only be sent with once or deny.",
-        path: ["note"],
-      })
+      .refine(
+        (b) =>
+          b.decisionComment === undefined || COMMENT_CHOICES.includes(b.choice),
+        {
+          message: "A decision comment can only be sent with once or deny.",
+          path: ["decisionComment"],
+        },
+      )
       .parse(req.body);
     if (!store.getRun(id))
       return reply.code(404).send({ error: "Run not found." });
     runs.answerApproval(id, requestId, {
       choice,
-      ...(note !== undefined ? { note } : {}),
+      ...(decisionComment !== undefined ? { decisionComment } : {}),
       ...(selection !== undefined ? { selection } : {}),
     });
     return { ok: true };

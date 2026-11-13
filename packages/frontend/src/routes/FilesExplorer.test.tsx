@@ -12,10 +12,10 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type Entry, type EntryDetail, type EntryScope } from "../api";
-import { entryKeys } from "../queries";
+import { api, type StoredFile, type FileDetail, type FileScope } from "../api";
+import { fileKeys } from "../queries";
 import { FilesExplorer } from "./FilesExplorer";
-import { ValueView } from "./Entries";
+import { ValueView } from "./FileViews";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -23,12 +23,12 @@ afterEach(() => {
 });
 beforeEach(() => localStorage.clear());
 
-const session: EntryScope = { scope: "session", id: "s1" };
-const project: EntryScope = { scope: "project", id: "p1" };
-const global: EntryScope = { scope: "global" };
+const session: FileScope = { scope: "session", id: "s1" };
+const project: FileScope = { scope: "project", id: "p1" };
+const global: FileScope = { scope: "global" };
 
 const at = "2026-11-11T00:00:00Z";
-const cat: Entry = {
+const cat: StoredFile = {
   key: "cat.png",
   mediaType: "image/png",
   value: "",
@@ -36,28 +36,28 @@ const cat: Entry = {
   updatedAt: at,
   deleted: false,
 };
-const note: Entry = {
+const note: StoredFile = {
   key: "drafts/notes.md",
   mediaType: "text/markdown",
   value: "# Hi",
   updatedAt: at,
   deleted: false,
 };
-const plan: Entry = {
+const plan: StoredFile = {
   key: "plan.txt",
   mediaType: "text/plain",
   value: "the plan",
   updatedAt: at,
   deleted: false,
 };
-const rules: Entry = {
+const rules: StoredFile = {
   key: "rules.txt",
   mediaType: "text/plain",
   value: "house rules",
   updatedAt: at,
   deleted: false,
 };
-const bible: Entry = {
+const bible: StoredFile = {
   key: "bible.txt",
   mediaType: "text/plain",
   value: "the story bible",
@@ -65,13 +65,13 @@ const bible: Entry = {
   deleted: false,
 };
 
-const FILES: Record<string, Entry[]> = {
+const FILES: Record<string, StoredFile[]> = {
   session: [cat, note, plan],
   project: [rules],
   global: [bible],
 };
 
-const detail = (e: Entry): EntryDetail => ({ ...e, versions: [] });
+const detail = (e: StoredFile): FileDetail => ({ ...e, versions: [] });
 
 function show(ui: React.ReactElement) {
   const client = new QueryClient({
@@ -103,13 +103,13 @@ function typeInEditor(text: string) {
 }
 
 function mockApi() {
-  vi.spyOn(api, "listEntries").mockImplementation(async (s) => {
+  vi.spyOn(api, "listFiles").mockImplementation(async (s) => {
     return FILES[s.scope] ?? [];
   });
   vi.spyOn(api, "listFolders").mockImplementation(async (s) =>
     s.scope === "session" ? ["drafts", "ideas"] : [],
   );
-  vi.spyOn(api, "getEntry").mockImplementation(async (s, _kind, key) => {
+  vi.spyOn(api, "getFile").mockImplementation(async (s, key) => {
     const e = (FILES[s.scope] ?? []).find((f) => f.key === key);
     if (!e) throw new Error("not found");
     return detail(e);
@@ -205,12 +205,10 @@ describe("the roots of the tree", () => {
   it("asks for deleted files when Show deleted is turned on", async () => {
     show(<FilesExplorer page={global} />);
     await screen.findByText("bible.txt");
-    const list = vi.mocked(api.listEntries);
-    expect(list).toHaveBeenCalledWith(global, "file", false);
+    const list = vi.mocked(api.listFiles);
+    expect(list).toHaveBeenCalledWith(global, false);
     fireEvent.click(screen.getByRole("button", { name: "Show deleted files" }));
-    await waitFor(() =>
-      expect(list).toHaveBeenCalledWith(global, "file", true),
-    );
+    await waitFor(() => expect(list).toHaveBeenCalledWith(global, true));
   });
 });
 
@@ -263,7 +261,7 @@ describe("what the tree remembers and shows", () => {
   });
 
   it("says why when the files cannot be loaded", async () => {
-    vi.spyOn(api, "listEntries").mockRejectedValue(new Error("no connection"));
+    vi.spyOn(api, "listFiles").mockRejectedValue(new Error("no connection"));
     show(<FilesExplorer page={global} />);
     expect(await screen.findByText("no connection")).toBeTruthy();
   });
@@ -481,7 +479,7 @@ describe("editing", () => {
     FILES.session = [cat, note, { ...plan, value: "theirs" }];
     try {
       await act(() =>
-        client.invalidateQueries({ queryKey: entryKeys.inScope(session) }),
+        client.invalidateQueries({ queryKey: fileKeys.inScope(session) }),
       );
       expect(
         await screen.findByText(/This file changed since you started editing/),
@@ -687,7 +685,7 @@ describe("making things in the tree", () => {
   });
 
   it("deletes a file from its tab, after asking", async () => {
-    const remove = vi.spyOn(api, "deleteEntry").mockResolvedValue({});
+    const remove = vi.spyOn(api, "deleteFile").mockResolvedValue({});
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("plan.txt"));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
@@ -697,7 +695,7 @@ describe("making things in the tree", () => {
       }),
     );
     await waitFor(() =>
-      expect(remove).toHaveBeenCalledWith(session, "file", "plan.txt"),
+      expect(remove).toHaveBeenCalledWith(session, "plan.txt"),
     );
   });
 });

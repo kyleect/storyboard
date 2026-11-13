@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createEntryAccess,
-  replaySessionEntries,
+  createFileAccess,
+  replaySessionFiles,
   ScriptedModel,
   type ChatRequest,
   type ScriptStep,
@@ -11,7 +11,7 @@ import {
 import { allTools } from "@harness/tools";
 import { getBlob, putBlob } from "./blobs.js";
 import { resultText, saveMedia } from "./mcp-manager.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -43,7 +43,7 @@ async function setup(
   const t = tempDatabase();
   writeSettings(t.db, { systemPrompt: "", ...settings });
   const store = new Store(t.db);
-  const entries = new EntryStore(t.db);
+  const files = new FileStore(t.db);
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
     store,
@@ -53,13 +53,13 @@ async function setup(
     }),
     model: () => model,
     tools: allTools,
-    entries,
+    files,
     ...(support ? { mediaSupport: () => Promise.resolve(support) } : {}),
   });
   const app = buildServer({
     store,
     runs,
-    entries,
+    files,
     token: TOKEN,
     env: {},
   });
@@ -262,8 +262,8 @@ describe("MCP images and audio", () => {
         put: (mediaType: string, data: Uint8Array) =>
           putBlob(t.db, mediaType, Buffer.from(data), "now"),
       },
-      entries: createEntryAccess({
-        session: replaySessionEntries([]),
+      files: createFileAccess({
+        session: replaySessionFiles([]),
         sessionOps: [],
         inProject: false,
         author: { by: "model", sessionId: "s", runId: "r" },
@@ -285,7 +285,7 @@ describe("MCP images and audio", () => {
     );
     expect(media).toEqual(["session://mcp_shots_grab-1.png"]);
     expect(text).toBe("[image saved as <session://mcp_shots_grab-1.png>]");
-    const file = ctx.entries.readFile("session", "mcp_shots_grab-1.png");
+    const file = ctx.files.readFile("session", "mcp_shots_grab-1.png");
     expect(file?.mediaType).toBe("image/png");
     expect(file?.blob && getBlob(t.db, file.blob.hash)?.data).toEqual(PNG);
   });

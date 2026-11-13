@@ -48,7 +48,7 @@ import { GlobalAgentsPage, ProjectAgentsPage } from "./Agents";
 import { Chat } from "./Chat";
 import { ChatsTree, type FocusedRow } from "./ChatsTree";
 import { ContextMeter } from "./ContextMeter";
-import { GlobalEntriesPage, ProjectEntriesPage } from "./EntriesPages";
+import { GlobalFilesPage, ProjectFilesPage } from "./FilesPages";
 import { ErrorsPage } from "./Errors";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
 import { ProjectPage } from "./ProjectPage";
@@ -95,12 +95,12 @@ const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
   sessions: "No project",
   agents: "Agents",
   skills: "Skills",
-  files: "Files & memory",
+  files: "Files",
   data: "Structured Data",
   workspaces: "Workspaces",
   errors: "Errors",
   settings: "Settings",
-  "project-files": "Files & memory",
+  "project-files": "Files",
   "project-agents": "Agents",
   "project-skills": "Skills",
   "project-data": "Structured Data",
@@ -117,7 +117,7 @@ function TabPage({ tab }: { tab: WorkbenchTab }) {
     case "project":
       return <ProjectPage projectId={id} />;
     case "project-files":
-      return <ProjectEntriesPage projectId={id} />;
+      return <ProjectFilesPage projectId={id} />;
     case "project-agents":
       return <ProjectAgentsPage projectId={id} />;
     case "project-skills":
@@ -129,7 +129,7 @@ function TabPage({ tab }: { tab: WorkbenchTab }) {
     case "skills":
       return <GlobalSkillsPage />;
     case "files":
-      return <GlobalEntriesPage />;
+      return <GlobalFilesPage />;
     case "data":
       return <GlobalStructuredDataPage />;
     case "workspaces":

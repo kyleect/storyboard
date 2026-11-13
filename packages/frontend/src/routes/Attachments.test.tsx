@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type Entry } from "../api";
+import { api, type StoredFile } from "../api";
 import type { MediaType } from "@harness/core";
 import {
   DraftAttachments,
@@ -33,7 +33,7 @@ function showFiles(files: string[]) {
   );
 }
 
-const entry = (key: string, mediaType: MediaType, hash: string): Entry => ({
+const file = (key: string, mediaType: MediaType, hash: string): StoredFile => ({
   key,
   mediaType,
   value: "",
@@ -44,8 +44,8 @@ const entry = (key: string, mediaType: MediaType, hash: string): Entry => ({
 
 describe("MessageFiles keep choice", () => {
   const setup = (choices: { ref: string; keep: boolean }[]) => {
-    vi.spyOn(api, "listEntries").mockResolvedValue([
-      entry("cat.png", "image/png", "h1"),
+    vi.spyOn(api, "listFiles").mockResolvedValue([
+      file("cat.png", "image/png", "h1"),
     ]);
     vi.spyOn(api, "blobUrl").mockResolvedValue("blob:image");
     // The server keeps what is set, so the next read shows it.
@@ -90,10 +90,10 @@ describe("MessageFiles keep choice", () => {
 describe("MessageFiles", () => {
   it("shows an image and an audio player from the fetched bytes", async () => {
     const list = vi
-      .spyOn(api, "listEntries")
+      .spyOn(api, "listFiles")
       .mockResolvedValue([
-        entry("cat.png", "image/png", "h1"),
-        entry("hi.wav", "audio/wav", "h2"),
+        file("cat.png", "image/png", "h1"),
+        file("hi.wav", "audio/wav", "h2"),
       ]);
     const urls: Record<string, string> = { h1: "blob:image", h2: "blob:audio" };
     vi.spyOn(api, "blobUrl").mockImplementation(async (h) => urls[h] ?? "");
@@ -106,20 +106,16 @@ describe("MessageFiles", () => {
       ),
     );
     expect(screen.getByText("hi.wav")).toBeTruthy();
-    expect(list).toHaveBeenCalledWith(
-      { scope: "session", id: "s1" },
-      "file",
-      false,
-    );
+    expect(list).toHaveBeenCalledWith({ scope: "session", id: "s1" }, false);
   });
 
   it("finds a project or global file in its own scope", async () => {
     const list = vi
-      .spyOn(api, "listEntries")
+      .spyOn(api, "listFiles")
       .mockImplementation(async (s) =>
         s.scope === "project"
-          ? [entry("p.png", "image/png", "hp")]
-          : [entry("g.png", "image/png", "hg")],
+          ? [file("p.png", "image/png", "hp")]
+          : [file("g.png", "image/png", "hg")],
       );
     vi.spyOn(api, "blobUrl").mockImplementation(async (h) => `blob:${h}`);
     showFiles(["project://p.png", "global://g.png"]);
@@ -129,16 +125,12 @@ describe("MessageFiles", () => {
     expect((await screen.findByAltText("g.png")).getAttribute("src")).toBe(
       "blob:hg",
     );
-    expect(list).toHaveBeenCalledWith(
-      { scope: "project", id: "p1" },
-      "file",
-      false,
-    );
-    expect(list).toHaveBeenCalledWith({ scope: "global" }, "file", false);
+    expect(list).toHaveBeenCalledWith({ scope: "project", id: "p1" }, false);
+    expect(list).toHaveBeenCalledWith({ scope: "global" }, false);
   });
 
   it("says when a file is no longer there", async () => {
-    vi.spyOn(api, "listEntries").mockResolvedValue([]);
+    vi.spyOn(api, "listFiles").mockResolvedValue([]);
     showFiles(["session://gone.png", "workspace://w/x.png"]);
     expect(
       await screen.findByText("gone.png is no longer available."),
@@ -147,8 +139,8 @@ describe("MessageFiles", () => {
   });
 
   it("says when the bytes cannot be loaded", async () => {
-    vi.spyOn(api, "listEntries").mockResolvedValue([
-      entry("cat.png", "image/png", "h1"),
+    vi.spyOn(api, "listFiles").mockResolvedValue([
+      file("cat.png", "image/png", "h1"),
     ]);
     vi.spyOn(api, "blobUrl").mockRejectedValue(new Error("gone"));
     showFiles(["session://cat.png"]);

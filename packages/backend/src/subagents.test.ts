@@ -5,9 +5,9 @@ import {
   type ChatRequest,
   type ScriptStep,
 } from "@harness/core";
-import { allTools, entriesInstruction } from "@harness/tools";
+import { allTools, filesInstruction } from "@harness/tools";
 import { AgentStore, type AgentInput } from "./agents-store.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import {
   MAX_QUEUED_USER_MESSAGES,
   MAX_USER_MESSAGE_LENGTH,
@@ -56,7 +56,7 @@ async function setup(
       new Date(Date.UTC(2026, 10, 5, 0, 0, ++clock))
         .toISOString()
         .replace(".000Z", "Z"));
-  const entries = new EntryStore(t.db, now);
+  const files = new FileStore(t.db, now);
   const agents = new AgentStore(t.db, now);
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
@@ -68,14 +68,14 @@ async function setup(
     model: () => model,
     tools: allTools,
     agents,
-    entries,
-    systemPrompt: (s) => entriesInstruction(s.project_id !== null),
+    files,
+    systemPrompt: (s) => filesInstruction(s.project_id !== null),
     now,
   });
-  const app = buildServer({ store, runs, entries, token: TOKEN, env: {} });
+  const app = buildServer({ store, runs, files, token: TOKEN, env: {} });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
-  return { t, store, runs, app, model, agents, entries, scripts };
+  return { t, store, runs, app, model, agents, files, scripts };
 }
 
 type Ctx = Awaited<ReturnType<typeof setup>>;

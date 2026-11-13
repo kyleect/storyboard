@@ -1,15 +1,10 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
-import {
-  chunkText,
-  replaySessionEntries,
-  type EntryKind,
-  type Scope,
-} from "@harness/core";
+import { chunkText, replaySessionFiles, type Scope } from "@harness/core";
 import { activeMessageJson } from "./transcript.js";
 
 /*
- * The search index over files and memory notes (files and memory design,
- * decisions 22 to 30; plan P2, P8, S1, S2, S6). Live entries are split
+ * The search index over files (files and memory design,
+ * decisions 22 to 30; plan P2, P8, S1, S2, S6). Live files are split
  * into chunks; a full-text index (FTS5, Porter stemming) and one vector per
  * chunk sit beside them. A chunk without a vector for the current model is
  * waiting to be embedded.
@@ -81,57 +76,45 @@ export class SearchIndex {
   constructor(readonly db: Database) {}
 
   /**
-   * Replaces one entry's chunks. `value` null (a deleted entry) removes
-   * them. A note is one chunk; a file is split (S1, S2).
+   * Replaces one file's chunks. `value` null (a deleted file) removes
+   * them. A file is split into chunks (S1, S2).
    */
-  indexEntry(
-    kind: EntryKind,
+  indexFile(
     scope: ChunkScope,
     ownerId: string | null,
     key: string,
     value: string | null,
   ) {
-    const chunks =
-      value === null
-        ? []
-        : kind === "note"
-          ? value.trim()
-            ? [value]
-            : []
-          : chunkText(value);
+    const chunks = value === null ? [] : chunkText(value);
     this.db.transaction(() => {
       this.db
         .prepare(
-          "DELETE FROM chunks WHERE kind = ? AND scope = ? AND owner_id IS ? AND key = ?",
+          "DELETE FROM chunks WHERE scope = ? AND owner_id IS ? AND key = ?",
         )
-        .run(kind, scope, ownerId, key);
+        .run(scope, ownerId, key);
       const insert = this.db.prepare(
-        "INSERT INTO chunks (kind, scope, owner_id, key, seq, text) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO chunks (scope, owner_id, key, seq, text) VALUES (?, ?, ?, ?, ?)",
       );
-      chunks.forEach((text, seq) =>
-        insert.run(kind, scope, ownerId, key, seq, text),
-      );
+      chunks.forEach((text, seq) => insert.run(scope, ownerId, key, seq, text));
     })();
     if (chunks.length > 0) this.onChunksAdded();
   }
 
   /**
-   * Replaces the chunks of the session's own files and notes with those of
+   * Replaces the chunks of the session's own files with those of
    * the line it shows now. For after the line changes (a switch, an edit or
    * a deleted branch): files of the branch left are no longer searched.
    */
   reindexSession(sessionId: string) {
-    const state = replaySessionEntries(
+    const state = replaySessionFiles(
       activeMessageJson(this.db, sessionId).map((m) => JSON.parse(m) as never),
     );
     this.db.transaction(() => {
       this.db
         .prepare("DELETE FROM chunks WHERE scope = 'session' AND owner_id = ?")
         .run(sessionId);
-      for (const kind of ["file", "note"] as const) {
-        for (const [key, current] of state[kind]) {
-          this.indexEntry(kind, "session", sessionId, key, current.value);
-        }
+      for (const [key, current] of state.files) {
+        this.indexFile("session", sessionId, key, current.value);
       }
     })();
   }
@@ -155,9 +138,9 @@ export class SearchIndex {
   }
 
   /**
-   * Indexes every existing entry once, after the migration that added the
+   * Indexes every existing file once, after the migration that added the
    * index (its chunking is done here, not in SQL). Returns the number of
-   * entries indexed, or null when the index was already built.
+   * files indexed, or null when the index was already built.
    */
   buildIfNeeded(): number | null {
     const state = this.db
@@ -172,17 +155,15 @@ export class SearchIndex {
         this.db.prepare("DELETE FROM chunks").run();
         const shared = this.db
           .prepare(
-            "SELECT kind, project_id, key, value FROM entries WHERE deleted_at IS NULL",
+            "SELECT project_id, key, value FROM files WHERE deleted_at IS NULL",
           )
           .all() as {
-          kind: EntryKind;
           project_id: string | null;
           key: string;
           value: string;
         }[];
         for (const e of shared) {
-          this.indexEntry(
-            e.kind,
+          this.indexFile(
             e.project_id === null ? "global" : "project",
             e.project_id,
             e.key,
@@ -197,14 +178,12 @@ export class SearchIndex {
           // The line the session shows, not every branch (message editing
           // plan, part A): files that exist only on another branch are not
           // searched until it is switched to.
-          const state = replaySessionEntries(
+          const state = replaySessionFiles(
             activeMessageJson(this.db, id).map((m) => JSON.parse(m) as never),
           );
-          for (const kind of ["file", "note"] as const) {
-            for (const [key, current] of state[kind]) {
-              this.indexEntry(kind, "session", id, key, current.value);
-              count++;
-            }
+          for (const [key, current] of state.files) {
+            this.indexFile("session", id, key, current.value);
+            count++;
           }
         }
         this.db
@@ -250,12 +229,7 @@ export class SearchIndex {
   }
 
   /** Best keyword matches, best first. */
-  keyword(
-    kind: EntryKind,
-    filter: ScopeFilter,
-    query: string,
-    limit: number,
-  ): ChunkRow[] {
+  keyword(filter: ScopeFilter, query: string, limit: number): ChunkRow[] {
     const match = ftsQuery(query);
     if (match === null) return [];
     const scope = scopeSql(filter);
@@ -263,15 +237,14 @@ export class SearchIndex {
       .prepare(
         `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text
          FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid
-         WHERE chunks_fts MATCH ? AND c.kind = ? AND ${scope.sql}
+         WHERE chunks_fts MATCH ? AND ${scope.sql}
          ORDER BY bm25(chunks_fts) LIMIT ?`,
       )
-      .all(match, kind, ...scope.params, limit) as ChunkRow[];
+      .all(match, ...scope.params, limit) as ChunkRow[];
   }
 
   /** Nearest chunks by cosine distance, nearest first (P2). */
   nearest(
-    kind: EntryKind,
     filter: ScopeFilter,
     model: string,
     vector: readonly number[],
@@ -282,9 +255,9 @@ export class SearchIndex {
       .prepare(
         `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text
          FROM chunks c JOIN chunk_vectors v ON v.chunk_id = c.id
-         WHERE v.model = ? AND c.kind = ? AND ${scope.sql}
+         WHERE v.model = ? AND ${scope.sql}
          ORDER BY vec_distance_cosine(v.embedding, ?) LIMIT ?`,
       )
-      .all(model, kind, ...scope.params, toBlob(vector), limit) as ChunkRow[];
+      .all(model, ...scope.params, toBlob(vector), limit) as ChunkRow[];
   }
 }

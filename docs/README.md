@@ -3,7 +3,7 @@
 The harness is a system for running LLM agents against a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server`. A user
 chats with an agent in a browser UI. The agent can call tools, ask the user
-questions, keep files and notes, work with structured data, and hand work to
+questions, keep files, work with structured data, and hand work to
 other agents. Everything is stored in one encrypted SQLite database.
 
 This documentation explains how the harness is built: what each part does,
@@ -80,7 +80,7 @@ The repository is a pnpm workspace with four packages. Their dependencies point 
 ## Design principles visible throughout the code
 
 - **The transcript is the source of truth.** A session's messages, in order,
-  are stored. Session-scoped files, notes, schemas and data are not stored in
+  are stored. Session-scoped files, schemas and data are not stored in
   tables of their own: they are rebuilt by replaying changes recorded on the
   messages.
 - **Everything is an event.** A run communicates only by emitting events.
@@ -91,9 +91,9 @@ The repository is a pnpm workspace with four packages. Their dependencies point 
   subagents, a schema checker, a search function). The backend implements
   those interfaces over SQL.
 - **Everything the user can do, the model can do, and the reverse.** Files,
-  notes, schemas, data, agents and skills are edited from the UI and by tools
+  schemas, data, agents and skills are edited from the UI and by tools
   through the same stores, and every change is versioned and attributed.
-- **Nothing is hard-deleted by accident.** Entries, agents, skills, schemas and
+- **Nothing is hard-deleted by accident.** Files, agents, skills, schemas and
   data keep every version and are soft-deleted. Sessions and projects go to a
   trash first.
 

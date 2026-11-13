@@ -28,7 +28,7 @@ import {
   toolsList,
   usesPlaceholder,
 } from "./placeholders.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
@@ -978,8 +978,8 @@ describe("the default global prompt", () => {
 });
 
 describe("instruction placeholders and {{files}} in runs", () => {
-  const withEntries = (t: ReturnType<typeof tempDatabase>) => ({
-    entries: new EntryStore(t.db),
+  const withFiles = (t: ReturnType<typeof tempDatabase>) => ({
+    files: new FileStore(t.db),
   });
 
   it("fills {{tools_instruction}} from the setting, apart from {{tools}}", async () => {
@@ -1007,23 +1007,21 @@ describe("instruction placeholders and {{files}} in runs", () => {
   });
 
   it("lists the global, project and session files, with a description for a binary file", async () => {
-    const s = await setup([answer], TOOLS, withEntries);
-    const entries = new EntryStore(s.t.db);
+    const s = await setup([answer], TOOLS, withFiles);
+    const files = new FileStore(s.t.db);
     writeSettings(s.t.db, {
       systemPrompt: "{{files_instruction}}\n{{files}}",
       filesInstruction: "Custom files wording.",
     });
     const project = (await api(s.app, "POST", "/api/projects", { name: "P" }))
       .body.id as string;
-    const shared = entries.shared(project);
+    const shared = files.shared(project);
     shared.put(
-      "file",
       "global",
       { key: "voice.md", value: "Plain.", mediaType: "text/markdown" },
       { by: "user" },
     );
     shared.put(
-      "file",
       "project",
       { key: "cast/alice.md", value: "Alice.", mediaType: "text/markdown" },
       { by: "user" },
@@ -1044,13 +1042,12 @@ describe("instruction placeholders and {{files}} in runs", () => {
   });
 
   it("does not list project files in a chat that is not in a project", async () => {
-    const s = await setup([answer], TOOLS, withEntries);
-    const entries = new EntryStore(s.t.db);
+    const s = await setup([answer], TOOLS, withFiles);
+    const files = new FileStore(s.t.db);
     writeSettings(s.t.db, { systemPrompt: "{{files}}" });
-    entries
+    files
       .shared(null)
       .put(
-        "file",
         "global",
         { key: "voice.md", value: "Plain.", mediaType: "text/markdown" },
         { by: "user" },

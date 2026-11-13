@@ -61,7 +61,7 @@ const TOOLS = [
   tool("files_kill", "files", { needsReview: true, approval: "always" }),
   tool("web_search", "web"),
   tool("read_webpage", "web"),
-  tool("memory_add", "memory"),
+  tool("skill_add", "skills"),
   tool("needs_skill", "skills", { available: (run) => run.hasSkills }),
 ];
 const NAMES = TOOLS.map((t) => t.name);
@@ -161,13 +161,13 @@ describe("what a run offers", () => {
     const c = await setup([answer]);
     const a = await newAgent(c.app, {
       toolGrant: {
-        ...grant("allow", ["memory_add"]),
+        ...grant("allow", ["skill_add"]),
         groups: ["files"],
         except: ["files_edit"],
       },
     });
     // core_read is always on; files_edit is excepted; files_kill needs review.
-    expect(await offered(c, a.id)).toEqual(["core_read", "memory_add"]);
+    expect(await offered(c, a.id)).toEqual(["core_read", "skill_add"]);
   });
 
   it("covers a tool that needs review only when it is listed on its own", async () => {
@@ -191,7 +191,7 @@ describe("what a run offers", () => {
     expect(await offered(c, a.id)).toEqual([
       "core_read",
       "files_edit",
-      "memory_add",
+      "skill_add",
     ]);
   });
 
@@ -208,7 +208,7 @@ describe("what a run offers", () => {
       "core_read",
       "files_edit",
       "files_kill",
-      "memory_add",
+      "skill_add",
     ]);
   });
 
@@ -242,10 +242,10 @@ describe("what a run offers", () => {
     });
     expect(await offered(c, a.id)).toEqual([]);
     // On for a tool that was not: every agent gets it.
-    await api(c.app, "PUT", "/api/tools/memory_add/always-on", {
+    await api(c.app, "PUT", "/api/tools/skill_add/always-on", {
       alwaysOn: true,
     });
-    expect(await offered(c, a.id)).toEqual(["memory_add"]);
+    expect(await offered(c, a.id)).toEqual(["skill_add"]);
   });
 });
 
@@ -438,12 +438,12 @@ describe("agent files", () => {
   it("exports the names a grant comes to, without the always-on tools", async () => {
     const c = await setup();
     const a = await newAgent(c.app, {
-      toolGrant: { ...grant("allow", ["memory_add"]), groups: ["files"] },
+      toolGrant: { ...grant("allow", ["skill_add"]), groups: ["files"] },
     });
     const res = await api(c.app, "GET", `/api/agents/${a.id}/export`);
     // core_read is always on; files_kill needs review, so the group omits it.
     expect(res.text).toContain("- files_edit");
-    expect(res.text).toContain("- memory_add");
+    expect(res.text).toContain("- skill_add");
     expect(res.text).not.toContain("core_read");
     expect(res.text).not.toContain("files_kill");
   });

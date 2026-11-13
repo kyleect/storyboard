@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { ScriptedModel, type ScriptStep } from "@harness/core";
-import { allTools, entriesInstruction } from "@harness/tools";
+import { allTools, filesInstruction } from "@harness/tools";
 import { Embedder, FIRST_RETRY_MS, MAX_RETRY_MS } from "./embedder.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { SearchIndex } from "./search-index.js";
 import { sessionSearch } from "./search.js";
@@ -42,9 +42,9 @@ function setupDb() {
   const t = tempDatabase();
   cleanups.push(t.cleanup);
   const index = new SearchIndex(t.db);
-  const entries = new EntryStore(t.db, undefined, undefined, index);
+  const files = new FileStore(t.db, undefined, undefined, index);
   const store = new Store(t.db);
-  return { t, index, entries, store };
+  return { t, index, files, store };
 }
 
 const user = { by: "user" } as const;
@@ -56,23 +56,19 @@ const everywhere = (sessionId: string | null, projectId: string | null) => ({
 
 describe("SearchIndex", () => {
   it("keeps chunks in step with writes and deletes, with stemmed keyword search", () => {
-    const { index, entries } = setupDb();
-    entries.put("note", null, { key: "n1", value: "Alice fears water" }, user);
+    const { index, files } = setupDb();
+    files.put(null, { key: "n1", value: "Alice fears water" }, user);
     const hits = () =>
-      index
-        .keyword("note", everywhere(null, null), "fear", 10)
-        .map((c) => c.key);
+      index.keyword(everywhere(null, null), "fear", 10).map((c) => c.key);
     expect(hits()).toEqual(["n1"]);
-    entries.put("note", null, { key: "n1", value: "Alice loves cake" }, user);
+    files.put(null, { key: "n1", value: "Alice loves cake" }, user);
     expect(hits()).toEqual([]);
-    entries.delete("note", null, "n1", user);
-    expect(index.keyword("note", everywhere(null, null), "cake", 10)).toEqual(
-      [],
-    );
+    files.delete(null, "n1", user);
+    expect(index.keyword(everywhere(null, null), "cake", 10)).toEqual([]);
   });
 
   it("splits long files into chunks and searches only the given scopes", () => {
-    const { t, index, entries, store } = setupDb();
+    const { t, index, files, store } = setupDb();
     store.createProject({ id: "p", name: "P", description: "", now: "T" });
     const long = Array.from(
       { length: 80 },
@@ -80,8 +76,7 @@ describe("SearchIndex", () => {
     )
       .join("\n\n")
       .concat("\n\nThe gale arrives at dawn.");
-    entries.put(
-      "file",
+    files.put(
       "p",
       { key: "draft", value: long, mediaType: "text/plain" },
       user,
@@ -91,16 +86,12 @@ describe("SearchIndex", () => {
       .get() as { n: number };
     expect(chunks.n).toBeGreaterThan(1);
     expect(
-      index
-        .keyword("file", everywhere(null, "p"), "gale", 10)
-        .map((c) => c.text),
+      index.keyword(everywhere(null, "p"), "gale", 10).map((c) => c.text),
     ).toEqual([expect.stringContaining("The gale arrives at dawn.")]);
-    expect(index.keyword("file", everywhere(null, null), "gale", 10)).toEqual(
-      [],
-    );
+    expect(index.keyword(everywhere(null, null), "gale", 10)).toEqual([]);
   });
 
-  it("indexes existing entries and session transcripts once after the migration", () => {
+  it("indexes existing files and session transcripts once after the migration", () => {
     const { t, index, store } = setupDb();
     store.createSession("s", "S", "T");
     store.addMessage(
@@ -109,20 +100,19 @@ describe("SearchIndex", () => {
       {
         role: "tool",
         callId: "c",
-        name: "memory_add",
+        name: "files_write",
         content: "",
         isError: false,
-        entries: [
-          { op: "put", kind: "note", key: "a", value: "storm at midnight" },
-          { op: "put", kind: "note", key: "b", value: "gone" },
-          { op: "delete", kind: "note", key: "b" },
+        files: [
+          { op: "put", key: "a", value: "storm at midnight" },
+          { op: "put", key: "b", value: "gone" },
+          { op: "delete", key: "b" },
         ],
       },
       "T",
     );
     // Written without the index, as before the migration.
-    new EntryStore(t.db).put(
-      "file",
+    new FileStore(t.db).put(
       null,
       { key: "g", value: "storm", mediaType: "text/plain" },
       user,
@@ -134,13 +124,12 @@ describe("SearchIndex", () => {
     expect(index.buildIfNeeded()).toBeNull();
     expect(
       index
-        .keyword("note", everywhere("s", null), "storm", 10)
-        .map((c) => c.key),
-    ).toEqual(["a"]);
+        .keyword(everywhere("s", null), "storm", 10)
+        .map((c) => c.key)
+        .sort(),
+    ).toEqual(["a", "g"]);
     expect(
-      index
-        .keyword("file", everywhere(null, null), "storm", 10)
-        .map((c) => c.key),
+      index.keyword(everywhere(null, null), "storm", 10).map((c) => c.key),
     ).toEqual(["g"]);
   });
 });
@@ -179,9 +168,9 @@ describe("Embedder", () => {
 
   it("embeds pending chunks in batches of 16", async () => {
     const model = { current: "embed-a" };
-    const { entries, embedder, calls, vectors } = setupEmbedder(model);
+    const { files, embedder, calls, vectors } = setupEmbedder(model);
     for (let i = 0; i < 20; i++) {
-      entries.put("note", null, { key: `n${i}`, value: `note ${i}` }, user);
+      files.put(null, { key: `n${i}`, value: `note ${i}` }, user);
     }
     await embedder.idle();
     expect(calls.map((c) => c.texts.length)).toEqual([1, 16, 3]);
@@ -190,8 +179,8 @@ describe("Embedder", () => {
 
   it("does nothing without a model, and re-embeds everything when it changes", async () => {
     const model = { current: "" };
-    const { entries, embedder, calls, vectors } = setupEmbedder(model);
-    entries.put("note", null, { key: "n", value: "x" }, user);
+    const { files, embedder, calls, vectors } = setupEmbedder(model);
+    files.put(null, { key: "n", value: "x" }, user);
     await embedder.idle();
     expect(calls).toEqual([]);
 
@@ -209,11 +198,11 @@ describe("Embedder", () => {
 
   it("retries after 5 s, doubling to 5 minutes, and resets on settings changes", async () => {
     let failing = true;
-    const { entries, embedder, timers, errors, vectors } = setupEmbedder(
+    const { files, embedder, timers, errors, vectors } = setupEmbedder(
       { current: "embed-a" },
       () => failing,
     );
-    entries.put("note", null, { key: "n", value: "x" }, user);
+    files.put(null, { key: "n", value: "x" }, user);
     await embedder.idle();
     for (let i = 0; i < 8; i++) {
       timers.at(-1)?.fn();
@@ -231,7 +220,7 @@ describe("Embedder", () => {
       MAX_RETRY_MS,
     ]);
     // New work does not cut a scheduled wait short.
-    entries.put("note", null, { key: "m", value: "y" }, user);
+    files.put(null, { key: "m", value: "y" }, user);
     await embedder.idle();
     expect(errors).toHaveLength(9);
 
@@ -249,20 +238,17 @@ describe("sessionSearch", () => {
   async function seeded(model: string, embedFails = false) {
     const db = setupDb();
     db.store.createProject({ id: "p", name: "P", description: "", now: "T" });
-    db.entries.put(
-      "note",
+    db.files.put(
       "p",
       { key: "lake", value: "Alice will not go near the lake." },
       user,
     );
-    db.entries.put(
-      "note",
+    db.files.put(
       "p",
       { key: "lamp", value: "The lamp has a Fresnel lens." },
       user,
     );
-    db.entries.put(
-      "note",
+    db.files.put(
       null,
       { key: "gale", value: "Storms come from the west." },
       user,
@@ -294,7 +280,6 @@ describe("sessionSearch", () => {
   it("returns every match when no limit is given", async () => {
     const { search } = await seeded("embed-a");
     const result = await search({
-      kind: "note",
       query: "lake",
       scopes: ["session", "project", "global"],
     });
@@ -309,7 +294,6 @@ describe("sessionSearch", () => {
   it("finds by meaning what keywords miss, and merges both rankings", async () => {
     const { search } = await seeded("embed-a");
     const result = await search({
-      kind: "note",
       query: "drowning lake",
       scopes: ["session", "project", "global"],
       limit: 2,
@@ -320,7 +304,6 @@ describe("sessionSearch", () => {
     expect(result.hits).toHaveLength(2);
 
     const byMeaning = await search({
-      kind: "note",
       query: "beam",
       scopes: ["project"],
       limit: 1,
@@ -339,7 +322,6 @@ describe("sessionSearch", () => {
     const none = await (
       await seeded("")
     ).search({
-      kind: "note",
       query: "storms",
       scopes: ["global"],
       limit: 5,
@@ -352,7 +334,6 @@ describe("sessionSearch", () => {
     const failed = await (
       await seeded("embed-a", true)
     ).search({
-      kind: "note",
       query: "storms",
       scopes: ["global"],
       limit: 5,
@@ -362,21 +343,16 @@ describe("sessionSearch", () => {
   });
 
   it("returns one hit per file, with its best chunk as the excerpt", async () => {
-    const { entries, search } = await seeded("");
+    const { files, search } = await seeded("");
     const value = `${"Filler sentence here. ".repeat(80)}\n\nThe storm breaks the lens.`;
-    entries.put(
-      "file",
-      null,
-      { key: "draft", value, mediaType: "text/plain" },
-      user,
-    );
+    files.put(null, { key: "draft", value, mediaType: "text/plain" }, user);
     const result = await search({
-      kind: "file",
       query: "storm lens filler",
       scopes: ["global"],
       limit: 5,
     });
-    expect(result.hits.map((h) => h.key)).toEqual(["draft"]);
+    // One hit for the file however many of its chunks matched.
+    expect(result.hits.filter((h) => h.key === "draft")).toHaveLength(1);
   });
 });
 
@@ -407,8 +383,8 @@ describe("search through the tools", () => {
       settings,
       model: () => new ScriptedModel(scripts),
       tools: allTools,
-      entries: db.entries,
-      systemPrompt: (s) => entriesInstruction(s.project_id !== null),
+      files: db.files,
+      systemPrompt: (s) => filesInstruction(s.project_id !== null),
       index: db.index,
       search: (session) =>
         sessionSearch({
@@ -422,7 +398,7 @@ describe("search through the tools", () => {
     const app = buildServer({
       store: db.store,
       runs,
-      entries: db.entries,
+      files: db.files,
       token: TOKEN,
       env: {},
       onSettingsSaved: () => saved++,
@@ -454,17 +430,19 @@ describe("search through the tools", () => {
     };
   };
 
-  it("finds a note the model saved earlier in the same run", async () => {
+  it("finds a file the model saved earlier in the same run", async () => {
     const { app, runs, store } = await setup([
       [
-        call("c1", "memory_add", {
+        call("c1", "files_write", {
           scope: "session",
-          text: "The keeper cannot swim.",
+          key: "keeper.md",
+          mediaType: "text/markdown",
+          value: "The keeper cannot swim.",
         }),
         { type: "finish", reason: "tool_calls" },
       ],
       [
-        call("c2", "memory_search", { query: "afraid of the sea" }),
+        call("c2", "files_search", { query: "afraid of the sea" }),
         { type: "finish", reason: "tool_calls" },
       ],
       [
@@ -476,18 +454,18 @@ describe("search through the tools", () => {
     const run = await api(app, "POST", `/api/sessions/${body.id}/messages`, {
       content: "Go",
     });
-    // The user confirms the note's scope (tool prompts D1).
+    // The user confirms the file's name and scope (tool prompts D1).
     await runAnsweringForms(runs, body.id, run.body.runId, [
-      { scope: "session", remember: false },
+      { name: "keeper.md", scope: "session" },
     ]);
     const result = store
       .listMessages(body.id)
       .map((m) => m.message)
       .filter((m) => m.role === "tool")
       .at(-1);
-    expect(result?.name).toBe("memory_search");
+    expect(result?.name).toBe("files_search");
     expect(JSON.parse(result?.content ?? "{}")).toMatchObject({
-      notes: [{ scope: "session", text: "The keeper cannot swim." }],
+      results: [{ scope: "session", key: "keeper.md" }],
     });
   });
 

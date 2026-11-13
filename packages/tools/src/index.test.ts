@@ -19,15 +19,8 @@ describe("allTools", () => {
       "files_folder_rename",
       "files_folder_delete",
       "files_search",
-      "memory_list",
-      "memory_add",
-      "memory_update",
-      "memory_delete",
-      "memory_search",
       "files_copy",
-      "memory_copy",
       "files_move",
-      "memory_move",
       "projects_list",
       "project_view",
       "project_create",
@@ -84,15 +77,6 @@ describe("allTools", () => {
         "files_copy",
         "files_move",
       ],
-      memory: [
-        "memory_list",
-        "memory_add",
-        "memory_update",
-        "memory_delete",
-        "memory_search",
-        "memory_copy",
-        "memory_move",
-      ],
       "structured-data": [
         "schemas_list",
         "schema_view",
@@ -131,8 +115,8 @@ describe("allTools", () => {
   });
 
   it("is always on only for the two run-dependent tools (files unification design, D23, D49)", () => {
-    // The files and memory tools are no longer always on (files unification
-    // design, D23 and D49).
+    // The files tools are no longer always on (files unification design,
+    // D23 and D49).
     expect(allTools.filter((t) => t.alwaysOn).map((t) => t.name)).toEqual([
       "subagent_handback",
       "skill_load",

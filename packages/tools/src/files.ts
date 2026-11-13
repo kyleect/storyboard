@@ -4,7 +4,7 @@ import {
   checkFileValue,
   defineTool,
   FILE_KEY_PATTERN,
-  EntryError,
+  FileError,
   isInFolder,
   mediaKindOf,
   parseRef,
@@ -18,13 +18,13 @@ import {
 } from "@harness/core";
 
 /*
- * Files and memory tools (files and memory design, decisions 16 to 20):
+ * Files tools (files and memory design, decisions 16 to 20):
  * one tool per operation, none asking for approval by default.
  *
- * Scopes (tool prompts design): the model suggests where a new file or
- * note goes and the user decides in a form (D1, D2, D15). Reads, updates
- * and deletes find the entry by key or id and ask only when it is in more
- * than one scope (D13, D19). Lists and searches cover every scope unless
+ * Scopes (tool prompts design): the model suggests where a new file goes
+ * and the user decides in a form (D1, D2, D15). Reads, updates and deletes
+ * find the file by key and ask only when it is in more than one scope
+ * (D13, D19). Lists and searches cover every scope unless
  * the model narrows them, and then the user confirms or changes the scopes
  * (D7). The result says when the user overrode the model's suggestion (D11).
  */
@@ -53,7 +53,7 @@ type Target = Record<string, string | undefined>;
 
 /**
  * Why a call failed, for the errors console (error reporting plan, P3):
- * "not_found" for a missing file or note, "rejected" for an `EntryError`
+ * "not_found" for a missing file, "rejected" for an `FileError`
  * (a bad key, a missing project scope, invalid JSON).
  */
 type Reason = "not_found" | "rejected";
@@ -77,7 +77,7 @@ const guarded = async (
   try {
     return await run();
   } catch (err) {
-    if (err instanceof EntryError) return fail(err.message, "rejected", target);
+    if (err instanceof FileError) return fail(err.message, "rejected", target);
     throw err;
   }
 };
@@ -102,12 +102,12 @@ function resolveName(
   const ref = parseRef(text.trim());
   if (!ref) return { key: text };
   if (ref.location === "workspace") {
-    throw new EntryError(
+    throw new FileError(
       "A workspace file cannot be reached with the files tools.",
     );
   }
-  if (!ctx.entries.scopes.includes(ref.location)) {
-    throw new EntryError(
+  if (!ctx.files.scopes.includes(ref.location)) {
+    throw new FileError(
       ref.location === "project"
         ? "This conversation is not in a project, so there is no project scope."
         : `The ${ref.location} scope is not available.`,
@@ -208,7 +208,7 @@ async function askScopes(
   suggested: readonly Scope[],
   texts: Texts,
 ): Promise<{ scopes: Scope[]; remember: boolean } | undefined> {
-  const choices = ctx.entries.scopes;
+  const choices = ctx.files.scopes;
   const marked = choices.filter((s) => suggested.includes(s));
   const form: Form = {
     title: texts.title,
@@ -241,7 +241,7 @@ async function askScopes(
 const listText = (scopes: readonly Scope[]) => scopes.join(", ");
 
 /** Said to the model when the user overrode its suggestion (D11). */
-function overrideNote(
+function overrideGuidance(
   suggested: Scope | readonly Scope[] | undefined,
   chosen: Scope | readonly Scope[],
 ): string | undefined {
@@ -263,22 +263,13 @@ const excerpt = (value: string, n = 200) => {
 
 // ---- Remembered scopes (D15, D7) -----------------------------------------
 
-const RememberedScope = z.object({ scope: z.enum(SCOPES) });
 const RememberedScopes = z.object({ scopes: z.array(z.enum(SCOPES)) });
-
-/** The scope the user chose to keep using, if it is still available. */
-function rememberedScope(ctx: ToolContext): Scope | undefined {
-  const parsed = RememberedScope.safeParse(ctx.state);
-  return parsed.success && ctx.entries.scopes.includes(parsed.data.scope)
-    ? parsed.data.scope
-    : undefined;
-}
 
 /** The scopes the user chose to keep using, if any are still available. */
 function rememberedScopes(ctx: ToolContext): Scope[] | undefined {
   const parsed = RememberedScopes.safeParse(ctx.state);
   if (!parsed.success) return undefined;
-  const kept = ctx.entries.scopes.filter((s) => parsed.data.scopes.includes(s));
+  const kept = ctx.files.scopes.filter((s) => parsed.data.scopes.includes(s));
   return kept.length > 0 ? kept : undefined;
 }
 
@@ -292,11 +283,13 @@ async function coveredScopes(
   suggested: readonly Scope[] | undefined,
   texts: Omit<Texts, "remember">,
 ): Promise<
-  { scopes: Scope[]; state?: unknown; note?: string | undefined } | undefined
+  | { scopes: Scope[]; state?: unknown; guidance?: string | undefined }
+  | undefined
 > {
   const kept = rememberedScopes(ctx);
-  if (kept) return { scopes: kept, note: overrideNote(suggested, kept) };
-  const all = ctx.entries.scopes;
+  if (kept)
+    return { scopes: kept, guidance: overrideGuidance(suggested, kept) };
+  const all = ctx.files.scopes;
   if (suggested === undefined || all.every((s) => suggested.includes(s))) {
     return { scopes: [...all] };
   }
@@ -308,11 +301,11 @@ async function coveredScopes(
   return {
     scopes: asked.scopes,
     ...(asked.remember ? { state: { scopes: asked.scopes } } : {}),
-    note: overrideNote(suggested, asked.scopes),
+    guidance: overrideGuidance(suggested, asked.scopes),
   };
 }
 
-// ---- Finding an entry by key or id (D13, D19) ----------------------------
+// ---- Finding a file by key or id (D13, D19) ----------------------------
 
 /**
  * The scope of the one copy to use: the only one, or the one the user
@@ -335,16 +328,10 @@ async function pickCopy(
 }
 
 const fileCopies = (ctx: ToolContext, key: string): Scope[] =>
-  ctx.entries
+  ctx.files
     .listFiles()
     .filter((f) => f.key === key)
     .map((f) => f.scope);
-
-const noteCopies = (ctx: ToolContext, id: string): Scope[] =>
-  ctx.entries
-    .listNotes()
-    .filter((n) => n.id === id)
-    .map((n) => n.scope);
 
 const several = "It is in more than one scope; pick the copy.";
 
@@ -377,13 +364,13 @@ export const filesList = defineTool({
         folder === undefined || (path !== folder && isInFolder(path, folder));
       return {
         data: {
-          files: ctx.entries
+          files: ctx.files
             .listFiles(covered.scopes)
             .filter((f) => inside(f.key)),
-          folders: ctx.entries
+          folders: ctx.files
             .listFolders(covered.scopes)
             .filter((f) => inside(f.path)),
-          ...(covered.note ? { note: covered.note } : {}),
+          ...(covered.guidance ? { guidance: covered.guidance } : {}),
         },
         ...(covered.state ? { state: covered.state } : {}),
       };
@@ -422,7 +409,7 @@ export const filesRead = defineTool({
       if (scope === "skipped")
         return notDone("Not read: the user chose not to pick a copy.");
       const file =
-        scope === "none" ? undefined : ctx.entries.readFile(scope, key);
+        scope === "none" ? undefined : ctx.files.readFile(scope, key);
       if (!file || scope === "none")
         return fail(`There is no file "${key}".`, "not_found", { key });
       if (file.blob) {
@@ -433,7 +420,7 @@ export const filesRead = defineTool({
           return {
             data: {
               ...base,
-              note: "This is a binary file, so there is no text to read.",
+              guidance: "This is a binary file, so there is no text to read.",
             },
           };
         }
@@ -441,14 +428,14 @@ export const filesRead = defineTool({
           return {
             data: {
               ...base,
-              note: `The model in use cannot take ${kind} files, so it cannot be read.`,
+              guidance: `The model in use cannot take ${kind} files, so it cannot be read.`,
             },
           };
         }
         return {
           data: {
             ...base,
-            note: `This is ${kind === "image" ? "an image" : "an audio file"}. It follows this result.`,
+            guidance: `This is ${kind === "image" ? "an image" : "an audio file"}. It follows this result.`,
           },
           media: [{ ref, ...(keep !== undefined ? { keep } : {}) }],
         };
@@ -514,7 +501,7 @@ export const filesWrite = defineTool({
           : fileCopies(ctx, named)
         : [];
       const [only] = copies;
-      const notes: string[] = [];
+      const remarks: string[] = [];
       let target: Scope;
       let name: string;
       if (named && copies.length === 1 && only) {
@@ -522,7 +509,7 @@ export const filesWrite = defineTool({
         target = only;
         name = named;
         if (scope && scope !== only)
-          notes.push(
+          remarks.push(
             `"${named}" already exists in the ${only} scope, so it was saved there.`,
           );
       } else if (named && copies.length > 1) {
@@ -537,11 +524,11 @@ export const filesWrite = defineTool({
           return notDone("Not saved: the user chose not to save this file.");
         target = asked.scope;
         name = named;
-        const n = overrideNote(scope, target);
-        if (n) notes.push(n);
+        const n = overrideGuidance(scope, target);
+        if (n) remarks.push(n);
       } else {
         // A new file: the user names it and picks its scope (Q18, D1).
-        const choices = ctx.entries.scopes;
+        const choices = ctx.files.scopes;
         const marked = scope && choices.includes(scope) ? [scope] : [];
         const answer = await ctx.requestInput({
           title: "Save a new file",
@@ -568,16 +555,16 @@ export const filesWrite = defineTool({
         target = answer.answers["scope"] as Scope;
         checkFileName(name);
         if (key !== undefined && name !== key)
-          notes.push(
+          remarks.push(
             `The user named the file "${name}" instead of your suggestion ("${key}").`,
           );
-        const n = overrideNote(scope, target);
-        if (n) notes.push(n);
+        const n = overrideGuidance(scope, target);
+        if (n) remarks.push(n);
       }
-      const created = ctx.entries.writeFile(target, name, mediaType, value);
+      const created = ctx.files.writeFile(target, name, mediaType, value);
       // A name the user typed can already exist in the scope picked (Q21).
       if (!created && !(named && copies.length > 0))
-        notes.push(
+        remarks.push(
           `This replaced the existing "${name}" in the ${target} scope.`,
         );
       return {
@@ -586,7 +573,7 @@ export const filesWrite = defineTool({
           key: name,
           mediaType,
           created,
-          ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
+          ...(remarks.length > 0 ? { guidance: remarks.join(" ") } : {}),
         },
       };
     }),
@@ -615,7 +602,7 @@ export const filesDelete = defineTool({
       );
       if (scope === "skipped")
         return notDone("Not deleted: the user chose not to pick a copy.");
-      if (scope === "none" || !ctx.entries.deleteFile(scope, key))
+      if (scope === "none" || !ctx.files.deleteFile(scope, key))
         return fail(`There is no file "${key}".`, "not_found", { key });
       return { data: { scope, key, deleted: true } };
     }),
@@ -624,7 +611,7 @@ export const filesDelete = defineTool({
 // ---- Folders (D6) -------------------------------------------------------
 
 const folderCopies = (ctx: ToolContext, path: string): Scope[] =>
-  ctx.entries
+  ctx.files
     .listFolders()
     .filter((f) => f.path === path)
     .map((f) => f.scope);
@@ -650,7 +637,7 @@ export const filesFolderCreate = defineTool({
       if (named) {
         target = named;
       } else {
-        const picked = await askScope(ctx, ctx.entries.scopes, asked, {
+        const picked = await askScope(ctx, ctx.files.scopes, asked, {
           title: `Create the folder "${path}" where?`,
           question: "Create in",
           submitLabel: "Create",
@@ -660,10 +647,15 @@ export const filesFolderCreate = defineTool({
           return notDone("Not created: the user chose not to create it.");
         target = picked.scope;
       }
-      const created = ctx.entries.createFolder(target, path);
-      const note = overrideNote(asked, target);
+      const created = ctx.files.createFolder(target, path);
+      const guidance = overrideGuidance(asked, target);
       return {
-        data: { scope: target, path, created, ...(note ? { note } : {}) },
+        data: {
+          scope: target,
+          path,
+          created,
+          ...(guidance ? { guidance } : {}),
+        },
       };
     }),
 });
@@ -697,11 +689,7 @@ export const filesFolderRename = defineTool({
       const moved =
         scope === "none"
           ? undefined
-          : ctx.entries.renameFolder(
-              scope,
-              path,
-              resolveName(ctx, newPath).key,
-            );
+          : ctx.files.renameFolder(scope, path, resolveName(ctx, newPath).key);
       if (!moved)
         return fail(`There is no folder "${path}".`, "not_found", { path });
       return {
@@ -734,126 +722,10 @@ export const filesFolderDelete = defineTool({
       if (scope === "skipped")
         return notDone("Not deleted: the user chose not to pick a copy.");
       const gone =
-        scope === "none" ? undefined : ctx.entries.deleteFolder(scope, path);
+        scope === "none" ? undefined : ctx.files.deleteFolder(scope, path);
       if (!gone)
         return fail(`There is no folder "${path}".`, "not_found", { path });
       return { data: { scope, path, deleted: true, files: gone.files } };
-    }),
-});
-
-// ---- Memory --------------------------------------------------------------
-
-export const memoryList = defineTool({
-  name: "memory_list",
-  description:
-    "Lists your memory notes (ids, text and scope). Covers every scope unless you name some in scopes.",
-  input: z.object({ scopes: Scopes.optional() }),
-  approval: "never",
-  group: "memory",
-  execute: ({ scopes }, ctx) =>
-    guarded({ scopes: scopes?.join(",") }, async () => {
-      const covered = await coveredScopes(ctx, scopes, {
-        title: "List notes in which scopes?",
-        question: "Scopes",
-        submitLabel: "List",
-        skipLabel: "Don't list",
-      });
-      if (!covered) return notDone("Not listed: the user chose not to list.");
-      return {
-        data: {
-          notes: ctx.entries.listNotes(covered.scopes),
-          ...(covered.note ? { note: covered.note } : {}),
-        },
-        ...(covered.state ? { state: covered.state } : {}),
-      };
-    }),
-});
-
-export const memoryAdd = defineTool({
-  name: "memory_add",
-  description:
-    "Saves a short note for yourself and returns its id and scope. Keep one fact or idea per note. Suggest a scope; the user decides where it is saved.",
-  input: z.object({
-    text: z.string().min(1),
-    scope: SuggestedScope.optional(),
-  }),
-  approval: "never",
-  group: "memory",
-  execute: ({ text, scope }, ctx) =>
-    guarded({ scope }, async () => {
-      // The scope the user chose to keep using for notes (D15).
-      const kept = rememberedScope(ctx);
-      let target: Scope;
-      let state: unknown;
-      if (kept) {
-        target = kept;
-      } else {
-        const asked = await askScope(ctx, ctx.entries.scopes, scope, {
-          title: "Save this note where?",
-          description: text,
-          question: "Save to",
-          submitLabel: "Save",
-          skipLabel: "Don't save",
-          remember: "Use this for my notes for the rest of this session",
-        });
-        if (!asked)
-          return notDone("Not saved: the user chose not to save this note.");
-        target = asked.scope;
-        if (asked.remember) state = { scope: target };
-      }
-      const note = overrideNote(scope, target);
-      return {
-        data: {
-          scope: target,
-          id: ctx.entries.addNote(target, text),
-          ...(note ? { note } : {}),
-        },
-        ...(state !== undefined ? { state } : {}),
-      };
-    }),
-});
-
-export const memoryUpdate = defineTool({
-  name: "memory_update",
-  description: "Replaces the text of one of your memory notes, by id.",
-  input: z.object({ id: z.string(), text: z.string().min(1) }),
-  approval: "never",
-  group: "memory",
-  execute: ({ id, text }, ctx) =>
-    guarded({ id }, async () => {
-      const scope = await pickCopy(ctx, noteCopies(ctx, id), {
-        title: `Change which note "${id}"?`,
-        description: several,
-        submitLabel: "Change",
-        skipLabel: "Don't change",
-      });
-      if (scope === "skipped")
-        return notDone("Not changed: the user chose not to pick a copy.");
-      if (scope === "none" || !ctx.entries.updateNote(scope, id, text))
-        return fail(`There is no memory note "${id}".`, "not_found", { id });
-      return { data: { scope, id, updated: true } };
-    }),
-});
-
-export const memoryDelete = defineTool({
-  name: "memory_delete",
-  description: "Deletes one of your memory notes, by id.",
-  input: z.object({ id: z.string() }),
-  approval: "never",
-  group: "memory",
-  execute: ({ id }, ctx) =>
-    guarded({ id }, async () => {
-      const scope = await pickCopy(ctx, noteCopies(ctx, id), {
-        title: `Delete which note "${id}"?`,
-        description: several,
-        submitLabel: "Delete",
-        skipLabel: "Don't delete",
-      });
-      if (scope === "skipped")
-        return notDone("Not deleted: the user chose not to pick a copy.");
-      if (scope === "none" || !ctx.entries.deleteNote(scope, id))
-        return fail(`There is no memory note "${id}".`, "not_found", { id });
-      return { data: { scope, id, deleted: true } };
     }),
 });
 
@@ -871,15 +743,6 @@ const Limit = z
   .max(20)
   .optional()
   .describe("How many results to return, 1 to 20. Defaults to 5.");
-/** Notes are short, so every match comes back unless a limit is given. */
-const NoteLimit = z
-  .number()
-  .int()
-  .min(1)
-  .max(100)
-  .optional()
-  .describe("Most notes to return, 1 to 100. Leave out to get every match.");
-
 export const filesSearch = defineTool({
   name: "files_search",
   description:
@@ -897,12 +760,7 @@ export const filesSearch = defineTool({
       });
       if (!covered)
         return notDone("Not searched: the user chose not to search.");
-      const result = await ctx.entries.search(
-        "file",
-        query,
-        covered.scopes,
-        limit ?? 5,
-      );
+      const result = await ctx.files.search(query, covered.scopes, limit ?? 5);
       return {
         data: {
           results: result.hits.map((h) => ({
@@ -911,56 +769,14 @@ export const filesSearch = defineTool({
             excerpt: h.excerpt,
           })),
           ...(result.notice ? { notice: result.notice } : {}),
-          ...(covered.note ? { note: covered.note } : {}),
+          ...(covered.guidance ? { guidance: covered.guidance } : {}),
         },
         ...(covered.state ? { state: covered.state } : {}),
       };
     }),
 });
 
-export const memorySearch = defineTool({
-  name: "memory_search",
-  description:
-    "Searches your memory notes by keywords and by meaning. Covers every scope unless you name some in scopes. Returns every matching note with its scope, best first.",
-  input: z.object({
-    query: Query,
-    scopes: Scopes.optional(),
-    limit: NoteLimit,
-  }),
-  approval: "never",
-  group: "memory",
-  execute: ({ query, scopes, limit }, ctx) =>
-    guarded({ scopes: scopes?.join(",") }, async () => {
-      const covered = await coveredScopes(ctx, scopes, {
-        title: `Search notes for "${excerpt(query, 80)}" in which scopes?`,
-        question: "Scopes",
-        submitLabel: "Search",
-        skipLabel: "Don't search",
-      });
-      if (!covered)
-        return notDone("Not searched: the user chose not to search.");
-      const result = await ctx.entries.search(
-        "note",
-        query,
-        covered.scopes,
-        limit,
-      );
-      return {
-        data: {
-          notes: result.hits.map((h) => ({
-            scope: h.scope,
-            id: h.key,
-            text: h.excerpt,
-          })),
-          ...(result.notice ? { notice: result.notice } : {}),
-          ...(covered.note ? { note: covered.note } : {}),
-        },
-        ...(covered.state ? { state: covered.state } : {}),
-      };
-    }),
-});
-
-export const entryTools = [
+export const fileTools = [
   filesList,
   filesRead,
   filesWrite,
@@ -969,28 +785,21 @@ export const entryTools = [
   filesFolderRename,
   filesFolderDelete,
   filesSearch,
-  memoryList,
-  memoryAdd,
-  memoryUpdate,
-  memoryDelete,
-  memorySearch,
 ];
 
 /**
- * The fixed system message about files and memory (design decision 15;
+ * The fixed system message about files (design decision 15;
  * scope wording from tool prompts D17).
  */
-export function entriesInstruction(inProject: boolean): string {
+export function filesInstruction(inProject: boolean): string {
   return [
-    "You can keep information across conversations with two sets of tools.",
+    "You can keep information across conversations in files.",
     "",
     "Files: named text documents (plain text, Markdown or JSON), kept in folders. The user and you can both write them. Use files_list and files_search to find files and files_read to read them. A file is named by its path in a scope, and written in text as a reference in angle brackets, such as <session://notes.md> or <project://characters/alice.md>; the tools accept a reference or a plain name.",
     "",
-    "Memory: short notes you write for yourself. Search memory with memory_search when earlier knowledge could help, and save what is worth remembering with memory_add.",
+    "Files are kept at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). To save something new, call the tool right away with your suggestions and leave out what you don't know, such as a file's name or scope; the user fills in or changes them in a form, and the result says what was used. Don't ask the user for them in your reply. Lists and searches cover every scope unless you name some, and the user can change the scopes you name.",
     "",
-    "Both are kept at three scopes: session (this conversation), project (every conversation in this project) and global (every conversation). To save something new, call the tool right away with your suggestions and leave out what you don't know, such as a file's name or scope; the user fills in or changes them in a form, and the result says what was used. Don't ask the user for them in your reply. Lists and searches cover every scope unless you name some, and the user can change the scopes you name.",
-    "",
-    "To copy entries to another scope, call files_copy or memory_copy; files_move and memory_move also delete the originals. Suggest where from and to and the user decides in a form, and each call needs the user's approval. To send entries to another project, give its id from projects_list. A project can only send to another project, never pull from one.",
+    "To copy files to another scope, call files_copy; files_move also deletes the originals. Suggest where from and to and the user decides in a form, and each call needs the user's approval. To send files to another project, give its id from projects_list. A project can only send to another project, never pull from one.",
     "",
     `This conversation is in a project: ${inProject ? "yes" : "no"}.`,
   ].join("\n");

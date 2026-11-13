@@ -1,9 +1,7 @@
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
-  Card,
   Code,
   Group,
   Image,
@@ -14,7 +12,6 @@ import {
   ScrollArea,
   SegmentedControl,
   Stack,
-  Switch,
   Text,
   Textarea,
 } from "@mantine/core";
@@ -25,26 +22,23 @@ import {
   fileNameProblem,
   mediaKindOf,
   type BlobRef,
-  type EntryKind,
   type MediaType,
 } from "@harness/core";
 import {
   api,
   type DerivedText,
-  type Entry,
-  type EntryDetail,
-  type EntryScope,
-  type EntryVersion,
+  type FileDetail,
+  type FileScope,
+  type FileVersion,
 } from "../api";
-import { blobKeys, entryKeys } from "../queries";
+import { blobKeys, fileKeys } from "../queries";
 import { Markdown } from "./Markdown";
 import { showError } from "./SessionActions";
 
 /*
- * Viewing and editing files and memory notes (files and memory design,
- * decisions 31 to 35; plan U1 to U8). Files: a list on the left and the
- * selected file on the right. Notes: one list of cards. Earlier versions
- * open in a dialog, where one can be made current again.
+ * Viewing and editing files (files and memory design, decisions 31 to 35;
+ * plan U1 to U8): a list on the left and the selected file on the right.
+ * Earlier versions open in a dialog, where one can be made current again.
  */
 
 const FILE_TYPES: { value: MediaType; label: string }[] = [
@@ -289,50 +283,41 @@ export function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
 export const when = (iso: string) =>
   iso ? new Date(iso).toLocaleString() : "";
 
-/** Refreshes a scope's lists and open entries after a change. */
-export function useRefresh(scope: EntryScope) {
+/** Refreshes a scope's lists and open files after a change. */
+export function useRefresh(scope: FileScope) {
   const queryClient = useQueryClient();
   return () =>
-    queryClient.invalidateQueries({ queryKey: entryKeys.inScope(scope) });
+    queryClient.invalidateQueries({ queryKey: fileKeys.inScope(scope) });
 }
 
-/** Earlier versions of one file or note; one can be made current. */
+/** Earlier versions of one file; one can be made current. */
 export function VersionsModal({
   scope,
-  kind,
-  entry,
+  file,
   readOnly,
   onClose,
 }: {
-  scope: EntryScope;
-  kind: EntryKind;
-  entry: EntryDetail;
+  scope: FileScope;
+  file: FileDetail;
   readOnly: boolean;
   onClose: () => void;
 }) {
   const refresh = useRefresh(scope);
-  const newestFirst = [...entry.versions].reverse();
-  const [picked, setPicked] = useState<EntryVersion | undefined>(
-    newestFirst[0],
-  );
-  const latest = entry.versions.at(-1);
+  const newestFirst = [...file.versions].reverse();
+  const [picked, setPicked] = useState<FileVersion | undefined>(newestFirst[0]);
+  const latest = file.versions.at(-1);
   const restore = useMutation({
-    mutationFn: (seq: number) => api.restoreEntry(scope, kind, entry.key, seq),
+    mutationFn: (seq: number) => api.restoreFile(scope, file.key, seq),
     onSuccess: async () => {
       await refresh();
       onClose();
     },
     onError: showError("Could not restore the version"),
   });
-  const isCurrent = picked?.seq === latest?.seq && !entry.deleted;
+  const isCurrent = picked?.seq === latest?.seq && !file.deleted;
 
   return (
-    <Modal
-      opened
-      onClose={onClose}
-      size="xl"
-      title={`Versions of ${kind === "file" ? entry.key : "note " + entry.key}`}
-    >
+    <Modal opened onClose={onClose} size="xl" title={`Versions of ${file.key}`}>
       <Group align="flex-start" wrap="nowrap" gap="md">
         <ScrollArea.Autosize mah="60vh" w={240} style={{ flexShrink: 0 }}>
           {newestFirst.map((v) => (
@@ -411,191 +396,4 @@ export function confirmDelete(what: string, onConfirm: () => void) {
     confirmProps: { color: "red" },
     onConfirm,
   });
-}
-
-/** Shown above a panel when changes are not allowed. */
-function ReadOnlyNote({ reason }: { reason: string | undefined }) {
-  if (!reason) return null;
-  return (
-    <Text size="sm" c="dimmed">
-      {reason}
-    </Text>
-  );
-}
-
-/**
- * A scope's memory notes as cards, newest change first (plan U8). Only the
- * model creates notes; here they can be edited, deleted and restored.
- */
-export function NotesPanel({
-  scope,
-  readOnly,
-}: {
-  scope: EntryScope;
-  readOnly?: string | undefined;
-}) {
-  const [showDeleted, setShowDeleted] = useState(false);
-  const list = useQuery({
-    queryKey: entryKeys.list(scope, "note", showDeleted),
-    queryFn: () => api.listEntries(scope, "note", showDeleted),
-  });
-  const notes = [...(list.data ?? [])].sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
-  );
-
-  return (
-    <Stack gap="xs" maw={800}>
-      <ReadOnlyNote reason={readOnly} />
-      <Switch
-        size="xs"
-        label="Show deleted"
-        checked={showDeleted}
-        onChange={(e) => setShowDeleted(e.currentTarget.checked)}
-      />
-      {list.isPending && <Loader size="sm" />}
-      {list.isError && <Alert color="red">{list.error.message}</Alert>}
-      {list.data?.length === 0 && (
-        <Text size="sm" c="dimmed">
-          No memory notes. Only the model creates notes.
-        </Text>
-      )}
-      {notes.map((n) => (
-        <NoteCard key={n.key} scope={scope} note={n} readOnly={!!readOnly} />
-      ))}
-    </Stack>
-  );
-}
-
-function NoteCard({
-  scope,
-  note,
-  readOnly,
-}: {
-  scope: EntryScope;
-  note: Entry;
-  readOnly: boolean;
-}) {
-  const refresh = useRefresh(scope);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(note.value);
-  const [versionsOpen, setVersionsOpen] = useState(false);
-  const detail = useQuery({
-    queryKey: entryKeys.detail(scope, "note", note.key),
-    queryFn: () => api.getEntry(scope, "note", note.key),
-    enabled: versionsOpen,
-  });
-  const save = useMutation({
-    mutationFn: () => api.editNote(scope, note.key, draft),
-    onSuccess: async () => {
-      await refresh();
-      setEditing(false);
-    },
-    onError: showError("Could not save the note"),
-  });
-  const remove = useMutation({
-    mutationFn: () => api.deleteEntry(scope, "note", note.key),
-    onSuccess: async () => {
-      await refresh();
-    },
-    onError: showError("Could not delete the note"),
-  });
-
-  return (
-    <Card withBorder padding="sm" opacity={note.deleted ? 0.6 : 1}>
-      {editing ? (
-        <Stack gap="xs">
-          <Textarea
-            autosize
-            minRows={2}
-            maxRows={12}
-            value={draft}
-            onChange={(e) => setDraft(e.currentTarget.value)}
-          />
-          <Group gap="xs">
-            <Button
-              size="xs"
-              disabled={draft.trim() === "" || draft === note.value}
-              loading={save.isPending}
-              onClick={() => save.mutate()}
-            >
-              Save
-            </Button>
-            <Button
-              size="xs"
-              variant="default"
-              onClick={() => {
-                setDraft(note.value);
-                setEditing(false);
-              }}
-            >
-              Cancel
-            </Button>
-          </Group>
-        </Stack>
-      ) : (
-        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-          {note.value}
-        </Text>
-      )}
-      <Group justify="space-between" mt="xs">
-        <Group gap="xs">
-          <Badge size="xs" variant="light" color="gray" tt="none">
-            {note.key}
-          </Badge>
-          {note.deleted && (
-            <Badge size="xs" variant="light" color="red">
-              deleted
-            </Badge>
-          )}
-          <Text size="xs" c="dimmed">
-            {when(note.updatedAt)}
-          </Text>
-        </Group>
-        {!editing && (
-          <Group gap="xs">
-            <Anchor
-              size="xs"
-              component="button"
-              onClick={() => setVersionsOpen(true)}
-            >
-              Versions
-            </Anchor>
-            {!readOnly && !note.deleted && (
-              <>
-                <Anchor
-                  size="xs"
-                  component="button"
-                  onClick={() => {
-                    setDraft(note.value);
-                    setEditing(true);
-                  }}
-                >
-                  Edit
-                </Anchor>
-                <Anchor
-                  size="xs"
-                  component="button"
-                  c="red"
-                  onClick={() =>
-                    confirmDelete("this note", () => remove.mutate())
-                  }
-                >
-                  Delete
-                </Anchor>
-              </>
-            )}
-          </Group>
-        )}
-      </Group>
-      {versionsOpen && detail.data && (
-        <VersionsModal
-          scope={scope}
-          kind="note"
-          entry={detail.data}
-          readOnly={readOnly}
-          onClose={() => setVersionsOpen(false)}
-        />
-      )}
-    </Card>
-  );
 }

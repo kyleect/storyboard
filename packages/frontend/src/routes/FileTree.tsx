@@ -39,7 +39,7 @@ import {
   type TreeNode,
 } from "../files-explorer";
 import { ACCEPT } from "../attachments";
-import { nameError } from "./Entries";
+import { nameError } from "./FileViews";
 
 /*
  * The explorer of the Files view: one tree with a root folder for each

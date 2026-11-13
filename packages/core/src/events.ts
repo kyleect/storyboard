@@ -16,7 +16,7 @@ type RunEvents =
   "run.started" | "run.finished" | "run.failed" | "run.interrupted";
 type SessionEvents =
   | "session.trashed"
-  | "session.entries_changed"
+  | "session.files_changed"
   | "session.renamed"
   | "session.agent_changed"
   | "session.data_changed"
@@ -237,13 +237,13 @@ export const ToolApprovalRequested = event(
 export const ApprovalChoice = z.enum(["once", "session", "always", "deny"]);
 export type ApprovalChoice = z.infer<typeof ApprovalChoice>;
 
-/** The choices that can carry a note (approval notes design, D2). */
-export const NOTE_CHOICES: readonly ApprovalChoice[] = ["once", "deny"];
+/** The choices that can carry a decision comment (approval notes design, D2). */
+export const COMMENT_CHOICES: readonly ApprovalChoice[] = ["once", "deny"];
 
-/** The user's answer, with the note typed on the prompt, if any. */
+/** The user's answer, with the decision comment typed on the prompt, if any. */
 export interface ApprovalAnswer {
   choice: ApprovalChoice;
-  note?: string;
+  decisionComment?: string;
   /**
    * With "once" on a call that has a review: the changes approved. Left
    * out: all of them (decision 34).
@@ -256,7 +256,7 @@ export const ToolApprovalResolved = event(
   z.object({
     requestId: z.string(),
     choice: ApprovalChoice,
-    note: z.string().optional(),
+    decisionComment: z.string().optional(),
   }),
 );
 
@@ -374,12 +374,12 @@ export type EventBody = z.infer<typeof EventBody>;
 export const SessionTrashed = event("session.trashed", z.object({}));
 
 /**
- * The user changed session-scoped files or memory notes in the app; the
+ * The user changed session-scoped files in the app; the
  * change is recorded in the edit message `messageId` (files and memory
  * design, decision 11).
  */
-export const SessionEntriesChanged = event(
-  "session.entries_changed",
+export const SessionFilesChanged = event(
+  "session.files_changed",
   z.object({ messageId: z.string() }),
 );
 
@@ -435,7 +435,7 @@ export const SessionTranscriptChanged = event(
 
 export const SessionEventBody = z.discriminatedUnion("type", [
   SessionTrashed,
-  SessionEntriesChanged,
+  SessionFilesChanged,
   SessionDataChanged,
   SessionRenamed,
   SessionAgentChanged,

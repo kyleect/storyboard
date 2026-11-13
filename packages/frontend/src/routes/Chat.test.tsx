@@ -65,9 +65,8 @@ vi.mock("./ReasoningPicker", () => ({
   effortLabel: () => "",
 }));
 vi.mock("./ModelPicker", () => ({ ModelPicker: () => null }));
-vi.mock("./Entries", () => ({
+vi.mock("./FileViews", () => ({
   FilesPanel: () => null,
-  NotesPanel: () => null,
 }));
 vi.mock("./Data", () => ({ SchemasAndData: () => null }));
 vi.mock("./Errors", () => ({

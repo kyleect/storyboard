@@ -3,16 +3,15 @@ import { z } from "zod";
 import {
   checkFileName,
   checkFileValue,
-  createEntryAccess,
+  createFileAccess,
   type BlobRef,
-  type EntryAccess,
-  EntryKind,
+  type FileAccess,
   isBinaryMediaType,
   MediaType,
   plainRef,
-  replaySessionEntries,
-  sessionEntryVersions,
-  type EntryOp,
+  replaySessionFiles,
+  sessionFileVersions,
+  type FileOp,
 } from "@harness/core";
 import { getBlob, putBlob } from "./blobs.js";
 import {
@@ -20,23 +19,21 @@ import {
   getDerived,
   type MediaDescriber,
 } from "./media-describer.js";
-import { blobOf, type EntryStore, type VersionRow } from "./entries-store.js";
+import { blobOf, type FileStore, type VersionRow } from "./files-store.js";
 import { detectMedia, MAX_UPLOAD_BYTES } from "./media-detect.js";
 import { RunError, type RunManager } from "./runs.js";
 import type { Store } from "./store.js";
 
 /*
- * Routes for viewing and editing files and memory notes in the app (files
- * and memory design, decisions 2, 8 and 34). The same routes exist under
+ * Routes for viewing and editing files in the app (files and memory
+ * design, decisions 2, 8 and 34). The same routes exist under
  * three bases:
  *
- *   /api/global                    global entries
- *   /api/projects/:projectId       a project's entries
- *   /api/sessions/:sessionId       a session's entries (from the transcript)
+ *   /api/global                    global files
+ *   /api/projects/:projectId       a project's files
+ *   /api/sessions/:sessionId       a session's files (from the transcript)
  *
- * Under each: GET files, GET/PUT/DELETE files/:key, POST files/:key/restore;
- * GET notes, GET/PATCH/DELETE notes/:id, POST notes/:id/restore. The user
- * creates files but not notes: only the model creates notes.
+ * Under each: GET files, GET/PUT/DELETE files/:key, POST files/:key/restore.
  *
  * Binary files (images and audio) are added with
  *
@@ -53,7 +50,7 @@ import type { Store } from "./store.js";
  * their value; a binary media type there is refused (400).
  */
 
-export interface EntryVersion {
+export interface FileVersion {
   seq: number;
   /** Files only. */
   mediaType?: MediaType;
@@ -69,7 +66,7 @@ export interface EntryVersion {
   createdAt: string;
 }
 
-export interface EntrySummary {
+export interface FileSummary {
   key: string;
   mediaType?: MediaType;
   /** Empty for a binary file. */
@@ -80,26 +77,23 @@ export interface EntrySummary {
   deleted: boolean;
 }
 
-export interface EntryDetail extends EntrySummary {
-  versions: EntryVersion[];
+export interface FileDetail extends FileSummary {
+  versions: FileVersion[];
 }
 
-/** One scope's entries, as the routes see them. */
+/** One scope's files, as the routes see them. */
 interface ScopeApi {
-  list(kind: EntryKind, includeDeleted: boolean): EntrySummary[];
-  get(kind: EntryKind, key: string): EntryDetail | undefined;
-  put(
-    kind: EntryKind,
-    entry: {
-      key: string;
-      value: string;
-      mediaType?: MediaType;
-      blob?: BlobRef;
-    },
-  ): void;
+  list(includeDeleted: boolean): FileSummary[];
+  get(key: string): FileDetail | undefined;
+  put(file: {
+    key: string;
+    value: string;
+    mediaType?: MediaType;
+    blob?: BlobRef;
+  }): void;
   /** Adds or replaces a binary file whose bytes are stored. */
   putBlob(key: string, mediaType: MediaType, blob: BlobRef): void;
-  delete(kind: EntryKind, key: string): void;
+  delete(key: string): void;
   /** Every folder, explicit or holding files. */
   folders(): string[];
   /** False when the folder already exists. */
@@ -111,25 +105,21 @@ interface ScopeApi {
 const folderNotFound = (path: string) =>
   new RunError(`No folder "${path}".`, 404);
 
-const notFound = (kind: EntryKind, key: string) =>
-  new RunError(
-    kind === "file" ? `No file "${key}".` : `No memory note "${key}".`,
-    404,
-  );
+const notFound = (key: string) => new RunError(`No file "${key}".`, 404);
 
-function sharedScope(entries: EntryStore, projectId: string | null): ScopeApi {
+function sharedScope(files: FileStore, projectId: string | null): ScopeApi {
   const scope = projectId === null ? "global" : "project";
   // Folder rules (names, clashes, what moves) live in the core access, as for
   // the tools; the user's changes go through the same code.
-  const access = (): EntryAccess =>
-    createEntryAccess({
-      session: replaySessionEntries([]),
+  const access = (): FileAccess =>
+    createFileAccess({
+      session: replaySessionFiles([]),
       sessionOps: [],
-      shared: entries.shared(projectId),
+      shared: files.shared(projectId),
       inProject: projectId !== null,
       author: { by: "user" },
     });
-  const toVersion = (v: VersionRow): EntryVersion => ({
+  const toVersion = (v: VersionRow): FileVersion => ({
     seq: v.seq,
     ...(v.media_type ? { mediaType: v.media_type } : {}),
     value: v.value,
@@ -141,8 +131,8 @@ function sharedScope(entries: EntryStore, projectId: string | null): ScopeApi {
     createdAt: v.created_at,
   });
   return {
-    list: (kind, includeDeleted) =>
-      entries.list(kind, projectId, includeDeleted).map((r) => ({
+    list: (includeDeleted) =>
+      files.list(projectId, includeDeleted).map((r) => ({
         key: r.key,
         ...(r.media_type ? { mediaType: r.media_type } : {}),
         value: r.value,
@@ -150,8 +140,8 @@ function sharedScope(entries: EntryStore, projectId: string | null): ScopeApi {
         updatedAt: r.updated_at,
         deleted: r.deleted_at !== null,
       })),
-    get: (kind, key) => {
-      const r = entries.get(kind, projectId, key);
+    get: (key) => {
+      const r = files.get(projectId, key);
       if (!r) return undefined;
       return {
         key: r.key,
@@ -160,18 +150,18 @@ function sharedScope(entries: EntryStore, projectId: string | null): ScopeApi {
         ...(blobOf(r) ? { blob: blobOf(r) as BlobRef } : {}),
         updatedAt: r.updated_at,
         deleted: r.deleted_at !== null,
-        versions: entries.versions(kind, projectId, key).map(toVersion),
+        versions: files.versions(projectId, key).map(toVersion),
       };
     },
-    put: (kind, entry) => {
-      entries.put(kind, projectId, entry, { by: "user" });
+    put: (file) => {
+      files.put(projectId, file, { by: "user" });
     },
     putBlob: (key, mediaType, blob) => {
       access().putBlob(scope, key, mediaType, blob);
     },
-    delete: (kind, key) => {
-      if (!entries.delete(kind, projectId, key, { by: "user" })) {
-        throw notFound(kind, key);
+    delete: (key) => {
+      if (!files.delete(projectId, key, { by: "user" })) {
+        throw notFound(key);
       }
     },
     folders: () =>
@@ -200,15 +190,14 @@ function sessionScope(
     messages: Messages,
     runOf: Map<string, string>,
     times: Map<string, string>,
-    kind: EntryKind,
     key: string,
-  ): EntryDetail | undefined => {
-    const changes = sessionEntryVersions(messages, kind, key);
+  ): FileDetail | undefined => {
+    const changes = sessionFileVersions(messages, key);
     if (changes.length === 0) return undefined;
     let value = "";
     let mediaType: MediaType | undefined;
     let blob: BlobRef | undefined;
-    const versions = changes.map((c, i): EntryVersion => {
+    const versions = changes.map((c, i): FileVersion => {
       if (c.op.op === "put") {
         value = c.op.value;
         mediaType = c.op.mediaType;
@@ -226,7 +215,7 @@ function sessionScope(
         createdAt: times.get(c.messageId) ?? "",
       };
     });
-    const current = versions.at(-1) as EntryVersion;
+    const current = versions.at(-1) as FileVersion;
     return {
       key,
       ...(current.mediaType ? { mediaType: current.mediaType } : {}),
@@ -237,13 +226,13 @@ function sessionScope(
       versions,
     };
   };
-  const edit = (op: EntryOp) => runs.editSessionEntries(sessionId, [op]);
+  const edit = (op: FileOp) => runs.editSessionFiles(sessionId, [op]);
   /** Runs a folder change in the core access and records the operations. */
-  const change = <T>(run: (access: EntryAccess) => T): T => {
-    const sessionOps: EntryOp[] = [];
+  const change = <T>(run: (access: FileAccess) => T): T => {
+    const sessionOps: FileOp[] = [];
     const result = run(
-      createEntryAccess({
-        session: replaySessionEntries(
+      createFileAccess({
+        session: replaySessionFiles(
           store.listMessages(sessionId).map((m) => m.message),
         ),
         sessionOps,
@@ -251,20 +240,20 @@ function sessionScope(
         author: { by: "user" },
       }),
     );
-    if (sessionOps.length > 0) runs.editSessionEntries(sessionId, sessionOps);
+    if (sessionOps.length > 0) runs.editSessionFiles(sessionId, sessionOps);
     return result;
   };
   return {
-    list: (kind, includeDeleted) => {
+    list: (includeDeleted) => {
       const messages = store.listMessages(sessionId);
       const runOf = store.messageRuns(sessionId);
       const times = store.messageTimes(sessionId);
-      const state = replaySessionEntries(messages.map((m) => m.message));
-      return [...state.used[kind]]
+      const state = replaySessionFiles(messages.map((m) => m.message));
+      return [...state.used]
         .sort()
-        .map((key) => detail(messages, runOf, times, kind, key) as EntryDetail)
+        .map((key) => detail(messages, runOf, times, key) as FileDetail)
         .filter((d) => includeDeleted || !d.deleted)
-        .map((d): EntrySummary => ({
+        .map((d): FileSummary => ({
           key: d.key,
           ...(d.mediaType ? { mediaType: d.mediaType } : {}),
           value: d.value,
@@ -273,26 +262,23 @@ function sessionScope(
           deleted: d.deleted,
         }));
     },
-    get: (kind, key) =>
+    get: (key) =>
       detail(
         store.listMessages(sessionId),
         store.messageRuns(sessionId),
         store.messageTimes(sessionId),
-        kind,
         key,
       ),
-    put: (kind, entry) => {
-      edit({ op: "put", kind, ...entry });
+    put: (file) => {
+      edit({ op: "put", ...file });
     },
     putBlob: (key, mediaType, blob) => {
       change((a) => a.putBlob("session", key, mediaType, blob));
     },
-    delete: (kind, key) => {
+    delete: (key) => {
       const messages = store.listMessages(sessionId).map((m) => m.message);
-      if (!replaySessionEntries(messages)[kind].has(key)) {
-        throw notFound(kind, key);
-      }
-      edit({ op: "delete", kind, key });
+      if (!replaySessionFiles(messages).files.has(key)) throw notFound(key);
+      edit({ op: "delete", key });
     },
     folders: () => change((a) => a.listFolders("session").map((f) => f.path)),
     createFolder: (path) => change((a) => a.createFolder("session", path)),
@@ -332,21 +318,20 @@ function freeName(name: string, taken: ReadonlySet<string>): string {
 }
 const FolderBody = z.object({ path: z.string() });
 const FolderRenameBody = z.object({ path: z.string(), newPath: z.string() });
-const NoteBody = z.object({ text: z.string().min(1) });
 const RestoreBody = z.object({ seq: z.number().int().min(1) });
 
-export function registerEntryRoutes(
+export function registerFileRoutes(
   app: FastifyInstance,
   deps: {
     store: Store;
     runs: RunManager;
-    entries: EntryStore;
+    files: FileStore;
     /** Describes an uploaded image or audio file in the background. */
     describer?: MediaDescriber;
     now?: () => string;
   },
 ) {
-  const { store, runs, entries } = deps;
+  const { store, runs, files } = deps;
   const now = deps.now ?? (() => new Date().toISOString());
 
   // Without this, Fastify refuses image and audio bodies. The body stays a
@@ -359,7 +344,7 @@ export function registerEntryRoutes(
 
   app.get("/api/blobs/:hash", async (req, reply) => {
     const { hash } = z.object({ hash: z.string() }).parse(req.params);
-    const blob = getBlob(entries.db, hash);
+    const blob = getBlob(files.db, hash);
     if (!blob)
       return reply.code(404).send({ error: "File content not found." });
     return (
@@ -380,7 +365,7 @@ export function registerEntryRoutes(
   /** The text and where it came from: none, pending, generated, edited, failed. */
   app.get("/api/blobs/:hash/derived-text", async (req, reply) => {
     const { hash } = HashParams.parse(req.params);
-    const derived = getDerived(entries.db, hash);
+    const derived = getDerived(files.db, hash);
     if (!derived)
       return reply.code(404).send({ error: "File content not found." });
     return derived;
@@ -395,13 +380,13 @@ export function registerEntryRoutes(
     if (!describer?.setText(hash, text)) {
       return reply.code(404).send({ error: "File content not found." });
     }
-    return getDerived(entries.db, hash);
+    return getDerived(files.db, hash);
   });
 
   /** Writes the text again with the Media Describer (Retry). 202 when queued. */
   app.post("/api/blobs/:hash/describe", async (req, reply) => {
     const { hash } = HashParams.parse(req.params);
-    if (!getDerived(entries.db, hash)) {
+    if (!getDerived(files.db, hash)) {
       return reply.code(404).send({ error: "File content not found." });
     }
     if (!describer?.enabled()) {
@@ -415,7 +400,7 @@ export function registerEntryRoutes(
         .code(409)
         .send({ error: "A description is already being written." });
     }
-    return reply.code(202).send(getDerived(entries.db, hash));
+    return reply.code(202).send(getDerived(files.db, hash));
   });
 
   /**
@@ -443,7 +428,7 @@ export function registerEntryRoutes(
     const { projectId } = z.object({ projectId: z.string() }).parse(req.params);
     const row = store.getProject(projectId);
     if (!row) throw new RunError("Project not found.", 404);
-    return sharedScope(entries, projectId);
+    return sharedScope(files, projectId);
   };
   const session = (req: FastifyRequest): ScopeApi => {
     const { sessionId } = z.object({ sessionId: z.string() }).parse(req.params);
@@ -462,7 +447,7 @@ export function registerEntryRoutes(
   };
 
   const bases: [string, (req: FastifyRequest) => ScopeApi][] = [
-    ["/api/global", () => sharedScope(entries, null)],
+    ["/api/global", () => sharedScope(files, null)],
     ["/api/projects/:projectId", project],
     ["/api/sessions/:sessionId", session],
   ];
@@ -520,13 +505,13 @@ export function registerEntryRoutes(
         checkFileName(wanted);
         const replace = query.replace === "true";
         const taken = new Set([
-          ...scope.list("file", false).map((f) => f.key),
+          ...scope.list(false).map((f) => f.key),
           ...scope.folders(),
         ]);
         const key = replace ? wanted : freeName(wanted, taken);
         checkFileName(key);
         const replaced = replace && taken.has(key);
-        const blob = putBlob(entries.db, found.mediaType, body, now());
+        const blob = putBlob(files.db, found.mediaType, body, now());
         scope.putBlob(key, found.mediaType, blob);
         // Written after the file is saved; the Files view shows it pending.
         deps.describer?.describeNew(blob.hash);
@@ -546,93 +531,74 @@ export function registerEntryRoutes(
         });
       },
     );
-    for (const kind of EntryKind.options) {
-      const path = `${base}/${kind === "file" ? "files" : "notes"}`;
-      const param = kind === "file" ? "key" : "id";
-      const keyOf = (req: FastifyRequest) => {
-        const key = (req.params as Record<string, string>)[param] ?? "";
-        if (kind === "file") checkFileName(key);
-        return key;
-      };
-      const existing = (req: FastifyRequest) => {
-        const key = keyOf(req);
-        const entry = scopeOf(req).get(kind, key);
-        if (!entry) throw notFound(kind, key);
-        return entry;
-      };
+    const path = `${base}/files`;
+    const param = "key";
+    const keyOf = (req: FastifyRequest) => {
+      const key = (req.params as Record<string, string>)[param] ?? "";
+      checkFileName(key);
+      return key;
+    };
+    const existing = (req: FastifyRequest) => {
+      const key = keyOf(req);
+      const file = scopeOf(req).get(key);
+      if (!file) throw notFound(key);
+      return file;
+    };
 
-      app.get(path, async (req) => {
-        const q = ListQuery.parse(req.query);
-        return scopeOf(req).list(kind, q.deleted === "true");
-      });
+    app.get(path, async (req) => {
+      const q = ListQuery.parse(req.query);
+      return scopeOf(req).list(q.deleted === "true");
+    });
 
-      app.get(`${path}/:${param}`, async (req) => existing(req));
+    app.get(`${path}/:${param}`, async (req) => existing(req));
 
-      if (kind === "file") {
-        app.put(`${path}/:${param}`, async (req) => {
-          writable(req);
-          const key = keyOf(req);
-          const body = FileBody.parse(req.body);
-          if (isBinaryMediaType(body.mediaType)) {
-            throw new RunError(
-              "Binary files are added by upload (POST …/files with the file as the body), not saved as text.",
-              400,
-            );
-          }
-          checkFileValue(body.mediaType, body.value);
-          const scope = scopeOf(req);
-          scope.put(kind, {
-            key,
-            value: body.value,
-            mediaType: body.mediaType,
-          });
-          return scope.get(kind, key);
-        });
-      } else {
-        app.patch(`${path}/:${param}`, async (req) => {
-          writable(req);
-          const entry = existing(req);
-          if (entry.deleted) {
-            throw new RunError(
-              "The note is deleted. Restore a version first.",
-              409,
-            );
-          }
-          const body = NoteBody.parse(req.body);
-          const scope = scopeOf(req);
-          scope.put(kind, { key: entry.key, value: body.text });
-          return scope.get(kind, entry.key);
-        });
+    app.put(`${path}/:${param}`, async (req) => {
+      writable(req);
+      const key = keyOf(req);
+      const body = FileBody.parse(req.body);
+      if (isBinaryMediaType(body.mediaType)) {
+        throw new RunError(
+          "Binary files are added by upload (POST …/files with the file as the body), not saved as text.",
+          400,
+        );
       }
-
-      app.delete(`${path}/:${param}`, async (req, reply) => {
-        writable(req);
-        scopeOf(req).delete(kind, keyOf(req));
-        return reply.code(204).send();
+      checkFileValue(body.mediaType, body.value);
+      const scope = scopeOf(req);
+      scope.put({
+        key,
+        value: body.value,
+        mediaType: body.mediaType,
       });
+      return scope.get(key);
+    });
 
-      /** Makes an earlier version current; also restores a deleted entry. */
-      app.post(`${path}/:${param}/restore`, async (req) => {
-        writable(req);
-        const entry = existing(req);
-        const { seq } = RestoreBody.parse(req.body);
-        const version = entry.versions.find((v) => v.seq === seq);
-        if (!version) throw new RunError(`No version ${seq}.`, 404);
-        if (version.deleted) {
-          throw new RunError(
-            "That version is a deletion; pick a version with a value.",
-            400,
-          );
-        }
-        const scope = scopeOf(req);
-        scope.put(kind, {
-          key: entry.key,
-          value: version.value,
-          ...(version.mediaType ? { mediaType: version.mediaType } : {}),
-          ...(version.blob ? { blob: version.blob } : {}),
-        });
-        return scope.get(kind, entry.key);
+    app.delete(`${path}/:${param}`, async (req, reply) => {
+      writable(req);
+      scopeOf(req).delete(keyOf(req));
+      return reply.code(204).send();
+    });
+
+    /** Makes an earlier version current; also restores a deleted file. */
+    app.post(`${path}/:${param}/restore`, async (req) => {
+      writable(req);
+      const file = existing(req);
+      const { seq } = RestoreBody.parse(req.body);
+      const version = file.versions.find((v) => v.seq === seq);
+      if (!version) throw new RunError(`No version ${seq}.`, 404);
+      if (version.deleted) {
+        throw new RunError(
+          "That version is a deletion; pick a version with a value.",
+          400,
+        );
+      }
+      const scope = scopeOf(req);
+      scope.put({
+        key: file.key,
+        value: version.value,
+        ...(version.mediaType ? { mediaType: version.mediaType } : {}),
+        ...(version.blob ? { blob: version.blob } : {}),
       });
-    }
+      return scope.get(file.key);
+    });
   }
 }

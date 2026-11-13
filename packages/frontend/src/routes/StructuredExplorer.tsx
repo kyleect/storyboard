@@ -8,7 +8,7 @@ import {
   api,
   type DataItem,
   type DataOwner,
-  type EntryScope,
+  type FileScope,
   type SchemaDetail,
 } from "../api";
 import {
@@ -78,7 +78,7 @@ export function StructuredExplorer({
   onDirtyChange,
 }: {
   /** The scope of the page: where its own schemas and data live. */
-  page: EntryScope;
+  page: FileScope;
   /** The session's project, if it has one. */
   projectId?: string | null | undefined;
   /** Why no root can be changed, when that is so. */
@@ -93,7 +93,7 @@ export function StructuredExplorer({
   // this one, which changes only with the page.
   const pageScope = page.scope;
   const pageId = "id" in page ? page.id : "";
-  const stablePage = useMemo<EntryScope>(
+  const stablePage = useMemo<FileScope>(
     () =>
       pageScope === "global"
         ? { scope: "global" }
@@ -104,7 +104,7 @@ export function StructuredExplorer({
     () => rootsFor(stablePage, projectId),
     [stablePage, projectId],
   );
-  const rootScope = (id: RootId): EntryScope | undefined =>
+  const rootScope = (id: RootId): FileScope | undefined =>
     roots.find((r) => r.id === id)?.scope;
   const pageRoot: RootId = pageScope;
 
@@ -254,7 +254,7 @@ export function StructuredExplorer({
   const schemaOwner = (
     info: SchemaInfo | undefined,
     from: RootId,
-  ): { owner: EntryScope; own: boolean } => {
+  ): { owner: FileScope; own: boolean } => {
     const fallback = rootScope(from) ?? stablePage;
     if (!info) return { owner: fallback, own: true };
     if (info.scope === "builtin")

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import type { Message, ToolResultMessage } from "@harness/core";
 import { MessageView } from "./Chat";
-import { ValueView } from "./Entries";
+import { ValueView } from "./FileViews";
 
 /* Where Markdown is rendered, and where it is not (markdown rendering plan M1, M2, M3). */
 
@@ -19,7 +19,7 @@ function chat(message: Message, streaming = false) {
       reasoningEffort={null}
       agent={null}
       streaming={streaming}
-      notes={new Map()}
+      decisionComments={new Map()}
       asks={{
         results: new Map(),
         opens: [],
@@ -59,7 +59,7 @@ describe("Markdown in the chat", () => {
     chat({
       role: "edit",
       content: "The user changed file `outline.md`.",
-      entries: [],
+      files: [],
     });
     expect(screen.getByText("outline.md").tagName).toBe("CODE");
   });

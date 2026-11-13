@@ -8,7 +8,7 @@
 export { agentKeys } from "./agents";
 export { blobKeys } from "./blobs";
 export { dataKeys, schemaKeys } from "./data";
-export { entryKeys } from "./entries";
+export { fileKeys } from "./files";
 export { errorKeys } from "./errors";
 export { modelKeys } from "./models";
 export { projectKeys } from "./projects";

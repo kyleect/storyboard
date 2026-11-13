@@ -89,8 +89,12 @@ describe("runDataSteps", () => {
       { name: "attachments-to-files", changed: 0 },
       // Two top-level messages, chained into one line.
       { name: "branches-backfill", changed: 2 },
+      { name: "memory-removal", changed: 0 },
+      // The tool result with changes: `entries` becomes `files`.
+      { name: "files-rename", changed: 1 },
+      { name: "decision-comment-rename", changed: 0 },
     ]);
-    expect(read("m1").entries).toEqual([
+    expect(read("m1").files).toEqual([
       { op: "put", key: "a", mediaType: "application/json", value: "{}" },
     ]);
     expect(
@@ -103,7 +107,10 @@ describe("runDataSteps", () => {
     expect(db.prepare("SELECT * FROM data_steps ORDER BY name").all()).toEqual([
       { name: "attachments-to-files", done_at: "T" },
       { name: "branches-backfill", done_at: "T" },
+      { name: "decision-comment-rename", done_at: "T" },
       { name: "file-ops-media-types", done_at: "T" },
+      { name: "files-rename", done_at: "T" },
+      { name: "memory-removal", done_at: "T" },
     ]);
 
     expect(runDataSteps(db)).toEqual([]);

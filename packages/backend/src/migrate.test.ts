@@ -477,9 +477,12 @@ describe("loadMigrations", () => {
     add("part", "allow", ["files_copy", "files_move", "nope"]);
     add("empty", "allow", []);
 
-    expect(migrate(db, all)).toEqual([
-      22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-    ]);
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 32),
+      ),
+    ).toEqual([22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]);
 
     const cols = (table: string) =>
       (
@@ -564,10 +567,10 @@ describe("loadMigrations", () => {
       "data",
       "data_steps",
       "data_versions",
-      "entries",
-      "entry_versions",
       "errors",
       "events",
+      "file_versions",
+      "files",
       "folders",
       "mcp_servers",
       "media_choices",
@@ -612,7 +615,10 @@ describe("migration 0025 (files get media types and folders)", () => {
       "INSERT INTO entry_versions (entry_id, seq, type, value, deleted, author, created_at) VALUES ('e2', 1, 'markdown', 'old', 0, 'user', 't')",
     ).run();
 
-    migrate(db, all);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 32),
+    );
 
     expect(
       db.prepare("SELECT key, media_type FROM entries ORDER BY key").all(),
@@ -677,7 +683,10 @@ describe("migration 0030 (workspace indexing)", () => {
       )
       .all();
 
-    migrate(db, all);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 32),
+    );
 
     expect(
       db
@@ -722,7 +731,10 @@ describe("migration 0030 (workspace indexing)", () => {
 
   it("accepts the workspace scope and still refuses an owner on global or none elsewhere", () => {
     db = new Database(":memory:");
-    migrate(db, loadMigrations(MIGRATIONS_DIR));
+    migrate(
+      db,
+      loadMigrations(MIGRATIONS_DIR).filter((m) => m.version <= 32),
+    );
     expect(chunk("workspace", "w1", "a.md", "x")).toBeGreaterThan(0);
     expect(() => chunk("workspace", null, "a.md", "x")).toThrow(/CHECK/);
     expect(() => chunk("global", "w1", "a.md", "x")).toThrow(/CHECK/);
@@ -770,7 +782,12 @@ describe("migration 0032 (session seen marker)", () => {
       "INSERT INTO sessions (id, title, created_at) VALUES ('b', 't', 'T')",
     ).run();
 
-    expect(migrate(db, all)).toEqual([32]);
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 32),
+      ),
+    ).toEqual([32]);
 
     expect(
       db.prepare("SELECT id, seen_tip_id FROM sessions ORDER BY id").all(),

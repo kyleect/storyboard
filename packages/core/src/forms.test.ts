@@ -375,8 +375,8 @@ describe("forms built by tools (tool prompts design)", () => {
         required: false,
         noOther: true,
         kind: "multi",
-        options: ["file", "note"],
-        labels: { file: "Files", note: "Notes" },
+        options: ["text", "audio"],
+        labels: { text: "Text", audio: "Audio" },
       },
       {
         name: "remember",
@@ -416,10 +416,14 @@ describe("forms built by tools (tool prompts design)", () => {
       },
     });
     expect(
-      checkAnswers(form, { scope: "global", kinds: ["note"], remember: false }),
+      checkAnswers(form, {
+        scope: "global",
+        kinds: ["audio"],
+        remember: false,
+      }),
     ).toEqual({
       ok: true,
-      answers: { scope: "global", kinds: ["note"], remember: false },
+      answers: { scope: "global", kinds: ["audio"], remember: false },
     });
   });
 
@@ -451,13 +455,13 @@ describe("forms built by tools (tool prompts design)", () => {
     expect(
       describePrompt(form, {
         outcome: "answered",
-        answers: { scope: "session", kinds: ["file", "note"], remember: true },
+        answers: { scope: "session", kinds: ["text", "audio"], remember: true },
       }),
     ).toEqual({
       title: "Save where?",
       answers: [
         { question: "Save to", answer: "This conversation only" },
-        { question: "Kinds", answer: "Files, Notes" },
+        { question: "Kinds", answer: "Text, Audio" },
         { question: "Remember", answer: "Yes" },
       ],
     });

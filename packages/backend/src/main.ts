@@ -6,7 +6,7 @@ import { embedTexts, LlamaServerAdapter } from "@harness/core";
 import {
   allTools,
   dataText,
-  entriesInstruction,
+  filesInstruction,
   schemaDataTools,
   schemasText,
   skillsList,
@@ -18,7 +18,7 @@ import { schemaChecker } from "./json-schema.js";
 import { bootstrapFromEnv } from "./config.js";
 import { loadOrCreateKey, openDatabase } from "./db.js";
 import { Embedder } from "./embedder.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { McpManager } from "./mcp-manager.js";
 import { MediaDescriber } from "./media-describer.js";
 import { modelMediaSupport } from "./media-support.js";
@@ -54,7 +54,7 @@ async function main() {
   runDataSteps(db);
   const store = new Store(db);
   const index = new SearchIndex(db);
-  const entries = new EntryStore(db, undefined, undefined, index);
+  const files = new FileStore(db, undefined, undefined, index);
   const agents = new AgentStore(db);
   const skills = new SkillStore(db);
   const workspaces = new WorkspaceStore(db);
@@ -116,13 +116,13 @@ async function main() {
         ),
     },
     skillsList,
-    entries,
+    files,
     data,
     schemaChecker,
     dataTools: schemaDataTools.map((t) => t.name),
     schemasList: schemasText,
     dataList: dataText,
-    systemPrompt: (session) => entriesInstruction(session.project_id !== null),
+    systemPrompt: (session) => filesInstruction(session.project_id !== null),
     index,
     search: (session) =>
       sessionSearch({
@@ -135,7 +135,7 @@ async function main() {
   });
   const recovered = runs.recover();
   const purged = purgeExpiredTrash(store, settings().trashRetentionDays);
-  // Indexes existing files and notes once, after the search migration.
+  // Indexes existing files once, after the search migration.
   const indexed = index.buildIfNeeded();
 
   const token = loadOrCreateToken(boot.tokenFile);
@@ -150,7 +150,7 @@ async function main() {
   const app = buildServer({
     store,
     runs,
-    entries,
+    files,
     agents,
     describer,
     skills,
@@ -188,7 +188,7 @@ async function main() {
       dataDir: boot.dataDir,
       migrationsApplied: applied,
       runsRecovered: recovered.length,
-      entriesIndexed: indexed,
+      filesIndexed: indexed,
       trashPurged: {
         projects: purged.projects.length,
         sessions: purged.sessions.length,

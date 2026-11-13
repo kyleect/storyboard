@@ -189,7 +189,6 @@ describe("TOOL_GROUPS", () => {
     expect(TOOL_GROUPS.map((g) => g.id)).toEqual([
       "files",
       "workspaces",
-      "memory",
       "structured-data",
       "projects",
       "agents",

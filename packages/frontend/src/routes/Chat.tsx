@@ -68,7 +68,6 @@ import {
 } from "./Attachments";
 import { VoiceButtons, type RecordingMode } from "./VoiceButtons";
 import { latestUsage } from "./ContextMeter";
-import { NotesPanel } from "./Entries";
 import { FilesExplorer } from "./FilesExplorer";
 import { useChatStatus } from "../chatStatus";
 import { useReportDirty } from "../dirty";
@@ -217,7 +216,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     queryKey: modelKeys.list(),
     queryFn: api.listModels,
   });
-  // Chat, or the session's files, memory, data or debugging tools (plan U3).
+  // Chat, or the session's files, data or debugging tools (plan U3).
   const [tab, setTab] = useState<string>("chat");
   // The Files view is made on the first visit and kept, hidden, after that,
   // so edits not yet saved survive a look at the chat.
@@ -485,11 +484,14 @@ export function Chat({ sessionId }: { sessionId: string }) {
         (child.approvals.length > 0 || child.inputs.length > 0),
     });
   }
-  // Approval notes, stored on tool results, are shown under their calls.
-  const notes = new Map<string, NonNullable<ToolResultMessage["note"]>>();
+  // Decision comments, stored on tool results, are shown under their calls.
+  const decisionComments = new Map<
+    string,
+    NonNullable<ToolResultMessage["decisionComment"]>
+  >();
   for (const m of detail.data.messages) {
-    if (m.message.role === "tool" && m.message.note)
-      notes.set(m.message.callId, m.message.note);
+    if (m.message.role === "tool" && m.message.decisionComment)
+      decisionComments.set(m.message.callId, m.message.decisionComment);
   }
   // A session in the trash can be read, not changed (design Q3a).
   const trashed = detail.data.session.trashed_at !== null;
@@ -606,9 +608,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const contextUsage =
     live?.usage ??
     latestUsage(detail.data.messages.filter((m) => !m.parentCallId));
-  // Session files and notes cannot change in the trash or during a run
+  // Session files cannot change in the trash or during a run
   // (plan P5).
-  const entriesReadOnly = trashed
+  const filesReadOnly = trashed
     ? "The session is in the trash, so these can be read but not changed."
     : live
       ? "A run is in progress; changes are possible when it ends."
@@ -660,7 +662,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
           data={[
             { value: "chat", label: "Chat" },
             { value: "files", label: "Files" },
-            { value: "memory", label: "Memory" },
             { value: "data", label: "Structured Data" },
             { value: "workspaces", label: "Workspaces" },
             { value: "debug", label: "Debug" },
@@ -684,7 +685,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
               key={sessionId}
               page={{ scope: "session", id: sessionId }}
               projectId={detail.data.session.project_id}
-              readOnly={entriesReadOnly}
+              readOnly={filesReadOnly}
               projectReadOnly={
                 detail.data.project?.trashed_at
                   ? "The project is in the trash, so its files can be read but not changed."
@@ -707,7 +708,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
               key={sessionId}
               page={{ scope: "session", id: sessionId }}
               projectId={detail.data.session.project_id}
-              readOnly={entriesReadOnly}
+              readOnly={filesReadOnly}
               projectReadOnly={
                 detail.data.project?.trashed_at
                   ? "The project is in the trash, so its data can be read but not changed."
@@ -722,16 +723,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
           <ScrollArea style={{ flex: 1 }}>
             {tab === "debug" ? (
               <DebugPanel sessionId={sessionId} />
-            ) : tab === "workspaces" ? (
+            ) : (
               <AttachedWorkspaces
                 owner="sessions"
                 id={sessionId}
                 disabled={trashed}
-              />
-            ) : (
-              <NotesPanel
-                scope={{ scope: "session", id: sessionId }}
-                readOnly={entriesReadOnly}
               />
             )}
           </ScrollArea>
@@ -768,7 +764,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
                       onCancel={() => setEditing(null)}
                     />
                   ) : (
-                    <MessageView {...m} notes={notes} asks={asks} />
+                    <MessageView
+                      {...m}
+                      decisionComments={decisionComments}
+                      asks={asks}
+                    />
                   )}
                   {!busy && !m.streaming && editing === null && (
                     <MessageActions
@@ -1011,8 +1011,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** Approval notes by call id. */
-type Notes = ReadonlyMap<string, NonNullable<ToolResultMessage["note"]>>;
+/** Decision comments by call id. */
+type DecisionComments = ReadonlyMap<
+  string,
+  NonNullable<ToolResultMessage["decisionComment"]>
+>;
 
 /** Exported for tests. */
 export function MessageView({
@@ -1022,10 +1025,14 @@ export function MessageView({
   agent,
   streaming,
   usage,
-  notes,
+  decisionComments,
   asks,
   userLabel = "You",
-}: ShownMessage & { notes: Notes; asks: Asks; userLabel?: string }) {
+}: ShownMessage & {
+  decisionComments: DecisionComments;
+  asks: Asks;
+  userLabel?: string;
+}) {
   if (message.role === "user") {
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
@@ -1072,7 +1079,7 @@ export function MessageView({
     return (
       <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
         <Text size="xs" c="dimmed">
-          Your edit to this session's files or memory
+          Your edit to this session's files
         </Text>
         <Markdown size="sm">{message.content}</Markdown>
       </Paper>
@@ -1115,7 +1122,7 @@ export function MessageView({
             // Only the block being written right now shows a live preview.
             live={streaming && i === message.content.length - 1}
             usage={usage}
-            notes={notes}
+            decisionComments={decisionComments}
             asks={asks}
           />
         ))}
@@ -1128,13 +1135,13 @@ function BlockView({
   block,
   live,
   usage,
-  notes,
+  decisionComments,
   asks,
 }: {
   block: ContentBlock;
   live: boolean;
   usage: Usage | undefined;
-  notes: Notes;
+  decisionComments: DecisionComments;
   asks: Asks;
 }) {
   switch (block.type) {
@@ -1171,7 +1178,7 @@ function BlockView({
           />
         );
       }
-      const note = notes.get(block.callId);
+      const decisionComment = decisionComments.get(block.callId);
       return (
         <Stack gap={2}>
           <Text size="xs" c="dimmed">
@@ -1184,16 +1191,21 @@ function BlockView({
               : JSON.stringify(block.arguments, null, 2)}
             )
           </Code>
-          {note && (
+          {decisionComment && (
             <Paper p="xs" withBorder bg="var(--mantine-color-default-hover)">
               <Text size="xs" c="dimmed">
-                Your note ({note.choice === "deny" ? "denied" : "allowed"})
+                Your comment (
+                {decisionComment.choice === "deny" ? "denied" : "allowed"})
               </Text>
-              <Markdown size="sm">{note.text}</Markdown>
+              <Markdown size="sm">{decisionComment.text}</Markdown>
             </Paper>
           )}
           <ToolPrompt callId={block.callId} asks={asks} />
-          <SubagentPanel callId={block.callId} notes={notes} asks={asks} />
+          <SubagentPanel
+            callId={block.callId}
+            decisionComments={decisionComments}
+            asks={asks}
+          />
         </Stack>
       );
     }
@@ -1208,11 +1220,11 @@ function BlockView({
  */
 function SubagentPanel({
   callId,
-  notes,
+  decisionComments,
   asks,
 }: {
   callId: string;
-  notes: Notes;
+  decisionComments: DecisionComments;
   asks: Asks;
 }) {
   const theme = useMantineTheme();
@@ -1277,7 +1289,7 @@ function SubagentPanel({
             <div key={m.id} id={messageAnchor(m.id)}>
               <MessageView
                 {...m}
-                notes={notes}
+                decisionComments={decisionComments}
                 asks={asks}
                 userLabel={subagentUserLabel(m.message, i)}
               />

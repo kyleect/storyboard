@@ -7,7 +7,7 @@ import {
 } from "@harness/core";
 import { AgentStore } from "./agents-store.js";
 import { putBlob } from "./blobs.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import {
   DERIVED_INDEX_CHARS,
   getDerived,
@@ -48,7 +48,7 @@ async function setup(
   writeSettings(t.db, { systemPrompt: "", ...settings });
   const store = new Store(t.db);
   const index = new SearchIndex(t.db);
-  const entries = new EntryStore(t.db, undefined, undefined, index);
+  const files = new FileStore(t.db, undefined, undefined, index);
   const agents = new AgentStore(t.db);
   const model = new ScriptedModel(scripts);
   const current = () => readSettings(t.db, {}).effective;
@@ -64,14 +64,14 @@ async function setup(
     store,
     settings: () => ({ ...current(), autoRename: false }),
     model: () => new ScriptedModel([]),
-    entries,
+    files,
     describer,
     index,
   });
   const app = buildServer({
     store,
     runs,
-    entries,
+    files,
     agents,
     describer,
     token: TOKEN,
@@ -79,7 +79,7 @@ async function setup(
   });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
-  return { t, store, agents, model, describer, app, entries, index };
+  return { t, store, agents, model, describer, app, files, index };
 }
 
 async function api(

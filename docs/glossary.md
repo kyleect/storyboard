@@ -13,15 +13,15 @@ fixed when it is created. Stored in the `sessions` table.
 
 **Project**
 A named container for sessions. A project has a description, an optional
-system prompt, an optional default agent, and its own files, notes, agents,
+system prompt, an optional default agent, and its own files, agents,
 skills, schemas and data that all of its sessions share. Stored in `projects`.
 
 **Transcript**
 A session's messages in order. It is the source of truth for the conversation
-and for session-scoped files, notes, schemas and data. Stored in `messages`.
+and for session-scoped files, schemas and data. Stored in `messages`.
 
 **Message**
-One entry in a transcript. Messages are provider-neutral and have one of five
+One file in a transcript. Messages are provider-neutral and have one of five
 roles: `system`, `user`, `assistant`, `tool` and `edit`. See
 [core.md](core.md#messages).
 
@@ -32,10 +32,10 @@ A message from the model. Its content is a list of _blocks_: `text`,
 **Tool result message** (role `tool`)
 The outcome of one tool call. It carries the text the model sees and also
 harness-only data: structured result, saved tool state, file and data changes,
-the user's approval note, and the form the tool showed.
+the user's decision comment, and the form the tool showed.
 
 **Edit message** (role `edit`)
-A record that _the user_ changed session-scoped files, notes, schemas or data
+A record that _the user_ changed session-scoped files, schemas or data
 in the UI. It has a one-line notice the model reads and the list of changes
 used for replay.
 
@@ -171,7 +171,16 @@ setting cannot be changed; the prompt offers only _Allow once_ and _Deny_.
 **Approval request**
 The prompt shown when a call needs approval. Answers: _once_, _session_
 (allow this tool for the rest of the session), _always_ (stop asking for this
-tool globally) and _deny_. A note can be attached to _once_ and _deny_.
+tool globally) and _deny_. A _decision comment_ can be attached to _once_ and _deny_.
+
+**Decision comment**
+The text a user types on an approval prompt when allowing a call once or
+denying it. It is stored on the call's tool result as `decisionComment` and sent
+to the model as a user message after the turn's results.
+
+**Guidance**
+A field named `guidance` in a tool result's `data`: a short remark from the tool
+to the model, for example that the user changed the scope it suggested.
 
 **Agent approval setting**
 A per-agent override saying a particular tool does (or does not) ask when that
@@ -213,14 +222,14 @@ extras, plus the tools that existed when the version was saved. See
 [backend.md](backend.md#tool-grants).
 
 **Tool group**
-A set of related tools (Files, Workspaces, Memory, Structured Data, Projects,
+A set of related tools (Files, Workspaces, Structured Data, Projects,
 Agents, Subagents, Sessions, Skills, Web, MCP, Utilities). Every tool is in exactly one. An
 agent can be given or refused a whole group. See [tools.md](tools.md#tool-groups).
 
 **Always-on tools**
 Tools offered to every agent regardless of its tool grant. A tool's own default
 can be changed in Settings. By default: `skill_load` and `subagent_handback`. The
-file and memory tools are in tool groups, so an agent gets them through its grant.
+file tools are in tool groups, so an agent gets them through its grant.
 
 **Needs-review tool**
 A destructive or prompt-changing tool that a group grant does not cover; an agent
@@ -281,10 +290,10 @@ A named block of written instructions. The system message lists each skill
 with its description; the model loads one in full with `skill_load`. Skills are
 built-in, global, project or agent scoped.
 
-## Files, memory, schemas and data
+## Files, schemas and data
 
 **Scope**
-Where a record lives and who sees it. Files and notes have three scopes:
+Where a record lives and who sees it. Files have three scopes:
 _session_, _project_, _global_. Schemas and data have four: _session_,
 _project_, _agent_, _global_ (schemas also have _builtin_). Skills have _builtin_,
 _global_, _project_ and _agent_.
@@ -298,7 +307,7 @@ Written by both the user and the model.
 
 **Folder**
 The `/`-separated part of a file's key. A folder with files needs no record; an
-_explicit folder_ (a row for project and global files, a transcript entry for
+_explicit folder_ (a row for project and global files, a transcript file for
 session files) lets an empty folder exist. See
 [backend.md](backend.md#folders).
 
@@ -313,15 +322,8 @@ An image or audio file. Its bytes are stored once, by SHA-256, in the `blobs`
 table; the file record points at them. See
 [backend.md](backend.md#binary-files-and-attachments).
 
-**Memory note**
-A short text note the model writes for itself. It has a generated id instead
-of a name.
-
-**Entry**
-Collective name for files and memory notes.
-
-**Entry version**
-Every change to a project or global entry adds a version with its author
+**File version**
+Every change to a project or global file adds a version with its author
 (`user` or `model`). A delete is a version.
 
 **Schema**
@@ -352,16 +354,15 @@ deleted (to the Trash) and restored. See [backend.md](backend.md#branches).
 
 **Fork**
 Copies a session's line up to a message into a new session, with new ids. Files,
-notes and data are shared with the source because they live in the project or
+data are shared with the source because they live in the project or
 global scope. See [backend.md](backend.md#branches).
 
 **Replay**
-Rebuilding session-scoped files, notes, schemas and data by applying, in order,
+Rebuilding session-scoped files, schemas and data by applying, in order,
 the changes recorded on the session's messages.
 
 **Chunk**
-A piece of an entry used for search. Files are split at about 1,500 characters;
-a note is one chunk.
+A piece of a file used for search. Files are split at about 1,500 characters.
 
 **Embedding**
 A vector for a chunk, produced by an embedding model on llama-server, used for

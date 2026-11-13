@@ -2,21 +2,21 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   replaySessionData,
-  replaySessionEntries,
+  replaySessionFiles,
   ScriptedModel,
   type ChatRequest,
   type DataOp,
-  type EntryOp,
+  type FileOp,
   type Form,
   type ScriptStep,
 } from "@harness/core";
-import { allTools, entriesInstruction } from "@harness/tools";
+import { allTools, filesInstruction } from "@harness/tools";
 import { AgentStore } from "./agents-store.js";
 import { putBlob } from "./blobs.js";
 import type { AppEvent } from "./app-events.js";
 import { DataStore } from "./data-store.js";
 import { BUILTIN_DISPATCHER } from "./default-agent.js";
-import { EntryStore } from "./entries-store.js";
+import { FileStore } from "./files-store.js";
 import { schemaChecker } from "./json-schema.js";
 import { SkillStore } from "./skills-store.js";
 import { RunManager } from "./runs.js";
@@ -58,12 +58,11 @@ async function setup(
     new Date(Date.UTC(2026, 10, 2, 0, 0, ++clock))
       .toISOString()
       .replace(".000Z", "Z");
-  const entries = new EntryStore(t.db, now);
+  const files = new FileStore(t.db, now);
   const agents = new AgentStore(t.db, now);
   const data = new DataStore(t.db, schemaChecker, now);
   const skills = new SkillStore(t.db, now);
   const model = new ScriptedModel(scripts);
-  let note = 0;
   const runs = new RunManager({
     store,
     settings: () => ({
@@ -73,10 +72,9 @@ async function setup(
     model: () => model,
     tools: allTools,
     agents,
-    entries,
+    files,
     ...(options.data ? { data, schemaChecker, skills } : {}),
-    systemPrompt: (s) => entriesInstruction(s.project_id !== null),
-    newNoteId: () => `n${++note}`,
+    systemPrompt: (s) => filesInstruction(s.project_id !== null),
     now,
   });
   const seen: AppEvent[] = [];
@@ -85,7 +83,7 @@ async function setup(
   runs.events.subscribe((e) => {
     if (e.type !== "runs.changed") seen.push(e);
   });
-  const app = buildServer({ store, runs, entries, token: TOKEN, env: {} });
+  const app = buildServer({ store, runs, files, token: TOKEN, env: {} });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
   return {
@@ -94,7 +92,7 @@ async function setup(
     runs,
     app,
     model,
-    entries,
+    files,
     agents,
     data,
     skills,
@@ -207,24 +205,16 @@ function results(c: Ctx, sessionId: string) {
     );
 }
 
-/** Puts files and notes in a session's scope, as the user editing them. */
-function seedSession(c: Ctx, sessionId: string, ops: EntryOp[]) {
-  c.runs.editSessionEntries(sessionId, ops);
+/** Puts files in a session's scope, as the user editing them. */
+function seedSession(c: Ctx, sessionId: string, ops: FileOp[]) {
+  c.runs.editSessionFiles(sessionId, ops);
 }
-const file = (key: string, value: string): EntryOp => ({
+const file = (key: string, value: string): FileOp => ({
   op: "put",
-  kind: "file",
   key,
   mediaType: "text/markdown",
   value,
 });
-const note = (key: string, value: string): EntryOp => ({
-  op: "put",
-  kind: "note",
-  key,
-  value,
-});
-
 const agentContent = (name: string) => ({
   name,
   description: `${name} agent`,
@@ -308,7 +298,7 @@ describe("agents_list and agent_view", () => {
     await go(c, id);
     expect(results(c, id)[0]?.data).toEqual({
       agent: null,
-      note: "This run has no agent.",
+      guidance: "This run has no agent.",
     });
   });
 
@@ -375,14 +365,14 @@ describe("projects_list, project_view and project_create", () => {
     });
     expect(results(c, outside)[0]?.data).toEqual({
       project: null,
-      note: "This session is not in a project.",
+      guidance: "This session is not in a project.",
     });
   });
 
   it("creates a project with no agent from the session, copying what was ticked", async () => {
     const c = await setup();
     const id = await newSession(c.app);
-    seedSession(c, id, [file("topics.md", "Topics"), note("n0", "A note")]);
+    seedSession(c, id, [file("topics.md", "Topics")]);
     c.scripts.push([call("a", "project_create", { name: "Research" })], done);
 
     const { shown } = await go(c, id, {
@@ -392,18 +382,16 @@ describe("projects_list, project_view and project_create", () => {
           description: "Looking things up",
           systemPrompt: "You research.",
           copyFiles: true,
-          copyNotes: false,
         },
       ],
     });
 
-    // The form suggested the name and offered both copies, ticked.
+    // The form suggested the name and offered the copy, ticked.
     expect(shown[0]?.fields.map((f) => f.name)).toEqual([
       "name",
       "description",
       "systemPrompt",
       "copyFiles",
-      "copyNotes",
     ]);
     expect(shown[0]?.fields[0]).toMatchObject({ default: "Research" });
     expect(shown[0]?.fields[3]).toMatchObject({
@@ -422,35 +410,16 @@ describe("projects_list, project_view and project_create", () => {
     expect(results(c, id)[0]?.data).toEqual({
       project: { id: created?.id, name: "Research topics" },
       filesCopied: 1,
-      notesCopied: 0,
     });
     expect(
-      c.entries.list("file", created?.id ?? "").map((e) => [e.key, e.value]),
+      c.files.list(created?.id ?? "").map((e) => [e.key, e.value]),
     ).toEqual([["topics.md", "Topics"]]);
-    expect(c.entries.list("note", created?.id ?? "")).toEqual([]);
     // The session stays where it is, and windows are told.
     expect(c.store.getSession(id)?.project_id).toBeNull();
     expect(c.seen).toContainEqual({
       type: "projects.changed",
       data: { projectId: created?.id },
     });
-  });
-
-  it("copies the notes too when ticked, as new notes", async () => {
-    const c = await setup();
-    const id = await newSession(c.app);
-    seedSession(c, id, [note("n0", "Remember this")]);
-    c.scripts.push([call("a", "project_create")], done);
-
-    await go(c, id, {
-      forms: [
-        { name: "Notes", description: "", systemPrompt: "", copyNotes: true },
-      ],
-    });
-    const created = c.store.listProjects().find((p) => p.name === "Notes");
-    expect(
-      c.entries.list("note", created?.id ?? "").map((e) => e.value),
-    ).toEqual(["Remember this"]);
   });
 
   it("creates nothing when the form is skipped", async () => {
@@ -1085,12 +1054,12 @@ describe("files_copy and files_move", () => {
       to: "global",
       copied: ["a.md"],
     });
-    expect(c.entries.get("file", null, "a.md")).toMatchObject({ value: "A" });
+    expect(c.files.get(null, "a.md")).toMatchObject({ value: "A" });
     // The original stays: no delete was recorded in the session.
     const ops = c.store
       .listMessages(id)
       .flatMap((m) =>
-        m.message.role === "tool" ? (m.message.entries ?? []) : [],
+        m.message.role === "tool" ? (m.message.files ?? []) : [],
       );
     expect(ops).toEqual([]);
   });
@@ -1108,7 +1077,6 @@ describe("files_copy and files_move", () => {
     seedSession(c, id, [
       {
         op: "put",
-        kind: "file",
         key: "cat.png",
         value: "",
         mediaType: "image/png",
@@ -1138,28 +1106,27 @@ describe("files_copy and files_move", () => {
         { from: "session", to: `project:${target}` },
       ],
     });
-    expect(c.entries.get("file", null, "cat.png")).toMatchObject({
+    expect(c.files.get(null, "cat.png")).toMatchObject({
       media_type: "image/png",
       value: "",
       blob_hash: blob.hash,
       size: blob.size,
     });
-    expect(c.entries.get("file", target, "cat.png")).toMatchObject({
+    expect(c.files.get(target, "cat.png")).toMatchObject({
       media_type: "image/png",
       blob_hash: blob.hash,
     });
     // The move deleted the session's file.
-    const state = replaySessionEntries(
+    const state = replaySessionFiles(
       c.store.listMessages(id).map((m) => m.message),
     );
-    expect(state.file.has("cat.png")).toBe(false);
+    expect(state.files.has("cat.png")).toBe(false);
   });
 
   it("sends to another project, skipping keys it already has", async () => {
     const c = await setup();
     const target = await newProject(c.app, "Target");
-    c.entries.put(
-      "file",
+    c.files.put(
       target,
       { key: "a.md", value: "old", mediaType: "text/markdown" },
       {
@@ -1195,15 +1162,15 @@ describe("files_copy and files_move", () => {
       skipped: ["a.md"],
       skippedBecause: "the destination already has a file with that name",
     });
-    expect(c.entries.get("file", target, "a.md")).toMatchObject({
+    expect(c.files.get(target, "a.md")).toMatchObject({
       value: "old",
     });
-    expect(c.entries.get("file", target, "b.md")).toMatchObject({
+    expect(c.files.get(target, "b.md")).toMatchObject({
       value: "B",
       media_type: "text/markdown",
     });
     // The write is recorded as the model's, in the version history.
-    expect(c.entries.versions("file", target, "b.md")[0]).toMatchObject({
+    expect(c.files.versions(target, "b.md")[0]).toMatchObject({
       author: "model",
       session_id: id,
     });
@@ -1212,8 +1179,7 @@ describe("files_copy and files_move", () => {
   it("moves only what was copied", async () => {
     const c = await setup();
     const target = await newProject(c.app, "Target");
-    c.entries.put(
-      "file",
+    c.files.put(
       target,
       { key: "a.md", value: "old", mediaType: "text/plain" },
       {
@@ -1235,16 +1201,15 @@ describe("files_copy and files_move", () => {
     const ops = c.store
       .listMessages(id)
       .flatMap((m) =>
-        m.message.role === "tool" ? (m.message.entries ?? []) : [],
+        m.message.role === "tool" ? (m.message.files ?? []) : [],
       );
-    expect(ops).toEqual([{ op: "delete", kind: "file", key: "b.md" }]);
+    expect(ops).toEqual([{ op: "delete", key: "b.md" }]);
   });
 
-  it("never sends global entries to another project", async () => {
+  it("never sends global files to another project", async () => {
     const c = await setup();
     const target = await newProject(c.app, "Target");
-    c.entries.put(
-      "file",
+    c.files.put(
       null,
       { key: "g.md", value: "G", mediaType: "text/markdown" },
       {
@@ -1259,7 +1224,7 @@ describe("files_copy and files_move", () => {
 
     await go(c, id, { forms: [{ from: "global", to: `project:${target}` }] });
     expect(results(c, id)[0]).toMatchObject({ isError: true });
-    expect(c.entries.list("file", target)).toEqual([]);
+    expect(c.files.list(target)).toEqual([]);
   });
 
   it("refuses a copy to the same scope", async () => {
@@ -1290,7 +1255,7 @@ describe("files_copy and files_move", () => {
     });
     await go(c, id, { decisions: ["deny"] });
     expect(results(c, id)[1]).toMatchObject({ isError: true });
-    expect(c.entries.list("file", null)).toEqual([]);
+    expect(c.files.list(null)).toEqual([]);
   });
 
   it("limits the keys named in one call by the setting, but not 'all'", async () => {
@@ -1318,7 +1283,7 @@ describe("files_copy and files_move", () => {
     expect(tooMany).toMatchObject({ isError: true });
     expect(JSON.stringify(tooMany?.data)).toContain("At most 2");
     expect(all?.data).toMatchObject({ copied: ["a.md", "b.md", "c.md"] });
-    expect(c.entries.list("file", null)).toHaveLength(3);
+    expect(c.files.list(null)).toHaveLength(3);
   });
 
   it("needs either names or all, and a real destination project", async () => {
@@ -1339,72 +1304,5 @@ describe("files_copy and files_move", () => {
     expect(found[2]?.data).toMatchObject({
       error: expect.stringContaining("projects_list") as unknown,
     });
-  });
-});
-
-describe("memory_copy and memory_move", () => {
-  it("copies a note with a new id and keeps the original", async () => {
-    const c = await setup();
-    const projectId = await newProject(c.app, "Ashfall");
-    const id = await newSession(c.app, projectId);
-    seedSession(c, id, [note("old1", "Remember this")]);
-    c.scripts.push(
-      [
-        call("a", "memory_copy", {
-          ids: ["old1"],
-          from: "session",
-          to: "project",
-        }),
-      ],
-      done,
-    );
-
-    const { shown } = await go(c, id, {
-      forms: [{ from: "session", to: "project" }],
-    });
-    expect(shown[0]?.fields[1]).toMatchObject({
-      options: ["session", "project", "global"],
-      labels: { project: "project (Ashfall) (suggested)" },
-    });
-    expect(results(c, id)[0]?.data).toMatchObject({
-      from: "session",
-      to: "project",
-      copied: [{ id: "old1", newId: "n1" }],
-    });
-    expect(
-      c.entries.list("note", projectId).map((e) => [e.key, e.value]),
-    ).toEqual([["n1", "Remember this"]]);
-  });
-
-  it("moves notes to another project and deletes the originals", async () => {
-    const c = await setup();
-    const target = await newProject(c.app, "Target");
-    const id = await newSession(c.app);
-    seedSession(c, id, [note("a", "One"), note("b", "Two")]);
-    c.scripts.push(
-      [call("a", "memory_move", { all: true, toProject: target })],
-      done,
-    );
-
-    await go(c, id, { forms: [{ from: "session", to: `project:${target}` }] });
-    expect(results(c, id)[0]?.data).toMatchObject({
-      moved: [
-        { id: "a", newId: "n1" },
-        { id: "b", newId: "n2" },
-      ],
-    });
-    expect(c.entries.list("note", target).map((e) => e.value)).toEqual([
-      "One",
-      "Two",
-    ]);
-    const ops = c.store
-      .listMessages(id)
-      .flatMap((m) =>
-        m.message.role === "tool" ? (m.message.entries ?? []) : [],
-      );
-    expect(ops).toEqual([
-      { op: "delete", kind: "note", key: "a" },
-      { op: "delete", kind: "note", key: "b" },
-    ]);
   });
 });

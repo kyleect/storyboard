@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  createEntryAccess,
+  createFileAccess,
   FILE_KEY_PATTERN,
-  replaySessionEntries,
-  type EntryOp,
-  type EntrySearch,
+  replaySessionFiles,
+  type FileOp,
+  type FileSearch,
   type Form,
   type InputAnswer,
   type SearchResult,
@@ -14,9 +14,9 @@ import {
   NO_DATA,
   NO_PROJECTS,
 } from "@harness/core";
-import { FakeSharedEntries } from "@harness/core/testing";
+import { FakeSharedFiles } from "@harness/core/testing";
 import {
-  entriesInstruction,
+  filesInstruction,
   filesDelete,
   filesFolderCreate,
   filesFolderDelete,
@@ -25,12 +25,7 @@ import {
   filesRead,
   filesSearch,
   filesWrite,
-  memoryAdd,
-  memoryDelete,
-  memoryList,
-  memorySearch,
-  memoryUpdate,
-} from "./entries.js";
+} from "./files.js";
 
 /** An answered form. */
 const answer = (answers: Record<string, unknown>): InputAnswer => ({
@@ -48,14 +43,13 @@ function context(
     inProject?: boolean;
     answers?: InputAnswer[];
     state?: unknown;
-    search?: EntrySearch;
+    search?: FileSearch;
   } = {},
 ) {
   const inProject = options.inProject ?? true;
-  const sessionOps: EntryOp[] = [];
+  const sessionOps: FileOp[] = [];
   const forms: Form[] = [];
   const queue = [...(options.answers ?? [])];
-  let n = 0;
   const ctx: ToolContext = {
     signal: new AbortController().signal,
     sessionId: "s",
@@ -78,13 +72,12 @@ function context(
     data: NO_DATA,
     copyLimit: 20,
     skills: [],
-    entries: createEntryAccess({
-      session: replaySessionEntries([]),
+    files: createFileAccess({
+      session: replaySessionFiles([]),
       sessionOps,
-      shared: new FakeSharedEntries(),
+      shared: new FakeSharedFiles(),
       inProject,
       author: { by: "model", sessionId: "s", runId: "r" },
-      newNoteId: () => `n${++n}`,
       ...(options.search ? { search: options.search } : {}),
     }),
   };
@@ -154,7 +147,7 @@ describe("files_write", () => {
       },
     ]);
     expect(sessionOps).toEqual([]);
-    expect(ctx.entries.readFile("project", "a.md")?.value).toBe("# A");
+    expect(ctx.files.readFile("project", "a.md")?.value).toBe("# A");
   });
 
   it("needs only a value: no name, scope or type (Q18, Q19)", async () => {
@@ -191,7 +184,8 @@ describe("files_write", () => {
         key: "b.md",
         mediaType: "text/plain",
         created: true,
-        note: 'The user named the file "b.md" instead of your suggestion ("a.md"). The user chose the session scope instead of your suggestion (global).',
+        guidance:
+          'The user named the file "b.md" instead of your suggestion ("a.md"). The user chose the session scope instead of your suggestion (global).',
       },
     });
   });
@@ -200,7 +194,7 @@ describe("files_write", () => {
     const { ctx } = context({
       answers: [answer({ name: "old", scope: "global" })],
     });
-    ctx.entries.writeFile("global", "old", "text/plain", "before");
+    ctx.files.writeFile("global", "old", "text/plain", "before");
     expect(
       await filesWrite.execute(
         { key: "new", mediaType: "text/plain", value: "after" },
@@ -212,15 +206,16 @@ describe("files_write", () => {
         key: "old",
         mediaType: "text/plain",
         created: false,
-        note: 'The user named the file "old" instead of your suggestion ("new"). This replaced the existing "old" in the global scope.',
+        guidance:
+          'The user named the file "old" instead of your suggestion ("new"). This replaced the existing "old" in the global scope.',
       },
     });
-    expect(ctx.entries.readFile("global", "old")?.value).toBe("after");
+    expect(ctx.files.readFile("global", "old")?.value).toBe("after");
   });
 
   it("saves a file that exists in one scope there, without asking", async () => {
     const { ctx, forms } = context();
-    ctx.entries.writeFile("global", "a", "text/plain", "1");
+    ctx.files.writeFile("global", "a", "text/plain", "1");
     expect(
       await filesWrite.execute(
         { key: "a", mediaType: "text/plain", value: "2", scope: "session" },
@@ -232,17 +227,18 @@ describe("files_write", () => {
         key: "a",
         mediaType: "text/plain",
         created: false,
-        note: '"a" already exists in the global scope, so it was saved there.',
+        guidance:
+          '"a" already exists in the global scope, so it was saved there.',
       },
     });
     expect(forms).toEqual([]);
-    expect(ctx.entries.readFile("global", "a")?.value).toBe("2");
+    expect(ctx.files.readFile("global", "a")?.value).toBe("2");
   });
 
   it("asks which copy when the key is in several scopes", async () => {
     const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    ctx.entries.writeFile("session", "a", "text/plain", "s");
-    ctx.entries.writeFile("global", "a", "text/plain", "g");
+    ctx.files.writeFile("session", "a", "text/plain", "s");
+    ctx.files.writeFile("global", "a", "text/plain", "g");
     await filesWrite.execute(
       { key: "a", mediaType: "text/plain", value: "new", scope: "global" },
       ctx,
@@ -257,8 +253,8 @@ describe("files_write", () => {
         },
       ],
     });
-    expect(ctx.entries.readFile("global", "a")?.value).toBe("new");
-    expect(ctx.entries.readFile("session", "a")?.value).toBe("s");
+    expect(ctx.files.readFile("global", "a")?.value).toBe("new");
+    expect(ctx.files.readFile("session", "a")?.value).toBe("s");
   });
 
   it("writes nothing when the user does not save", async () => {
@@ -272,7 +268,7 @@ describe("files_write", () => {
       data: "Not saved: the user chose not to save this file.",
       isError: true,
     });
-    expect(ctx.entries.listFiles()).toEqual([]);
+    expect(ctx.files.listFiles()).toEqual([]);
   });
 
   it("puts a bad suggested name in the form to be fixed; rejects bad JSON before asking", async () => {
@@ -324,9 +320,9 @@ describe("files_write", () => {
 describe("files_read and files_delete", () => {
   it("find a file by key, asking only when it is in several scopes", async () => {
     const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    ctx.entries.writeFile("project", "one", "text/plain", "p");
-    ctx.entries.writeFile("session", "two", "text/plain", "s");
-    ctx.entries.writeFile("global", "two", "text/markdown", "g");
+    ctx.files.writeFile("project", "one", "text/plain", "p");
+    ctx.files.writeFile("session", "two", "text/plain", "s");
+    ctx.files.writeFile("global", "two", "text/markdown", "g");
     expect(await filesRead.execute({ key: "one" }, ctx)).toEqual({
       data: {
         scope: "project",
@@ -366,136 +362,21 @@ describe("files_read and files_delete", () => {
       isError: true,
       details: { reason: "rejected", key: "a/../b" },
     });
-    ctx.entries.writeFile("session", "two", "text/plain", "s");
-    ctx.entries.writeFile("global", "two", "text/plain", "g");
+    ctx.files.writeFile("session", "two", "text/plain", "s");
+    ctx.files.writeFile("global", "two", "text/plain", "g");
     expect(await filesDelete.execute({ key: "two" }, ctx)).toEqual({
       data: "Not deleted: the user chose not to pick a copy.",
       isError: true,
     });
-    expect(ctx.entries.listFiles()).toHaveLength(2);
+    expect(ctx.files.listFiles()).toHaveLength(2);
   });
 });
 
-describe("memory_add", () => {
-  it("asks where a note goes, showing its text, and can remember", async () => {
-    const { ctx, forms } = context({
-      answers: [answer({ scope: "project", remember: true })],
-    });
-    expect(
-      await memoryAdd.execute(
-        { text: "Alice hates water", scope: "project" },
-        ctx,
-      ),
-    ).toEqual({
-      data: { scope: "project", id: "n1" },
-      state: { scope: "project" },
-    });
-    expect(forms[0]).toMatchObject({
-      title: "Save this note where?",
-      description: "Alice hates water",
-      fields: [
-        { name: "scope", default: "project" },
-        {
-          name: "remember",
-          kind: "boolean",
-          label: "Use this for my notes for the rest of this session",
-          noOther: true,
-          default: false,
-        },
-      ],
-    });
-  });
-
-  it("uses the remembered scope without asking", async () => {
-    const { ctx, forms } = context({ state: { scope: "global" } });
-    expect(
-      await memoryAdd.execute({ text: "fact", scope: "session" }, ctx),
-    ).toEqual({
-      data: {
-        scope: "global",
-        id: "n1",
-        note: "The user chose the global scope instead of your suggestion (session).",
-      },
-    });
-    expect(forms).toEqual([]);
-  });
-
-  it("asks again when the remembered scope is not available", async () => {
-    const { ctx, forms } = context({
-      inProject: false,
-      state: { scope: "project" },
-      answers: [answer({ scope: "session", remember: false })],
-    });
-    expect(await memoryAdd.execute({ text: "fact" }, ctx)).toEqual({
-      data: { scope: "session", id: "n1" },
-    });
-    expect(forms).toHaveLength(1);
-  });
-
-  it("saves nothing when the user does not save", async () => {
-    const { ctx } = context({ answers: [SKIP] });
-    expect(await memoryAdd.execute({ text: "fact" }, ctx)).toEqual({
-      data: "Not saved: the user chose not to save this note.",
-      isError: true,
-    });
-    expect(ctx.entries.listNotes()).toEqual([]);
-  });
-});
-
-describe("memory_update and memory_delete", () => {
-  it("find a note by id", async () => {
-    const { ctx, forms } = context();
-    const id = ctx.entries.addNote("project", "Alice hates water");
-    expect(
-      await memoryUpdate.execute({ id, text: "Alice fears water" }, ctx),
-    ).toEqual({ data: { scope: "project", id, updated: true } });
-    expect(ctx.entries.listNotes()).toEqual([
-      { scope: "project", id, text: "Alice fears water" },
-    ]);
-    expect(await memoryDelete.execute({ id }, ctx)).toEqual({
-      data: { scope: "project", id, deleted: true },
-    });
-    expect(await memoryUpdate.execute({ id, text: "x" }, ctx)).toEqual({
-      data: { error: `There is no memory note "${id}".` },
-      isError: true,
-      details: { reason: "not_found", id },
-    });
-    expect(await memoryDelete.execute({ id }, ctx)).toMatchObject({
-      isError: true,
-      details: { reason: "not_found", id },
-    });
-    expect(forms).toEqual([]);
-  });
-
-  it("ask which note when the id is in several scopes", async () => {
-    let n = 0;
-    const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    ctx.entries = createEntryAccess({
-      session: replaySessionEntries([]),
-      sessionOps: [],
-      shared: new FakeSharedEntries(),
-      inProject: true,
-      author: { by: "model", sessionId: "s", runId: "r" },
-      // The same id in two scopes.
-      newNoteId: () => (n++ < 2 ? "same" : `n${n}`),
-    });
-    ctx.entries.addNote("session", "s");
-    ctx.entries.addNote("global", "g");
-    expect(await memoryDelete.execute({ id: "same" }, ctx)).toEqual({
-      data: { scope: "global", id: "same", deleted: true },
-    });
-    expect(forms[0]).toMatchObject({
-      title: 'Delete which note "same"?',
-      fields: [{ options: ["session", "global"] }],
-    });
-  });
-});
-
-describe("files_list and memory_list", () => {
+describe("files_list", () => {
   it("cover every scope without asking when no scopes are named", async () => {
     const { ctx, forms } = context();
-    ctx.entries.writeFile("session", "a", "text/markdown", "# A");
-    ctx.entries.writeFile("global", "a", "text/plain", "g");
+    ctx.files.writeFile("session", "a", "text/markdown", "# A");
+    ctx.files.writeFile("global", "a", "text/plain", "g");
     expect(await filesList.execute({}, ctx)).toEqual({
       data: {
         files: [
@@ -506,7 +387,7 @@ describe("files_list and memory_list", () => {
       },
     });
     // Naming every scope does not narrow anything.
-    await memoryList.execute({ scopes: ["global", "project", "session"] }, ctx);
+    await filesList.execute({ scopes: ["global", "project", "session"] }, ctx);
     expect(forms).toEqual([]);
   });
 
@@ -514,16 +395,22 @@ describe("files_list and memory_list", () => {
     const { ctx, forms } = context({
       answers: [answer({ scopes: ["session", "global"], remember: false })],
     });
-    ctx.entries.addNote("project", "p");
-    ctx.entries.addNote("global", "g");
-    expect(await memoryList.execute({ scopes: ["global"] }, ctx)).toEqual({
+    ctx.files.writeFile("session", "s", "text/plain", "s");
+    ctx.files.writeFile("project", "p", "text/plain", "p");
+    ctx.files.writeFile("global", "g", "text/plain", "g");
+    expect(await filesList.execute({ scopes: ["global"] }, ctx)).toEqual({
       data: {
-        notes: [{ scope: "global", id: "n2", text: "g" }],
-        note: "The user chose session, global instead of your suggestion (global).",
+        files: [
+          { scope: "session", key: "s", mediaType: "text/plain", size: 1 },
+          { scope: "global", key: "g", mediaType: "text/plain", size: 1 },
+        ],
+        folders: [],
+        guidance:
+          "The user chose session, global instead of your suggestion (global).",
       },
     });
     expect(forms[0]).toEqual({
-      title: "List notes in which scopes?",
+      title: "List files in which scopes?",
       fields: [
         {
           name: "scopes",
@@ -582,7 +469,6 @@ describe("search tools", () => {
     });
     expect(queries).toEqual([
       {
-        kind: "file",
         query: "storm",
         scopes: ["session", "project", "global"],
         limit: 5,
@@ -591,11 +477,11 @@ describe("search tools", () => {
     expect(forms).toEqual([]);
   });
 
-  it("memory_search asks when narrowed, and remembers the choice", async () => {
+  it("files_search asks when narrowed, and remembers the choice", async () => {
     const { ctx, queries, forms } = withSearch(
       {
         hits: [
-          { scope: "global", key: "n1", excerpt: "fact", matched: "keyword" },
+          { scope: "global", key: "n.md", excerpt: "fact", matched: "keyword" },
         ],
         mode: "keyword",
         notice: "No embedding model is set.",
@@ -603,25 +489,23 @@ describe("search tools", () => {
       { answers: [answer({ scopes: ["global"], remember: true })] },
     );
     expect(
-      await memorySearch.execute(
+      await filesSearch.execute(
         { query: "x", scopes: ["global"], limit: 2 },
         ctx,
       ),
     ).toEqual({
       data: {
-        notes: [{ scope: "global", id: "n1", text: "fact" }],
+        results: [{ scope: "global", key: "n.md", excerpt: "fact" }],
         notice: "No embedding model is set.",
       },
       state: { scopes: ["global"] },
     });
     expect(forms[0]).toMatchObject({
-      title: 'Search notes for "x" in which scopes?',
+      title: 'Search files for "x" in which scopes?',
       submitLabel: "Search",
       skipLabel: "Don't search",
     });
-    expect(queries).toMatchObject([
-      { kind: "note", scopes: ["global"], limit: 2 },
-    ]);
+    expect(queries).toMatchObject([{ scopes: ["global"], limit: 2 }]);
   });
 
   it("uses remembered scopes without asking", async () => {
@@ -650,36 +534,20 @@ describe("search tools", () => {
     expect(queries).toEqual([]);
   });
 
-  it("memory_search returns every match when no limit is given", async () => {
-    const { ctx, queries } = withSearch({ hits: [], mode: "keyword+meaning" });
-    await memorySearch.execute({ query: "x" }, ctx);
-    expect(queries).toEqual([
-      {
-        kind: "note",
-        query: "x",
-        scopes: ["session", "project", "global"],
-        limit: undefined,
-      },
-    ]);
-  });
-
   it("bounds limit to 1-20 and scopes to 1-3, and needs a query", () => {
     expect(filesSearch.parse({ query: "x", limit: 21 }).ok).toBe(false);
     expect(filesSearch.parse({ query: "x", limit: 0 }).ok).toBe(false);
     expect(filesSearch.parse({ query: "x", scopes: [] }).ok).toBe(false);
-    expect(memorySearch.parse({ query: "" }).ok).toBe(false);
-    expect(memorySearch.parse({ query: "x", limit: 0 }).ok).toBe(false);
-    expect(memorySearch.parse({ query: "x", limit: 100 }).ok).toBe(true);
-    expect(memorySearch.parse({ query: "x", limit: 101 }).ok).toBe(false);
+    expect(filesSearch.parse({ query: "" }).ok).toBe(false);
   });
 });
 
-describe("entriesInstruction", () => {
+describe("filesInstruction", () => {
   it("says whether the conversation is in a project", () => {
-    expect(entriesInstruction(true)).toMatch(/in a project: yes\.$/);
-    expect(entriesInstruction(false)).toMatch(/in a project: no\.$/);
-    expect(entriesInstruction(true)).toMatch(/^You can keep information/);
-    expect(entriesInstruction(true)).toMatch(
+    expect(filesInstruction(true)).toMatch(/in a project: yes\.$/);
+    expect(filesInstruction(false)).toMatch(/in a project: no\.$/);
+    expect(filesInstruction(true)).toMatch(/^You can keep information/);
+    expect(filesInstruction(true)).toMatch(
       /leave out what you don't know, such as a file's name or scope/,
     );
   });
@@ -688,8 +556,8 @@ describe("entriesInstruction", () => {
 describe("references and folders in the files tools", () => {
   it("files_read takes a reference in angle brackets or plain, and skips the scope question", async () => {
     const { ctx, forms } = context();
-    ctx.entries.writeFile("session", "My Notes.md", "text/markdown", "s");
-    ctx.entries.writeFile("global", "My Notes.md", "text/markdown", "g");
+    ctx.files.writeFile("session", "My Notes.md", "text/markdown", "s");
+    ctx.files.writeFile("global", "My Notes.md", "text/markdown", "g");
     expect(
       await filesRead.execute({ key: "<global://My Notes.md>" }, ctx),
     ).toEqual({
@@ -742,10 +610,10 @@ describe("references and folders in the files tools", () => {
 
   it("files_list shows folders and can list one folder", async () => {
     const { ctx } = context();
-    ctx.entries.writeFile("session", "a/one.md", "text/markdown", "1");
-    ctx.entries.writeFile("session", "a/b/two.md", "text/markdown", "2");
-    ctx.entries.writeFile("session", "top.md", "text/markdown", "3");
-    ctx.entries.createFolder("session", "empty");
+    ctx.files.writeFile("session", "a/one.md", "text/markdown", "1");
+    ctx.files.writeFile("session", "a/b/two.md", "text/markdown", "2");
+    ctx.files.writeFile("session", "top.md", "text/markdown", "3");
+    ctx.files.createFolder("session", "empty");
     expect(await filesList.execute({ folder: "a" }, ctx)).toEqual({
       data: {
         files: [
@@ -785,13 +653,14 @@ describe("references and folders in the files tools", () => {
         scope: "project",
         path: "chars",
         created: true,
-        note: "The user chose the project scope instead of your suggestion (global).",
+        guidance:
+          "The user chose the project scope instead of your suggestion (global).",
       },
     });
     expect(forms[0]).toMatchObject({
       title: 'Create the folder "chars" where?',
     });
-    expect(ctx.entries.listFolders("project")).toEqual([
+    expect(ctx.files.listFolders("project")).toEqual([
       { scope: "project", path: "chars" },
     ]);
     // A reference names the scope, so there is no form.
@@ -816,7 +685,7 @@ describe("references and folders in the files tools", () => {
 
   it("files_folder_rename moves a folder and what is inside it", async () => {
     const { ctx } = context();
-    ctx.entries.writeFile("session", "a/one.md", "text/markdown", "1");
+    ctx.files.writeFile("session", "a/one.md", "text/markdown", "1");
     expect(
       await filesFolderRename.execute({ path: "a", newPath: "z" }, ctx),
     ).toEqual({
@@ -828,7 +697,7 @@ describe("references and folders in the files tools", () => {
         files: 1,
       },
     });
-    expect(ctx.entries.readFile("session", "z/one.md")?.value).toBe("1");
+    expect(ctx.files.readFile("session", "z/one.md")?.value).toBe("1");
     expect(
       await filesFolderRename.execute({ path: "nope", newPath: "x" }, ctx),
     ).toMatchObject({ isError: true, details: { reason: "not_found" } });
@@ -839,14 +708,14 @@ describe("references and folders in the files tools", () => {
 
   it("files_folder_delete asks which copy when a folder is in two scopes", async () => {
     const { ctx, forms } = context({ answers: [answer({ scope: "global" })] });
-    ctx.entries.writeFile("session", "d/x.md", "text/markdown", "s");
-    ctx.entries.writeFile("global", "d/y.md", "text/markdown", "g");
+    ctx.files.writeFile("session", "d/x.md", "text/markdown", "s");
+    ctx.files.writeFile("global", "d/y.md", "text/markdown", "g");
     expect(await filesFolderDelete.execute({ path: "d" }, ctx)).toEqual({
       data: { scope: "global", path: "d", deleted: true, files: 1 },
     });
     expect(forms[0]).toMatchObject({ title: 'Delete which folder "d"?' });
-    expect(ctx.entries.listFiles("session")).toHaveLength(1);
-    expect(ctx.entries.listFiles("global")).toEqual([]);
+    expect(ctx.files.listFiles("session")).toHaveLength(1);
+    expect(ctx.files.listFiles("global")).toEqual([]);
     expect(
       await filesFolderDelete.execute({ path: "<global://d>" }, ctx),
     ).toMatchObject({ isError: true, details: { reason: "not_found" } });
@@ -870,7 +739,7 @@ describe("binary files in the files tools", () => {
 
   it("files_list shows a binary file's media type and size in bytes", async () => {
     const { ctx } = context();
-    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    ctx.files.putBlob("session", "cat.png", "image/png", blob);
     expect(await filesList.execute({}, ctx)).toMatchObject({
       data: {
         files: [
@@ -887,7 +756,7 @@ describe("binary files in the files tools", () => {
 
   it("files_read hands an image to the model as media, with keep when asked", async () => {
     const { ctx } = context();
-    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    ctx.files.putBlob("session", "cat.png", "image/png", blob);
     const result = await filesRead.execute({ key: "session://cat.png" }, ctx);
     expect(result).toEqual({
       data: {
@@ -895,7 +764,7 @@ describe("binary files in the files tools", () => {
         key: "cat.png",
         mediaType: "image/png",
         size: 84_000,
-        note: "This is an image. It follows this result.",
+        guidance: "This is an image. It follows this result.",
       },
       media: [{ ref: "session://cat.png" }],
     });
@@ -908,14 +777,15 @@ describe("binary files in the files tools", () => {
 
   it("files_read says so when the model cannot take that kind of media", async () => {
     const { ctx } = context();
-    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    ctx.files.putBlob("session", "cat.png", "image/png", blob);
     const result = await filesRead.execute(
       { key: "session://cat.png" },
       { ...ctx, mediaSupport: { image: false, audio: true } },
     );
     expect(result.media).toBeUndefined();
     expect(result.data).toMatchObject({
-      note: "The model in use cannot take image files, so it cannot be read.",
+      guidance:
+        "The model in use cannot take image files, so it cannot be read.",
     });
   });
 
@@ -930,7 +800,7 @@ describe("binary files in the files tools", () => {
 
   it("files_delete removes a binary file like any other", async () => {
     const { ctx } = context();
-    ctx.entries.putBlob("session", "cat.png", "image/png", blob);
+    ctx.files.putBlob("session", "cat.png", "image/png", blob);
     expect(
       await filesDelete.execute({ key: "session://cat.png" }, ctx),
     ).toEqual({

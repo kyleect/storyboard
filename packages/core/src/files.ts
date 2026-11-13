@@ -1,8 +1,7 @@
 import { isBinaryMediaType } from "./messages.js";
 import type {
   BlobRef,
-  EntryKind,
-  EntryOp,
+  FileOp,
   MediaType,
   Message,
   ModelMessage,
@@ -10,26 +9,26 @@ import type {
 import { fileNameProblem, isInFolder, parentFolders } from "./file-names.js";
 
 /*
- * Files and memory notes (files and memory design, section 3).
+ * Files (files and memory design, section 3).
  *
  * - Files: key/value text written by the user and the model. Notes: text the
  *   model writes for itself, with generated ids.
- * - Three scopes. Session-scoped entries are rebuilt from the transcript:
+ * - Three scopes. Session-scoped files are rebuilt from the transcript:
  *   tool results and edit messages carry the changes (decision 11). Project
- *   and global entries live in the backend's tables, reached through
- *   `SharedEntries`.
+ *   and global files live in the backend's tables, reached through
+ *   `SharedFiles`.
  */
 
 export type Scope = "session" | "project" | "global";
 export type SharedScope = Exclude<Scope, "session">;
 
 /** Who made a change, for the version history (decision 8). */
-export type EntryAuthor =
+export type FileAuthor =
   | { by: "user"; sessionId?: string }
   | { by: "model"; sessionId: string; runId: string };
 
-/** A project or global entry as the backend stores it. */
-export interface SharedEntry {
+/** A project or global file as the backend stores it. */
+export interface SharedFile {
   key: string;
   value: string;
   /** Files only. */
@@ -40,36 +39,24 @@ export interface SharedEntry {
 }
 
 /**
- * Project and global entries, implemented by the backend for one session:
- * "project" means that session's project. Deleted entries are not returned.
+ * Project and global files, implemented by the backend for one session:
+ * "project" means that session's project. Deleted files are not returned.
  */
-export interface SharedEntries {
-  list(kind: EntryKind, scope: SharedScope): SharedEntry[];
-  get(
-    kind: EntryKind,
-    scope: SharedScope,
-    key: string,
-  ): SharedEntry | undefined;
-  /** True when the key was used before, even by a deleted entry. */
-  exists(kind: EntryKind, scope: SharedScope, key: string): boolean;
+export interface SharedFiles {
+  list(scope: SharedScope): SharedFile[];
+  get(scope: SharedScope, key: string): SharedFile | undefined;
   put(
-    kind: EntryKind,
     scope: SharedScope,
-    entry: {
+    file: {
       key: string;
       value: string;
       mediaType?: MediaType;
       blob?: BlobRef;
     },
-    author: EntryAuthor,
+    author: FileAuthor,
   ): void;
-  /** False when there was no such entry. */
-  delete(
-    kind: EntryKind,
-    scope: SharedScope,
-    key: string,
-    author: EntryAuthor,
-  ): boolean;
+  /** False when there was no such file. */
+  delete(scope: SharedScope, key: string, author: FileAuthor): boolean;
   /** The explicit folders; folders that only hold files are not listed. */
   listFolders(scope: SharedScope): string[];
   createFolder(scope: SharedScope, path: string): void;
@@ -78,15 +65,15 @@ export interface SharedEntries {
     scope: SharedScope,
     from: string,
     to: string,
-    author: EntryAuthor,
+    author: FileAuthor,
   ): void;
   /** Deletes the folder, its explicit subfolders and the files inside it. */
-  deleteFolder(scope: SharedScope, path: string, author: EntryAuthor): void;
+  deleteFolder(scope: SharedScope, path: string, author: FileAuthor): void;
 }
 
 /** Thrown for a bad key, an unavailable scope or an invalid value. */
-export class EntryError extends Error {
-  override name = "EntryError";
+export class FileError extends Error {
+  override name = "FileError";
 }
 
 /**
@@ -103,7 +90,7 @@ export const FILE_KEY_PATTERN = "^[^\\u0000-\\u001f\\u007f]+$";
 export function checkFileName(path: string): void {
   const problem = fileNameProblem(path);
   if (problem) {
-    throw new EntryError(`Invalid file name "${path}": ${problem}.`);
+    throw new FileError(`Invalid file name "${path}": ${problem}.`);
   }
 }
 
@@ -113,7 +100,7 @@ export function checkFileValue(mediaType: MediaType, value: string): void {
   try {
     JSON.parse(value);
   } catch (err) {
-    throw new EntryError(
+    throw new FileError(
       `The value is tagged json but is not valid JSON: ${(err as Error).message}`,
     );
   }
@@ -139,15 +126,8 @@ export interface FolderInfo {
   path: string;
 }
 
-export interface NoteEntry {
-  scope: Scope;
-  id: string;
-  text: string;
-}
-
-/** A search over one kind of entry in some scopes (decisions 22 to 30). */
+/** A search over files in some scopes (decisions 22 to 30). */
 export interface SearchQuery {
-  kind: EntryKind;
   query: string;
   scopes: readonly Scope[];
   /** Most hits to return; left out: every match. */
@@ -157,9 +137,9 @@ export interface SearchQuery {
 
 export interface SearchHit {
   scope: Scope;
-  /** The file key, or the note id. */
+  /** The file key. */
   key: string;
-  /** The matching chunk; for a note, its whole text. */
+  /** The matching chunk. */
   excerpt: string;
   /** Which search found it. */
   matched: "keyword" | "meaning" | "both";
@@ -173,8 +153,8 @@ export interface SearchResult {
   notice?: string;
 }
 
-/** Searches files or notes; implemented by the backend for one session. */
-export type EntrySearch = (query: SearchQuery) => Promise<SearchResult>;
+/** Searches files; implemented by the backend for one session. */
+export type FileSearch = (query: SearchQuery) => Promise<SearchResult>;
 
 /**
  * One scope, several, or (left out) every scope this session has. Several
@@ -182,8 +162,8 @@ export type EntrySearch = (query: SearchQuery) => Promise<SearchResult>;
  */
 export type ScopeFilter = Scope | readonly Scope[];
 
-/** What tools use to reach files and notes (`ToolContext.entries`). */
-export interface EntryAccess {
+/** What tools use to reach files (`ToolContext.files`). */
+export interface FileAccess {
   /** The scopes this session has: no project scope in a standalone one. */
   readonly scopes: readonly Scope[];
   /** Every scope's files when `scope` is left out (decision 9). */
@@ -222,14 +202,8 @@ export interface EntryAccess {
   ): { files: number } | undefined;
   /** Undefined when there is no such folder. */
   deleteFolder(scope: Scope, path: string): { files: number } | undefined;
-  listNotes(scope?: ScopeFilter): NoteEntry[];
-  /** Returns the new note's id. */
-  addNote(scope: Scope, text: string): string;
-  updateNote(scope: Scope, id: string, text: string): boolean;
-  deleteNote(scope: Scope, id: string): boolean;
   /** Every scope when `scope` is left out. */
   search(
-    kind: EntryKind,
     query: string,
     scope: ScopeFilter | undefined,
     /** Left out: every match. */
@@ -243,76 +217,71 @@ interface Current {
   blob?: BlobRef;
 }
 
-/** Current session-scoped entries, by kind and key. */
-export interface SessionEntries {
-  file: Map<string, Current>;
-  note: Map<string, Current>;
+/** Current session-scoped files, by key. */
+export interface SessionFiles {
+  files: Map<string, Current>;
   /** Explicit folders (D6); folders that only hold files are not here. */
   folders: Set<string>;
   /** Every key ever used, including deleted ones (ids are not reused). */
-  used: { file: Set<string>; note: Set<string> };
+  used: Set<string>;
 }
 
 /** The changes a message carries, if any. */
-export function messageEntryOps(message: Message): readonly EntryOp[] {
-  if (message.role === "edit") return message.entries;
-  if (message.role === "tool") return message.entries ?? [];
+export function messageFileOps(message: Message): readonly FileOp[] {
+  if (message.role === "edit") return message.files;
+  if (message.role === "tool") return message.files ?? [];
   return [];
 }
 
-export function applyEntryOp(state: SessionEntries, op: EntryOp): void {
+export function applyFileOp(state: SessionFiles, op: FileOp): void {
   if (op.op === "folder") {
     if (op.action === "create") state.folders.add(op.path);
     else state.folders.delete(op.path);
     return;
   }
-  state.used[op.kind].add(op.key);
+  state.used.add(op.key);
   if (op.op === "put") {
-    state[op.kind].set(op.key, {
+    state.files.set(op.key, {
       value: op.value,
       ...(op.mediaType ? { mediaType: op.mediaType } : {}),
       ...(op.blob ? { blob: op.blob } : {}),
     });
   } else {
-    state[op.kind].delete(op.key);
+    state.files.delete(op.key);
   }
 }
 
-/** Rebuilds session-scoped files and notes from the transcript. */
-export function replaySessionEntries(
-  messages: readonly Message[],
-): SessionEntries {
-  const state: SessionEntries = {
-    file: new Map(),
-    note: new Map(),
+/** Rebuilds session-scoped files from the transcript. */
+export function replaySessionFiles(messages: readonly Message[]): SessionFiles {
+  const state: SessionFiles = {
+    files: new Map(),
     folders: new Set(),
-    used: { file: new Set(), note: new Set() },
+    used: new Set(),
   };
   for (const m of messages) {
-    for (const op of messageEntryOps(m)) applyEntryOp(state, op);
+    for (const op of messageFileOps(m)) applyFileOp(state, op);
   }
   return state;
 }
 
-/** One version of a session-scoped entry, read from the transcript. */
-export interface SessionEntryVersion {
+/** One version of a session-scoped file, read from the transcript. */
+export interface SessionFileVersion {
   /** The message that made the change. */
   messageId: string;
   /** "user" for an edit message, "model" for a tool result. */
   by: "user" | "model";
-  op: Exclude<EntryOp, { op: "folder" }>;
+  op: Exclude<FileOp, { op: "folder" }>;
 }
 
-/** Every change to one session-scoped entry, oldest first. */
-export function sessionEntryVersions(
+/** Every change to one session-scoped file, oldest first. */
+export function sessionFileVersions(
   messages: readonly { id: string; message: Message }[],
-  kind: EntryKind,
   key: string,
-): SessionEntryVersion[] {
-  const out: SessionEntryVersion[] = [];
+): SessionFileVersion[] {
+  const out: SessionFileVersion[] = [];
   for (const { id, message } of messages) {
-    for (const op of messageEntryOps(message)) {
-      if (op.op !== "folder" && op.kind === kind && op.key === key) {
+    for (const op of messageFileOps(message)) {
+      if (op.op !== "folder" && op.key === key) {
         out.push({
           messageId: id,
           by: message.role === "edit" ? "user" : "model",
@@ -324,40 +293,29 @@ export function sessionEntryVersions(
   return out;
 }
 
-const randomNoteId = (): string => {
-  // 16 hex digits, so an id is effectively never in two scopes (tool
-  // prompts D18).
-  const bytes = new Uint8Array(8);
-  globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-};
-
-export interface EntryAccessOptions {
-  /** Session-scoped entries; changed in place by writes. */
-  session: SessionEntries;
+export interface FileAccessOptions {
+  /** Session-scoped files; changed in place by writes. */
+  session: SessionFiles;
   /** Session-scoped changes are appended here, to be recorded. */
-  sessionOps: EntryOp[];
-  /** Project and global entries. Left out: only session scope exists. */
-  shared?: SharedEntries;
+  sessionOps: FileOp[];
+  /** Project and global files. Left out: only session scope exists. */
+  shared?: SharedFiles;
   inProject: boolean;
-  author: EntryAuthor;
-  /** Generates note ids. Default: 16 random hex digits. */
-  newNoteId?: () => string;
-  /** Search. Left out: searching fails with an EntryError. */
-  search?: EntrySearch;
+  author: FileAuthor;
+  /** Search. Left out: searching fails with a FileError. */
+  search?: FileSearch;
 }
 
-/** The `EntryAccess` a tool gets for one call. */
-export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
+/** The `FileAccess` a tool gets for one call. */
+export function createFileAccess(options: FileAccessOptions): FileAccess {
   const { session, sessionOps, shared, author } = options;
-  const newNoteId = options.newNoteId ?? randomNoteId;
   const scopes: Scope[] = ["session"];
   if (shared && options.inProject) scopes.push("project");
   if (shared) scopes.push("global");
 
   const requireScope = (scope: Scope) => {
     if (scopes.includes(scope)) return;
-    throw new EntryError(
+    throw new FileError(
       scope === "project"
         ? "This conversation is not in a project, so there is no project scope."
         : `The ${scope} scope is not available.`,
@@ -370,36 +328,32 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
     wanted.forEach(requireScope);
     return scopes.filter((s) => wanted.includes(s));
   };
-  const sessionOp = (op: EntryOp) => {
-    applyEntryOp(session, op);
+  const sessionOp = (op: FileOp) => {
+    applyFileOp(session, op);
     sessionOps.push(op);
   };
-  const get = (kind: EntryKind, scope: Scope, key: string) =>
-    scope === "session"
-      ? session[kind].get(key)
-      : shared?.get(kind, scope, key);
+  const get = (scope: Scope, key: string) =>
+    scope === "session" ? session.files.get(key) : shared?.get(scope, key);
   const put = (
-    kind: EntryKind,
     scope: Scope,
-    entry: {
+    file: {
       key: string;
       value: string;
       mediaType?: MediaType;
       blob?: BlobRef;
     },
   ) => {
-    if (scope === "session") sessionOp({ op: "put", kind, ...entry });
-    else shared?.put(kind, scope, entry, author);
+    if (scope === "session") sessionOp({ op: "put", ...file });
+    else shared?.put(scope, file, author);
   };
-  const remove = (kind: EntryKind, scope: Scope, key: string): boolean => {
-    if (scope !== "session")
-      return shared?.delete(kind, scope, key, author) ?? false;
-    if (!session[kind].has(key)) return false;
-    sessionOp({ op: "delete", kind, key });
+  const remove = (scope: Scope, key: string): boolean => {
+    if (scope !== "session") return shared?.delete(scope, key, author) ?? false;
+    if (!session.files.has(key)) return false;
+    sessionOp({ op: "delete", key });
     return true;
   };
-  const fileKeys = (scope: Scope): string[] =>
-    list("file", scope).map((e) => e.key);
+  const liveFileKeys = (scope: Scope): string[] =>
+    list(scope).map((e) => e.key);
   /** Explicit folders, plus the folders above every file and folder. */
   const allFolders = (scope: Scope): string[] => {
     const explicit =
@@ -410,38 +364,38 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
       ...new Set([
         ...explicit,
         ...explicit.flatMap(parentFolders),
-        ...fileKeys(scope).flatMap(parentFolders),
+        ...liveFileKeys(scope).flatMap(parentFolders),
       ]),
     ].sort();
   };
   /** True when the file is new; refuses a name that is a folder (D6). */
   const checkNewFile = (scope: Scope, key: string): boolean => {
-    const existing = get("file", scope, key);
+    const existing = get(scope, key);
     if (existing === undefined) {
       if (allFolders(scope).includes(key)) {
-        throw new EntryError(`"${key}" is a folder, so it cannot be a file.`);
+        throw new FileError(`"${key}" is a folder, so it cannot be a file.`);
       }
       const blocking = parentFolders(key).find((p) =>
-        fileKeys(scope).includes(p),
+        liveFileKeys(scope).includes(p),
       );
       if (blocking !== undefined) {
-        throw new EntryError(
+        throw new FileError(
           `"${blocking}" is a file, so it cannot also be a folder for "${key}".`,
         );
       }
     }
     return existing === undefined;
   };
-  const list = (kind: EntryKind, scope: Scope) =>
+  const list = (scope: Scope) =>
     scope === "session"
-      ? [...session[kind]].map(([key, c]) => ({ key, ...c }))
-      : (shared?.list(kind, scope) ?? []);
+      ? [...session.files].map(([key, c]) => ({ key, ...c }))
+      : (shared?.list(scope) ?? []);
 
   return {
     scopes,
     listFiles: (scope) =>
       listScopes(scope).flatMap((s) =>
-        list("file", s).map((e) => ({
+        list(s).map((e) => ({
           scope: s,
           key: e.key,
           mediaType: e.mediaType ?? "text/plain",
@@ -451,7 +405,7 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
     readFile: (scope, key) => {
       requireScope(scope);
       checkFileName(key);
-      const e = get("file", scope, key);
+      const e = get(scope, key);
       return e
         ? {
             scope,
@@ -467,29 +421,29 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
       requireScope(scope);
       checkFileName(key);
       if (isBinaryMediaType(mediaType)) {
-        throw new EntryError(
+        throw new FileError(
           `${mediaType} is a binary type. Binary files are added by upload, not written as text.`,
         );
       }
       checkFileValue(mediaType, value);
       const isNew = checkNewFile(scope, key);
-      put("file", scope, { key, value, mediaType });
+      put(scope, { key, value, mediaType });
       return isNew;
     },
     putBlob: (scope, key, mediaType, blob) => {
       requireScope(scope);
       checkFileName(key);
       if (!isBinaryMediaType(mediaType)) {
-        throw new EntryError(`${mediaType} is not a binary type.`);
+        throw new FileError(`${mediaType} is not a binary type.`);
       }
       const isNew = checkNewFile(scope, key);
-      put("file", scope, { key, value: "", mediaType, blob });
+      put(scope, { key, value: "", mediaType, blob });
       return isNew;
     },
     deleteFile: (scope, key) => {
       requireScope(scope);
       checkFileName(key);
-      return remove("file", scope, key);
+      return remove(scope, key);
     },
     listFolders: (scope) =>
       listScopes(scope).flatMap((s) =>
@@ -498,14 +452,14 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
     createFolder: (scope, path) => {
       requireScope(scope);
       checkFileName(path);
-      if (fileKeys(scope).includes(path)) {
-        throw new EntryError(`"${path}" is a file, so it cannot be a folder.`);
+      if (liveFileKeys(scope).includes(path)) {
+        throw new FileError(`"${path}" is a file, so it cannot be a folder.`);
       }
       const blocking = parentFolders(path).find((p) =>
-        fileKeys(scope).includes(p),
+        liveFileKeys(scope).includes(p),
       );
       if (blocking !== undefined) {
-        throw new EntryError(
+        throw new FileError(
           `"${blocking}" is a file, so it cannot also be a folder for "${path}".`,
         );
       }
@@ -521,37 +475,36 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
       checkFileName(to);
       if (!allFolders(scope).includes(from)) return undefined;
       if (isInFolder(to, from)) {
-        throw new EntryError(`A folder cannot be moved into itself.`);
+        throw new FileError(`A folder cannot be moved into itself.`);
       }
-      if (allFolders(scope).includes(to) || fileKeys(scope).includes(to)) {
-        throw new EntryError(`"${to}" already exists.`);
+      if (allFolders(scope).includes(to) || liveFileKeys(scope).includes(to)) {
+        throw new FileError(`"${to}" already exists.`);
       }
       const blocking = parentFolders(to).find((p) =>
-        fileKeys(scope).includes(p),
+        liveFileKeys(scope).includes(p),
       );
       if (blocking !== undefined) {
-        throw new EntryError(
+        throw new FileError(
           `"${blocking}" is a file, so it cannot also be a folder for "${to}".`,
         );
       }
-      const moved = fileKeys(scope).filter((k) => isInFolder(k, from));
+      const moved = liveFileKeys(scope).filter((k) => isInFolder(k, from));
       const rename = (path: string) => `${to}${path.slice(from.length)}`;
       if (scope !== "session") {
         shared?.renameFolder(scope, from, to, author);
         return { files: moved.length };
       }
       for (const key of moved) {
-        const e = session.file.get(key);
+        const e = session.files.get(key);
         if (!e) continue;
         sessionOp({
           op: "put",
-          kind: "file",
           key: rename(key),
           value: e.value,
           ...(e.mediaType ? { mediaType: e.mediaType } : {}),
           ...(e.blob ? { blob: e.blob } : {}),
         });
-        sessionOp({ op: "delete", kind: "file", key });
+        sessionOp({ op: "delete", key });
       }
       for (const path of [...session.folders].filter((f) =>
         isInFolder(f, from),
@@ -569,63 +522,34 @@ export function createEntryAccess(options: EntryAccessOptions): EntryAccess {
       requireScope(scope);
       checkFileName(path);
       if (!allFolders(scope).includes(path)) return undefined;
-      const gone = fileKeys(scope).filter((k) => isInFolder(k, path));
+      const gone = liveFileKeys(scope).filter((k) => isInFolder(k, path));
       if (scope !== "session") {
         shared?.deleteFolder(scope, path, author);
         return { files: gone.length };
       }
       for (const key of gone) {
-        sessionOp({ op: "delete", kind: "file", key });
+        sessionOp({ op: "delete", key });
       }
       for (const f of [...session.folders].filter((f) => isInFolder(f, path))) {
         sessionOp({ op: "folder", action: "delete", path: f });
       }
       return { files: gone.length };
     },
-    listNotes: (scope) =>
-      listScopes(scope).flatMap((s) =>
-        list("note", s).map((e) => ({ scope: s, id: e.key, text: e.value })),
-      ),
-    addNote: (scope, text) => {
-      requireScope(scope);
-      const used = (id: string) =>
-        scope === "session"
-          ? session.used.note.has(id)
-          : (shared?.exists("note", scope, id) ?? false);
-      let id = newNoteId();
-      for (let i = 0; used(id); i++) {
-        if (i >= 100) throw new EntryError("Could not generate a note id.");
-        id = newNoteId();
-      }
-      put("note", scope, { key: id, value: text });
-      return id;
-    },
-    updateNote: (scope, id, text) => {
-      requireScope(scope);
-      if (get("note", scope, id) === undefined) return false;
-      put("note", scope, { key: id, value: text });
-      return true;
-    },
-    deleteNote: (scope, id) => {
-      requireScope(scope);
-      return remove("note", scope, id);
-    },
-    search: async (kind, query, scope, limit) => {
+    search: async (query, scope, limit) => {
       const scopesToSearch = listScopes(scope);
-      if (!options.search) throw new EntryError("Search is not available.");
-      return options.search({ kind, query, scopes: scopesToSearch, limit });
+      if (!options.search) throw new FileError("Search is not available.");
+      return options.search({ query, scopes: scopesToSearch, limit });
     },
   };
 }
 
 /** The notice the model reads for an edit message (plan P4). */
-export function editNotice(ops: readonly EntryOp[]): string {
+export function editNotice(ops: readonly FileOp[]): string {
   const parts = ops.map((op) => {
     if (op.op === "folder") {
       return `${op.action === "create" ? "created" : "deleted"} session folder ${op.path}`;
     }
-    const what =
-      op.kind === "file" ? `file ${op.key}` : `memory note ${op.key}`;
+    const what = `file ${op.key}`;
     if (op.op === "put") {
       return `${op.blob ? "added" : "changed"} session ${what}`;
     }

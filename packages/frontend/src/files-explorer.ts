@@ -4,7 +4,7 @@ import {
   parentFolders,
   type MediaType,
 } from "@harness/core";
-import type { Entry, EntryScope } from "./api";
+import type { StoredFile, FileScope } from "./api";
 import {
   loadViewIn,
   nodeValue,
@@ -46,7 +46,7 @@ export {
 
 /** The roots the Files view shows: the files available at the page's scope. */
 export const rootsFor = (
-  page: EntryScope,
+  page: FileScope,
   projectId: string | null | undefined,
 ): Root[] => sharedRootsFor(page, projectId);
 
@@ -95,7 +95,7 @@ export interface NodeInfo {
 
 export interface RootData {
   root: Root;
-  files: readonly Entry[];
+  files: readonly StoredFile[];
   folders: readonly string[];
 }
 
@@ -234,8 +234,8 @@ export type SavedView = SavedViewOf<TabState>;
 const KINDS = ["file", "preview"] as const;
 
 /** Reads what was saved for a page; anything unreadable is dropped. */
-export const loadView = (page: EntryScope): SavedView =>
+export const loadView = (page: FileScope): SavedView =>
   loadViewIn("files", page, KINDS);
 
-export const saveView = (page: EntryScope, view: SavedView): void =>
+export const saveView = (page: FileScope, view: SavedView): void =>
   saveViewIn("files", page, view);
