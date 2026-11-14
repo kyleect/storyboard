@@ -13,6 +13,7 @@ fixed when it is created. Stored in the `sessions` table.
 
 **Project**
 A named container for sessions. A project has a description, an optional
+color (a name from a fixed palette, shown on its folder in the UI), an optional
 system prompt, an optional default agent, and its own files, agents,
 skills, schemas and data that all of its sessions share. Stored in `projects`.
 

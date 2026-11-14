@@ -51,6 +51,7 @@ export function FilesExplorer({
       source: filesSource(r.scope),
       readOnly: r.id === "project" ? (readOnly ?? projectReadOnly) : readOnly,
       broadNote: isHigherScope(r.scope, stable) ? BROAD[r.id] : undefined,
+      projectId: r.scope.scope === "project" ? r.scope.id : undefined,
     }));
   }, [pageScope, pageId, projectId, readOnly, projectReadOnly]);
   const pageKey = useMemo<FileScope>(

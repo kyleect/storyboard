@@ -3,7 +3,7 @@ import { modals } from "@mantine/modals";
 import { IconFileDatabase, IconSchema } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { SchemaInfo } from "@harness/core";
+import type { ProjectColor, SchemaInfo } from "@harness/core";
 import { api, type DataItem, type DataOwner, type SchemaDetail } from "../api";
 import {
   closeTab,
@@ -16,6 +16,7 @@ import {
   type RootId,
 } from "../explorer";
 import { dataKeys, schemaKeys } from "../queries";
+import { useProjectColor } from "../useProjectColor";
 import {
   buildTree,
   loadView,
@@ -372,6 +373,14 @@ export function useStructured({
   const where = (t: TabState): string =>
     `${labelOf(t.root)} › ${t.kind === "schema" ? "Schemas" : "Data"} › ${nameOf(t)}`;
 
+  const colorOf = useProjectColor();
+  /** The color of the project a tab's root belongs to, if it does. */
+  const colorProps = (root: RootId): { iconColor?: ProjectColor } => {
+    const owner = rootOwner(root);
+    const color = owner?.scope === "project" ? colorOf(owner.id) : null;
+    return color ? { iconColor: color } : {};
+  };
+
   const shellTabs: ShellTab[] = tabsState.tabs.map((t) => ({
     id: tabId(t),
     label: `${nameOf(t)} · ${labelOf(t.root)}`,
@@ -382,6 +391,7 @@ export function useStructured({
       ) : (
         <IconFileDatabase size={14} />
       ),
+    ...colorProps(t.root),
     transient: t.transient,
     dirty: drafts[tabId(t)] !== undefined,
   }));

@@ -100,7 +100,12 @@ const session = (id: string, title: string, project: string | null) =>
     unread: false,
   }) satisfies SessionListItem;
 
-const project = (id: string, name: string, used: string) =>
+const project = (
+  id: string,
+  name: string,
+  used: string,
+  color: Project["color"] = null,
+) =>
   ({
     id,
     name,
@@ -110,6 +115,7 @@ const project = (id: string, name: string, used: string) =>
     trashed_at: null,
     default_agent_id: null,
     system_prompt: "",
+    color,
   }) as Project;
 
 const SESSIONS = [
@@ -871,5 +877,141 @@ describe("the workbench on a small screen", () => {
     expect(screen.getByRole("status")).toBeTruthy();
     expect(screen.getByRole("separator")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open the menu" })).toBeNull();
+  });
+});
+
+describe("project colors", () => {
+  /** The folder icon in a row or a tab; the chevron is another icon. */
+  const folder = (el: HTMLElement) =>
+    el.querySelector("svg.tabler-icon-folder");
+
+  function withColors() {
+    mockApi();
+    vi.spyOn(api, "listProjects").mockResolvedValue([
+      project("p1", "Novel", "2026-03-01", "teal"),
+      project("p2", "Poems", "2026-02-01"),
+    ]);
+  }
+
+  const styleOf = (el: Element | null) => el?.getAttribute("style") ?? "";
+  /** What a tab's icon is drawn on. */
+  const iconBg = (tab: HTMLElement) =>
+    (
+      tab.querySelector(".mantine-ThemeIcon-root") as HTMLElement | null
+    )?.style.getPropertyValue("--ti-bg");
+
+  it("tints a project's row in its color, and leaves a project without one plain", async () => {
+    withColors();
+    await show("/");
+    const novel = await screen.findByRole("group", { name: "Novel" });
+    const poems = screen.getByRole("group", { name: "Poems" });
+
+    expect(
+      styleOf(within(novel).getAllByRole("treeitem")[0] ?? null),
+    ).toContain("--mantine-color-teal-light");
+    expect(
+      styleOf(within(poems).getAllByRole("treeitem")[0] ?? null),
+    ).not.toContain("-light");
+    // The folder itself keeps its normal color.
+    expect(folder(novel)?.getAttribute("stroke")).toBe("currentColor");
+  });
+
+  it("draws the chats of a project with its color", async () => {
+    withColors();
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    const alpha = await screen.findByText("Alpha chat");
+    const icon = alpha
+      .closest("[role=treeitem]")
+      ?.querySelector("svg.tabler-icon-message");
+    expect(icon?.getAttribute("stroke")).toBe("var(--mantine-color-teal-6)");
+
+    // A chat with no project keeps the normal color.
+    const loose = (await screen.findByText("Loose chat"))
+      .closest("[role=treeitem]")
+      ?.querySelector("svg.tabler-icon-message");
+    expect(loose?.getAttribute("stroke")).toBe("currentColor");
+  });
+
+  it("highlights the open chat of a colored project in a darker shade of the project's row", async () => {
+    withColors();
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    const row = async (title: string) =>
+      (await within(screen.getByRole("tree")).findByText(title)).closest(
+        "[role=treeitem]",
+      );
+    fireEvent.click(
+      await within(screen.getByRole("tree")).findByText("Alpha chat"),
+    );
+    await screen.findByText("chat page s1");
+
+    // Darker means more opaque on a light page, more transparent on a dark one.
+    const open = styleOf(await row("Alpha chat"));
+    expect(open).toContain("light-dark(");
+    expect(open).toContain("--mantine-color-teal-light-hover");
+    expect(open).toContain(
+      "color-mix(in srgb, var(--mantine-color-teal-filled)",
+    );
+    expect(styleOf(await row("Beta chat"))).not.toContain("teal");
+
+    // A chat of no project keeps the theme's highlight.
+    fireEvent.click(
+      await within(screen.getByRole("tree")).findByText("Loose chat"),
+    );
+    await screen.findByText("chat page s3");
+    expect(styleOf(await row("Loose chat"))).toContain(
+      "--mantine-primary-color-light",
+    );
+    expect(styleOf(await row("Alpha chat"))).not.toContain("teal");
+  });
+
+  it("puts a project's color behind the icon of its tabs, not on the glyph", async () => {
+    withColors();
+    const { go } = await show("/projects/p1");
+    await waitFor(() => expect(tabNamed("Novel")).toBeTruthy());
+    expect(iconBg(tabNamed("Novel"))).toBe("var(--mantine-color-teal-filled)");
+    expect(folder(tabNamed("Novel"))?.getAttribute("stroke")).toBe(
+      "currentColor",
+    );
+
+    // A chat of the project, and a chat or page of no project.
+    await go("/sessions/s1");
+    await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
+    expect(iconBg(tabNamed("Alpha chat"))).toBe(
+      "var(--mantine-color-teal-filled)",
+    );
+    await go("/sessions/s3");
+    await waitFor(() => expect(tabNamed("Loose chat")).toBeTruthy());
+    expect(iconBg(tabNamed("Loose chat"))).not.toContain("teal");
+  });
+
+  it("creates a project with the color picked in the New project dialog", async () => {
+    mockApi();
+    const create = vi
+      .spyOn(api, "createProject")
+      .mockResolvedValue(project("p3", "Essays", "2026-04-01", "violet"));
+    await show("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "Essays" },
+    });
+    // No color until one is picked.
+    expect(
+      screen
+        .getByRole("radio", { name: "No color" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Violet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        name: "Essays",
+        description: "",
+        color: "violet",
+      }),
+    );
   });
 });

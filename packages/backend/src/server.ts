@@ -55,7 +55,7 @@ import {
   setToolAsks,
   setToolOff,
 } from "./tool-settings.js";
-import { TOOL_GROUPS, type Tool } from "@harness/core";
+import { PROJECT_COLORS, TOOL_GROUPS, type Tool } from "@harness/core";
 
 /*
  * HTTP routes (design doc 6.10, 6.14). Routes are thin adapters over the
@@ -113,6 +113,8 @@ const PAGE_SIZES = [10, 25, 50, 100];
 const DEFAULT_PAGE_SIZE = 10;
 /** Trimmed; empty is rejected; no maximum (design Q2). */
 const Title = z.string().trim().min(1);
+/** A name from the project palette; null is no color. */
+const ProjectColorName = z.enum(PROJECT_COLORS);
 const ModelName = z.string().min(1);
 /** "none" turns reasoning off; other values go to the chat template. */
 const Effort = z.string().min(1);
@@ -723,12 +725,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   app.post("/api/projects", async (req, reply) => {
     const body = z
-      .object({ name: Title, description: z.string().optional() })
+      .object({
+        name: Title,
+        description: z.string().optional(),
+        color: ProjectColorName.nullable().optional(),
+      })
       .parse(req.body);
     const project = store.createProject({
       id: newId(),
       name: body.name,
       description: body.description ?? "",
+      ...(body.color !== undefined ? { color: body.color } : {}),
       now: now(),
     });
     return reply.code(201).send(project);
@@ -743,10 +750,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   /**
-   * Renames the project, changes its description or system prompt, or sets
-   * its default agent (an agent id, or null for none). A field left out is
-   * unchanged. Refused for a project in the trash. The default agent must be
-   * a live agent of the project or a global one.
+   * Renames the project, changes its description, system prompt or color (a
+   * name from the palette, or null for none), or sets its default agent (an
+   * agent id, or null for none). A field left out is unchanged. Refused for a
+   * project in the trash. The default agent must be a live agent of the
+   * project or a global one.
    */
   app.patch("/api/projects/:id", async (req, reply) => {
     const { id } = IdParams.parse(req.params);
@@ -756,13 +764,15 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         description: z.string().optional(),
         defaultAgentId: z.string().min(1).nullable().optional(),
         systemPrompt: z.string().optional(),
+        color: ProjectColorName.nullable().optional(),
       })
       .refine(
         (f) =>
           f.name !== undefined ||
           f.description !== undefined ||
           f.defaultAgentId !== undefined ||
-          f.systemPrompt !== undefined,
+          f.systemPrompt !== undefined ||
+          f.color !== undefined,
         { message: "Nothing to change" },
       )
       .parse(req.body);

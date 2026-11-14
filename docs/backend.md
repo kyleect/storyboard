@@ -7,7 +7,7 @@ serves the HTTP API; and pushes events to the UI over server-sent events (SSE).
 
 ```
 packages/backend
-  migrations/            0001_init.sql … 0034_files_table.sql
+  migrations/            0001_init.sql … 0036_project_color.sql
   src/
     main.ts              startup, wiring, shutdown
     config.ts            data directory and file locations
@@ -1031,7 +1031,7 @@ request also lists the `issues`.
 | `POST /api/sessions/:id/fork`                                           | Copy the line up to a message into a new session (201); body `{ messageId, title }`.                                                                                                       |
 | `DELETE /api/sessions/:id/branches/:messageId`                          | Move a branch to the trash.                                                                                                                                                                |
 | `POST /api/trash/branches/:messageId/restore`, `DELETE …/:messageId`    | Restore a deleted branch; delete it forever.                                                                                                                                               |
-| `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects.                                                                                                                                                       |
+| `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects. `color` is a name from `PROJECT_COLORS` (core) or `null`; any other value is a 400.                                                                   |
 | `POST /api/projects/:id/trash`, `…/restore`, `DELETE /api/projects/:id` | Trash, restore, permanently delete.                                                                                                                                                        |
 
 ### Runs

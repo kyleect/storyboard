@@ -20,6 +20,7 @@ import {
 } from "../api";
 import { emptyGrant } from "../tool-grant";
 import { useAgentFocus } from "../agent-focus";
+import { projectKeys } from "../queries";
 import { useAppEvents } from "../live";
 import { AgentsExplorer } from "./AgentsExplorer";
 
@@ -170,13 +171,16 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <MantineProvider env="test">
-        <ModalsProvider>{ui}</ModalsProvider>
-      </MantineProvider>
-    </QueryClientProvider>,
-  );
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <MantineProvider env="test">
+          <ModalsProvider>{ui}</ModalsProvider>
+        </MantineProvider>
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 describe("the tree", () => {
@@ -457,6 +461,24 @@ describe("a request from a chat message's badge", () => {
     expect(await screen.findByText("Versions of Scout")).toBeTruthy();
     expect(screen.getByRole("tab").getAttribute("title")).toContain(
       "Project › Scout",
+    );
+  });
+
+  it("shows the project's color over a project agent's tab and behind its icon", async () => {
+    useAgentFocus
+      .getState()
+      .ask({ agentId: "a2", version: 1, projectId: "p1" });
+    const { client } = show(<AgentsExplorer projectId="p1" />);
+    client.setQueryData(projectKeys.list(), [
+      { id: "p1", name: "Novel", color: "teal" },
+    ]);
+    const tab = await screen.findByRole("tab");
+    await waitFor(() =>
+      expect(tab.style.borderTop).toContain("--mantine-color-teal-filled"),
+    );
+    const icon = tab.querySelector(".mantine-ThemeIcon-root") as HTMLElement;
+    expect(icon.style.getPropertyValue("--ti-bg")).toContain(
+      "--mantine-color-teal-filled",
     );
   });
 

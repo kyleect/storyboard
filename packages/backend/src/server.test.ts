@@ -1354,6 +1354,84 @@ describe("projects", () => {
     expect((await api(app, "GET", "/api/projects/nope")).status).toBe(404);
   });
 
+  it("gives a project a color when it is created, changes it and removes it", async () => {
+    const { app } = await setup([]);
+
+    const plain = await newProject(app, { name: "Plain" });
+    expect(plain).toMatchObject({ color: null });
+
+    const teal = await newProject(app, { name: "Sea", color: "teal" });
+    expect(teal).toMatchObject({ color: "teal" });
+    const id = teal.id;
+
+    const changed = await api(app, "PATCH", `/api/projects/${id}`, {
+      color: "grape",
+    });
+    expect(changed.body).toMatchObject({ name: "Sea", color: "grape" });
+
+    // The color alone is a change, and a field left out keeps it.
+    const renamed = await api(app, "PATCH", `/api/projects/${id}`, {
+      name: "Sea stories",
+    });
+    expect(renamed.body).toMatchObject({ name: "Sea stories", color: "grape" });
+
+    const removed = await api(app, "PATCH", `/api/projects/${id}`, {
+      color: null,
+    });
+    expect(removed.body).toMatchObject({ color: null });
+    expect((await api(app, "GET", `/api/projects/${id}`)).body).toMatchObject({
+      color: null,
+    });
+
+    const list = (await api(app, "GET", "/api/projects")).body as unknown as {
+      id: string;
+      color: string | null;
+    }[];
+    expect(list.find((p) => p.id === plain.id)?.color).toBeNull();
+  });
+
+  it("accepts only a color from the palette", async () => {
+    const { app } = await setup([]);
+    const p = await newProject(app, { name: "Sea", color: "blue" });
+
+    for (const color of ["chartreuse", "#ff0000", "", 5]) {
+      expect(
+        (await api(app, "POST", "/api/projects", { name: "X", color })).status,
+      ).toBe(400);
+      expect(
+        (await api(app, "PATCH", `/api/projects/${p.id}`, { color })).status,
+      ).toBe(400);
+    }
+    expect((await api(app, "GET", `/api/projects/${p.id}`)).body).toMatchObject(
+      { color: "blue" },
+    );
+  });
+
+  it("does not change the color of a project in the trash", async () => {
+    const { app } = await setup([]);
+    const p = await newProject(app, { name: "Sea", color: "red" });
+    expect((await api(app, "POST", `/api/projects/${p.id}/trash`)).status).toBe(
+      200,
+    );
+
+    expect(
+      (await api(app, "PATCH", `/api/projects/${p.id}`, { color: "blue" }))
+        .status,
+    ).toBe(409);
+
+    // It keeps its color in the trash and after it is restored.
+    const trash = await api(app, "GET", "/api/trash");
+    expect(
+      (trash.body.projects as { id: string; color: string }[]).find(
+        (x) => x.id === p.id,
+      )?.color,
+    ).toBe("red");
+    await api(app, "POST", `/api/projects/${p.id}/restore`);
+    expect((await api(app, "GET", `/api/projects/${p.id}`)).body).toMatchObject(
+      { color: "red" },
+    );
+  });
+
   it("keeps project sessions apart from standalone sessions", async () => {
     const { app } = await setup([]);
     const p = await newProject(app);

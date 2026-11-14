@@ -1,6 +1,5 @@
-import { Alert, Anchor, Box, Loader, Stack, Text, Title } from "@mantine/core";
+import { Alert, Box, Loader, Stack } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type FileScope } from "../api";
 import { useReportDirty } from "../dirty";

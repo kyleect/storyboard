@@ -4,7 +4,7 @@ import { notifications } from "@mantine/notifications";
 import { IconBook } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { fileNameProblem, joinPath } from "@harness/core";
+import { fileNameProblem, joinPath, type ProjectColor } from "@harness/core";
 import type { StoredFile } from "../api";
 import {
   ACCEPTED_DESCRIPTION,
@@ -32,6 +32,7 @@ import {
   type TabState,
 } from "../files-explorer";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
+import { useProjectColor } from "../useProjectColor";
 import { FileIcon, FileTree, type NodeAction } from "./FileTree";
 import { FileTab, PreviewTab, type Draft } from "./FileTab";
 import { showError } from "./SessionActions";
@@ -423,6 +424,17 @@ export function SourceExplorer({
     </>
   );
 
+  // What a project has (its root) wears the project's color.
+  const colorOf = useProjectColor();
+  /** The color of the project a root belongs to, if it does. */
+  const colorProps = (root: RootId): { iconColor?: ProjectColor } => {
+    const color = colorOf(rootOf(root)?.projectId);
+    return color ? { iconColor: color } : {};
+  };
+  const rootColorProps = (root: RootId): { rootColor?: ProjectColor } => {
+    const { iconColor } = colorProps(root);
+    return iconColor ? { rootColor: iconColor } : {};
+  };
   const shellTabs: ShellTab[] = tabsState.tabs.map((t) => {
     const info = tree.info.get(
       nodeValue({ root: t.root, kind: "file", path: t.key }),
@@ -441,6 +453,7 @@ export function SourceExplorer({
         ) : (
           <FileIcon mediaType={info?.mediaType} size={14} />
         ),
+      ...colorProps(t.root),
       transient: t.transient,
       dirty: drafts[tabId(t)] !== undefined,
     };
@@ -460,6 +473,7 @@ export function SourceExplorer({
           key={tabId(activeTab)}
           source={sourceOf(activeTab) as ExplorerSource}
           rootLabel={labelOf(activeTab.root)}
+          {...rootColorProps(activeTab.root)}
           fileKey={activeTab.key}
           readOnly={reasons[activeTab.root]}
           broadNote={rootOf(activeTab.root)?.broadNote}

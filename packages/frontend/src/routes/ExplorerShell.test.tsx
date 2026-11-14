@@ -53,3 +53,29 @@ describe("ExplorerShell tabs", () => {
     expect(dotIn("Chat a")).toBeNull();
   });
 });
+
+describe("ExplorerShell tabs of a project", () => {
+  const lineOf = (name: string) =>
+    screen.getByRole("tab", { name: new RegExp(name) }).style.borderTop;
+
+  it("shows the project's color over the open tab and behind its icon", () => {
+    renderShell([tab("a", { iconColor: "teal", icon: <span>i</span> })]);
+    expect(lineOf("Chat a")).toContain("--mantine-color-teal-filled");
+    const icon = screen
+      .getByRole("tab", { name: /Chat a/ })
+      .querySelector(".mantine-ThemeIcon-root") as HTMLElement;
+    expect(icon.style.getPropertyValue("--ti-bg")).toContain(
+      "--mantine-color-teal-filled",
+    );
+  });
+
+  it("keeps the theme's color for a tab without one", () => {
+    renderShell([tab("a")]);
+    expect(lineOf("Chat a")).toContain("--mantine-primary-color-filled");
+  });
+
+  it("shows the line only on the open tab", () => {
+    renderShell([tab("a"), tab("b", { iconColor: "teal" })]);
+    expect(lineOf("Chat b")).toContain("transparent");
+  });
+});

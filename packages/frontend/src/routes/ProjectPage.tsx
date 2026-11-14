@@ -2,10 +2,12 @@ import { Alert, Button, Group, Loader, Stack, Textarea } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import type { ProjectColor } from "@harness/core";
 import { api, type Project } from "../api";
 import { projectKeys, sessionKeys } from "../queries";
 import { DefaultAgentSelect } from "./Agents";
 import { EditableTitle } from "./EditableTitle";
+import { ProjectColorPicker } from "./ProjectColorPicker";
 import { SessionsPage } from "./Sessions";
 import { AttachedWorkspaces } from "./Workspaces";
 import { showError, useProjectActions } from "./SessionActions";
@@ -28,6 +30,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
     name?: string;
     description?: string;
     systemPrompt?: string;
+    color?: ProjectColor | null;
   }) => {
     const updated = await api.updateProject(projectId, fields);
     queryClient.setQueryData<Project>(projectKeys.detail(projectId), updated);
@@ -121,6 +124,13 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             Structured Data
           </Button>
         </Group>
+        <ProjectColorPicker
+          value={project.data.color}
+          disabled={trashed}
+          onChange={(color) =>
+            save({ color }).catch(showError("Could not save the color"))
+          }
+        />
         <DefaultAgentSelect project={project.data} disabled={trashed} />
         <SavedText
           key={`d:${project.data.description}`}

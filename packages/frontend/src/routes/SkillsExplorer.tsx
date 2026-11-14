@@ -80,6 +80,7 @@ export function SkillsExplorer({
         id: "project",
         label: "Project",
         source: skillsSource(project, "own"),
+        projectId: project.id,
         readOnly,
         broadNote: "Every session in this project sees this skill.",
       });

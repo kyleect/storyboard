@@ -1,5 +1,6 @@
 import { Box, Text, ThemeIcon } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
+import type { ProjectColor } from "@harness/core";
 import { useRef, useState, type ReactNode } from "react";
 import { clampWidth } from "../explorer";
 import { UnreadDot } from "./UnreadDot";
@@ -24,6 +25,11 @@ export interface ShellTab {
   /** The hover text. */
   title: string;
   icon: ReactNode;
+  /**
+   * A project's color: the background of the icon and the line over the tab
+   * when it is open. Left out: the theme's.
+   */
+  iconColor?: ProjectColor;
   /** Shown in italics; the next single click on an item replaces it. */
   transient: boolean;
   /** Has unsaved changes: a dot takes the place of the close button. */
@@ -247,14 +253,19 @@ export function ExplorerShell({
                       over === t.id && dragged !== t.id
                         ? "inset 3px 0 0 var(--mantine-primary-color-filled)"
                         : undefined,
-                    borderTop: `2px solid ${isActive ? "var(--mantine-primary-color-filled)" : "transparent"}`,
+                    borderTop: `2px solid ${isActive ? (t.iconColor ? `var(--mantine-color-${t.iconColor}-filled)` : "var(--mantine-primary-color-filled)") : "transparent"}`,
                     background: isActive
                       ? "var(--mantine-color-body)"
                       : undefined,
                     color: isActive ? undefined : "var(--mantine-color-dimmed)",
                   }}
                 >
-                  <ThemeIcon size="xs" variant="filled" radius="xs">
+                  <ThemeIcon
+                    size="xs"
+                    variant="filled"
+                    radius="xs"
+                    {...(t.iconColor ? { color: t.iconColor } : {})}
+                  >
                     {t.icon}
                   </ThemeIcon>
                   {t.prefix && (

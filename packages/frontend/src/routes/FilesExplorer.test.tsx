@@ -12,8 +12,14 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type StoredFile, type FileDetail, type FileScope } from "../api";
-import { fileKeys } from "../queries";
+import {
+  api,
+  type FileDetail,
+  type FileScope,
+  type Project,
+  type StoredFile,
+} from "../api";
+import { fileKeys, projectKeys } from "../queries";
 import { FilesExplorer } from "./FilesExplorer";
 import { ValueView } from "./FileViews";
 
@@ -850,5 +856,63 @@ describe("the divider", () => {
     expect(
       (await screen.findByRole("separator")).getAttribute("aria-valuenow"),
     ).toBe("180");
+  });
+});
+
+describe("a project's color in the Files explorer", () => {
+  beforeEach(mockApi);
+  const tealProject = (color: Project["color"]) =>
+    [{ id: "p1", name: "Novel", color }] as Project[];
+  const tab = (name: string) =>
+    screen.getByRole("tab", { name: new RegExp(name) });
+  const iconBg = (el: HTMLElement) =>
+    (
+      el.querySelector(".mantine-ThemeIcon-root") as HTMLElement
+    ).style.getPropertyValue("--ti-bg");
+
+  it("colors the tabs of the project's files, and no others", async () => {
+    const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+    client.setQueryData(projectKeys.list(), tealProject("teal"));
+
+    fireEvent.doubleClick(await screen.findByText("plan.txt"));
+    await waitFor(() => expect(tab("plan.txt")).toBeTruthy());
+    expect(iconBg(tab("plan.txt"))).not.toContain("teal");
+
+    fireEvent.doubleClick(screen.getByText("rules.txt"));
+    await waitFor(() => expect(tab("rules.txt")).toBeTruthy());
+    expect(iconBg(tab("rules.txt"))).toContain("--mantine-color-teal-filled");
+    expect(tab("rules.txt").style.borderTop).toContain(
+      "--mantine-color-teal-filled",
+    );
+    // The file of the global scope is not the project's.
+    fireEvent.doubleClick(screen.getByText("bible.txt"));
+    await waitFor(() => expect(tab("bible.txt")).toBeTruthy());
+    expect(iconBg(tab("bible.txt"))).not.toContain("teal");
+  });
+
+  it("colors the project's name in the path above its file", async () => {
+    const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+    client.setQueryData(projectKeys.list(), tealProject("teal"));
+    fireEvent.click(await screen.findByText("rules.txt"));
+    await screen.findByRole("tab");
+
+    // The path appears once the file has loaded.
+    await waitFor(() => {
+      const root = screen
+        .getAllByText("Project")
+        .find((el) => el.parentElement?.textContent?.includes("›"));
+      expect(root?.getAttribute("style") ?? "").toContain("teal");
+    });
+  });
+
+  it("leaves a project without a color as it was", async () => {
+    const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+    client.setQueryData(projectKeys.list(), tealProject(null));
+    fireEvent.doubleClick(await screen.findByText("rules.txt"));
+    await waitFor(() => expect(tab("rules.txt")).toBeTruthy());
+    expect(iconBg(tab("rules.txt"))).not.toContain("--mantine-color-null");
+    expect(tab("rules.txt").style.borderTop).toContain(
+      "--mantine-primary-color-filled",
+    );
   });
 });

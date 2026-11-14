@@ -10,6 +10,7 @@ import type {
   InputAnswer,
   InputRequest,
   Message,
+  ProjectColor,
   RunAgent,
   SchemaInfo,
   Selection,
@@ -213,6 +214,8 @@ export interface Project {
   default_agent_id: string | null;
   /** Sent after the global system prompt; empty when there is none. */
   system_prompt: string;
+  /** A name from the project palette; null: no color. */
+  color: ProjectColor | null;
 }
 
 /** Everything in the trash. */
@@ -1182,8 +1185,12 @@ export const api = {
     request<{ ok: true }>("DELETE", `/api/trash/branches/${messageId}`),
   listProjects: () => request<Project[]>("GET", "/api/projects"),
   getProject: (id: string) => request<Project>("GET", `/api/projects/${id}`),
-  createProject: (p: { name: string; description: string }) =>
-    request<Project>("POST", "/api/projects", p),
+  createProject: (p: {
+    name: string;
+    description: string;
+    /** Left out or null: no color. */
+    color?: ProjectColor | null;
+  }) => request<Project>("POST", "/api/projects", p),
   /** A field left out is unchanged. */
   updateProject: (
     id: string,
@@ -1193,6 +1200,8 @@ export const api = {
       /** An agent id, or null for none. */
       defaultAgentId?: string | null;
       systemPrompt?: string;
+      /** A color from the palette, or null to remove it. */
+      color?: ProjectColor | null;
     },
   ) => request<Project>("PATCH", `/api/projects/${id}`, fields),
   trashProject: (id: string) =>

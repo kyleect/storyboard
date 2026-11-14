@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
+import type { ProjectColor } from "@harness/core";
 import { IconHistory, IconMarkdown, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -41,6 +42,7 @@ export interface Draft {
 export function FileTab({
   source,
   rootLabel,
+  rootColor,
   fileKey,
   readOnly,
   broadNote,
@@ -53,6 +55,8 @@ export function FileTab({
   source: ExplorerSource;
   /** The name of the root the file is in. */
   rootLabel: string;
+  /** The color of the project the root belongs to; left out: none. */
+  rootColor?: ProjectColor | undefined;
   fileKey: string;
   /** Why the file cannot be changed, when it cannot. */
   readOnly: string | undefined;
@@ -142,7 +146,10 @@ export function FileTab({
           style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
         >
           <Text size="xs" c="dimmed" truncate>
-            {rootLabel} › {fileKey.split("/").join(" › ")}
+            <Text span inherit {...(rootColor ? { c: rootColor } : {})}>
+              {rootLabel}
+            </Text>{" "}
+            › {fileKey.split("/").join(" › ")}
           </Text>
           <TypeBadge {...(f.mediaType ? { mediaType: f.mediaType } : {})} />
           {f.deleted && (

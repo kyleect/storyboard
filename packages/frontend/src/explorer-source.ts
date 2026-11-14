@@ -65,6 +65,8 @@ export interface ExplorerRoot {
    * makes a save ask first and shows this as the reason.
    */
   broadNote?: string | undefined;
+  /** The project the root belongs to: its color marks the root's tabs. */
+  projectId?: string | undefined;
 }
 
 /** The files of one scope. */

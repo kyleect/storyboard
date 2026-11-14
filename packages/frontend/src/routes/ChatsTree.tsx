@@ -22,7 +22,9 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import type { ProjectColor } from "@harness/core";
 import { api, type Project, type SessionListItem } from "../api";
+import { projectColorVar } from "../project-color";
 import { projectKeys, sessionKeys } from "../queries";
 import type { RunSummary } from "../runs";
 import { useWorkbench } from "../workbenchStore";
@@ -64,6 +66,14 @@ interface Handlers {
   unread: UnreadSessions;
 }
 
+/**
+ * The background of the open chat under a project of this color: darker than
+ * the project row's tint. On a light page that is a more opaque tint; on a dark
+ * page "darker" is a more transparent one, so more of the page shows through.
+ */
+const selectedChatBackground = (color: ProjectColor) =>
+  `light-dark(var(--mantine-color-${color}-light-hover), color-mix(in srgb, var(--mantine-color-${color}-filled) 18%, transparent))`;
+
 function Row({
   label,
   icon,
@@ -75,6 +85,8 @@ function Row({
   expanded,
   onToggle,
   bold,
+  tint,
+  selectedTint,
 }: {
   label: string;
   icon: ReactNode;
@@ -88,6 +100,14 @@ function Row({
   /** The chevron's click; a click on the row only ever opens it. */
   onToggle?: () => void;
   bold?: boolean;
+  /** A project's color: the row's background. */
+  tint?: ProjectColor | null;
+  /**
+   * A project's color for a row that has no tint of its own (a chat): when
+   * the row is open it is a darker shade of the project row's tint (see
+   * `selectedChatBackground`).
+   */
+  selectedTint?: ProjectColor | null | undefined;
 }) {
   return (
     <Box
@@ -112,7 +132,18 @@ function Row({
         cursor: "pointer",
         fontSize: 13,
         fontWeight: bold ? 600 : undefined,
-        background: active ? "var(--mantine-primary-color-light)" : undefined,
+        background: tint
+          ? `var(--mantine-color-${tint}-${active ? "light-hover" : "light"})`
+          : active
+            ? selectedTint
+              ? selectedChatBackground(selectedTint)
+              : "var(--mantine-primary-color-light)"
+            : undefined,
+        // A tinted row still shows which one is open.
+        boxShadow:
+          tint && active
+            ? `inset 3px 0 0 var(--mantine-color-${tint}-filled)`
+            : undefined,
         borderRadius: 4,
       }}
     >
@@ -166,10 +197,13 @@ function ChatRow({
   session,
   depth,
   h,
+  color,
 }: {
   session: SessionListItem;
   depth: number;
   h: Handlers;
+  /** The project's color, for the chat's icon. */
+  color?: ProjectColor | null | undefined;
 }) {
   const tab: NewWorkbenchTab = {
     kind: "chat",
@@ -179,9 +213,10 @@ function ChatRow({
   return (
     <Row
       label={session.title}
-      icon={<IconMessage size={14} />}
+      icon={<IconMessage size={14} color={projectColorVar(color)} />}
       depth={depth}
       active={h.activeId === idOf(tab)}
+      selectedTint={color}
       onClick={() => {
         h.onFocusRow({ projectId: session.project_id });
         h.onOpen(tab, false);
@@ -210,11 +245,13 @@ function ChatList({
   sessions,
   depth,
   h,
+  color,
 }: {
   projectId: string | null;
   sessions: readonly SessionListItem[];
   depth: number;
   h: Handlers;
+  color?: ProjectColor | null | undefined;
 }) {
   const filtering = h.filter !== "";
   const shown = filtering
@@ -227,7 +264,7 @@ function ChatList({
   return (
     <>
       {shown.map((s) => (
-        <ChatRow key={s.id} session={s} depth={depth} h={h} />
+        <ChatRow key={s.id} session={s} depth={depth} h={h} color={color} />
       ))}
       {!filtering && sessions.length > TREE_CHATS && (
         <Row
@@ -322,6 +359,7 @@ function ProjectGroup({
       <Row
         label={project.name}
         icon={<IconFolder size={14} />}
+        tint={project.color}
         depth={0}
         bold
         expanded={open}
@@ -355,7 +393,13 @@ function ProjectGroup({
               {sessions.error.message}
             </Text>
           )}
-          <ChatList projectId={project.id} sessions={loaded} depth={1} h={h} />
+          <ChatList
+            projectId={project.id}
+            sessions={loaded}
+            depth={1}
+            h={h}
+            color={project.color}
+          />
         </>
       )}
     </div>

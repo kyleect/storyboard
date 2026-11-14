@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type Project } from "../api";
 import { ProjectPage } from "./ProjectPage";
@@ -43,12 +43,13 @@ const project = {
   trashed_at: null,
   default_agent_id: null,
   system_prompt: "",
+  color: null,
 } as Project;
 
 afterEach(() => vi.restoreAllMocks());
 
-function show() {
-  vi.spyOn(api, "getProject").mockResolvedValue(project);
+function show(shown: Project = project) {
+  vi.spyOn(api, "getProject").mockResolvedValue(shown);
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
@@ -74,5 +75,54 @@ describe("a project's page", () => {
     expect(href("Agents")).toBe("/projects/$projectId/agents");
     expect(href("Skills")).toBe("/projects/$projectId/skills");
     expect(href("Structured Data")).toBe("/projects/$projectId/data");
+  });
+});
+
+describe("a project's color", () => {
+  const checked = () =>
+    screen
+      .getAllByRole("radio")
+      .filter((r) => r.getAttribute("aria-checked") === "true")
+      .map((r) => r.getAttribute("aria-label"));
+
+  it("shows the project's color", async () => {
+    show({ ...project, color: "teal" });
+    await screen.findByText("sessions table p1");
+    expect(checked()).toEqual(["Teal"]);
+  });
+
+  it("shows no color for a project that has none", async () => {
+    show();
+    await screen.findByText("sessions table p1");
+    expect(checked()).toEqual(["No color"]);
+  });
+
+  it("saves the color that is picked, and none when that is picked", async () => {
+    const update = vi
+      .spyOn(api, "updateProject")
+      .mockResolvedValue({ ...project, color: "orange" });
+    show({ ...project, color: "teal" });
+    await screen.findByText("sessions table p1");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Orange" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith("p1", { color: "orange" }),
+    );
+    await waitFor(() => expect(checked()).toEqual(["Orange"]));
+
+    update.mockResolvedValue({ ...project, color: null });
+    fireEvent.click(screen.getByRole("radio", { name: "No color" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith("p1", { color: null }),
+    );
+  });
+
+  it("cannot be changed for a project in the trash", async () => {
+    const update = vi.spyOn(api, "updateProject");
+    show({ ...project, color: "teal", trashed_at: "2026-02-01" });
+    await screen.findByText("sessions table p1");
+    fireEvent.click(screen.getByRole("radio", { name: "Red" }));
+    expect(update).not.toHaveBeenCalled();
+    expect(checked()).toEqual(["Teal"]);
   });
 });

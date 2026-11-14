@@ -67,6 +67,7 @@ packages/frontend/src
     ToolGrantEditor.tsx  the agent editor's tools section
     ApprovalSelect.tsx   ask / don't ask choice
     ProjectPage.tsx      one project
+    ProjectColorPicker.tsx   the palette of project colors (New project dialog, project page)
     DebugPanel.tsx, LinearView.tsx   debugging tab
     EditableTitle.tsx    click-to-edit project name
     JsonEditor.tsx       CodeMirror JSON editor
@@ -106,17 +107,17 @@ Defined in `main.tsx`. The routes are the addresses of the workbench's tabs (see
 [The workbench](#the-workbench)): `Layout` draws the workbench, and the routes
 render nothing themselves.
 
-| Path                                                        | Page                                                                       |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `/`                                                         | No tab: the saved active tab is shown, else an empty state                 |
-| `/sessions`                                                 | Chats with no project: a table                                             |
-| `/sessions/$sessionId`                                      | Chat                                                                       |
-| `/projects/$projectId`                                      | Project page (name, description, links to its pages, its chats as a table) |
-| `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files, agents, skills, schemas and data                        |
-| `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                              |
-| `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants                  |
-| `/errors`                                                   | Errors console across all sessions                                         |
-| `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                                  |
+| Path                                                        | Page                                                                              |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `/`                                                         | No tab: the saved active tab is shown, else an empty state                        |
+| `/sessions`                                                 | Chats with no project: a table                                                    |
+| `/sessions/$sessionId`                                      | Chat                                                                              |
+| `/projects/$projectId`                                      | Project page (name, color, description, links to its pages, its chats as a table) |
+| `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files, agents, skills, schemas and data                               |
+| `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                                     |
+| `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants                         |
+| `/errors`                                                   | Errors console across all sessions                                                |
+| `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                                         |
 
 ## Where state lives
 
@@ -188,7 +189,19 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
   its row. The "No project" row opens the table of the chats that have no project. A
   project's chats are read only while it is open. The filter matches project names
   and the chats already loaded, all of them. Which projects are open is saved with
-  the tabs. The rail's Chats button shows and hides the tree (kept in
+  the tabs. A project's row in the tree is tinted in the project's color, and the
+  icons of its chats are drawn in it. The chat that is open is highlighted in a
+  darker shade of the same tint: more opaque on a light page, more transparent
+  on a dark one (`selectedChatBackground` in `ChatsTree.tsx`). Every tab of the project (its page, its
+  pages and its chats) has the color behind its icon and over it while it is
+  open. The same goes for the tabs inside the Files, Skills, Agents and
+  Structured Data pages that hold a project's own things (not the global or
+  built-in ones), and the root name in a file's path is drawn in it
+  (`useProjectColor`, which reads the project list the tree keeps loaded). A project without a color
+  looks plain. The color is a Mantine theme color, so it follows light and dark
+  (`projectColorVar` in `project-color.ts`), and is picked from the palette in
+  `PROJECT_COLORS` (core) on the project's page or in the New project dialog.
+  The rail's Chats button shows and hides the tree (kept in
   `harness.workbench.sidebar`); on a small screen it opens the drawer.
 - **Small screens.** Below Mantine's `sm` breakpoint the rail and the tree are in a
   drawer, opened by a menu button at the left of the tab strip; the divider and the

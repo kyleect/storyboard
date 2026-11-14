@@ -20,6 +20,7 @@ import {
   type FileScope,
   type SchemaDetail,
 } from "../api";
+import { projectKeys } from "../queries";
 import { StructuredExplorer, StructuredRoots } from "./StructuredExplorer";
 import type { StructuredRoot } from "../structured-explorer";
 
@@ -309,6 +310,35 @@ describe("opening", () => {
     expect(screen.getByRole("tab").getAttribute("title")).toContain(
       "Session › Schemas › Character",
     );
+  });
+
+  it("shows the project's color on the tab of a project's schema, and not on another", async () => {
+    const { client } = show(<StructuredExplorer page={project} />);
+    client.setQueryData(projectKeys.list(), [
+      { id: "p1", name: "Novel", color: "teal" },
+    ]);
+    const iconBg = (tab: HTMLElement) =>
+      (
+        tab.querySelector(".mantine-ThemeIcon-root") as HTMLElement
+      ).style.getPropertyValue("--ti-bg");
+
+    fireEvent.doubleClick(await screen.findByText("Place"));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Place/ })).toBeTruthy(),
+    );
+    const tab = screen.getByRole("tab", { name: /Place/ });
+    expect(tab.getAttribute("title")).toContain("Project");
+    expect(iconBg(tab)).toContain("--mantine-color-teal-filled");
+    expect(tab.style.borderTop).toContain("--mantine-color-teal-filled");
+
+    // A global schema, seen from the project's page, is not the project's.
+    const globalTab = () =>
+      screen
+        .getAllByRole("tab")
+        .find((t) => t.getAttribute("title")?.startsWith("Global"));
+    fireEvent.doubleClick(screen.getAllByText("Setting")[0] as HTMLElement);
+    await waitFor(() => expect(globalTab()).toBeTruthy());
+    expect(iconBg(globalTab() as HTMLElement)).not.toContain("teal");
   });
 
   it("opens data as a form of its schema, filled in", async () => {

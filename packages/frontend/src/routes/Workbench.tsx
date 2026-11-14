@@ -274,6 +274,10 @@ export function Workbench() {
   const shellTabs: ShellTab[] = tabs.map((t) => {
     const id = tabId(t);
     const { prefix, label } = partsOf(t);
+    const projectId = projectOfTab(t, projectOfSession);
+    const color = projectId
+      ? projects.data?.find((p) => p.id === projectId)?.color
+      : null;
 
     return {
       id,
@@ -281,6 +285,8 @@ export function Workbench() {
       ...(prefix ? { prefix } : {}),
       title: describe(t),
       icon: ICONS[t.kind],
+      // A tab of a project has the project's color behind its icon.
+      ...(color ? { iconColor: color } : {}),
       transient: t.transient,
       dirty: dirty[id] === true,
       // Not the tab on screen: its reply is marked seen as it arrives.

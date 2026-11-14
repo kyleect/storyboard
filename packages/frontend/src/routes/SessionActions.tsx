@@ -13,11 +13,13 @@ import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
+import type { ProjectColor } from "@harness/core";
 import { api, type Project, type Session } from "../api";
 import { projectKeys, sessionKeys, trashKeys } from "../queries";
 import { dropDraft } from "../drafts";
 import { closeTabsAndGo, useWorkbench } from "../workbenchStore";
 import { tabsForProject, tabsForSession } from "../workbench";
+import { ProjectColorPicker } from "./ProjectColorPicker";
 
 /*
  * Session and project actions shared by the navbar, the chat view, the
@@ -319,11 +321,16 @@ function ProjectForm({
   onCancel,
 }: {
   submitLabel: string;
-  onSubmit: (fields: { name: string; description: string }) => Promise<void>;
+  onSubmit: (fields: {
+    name: string;
+    description: string;
+    color: ProjectColor | null;
+  }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [color, setColor] = useState<ProjectColor | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const trimmed = name.trim();
@@ -334,10 +341,12 @@ function ProjectForm({
         e.preventDefault();
         if (!trimmed) return;
         setSaving(true);
-        onSubmit({ name: trimmed, description }).catch((err: unknown) => {
-          setSaving(false);
-          setError(err instanceof Error ? err.message : String(err));
-        });
+        onSubmit({ name: trimmed, description, color }).catch(
+          (err: unknown) => {
+            setSaving(false);
+            setError(err instanceof Error ? err.message : String(err));
+          },
+        );
       }}
     >
       <Stack gap="sm">
@@ -359,6 +368,7 @@ function ProjectForm({
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
         />
+        <ProjectColorPicker value={color} onChange={setColor} />
         <Group justify="flex-end" gap="xs">
           <Button variant="default" onClick={onCancel}>
             Cancel

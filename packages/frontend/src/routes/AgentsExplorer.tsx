@@ -75,6 +75,7 @@ import type { SchemaInfo } from "@harness/core";
 import { AgentForm, contentOf } from "./AgentForm";
 import { AgentsTree, type TreeAction } from "./AgentsTree";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
+import { useProjectColor } from "../useProjectColor";
 import { download, fileName } from "./AgentParts";
 import { FileTab, type Draft as FileDraft } from "./FileTab";
 import { CopyModal } from "./Schemas";
@@ -977,11 +978,15 @@ export function AgentsExplorer({
     schema: <IconSchema size={14} />,
     data: <IconFileDatabase size={14} />,
   };
+  const projectColor = useProjectColor()(projectId);
   const shellTabs: ShellTab[] = tabsState.tabs.map((t) => ({
     id: tabId(t),
     label: nameOf(t),
     title: `${rootLabel(t.root)} › ${agentRows.get(tabAgent(t))?.row.name ?? "New agent"} › ${nameOf(t)}`,
     icon: KIND_ICON[t.kind],
+    ...(projectColor && t.root === "project"
+      ? { iconColor: projectColor }
+      : {}),
     transient: t.transient,
     dirty: drafted(tabId(t)),
   }));
@@ -1067,6 +1072,9 @@ export function AgentsExplorer({
             p.origin === "builtin" ? "builtin" : "own",
           )}
           rootLabel={rootLabel(activeTab.root)}
+          {...(projectColor && activeTab.root === "project"
+            ? { rootColor: projectColor }
+            : {})}
           fileKey={p.key}
           readOnly={readOnlyReason}
           broadNote={undefined}

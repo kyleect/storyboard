@@ -5,6 +5,7 @@ import {
   Message,
   Usage,
   type HarnessEvent,
+  type ProjectColor,
   type StoredEvent,
   type ToolDefinition,
 } from "@harness/core";
@@ -98,10 +99,12 @@ export interface ProjectRow {
    * prompts design, decision 4). Empty when there is none.
    */
   system_prompt: string;
+  /** One of `PROJECT_COLORS`; null when it has none. */
+  color: ProjectColor | null;
 }
 
 const PROJECT_COLUMNS =
-  "id, name, description, created_at, last_used_at, trashed_at, default_agent_id, system_prompt";
+  "id, name, description, created_at, last_used_at, trashed_at, default_agent_id, system_prompt, color";
 
 /** An agent version a run used (agents design, decisions 13, 14). */
 export interface AgentRef {
@@ -601,17 +604,21 @@ export class Store {
     id: string;
     name: string;
     description: string;
+    /** Left out: no color. */
+    color?: ProjectColor | null;
     now: string;
   }): ProjectRow {
+    const color = project.color ?? null;
     this.db
       .prepare(
-        `INSERT INTO projects (id, name, description, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO projects (id, name, description, color, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
         project.id,
         project.name,
         project.description,
+        color,
         project.now,
         project.now,
       );
@@ -624,6 +631,7 @@ export class Store {
       trashed_at: null,
       default_agent_id: null,
       system_prompt: "",
+      color,
     };
   }
 
@@ -662,8 +670,15 @@ export class Store {
       description?: string;
       defaultAgentId?: string | null;
       systemPrompt?: string;
+      /** A color of `PROJECT_COLORS`, or null to remove it. */
+      color?: ProjectColor | null;
     },
   ) {
+    if (fields.color !== undefined) {
+      this.db
+        .prepare("UPDATE projects SET color = ? WHERE id = ?")
+        .run(fields.color, id);
+    }
     if (fields.systemPrompt !== undefined) {
       this.db
         .prepare("UPDATE projects SET system_prompt = ? WHERE id = ?")
