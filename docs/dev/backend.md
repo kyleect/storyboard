@@ -7,7 +7,7 @@ serves the HTTP API; and pushes events to the UI over server-sent events (SSE).
 
 ```
 packages/backend
-  migrations/            0001_init.sql … 0036_project_color.sql
+  migrations/            0001_init.sql … 0037_profiles.sql
   src/
     main.ts              startup, wiring, shutdown
     config.ts            data directory and file locations
@@ -1069,6 +1069,8 @@ request also lists the `issues`.
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GET /api/sessions?projectId=`                                          | List sessions (a project's, or standalone).                                                                                                                                                |
 | `GET /api/sessions-page`                                                | One page of sessions for the Sessions page: `projectId`, `direction` (`asc`/`desc` by creation time), `page`, `pageSize` (10, 25, 50 or 100). Each item says whether a run is in progress. |
+| `GET /api/sessions-unread`, `GET /api/sessions-unread/list`             | How many sessions (and which) have an assistant reply the user has not seen: the rail's indicator and the tab dots.                                                                        |
+| `POST /api/sessions/:id/seen`                                           | Mark a session's replies as seen (sets the read mark; returns the session).                                                                                                                |
 | `GET /api/sessions-page/ids`                                            | The ids of every session not in the trash (a project's, or standalone) and whether each is running: what "select all" needs.                                                               |
 | `POST /api/sessions/trash`                                              | Trash several sessions (`{ ids }`). The ones that cannot be trashed (not found, already trashed, a run in progress) come back with the reason.                                             |
 | `POST /api/sessions`                                                    | Create (optionally in a project; applies the default agent).                                                                                                                               |

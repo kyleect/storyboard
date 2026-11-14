@@ -195,9 +195,11 @@ table when SQLite cannot alter it. Document new tables in
 
 ### Add a page to the UI
 
-1. Create `routes/Name.tsx` and `routes/Name.test.tsx`.
-2. Add a route in `frontend/src/main.tsx` and, if it belongs in the navbar, a link
-   in `routes/Layout.tsx`.
+1. Create `routes/<name>/Name.tsx` and `routes/<name>/Name.test.tsx`, with
+   `components/` and `lib/` beside them for anything only this page uses.
+2. Add a route in `frontend/src/main.tsx` and a tab kind in `lib/workbench.ts`;
+   if it belongs in the rail, add it to `PAGES` in
+   `routes/workbench/components/Rail.tsx`.
 3. Fetch with TanStack Query using a key from a factory in `frontend/src/queries/`
    (add a factory for a new feature, export it from `queries/index.ts`, and extend
    `queries/keys.test.ts`). **Never write a query key inline.**
@@ -228,13 +230,13 @@ pnpm vitest run -t "part of a test name"    # by name
 and `frontend` (`packages/frontend/src/**/*.test.tsx`, run in jsdom with
 `test-setup.ts`). Tests sit next to the code.
 
-| You are testing…         | Use                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| The agent loop or a run  | `ScriptedModel` (`core/src/fake-model.ts`); see `core/src/loop.test.ts`                                      |
-| The llama-server client  | The fake llama-server from `@harness/core/testing`                                                           |
-| A backend store or route | `tempDatabase()` from `backend/src/test-helpers.ts` (a fresh encrypted, migrated database; call `cleanup()`) |
-| A tool                   | A hand-built `ToolContext`; see `tools/src/clock.test.ts`                                                    |
-| A React component        | Testing Library with `MantineProvider`; stub the API with `vi.spyOn(api, "…")`; see `routes/Skills.test.tsx` |
+| You are testing…         | Use                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| The agent loop or a run  | `ScriptedModel` (`core/src/fake-model.ts`); see `core/src/loop.test.ts`                                             |
+| The llama-server client  | The fake llama-server from `@harness/core/testing`                                                                  |
+| A backend store or route | `tempDatabase()` from `backend/src/test-helpers.ts` (a fresh encrypted, migrated database; call `cleanup()`)        |
+| A tool                   | A hand-built `ToolContext`; see `tools/src/clock.test.ts`                                                           |
+| A React component        | Testing Library with `MantineProvider`; stub the API with `vi.spyOn(api, "…")`; see `routes/errors/Errors.test.tsx` |
 
 Tests never call a real llama-server and never touch your real data directory.
 

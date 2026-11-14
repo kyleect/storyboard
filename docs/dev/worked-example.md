@@ -1,5 +1,10 @@
 # Worked Example: One Conversation, Start to Finish
 
+> **Note:** the export was recorded when the harness still had memory tools
+> (`memory_add` and the other `memory_*` tools). They have since been removed
+> (migration `0033`), so those steps and the tool counts will not match a new
+> session. The mechanisms they show are unchanged.
+
 This document follows one real conversation through every layer of the harness.
 It uses a debug export of a session (Session → Debug → copy) in which a user asks
 for help learning to bowl. The Dispatcher agent hands the work to the Researcher

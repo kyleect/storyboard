@@ -17,6 +17,7 @@ packages/core/src
   run.ts                 streamMessage, runSingleCall
   loop.ts                runLoop: the agent loop
   tools.ts               Tool, defineTool, ToolContext, TOOL_GROUPS, access interfaces
+  project-colors.ts      PROJECT_COLORS: the color names a project may have
   forms.ts               input forms: reading, validating, describing
   files.ts             files: access API, replay
   file-names.ts          rules for file and folder names

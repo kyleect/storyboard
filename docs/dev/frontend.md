@@ -16,7 +16,7 @@ packages/frontend/src
   main.tsx               providers, router, route table
   api.ts                 token handling, typed API client, stream URLs
   queries/               query-key factories, one file per feature
-  stores/                client state (Zustand): live runs, tabs, drafts, dirty tabs, chat status, appearance, profile
+  stores/                client state (Zustand): live runs, tabs, drafts, dirty tabs, chat status, appearance, profile, sessions table choices, agent focus
   hooks/                 high-level hooks: data, live updates, actions (see Hooks)
   lib/                   plain logic with no React state: event-stream, favicon, notify, workbench tabs, explorers, schema builder, tool grants
   components/            shared components, reusable across routes
@@ -306,15 +306,15 @@ in the query cache rather than in `useLive`.
 ## The Chat page
 
 `routes/chat/Chat.tsx` is the main screen, shown in a workbench tab. A segmented control
-at the top of the page chooses one of six views:
+at the top of the page chooses one of five views:
 
-| Tab        | Content                                                                |
-| ---------- | ---------------------------------------------------------------------- |
-| Chat       | The transcript, the composer, and the live run.                        |
-| Files      | An editor-style view of every file the session can use (see below).    |
-| Data       | The session's schemas and data.                                        |
-| Workspaces | The workspaces attached to the session (and its project's, read-only). |
-| Debug      | The linear view, an event table, and each run's request.               |
+| Tab             | Content                                                                |
+| --------------- | ---------------------------------------------------------------------- |
+| Chat            | The transcript, the composer, and the live run.                        |
+| Files           | An editor-style view of every file the session can use (see below).    |
+| Structured Data | The session's schemas and data.                                        |
+| Workspaces      | The workspaces attached to the session (and its project's, read-only). |
+| Debug           | The linear view, an event table, and each run's request.               |
 
 **Editing and branching.** The transcript is a tree (see
 [Branches](backend.md#branches)); the page shows one line of it. `routes/chat/components/Branching.tsx`
@@ -585,7 +585,7 @@ schema or its data in the Structured Data tabs (an agent's root, see
 `StructuredRoots` above); an inherited skill or schema opens read-only.
 
 **Chat badge.** The agent label on a message opens the Agents page, the agent's tab
-and its Versions list on that version (`agent-focus.ts` carries the request).
+and its Versions list on that version (`stores/agentFocus.ts` carries the request).
 
 **Tab kinds.** A project's Agents and Skills pages are the Agents and Skills tabs of
 the workbench with the project as their root, not kinds of their own. Tabs saved
@@ -644,13 +644,19 @@ a running session cannot be trashed. _Move to trash_ sends the ids to
 `/settings/<area>/<section>`, so changing tabs does not remount the page and a tab
 can be linked to. An unknown area or section is replaced by the first one.
 
-| Area    | Sections                                                   |
-| ------- | ---------------------------------------------------------- |
-| General | Models, Server, Profiles                                   |
-| Chat    | System prompt, Session titles, Editing, Media              |
-| Agents  | Subagents, Limits                                          |
-| Tools   | Permissions (`ToolSettings`), MCP servers (`McpServers`)   |
-| Trash   | Retention, and the trashed sessions, projects and branches |
+| Area    | Sections                                                    |
+| ------- | ----------------------------------------------------------- |
+| General | Models, Server, Profiles, Look & Feel                       |
+| Chat    | System prompt, Instructions, Session titles, Editing, Media |
+| Agents  | Subagents, Limits                                           |
+| Tools   | Permissions (`ToolSettings`), MCP servers (`McpServers`)    |
+| Trash   | Retention, and the trashed sessions, projects and branches  |
+
+**Instructions** (`Instructions` in `ChatSettings.tsx`) edits the seven `…Instruction`
+settings, the wording that introduces each list in the system message, each with the
+placeholder that puts it elsewhere. **Look & Feel** (`LookAndFeel.tsx`) picks the theme
+color from Mantine's palettes; it is kept in this browser (`stores/appearance.ts`,
+per profile), not on the server.
 
 `McpServers.tsx` lists the MCP servers the backend connects to, each with its
 connection state and tools, and a form to add or edit one (stdio or http, see
