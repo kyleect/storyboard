@@ -8,6 +8,7 @@ import {
   type AgentSummary,
   type SubagentOutcome,
   type ToolContext,
+  NO_SKILL_FILES,
 } from "@harness/core";
 import { startSubagent, subagentHandback } from "./subagents.js";
 
@@ -66,6 +67,7 @@ function context(
     data: NO_DATA,
     copyLimit: 20,
     skills: [],
+    skillFiles: NO_SKILL_FILES,
     files: createFileAccess({
       session: replaySessionFiles([]),
       sessionOps: [],

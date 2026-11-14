@@ -56,7 +56,14 @@ async function main() {
   const index = new SearchIndex(db);
   const files = new FileStore(db, undefined, undefined, index);
   const agents = new AgentStore(db);
-  const skills = new SkillStore(db);
+  const skills = new SkillStore(db, undefined, undefined, () => {
+    const s = readSettings(db).effective;
+    return {
+      fileBytes: s.skillFileMaxMib * 1024 * 1024,
+      skillBytes: s.skillMaxMib * 1024 * 1024,
+      files: s.skillMaxFiles,
+    };
+  });
   const workspaces = new WorkspaceStore(db);
   const workspaceIndexer = new WorkspaceIndexer({
     store: workspaces,

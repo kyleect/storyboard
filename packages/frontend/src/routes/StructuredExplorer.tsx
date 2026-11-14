@@ -1,75 +1,98 @@
 import { Alert, Loader, Text } from "@mantine/core";
-import { modals } from "@mantine/modals";
-import { IconFileDatabase, IconSchema } from "@tabler/icons-react";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { SchemaInfo } from "@harness/core";
-import {
-  api,
-  type DataItem,
-  type DataOwner,
-  type FileScope,
-  type SchemaDetail,
-} from "../api";
-import {
-  isHigherScope,
-  keepTab,
-  closeTab,
-  nodeValue,
-  rootLabel,
-  rootsFor,
-  tabId,
-  type RootId,
-} from "../explorer";
-import { dataKeys, schemaKeys } from "../queries";
-import {
-  buildTree,
-  loadView,
-  mergeSchemas,
-  openTab,
-  saveView,
-  schemaTabRoot,
-  tabNode,
-  type NodeRef,
-  type Pending,
-  type TabState,
-} from "../structured-explorer";
-import { ExplorerShell, type ShellTab } from "./ExplorerShell";
-import { CopyModal } from "./Schemas";
-import { showError } from "./SessionActions";
+import { useMemo } from "react";
+import { type FileScope } from "../api";
+import { rootsFor, type RootId } from "../explorer";
+import type { StructuredRoot } from "../structured-explorer";
+import { ExplorerShell } from "./ExplorerShell";
 import { StructuredTree } from "./StructuredTree";
-import {
-  DataTab,
-  newDataDraft,
-  newSchemaDraft,
-  SchemaTab,
-  type DataDraft,
-  type Draft,
-  type SchemaDraft,
-  type View,
-} from "./StructuredTabs";
+import { useStructured } from "./useStructured";
 
 /*
  * The Structured Data view: an editor-style explorer for schemas and data.
- * A tree on the left has a root folder for each scope the page can see (a
- * session sees Session, Project and Global; a project, Project and Global;
- * the global page, Global); each has a Schemas folder holding the schemas
- * it can make data from, each with its data. Schemas and data open as tabs
- * on the right, as a form with a JSON view beside it. The rules for roots,
- * the tree and the tabs are in `explorer.ts` and `structured-explorer.ts`.
+ * A tree on the left has a root folder for each root it is given; each has
+ * a Schemas folder holding the schemas it can make data from, each with its
+ * data. Schemas and data open as tabs on the right, as a form with a JSON
+ * view beside it. `StructuredExplorer` is the view for a page, whose roots
+ * are the scopes it can see (a session sees Session, Project and Global; a
+ * project, Project and Global; the global page, Global); `StructuredRoots`
+ * is the same view over any roots. The logic is in `useStructured`, and the
+ * rules for roots, the tree and the tabs in `explorer.ts` and
+ * `structured-explorer.ts`.
  */
 
-/** Lists of every root, as one stable value each. */
-const combineResults = (
-  results: { data: unknown; error: Error | null; isPending: boolean }[],
-) => ({
-  data: results.map((r) => r.data),
-  error: results.find((r) => r.error)?.error ?? null,
-  pending: results.some((r) => r.isPending),
-});
+/** The view over roots the caller chooses. */
+export function StructuredRoots({
+  roots,
+  viewKey,
+  pageRoot,
+  onDirtyChange,
+}: {
+  /** One value while the roots stay the same: they are what the view depends on. */
+  roots: readonly StructuredRoot[];
+  /** What the open tabs and the tree's folds are remembered under. */
+  viewKey: string;
+  /** The root that is the view's own, which a new schema or data goes to. */
+  pageRoot: RootId;
+  /** Whether there are unsaved edits, for a guard against leaving. */
+  onDirtyChange?: ((dirty: boolean) => void) | undefined;
+}) {
+  const s = useStructured({ roots, viewKey, pageRoot, onDirtyChange });
+  return <StructuredLayout s={s} />;
+}
 
-const isNewKey = (key: string) => key.startsWith("new:");
+function StructuredLayout({ s }: { s: ReturnType<typeof useStructured> }) {
+  const sidebar = s.loading ? (
+    <Loader size="sm" m="sm" aria-label="Loading the structured data" />
+  ) : (
+    <>
+      {s.loadError && (
+        <Alert color="red" m="xs" p="xs">
+          {s.loadError.message}
+        </Alert>
+      )}
+      <StructuredTree {...s.treeProps} />
+    </>
+  );
 
+  return (
+    <>
+      <ExplorerShell
+        width={s.width}
+        onWidthChange={s.setWidth}
+        sidebar={sidebar}
+        tabs={s.tabs}
+        active={s.active}
+        onActivate={s.setActive}
+        onKeep={s.keep}
+        onRequestClose={s.requestClose}
+        content={s.content}
+        empty="Open a schema or data from the tree."
+        tabListLabel="Open schemas and data"
+        resizeLabel="Resize the structured data tree"
+        statusLeft={s.activeWhere ?? "Nothing open"}
+        statusRight={
+          s.activeKind && (
+            <>
+              <Text size="xs" c="dimmed">
+                {s.activeKind === "schema" ? "Schema" : "Data"}
+              </Text>
+              <Text size="xs" c={s.activeDirty ? "yellow" : "dimmed"}>
+                {s.activeReason
+                  ? "Read-only"
+                  : s.activeDirty
+                    ? "Unsaved changes"
+                    : "Saved"}
+              </Text>
+            </>
+          )
+        }
+      />
+      {s.copyModal}
+    </>
+  );
+}
+
+/** The view for a page: the scopes it can see. */
 export function StructuredExplorer({
   page,
   projectId,
@@ -88,7 +111,6 @@ export function StructuredExplorer({
   /** Whether there are unsaved edits, for a guard against leaving. */
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }) {
-  const queryClient = useQueryClient();
   // Callers may pass a new object each render; everything below depends on
   // this one, which changes only with the page.
   const pageScope = page.scope;
@@ -100,457 +122,20 @@ export function StructuredExplorer({
         : { scope: pageScope, id: pageId },
     [pageScope, pageId],
   );
-  const roots = useMemo(
-    () => rootsFor(stablePage, projectId),
-    [stablePage, projectId],
-  );
-  const rootScope = (id: RootId): FileScope | undefined =>
-    roots.find((r) => r.id === id)?.scope;
-  const pageRoot: RootId = pageScope;
-
-  const [initial] = useState(() => loadView(stablePage));
-  const [tabsState, setTabsState] = useState(() => {
-    // A tab for something not yet made has no draft after a reload.
-    const tabs = initial.tabs.filter(
-      (t) => roots.some((r) => r.id === t.root) && !isNewKey(t.key),
-    );
-    const active = tabs.some((t) => tabId(t) === initial.active)
-      ? initial.active
-      : tabs[0]
-        ? tabId(tabs[0])
-        : null;
-    return { tabs, active };
-  });
-  const [expanded, setExpanded] = useState(initial.expanded);
-  const [width, setWidth] = useState(initial.width);
-  const [showDeleted, setShowDeleted] = useState(initial.showDeleted);
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [views, setViews] = useState<Record<string, View>>({});
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [copying, setCopying] = useState<{
-    owner: DataOwner;
-    schema: SchemaInfo;
-  } | null>(null);
-  const counter = useRef(0);
-
-  // What is remembered between visits (not the unsaved edits).
-  useEffect(() => {
-    saveView(stablePage, {
-      tabs: tabsState.tabs.filter((t) => !isNewKey(t.key)),
-      active: tabsState.active,
-      expanded,
-      width,
-      showDeleted,
-    });
-  }, [stablePage, tabsState, expanded, width, showDeleted]);
-
-  const dirty = Object.keys(drafts).length > 0;
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
-
-  // ---- data: the schemas and data of every root (three lists each)
-  const lists = useQueries({
-    queries: roots.flatMap((r) => [
-      {
-        queryKey: dataKeys.schemaInfos(r.scope),
-        queryFn: () => api.dataSchemas(r.scope),
-      },
-      {
-        queryKey: schemaKeys.list(r.scope, showDeleted),
-        queryFn: () => api.listSchemas(r.scope, showDeleted),
-      },
-      {
-        queryKey: dataKeys.list(r.scope, showDeleted),
-        queryFn: () => api.listData(r.scope, showDeleted),
-      },
-    ]),
-    combine: combineResults,
-  });
-  const inputs = useMemo(
+  const roots = useMemo<StructuredRoot[]>(
     () =>
-      roots.map((root, i) => {
-        const usable = (lists.data[3 * i] as SchemaInfo[] | undefined) ?? [];
-        const own =
-          (lists.data[3 * i + 1] as { schemas: SchemaInfo[] } | undefined)
-            ?.schemas ?? [];
-        const data =
-          (lists.data[3 * i + 2] as { data: DataItem[] } | undefined)?.data ??
-          [];
-        return { root, schemas: mergeSchemas(own, usable), data };
-      }),
-    [roots, lists.data],
+      rootsFor(stablePage, projectId).map((r) => ({
+        ...r,
+        readOnly:
+          readOnly ?? (r.id === "project" ? projectReadOnly : undefined),
+      })),
+    [stablePage, projectId, readOnly, projectReadOnly],
   );
-  const tree = useMemo(() => buildTree(inputs, pending), [inputs, pending]);
-  const schemaById = useMemo(() => {
-    const m = new Map<string, SchemaInfo>();
-    for (const i of inputs) for (const s of i.schemas) m.set(s.id, s);
-    return m;
-  }, [inputs]);
-
-  const reasons = useMemo<Record<RootId, string | undefined>>(() => {
-    const fromBackend = (id: RootId): string | undefined => {
-      const i = roots.findIndex((r) => r.id === id);
-      const list = lists.data[3 * i + 2] as
-        { readOnly: string | null } | undefined;
-      return list?.readOnly ?? undefined;
-    };
-    return {
-      session: readOnly ?? fromBackend("session"),
-      project: readOnly ?? projectReadOnly ?? fromBackend("project"),
-      global: readOnly ?? fromBackend("global"),
-    };
-  }, [roots, lists.data, readOnly, projectReadOnly]);
-
-  // The tree is made once the lists are known, so the folders remembered as
-  // open are still known to it when its nodes appear.
-  const loading = lists.pending;
-  const loadError = lists.error;
-
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: dataKeys.all });
-
-  // ---- tabs
-  const setActive = (id: string) => setTabsState((s) => ({ ...s, active: id }));
-  const open = (tab: Omit<TabState, "transient">, permanent: boolean) =>
-    setTabsState((s) => openTab(s, tab, permanent));
-  const forget = (id: string) => {
-    const without = <T,>(r: Record<string, T>) =>
-      Object.fromEntries(Object.entries(r).filter(([k]) => k !== id));
-    setDrafts(without);
-    setViews(without);
-  };
-  const close = (id: string) => {
-    setTabsState((s) => closeTab(s, id));
-    forget(id);
-  };
-  const nameOf = (t: TabState): string => {
-    const draft = drafts[tabId(t)];
-    if (draft && isNewKey(t.key))
-      return draft.name || (t.kind === "schema" ? "New schema" : "New data");
-    return (
-      tree.info.get(tabNode(t))?.name ??
-      (t.kind === "schema" ? "Schema" : "Data")
-    );
-  };
-  const requestClose = (id: string) => {
-    const tab = tabsState.tabs.find((t) => tabId(t) === id);
-    if (!tab || !drafts[id]) {
-      close(id);
-      return;
-    }
-    modals.openConfirmModal({
-      title: `Close “${nameOf(tab)}” without saving?`,
-      children: <Text size="sm">Your unsaved changes to it will be lost.</Text>,
-      labels: { confirm: "Discard changes", cancel: "Keep editing" },
-      confirmProps: { color: "red" },
-      onConfirm: () => close(id),
-    });
-  };
-  const activeTab = tabsState.tabs.find((t) => tabId(t) === tabsState.active);
-
-  // ---- who a schema belongs to
-  /** Where a schema lives: the scope that owns it, to read and change it. */
-  const schemaOwner = (
-    info: SchemaInfo | undefined,
-    from: RootId,
-  ): { owner: FileScope; own: boolean } => {
-    const fallback = rootScope(from) ?? stablePage;
-    if (!info) return { owner: fallback, own: true };
-    if (info.scope === "builtin")
-      return { owner: { scope: "global" }, own: true };
-    if (info.scope === "agent") return { owner: fallback, own: false };
-    const home = roots.find((r) => r.scope.scope === info.scope)?.scope;
-    return { owner: home ?? fallback, own: true };
-  };
-
-  // ---- actions from the tree and the tabs
-  const openRef = (ref: NodeRef, permanent: boolean) => {
-    if (ref.kind === "schema") {
-      const info = schemaById.get(ref.path);
-      open(
-        {
-          kind: "schema",
-          root: info ? schemaTabRoot(info.scope, ref.root) : ref.root,
-          key: ref.path,
-        },
-        permanent,
-      );
-    } else if (ref.kind === "data") {
-      open({ kind: "data", root: ref.root, key: ref.path }, permanent);
-    }
-  };
-
-  const commitPending = (p: Pending, name: string) => {
-    setPending(null);
-    counter.current += 1;
-    const tab = {
-      kind: p.kind === "new-schema" ? ("schema" as const) : ("data" as const),
-      root: p.root,
-      key: `new:${counter.current}`,
-    };
-    const id = tabId(tab);
-    setDrafts((d) => ({
-      ...d,
-      [id]:
-        p.kind === "new-schema"
-          ? newSchemaDraft(name)
-          : newDataDraft(name, p.schemaId),
-    }));
-    setViews((v) => ({ ...v, [id]: "form" }));
-    open(tab, true);
-  };
-
-  const deleteSchema = (schema: SchemaInfo, from: RootId) => {
-    const { owner } = schemaOwner(schema, from);
-    modals.openConfirmModal({
-      title: `Delete “${schema.name}”?`,
-      children: (
-        <Text size="sm">
-          Any data made from it is deleted with it. Restoring the schema brings
-          the data back.
-        </Text>
-      ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
-      onConfirm: () =>
-        api
-          .deleteSchema(owner, schema.id)
-          .then(refresh)
-          .catch(showError("Could not delete the schema")),
-    });
-  };
-
-  const deleteData = (id: string, name: string, root: RootId) => {
-    const owner = rootScope(root);
-    if (!owner) return;
-    modals.openConfirmModal({
-      title: `Delete “${name}”?`,
-      children: (
-        <Text size="sm">
-          The agent can no longer use it. Its versions are kept, and it can be
-          restored from them.
-        </Text>
-      ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
-      onConfirm: () =>
-        api
-          .deleteData(owner, id)
-          .then(refresh)
-          .catch(showError("Could not delete the data")),
-    });
-  };
-
-  const activeRef = activeTab && !isNewKey(activeTab.key) ? activeTab : null;
-
-  const sidebar = loading ? (
-    <Loader size="sm" m="sm" aria-label="Loading the structured data" />
-  ) : (
-    <>
-      {loadError && (
-        <Alert color="red" m="xs" p="xs">
-          {loadError.message}
-        </Alert>
-      )}
-      <StructuredTree
-        data={tree.data}
-        info={tree.info}
-        roots={roots}
-        reasons={reasons}
-        pageRoot={pageRoot}
-        initialExpanded={{
-          ...Object.fromEntries(
-            roots.flatMap((r) => [
-              [nodeValue({ root: r.id, kind: "root", path: "" }), true],
-              [nodeValue({ root: r.id, kind: "schemas", path: "" }), true],
-            ]),
-          ),
-          ...expanded,
-        }}
-        onExpandedChange={setExpanded}
-        activeValue={activeRef ? tabNode(activeRef) : null}
-        showDeleted={showDeleted}
-        onToggleDeleted={() => setShowDeleted((v) => !v)}
-        onOpen={openRef}
-        onStartPending={setPending}
-        onCommitPending={commitPending}
-        onCancelPending={() => setPending(null)}
-        onCopy={(ref) => {
-          const schema = schemaById.get(ref.path);
-          if (schema)
-            setCopying({ owner: schemaOwner(schema, ref.root).owner, schema });
-        }}
-        onDelete={(ref) => {
-          if (ref.kind === "schema") {
-            const schema = schemaById.get(ref.path);
-            if (schema) deleteSchema(schema, ref.root);
-          } else if (ref.kind === "data") {
-            deleteData(
-              ref.path,
-              tree.info.get(nodeValue(ref))?.name ?? "this data",
-              ref.root,
-            );
-          }
-        }}
-      />
-    </>
-  );
-
-  const shellTabs: ShellTab[] = tabsState.tabs.map((t) => ({
-    id: tabId(t),
-    label: `${nameOf(t)} · ${rootLabel(t.root)}`,
-    title: `${rootLabel(t.root)} › ${t.kind === "schema" ? "Schemas" : "Data"} › ${nameOf(t)}`,
-    icon:
-      t.kind === "schema" ? (
-        <IconSchema size={14} />
-      ) : (
-        <IconFileDatabase size={14} />
-      ),
-    transient: t.transient,
-    dirty: drafts[tabId(t)] !== undefined,
-  }));
-
-  const setDraftFor = (id: string, draft: Draft | undefined) =>
-    setDrafts((d) => {
-      if (draft) return { ...d, [id]: draft };
-      return Object.fromEntries(Object.entries(d).filter(([k]) => k !== id));
-    });
-
-  let content: React.ReactNode = null;
-  if (activeTab) {
-    const id = tabId(activeTab);
-    const isNew = isNewKey(activeTab.key);
-    const draft = drafts[id];
-    const view = views[id] ?? "form";
-    const common = {
-      root: activeTab.root,
-      isNew,
-      readOnly: reasons[activeTab.root],
-      view,
-      onView: (v: View) => setViews((m) => ({ ...m, [id]: v })),
-      onKeep: () => setTabsState((s) => keepTab(s, id)),
-    };
-    if (activeTab.kind === "schema") {
-      const info = isNew ? undefined : schemaById.get(activeTab.key);
-      const { owner, own } = schemaOwner(info, activeTab.root);
-      content = (
-        <SchemaTab
-          key={id}
-          {...common}
-          owner={owner}
-          schemaId={activeTab.key}
-          info={info}
-          own={own}
-          higher={isHigherScope(owner, stablePage)}
-          draft={draft?.type === "schema" ? (draft as SchemaDraft) : undefined}
-          onDraft={(d) => setDraftFor(id, d)}
-          onCreated={(made) => {
-            close(id);
-            open(
-              {
-                kind: "schema",
-                root: schemaTabRoot(made.scope, activeTab.root),
-                key: made.id,
-              },
-              true,
-            );
-          }}
-          onCopy={(schema) => setCopying({ owner, schema })}
-          onDelete={(schema) => deleteSchema(schema, activeTab.root)}
-        />
-      );
-    } else {
-      const owner = rootScope(activeTab.root);
-      if (owner) {
-        content = (
-          <DataTab
-            key={id}
-            {...common}
-            owner={owner}
-            dataId={activeTab.key}
-            newSchemaId={
-              draft?.type === "data" ? (draft as DataDraft).schemaId : ""
-            }
-            higher={isHigherScope(owner, stablePage)}
-            draft={draft?.type === "data" ? (draft as DataDraft) : undefined}
-            onDraft={(d) => setDraftFor(id, d)}
-            onCreated={(madeId) => {
-              close(id);
-              open({ kind: "data", root: activeTab.root, key: madeId }, true);
-            }}
-            onDelete={(d) => deleteData(d.id, d.name, activeTab.root)}
-          />
-        );
-      }
-    }
-  }
-
-  const activeDirty = activeTab
-    ? drafts[tabId(activeTab)] !== undefined
-    : false;
-  // A schema the view can only look at is read-only too, such as a built-in.
-  const activeSchemaInfo =
-    activeTab?.kind === "schema" ? schemaById.get(activeTab.key) : undefined;
-  const activeReason = activeTab
-    ? (reasons[activeTab.root] ??
-      (activeSchemaInfo?.scope === "builtin" ||
-      activeSchemaInfo?.scope === "agent"
-        ? "Read-only."
-        : undefined))
-    : undefined;
-
-  return (
-    <>
-      <ExplorerShell
-        width={width}
-        onWidthChange={setWidth}
-        sidebar={sidebar}
-        tabs={shellTabs}
-        active={tabsState.active}
-        onActivate={setActive}
-        onKeep={(id) => setTabsState((s) => keepTab(s, id))}
-        onRequestClose={requestClose}
-        content={content}
-        empty="Open a schema or data from the tree."
-        tabListLabel="Open schemas and data"
-        resizeLabel="Resize the structured data tree"
-        statusLeft={
-          activeTab
-            ? `${rootLabel(activeTab.root)} › ${activeTab.kind === "schema" ? "Schemas" : "Data"} › ${nameOf(activeTab)}`
-            : "Nothing open"
-        }
-        statusRight={
-          activeTab && (
-            <>
-              <Text size="xs" c="dimmed">
-                {activeTab.kind === "schema" ? "Schema" : "Data"}
-              </Text>
-              <Text size="xs" c={activeDirty ? "yellow" : "dimmed"}>
-                {activeReason
-                  ? "Read-only"
-                  : activeDirty
-                    ? "Unsaved changes"
-                    : "Saved"}
-              </Text>
-            </>
-          )
-        }
-      />
-      {copying && (
-        <CopyModal
-          owner={copying.owner}
-          schema={
-            {
-              ...copying.schema,
-              body: null,
-              versions: [],
-              dataCount: 0,
-            } satisfies SchemaDetail
-          }
-          onClose={() => setCopying(null)}
-        />
-      )}
-    </>
-  );
+  const s = useStructured({
+    roots,
+    viewKey: stablePage,
+    pageRoot: pageScope,
+    onDirtyChange,
+  });
+  return <StructuredLayout s={s} />;
 }

@@ -27,6 +27,14 @@ export const Settings = z.object({
    */
   copyLimit: z.number().int().min(1).max(COPY_LIMIT_MAX),
   /**
+   * The caps on a skill's folder (skills folders design, decision 11): the
+   * most MiB in one file, the most MiB in all of a skill's files, and the
+   * most files.
+   */
+  skillFileMaxMib: z.number().int().min(1).max(1024),
+  skillMaxMib: z.number().int().min(1).max(4096),
+  skillMaxFiles: z.number().int().min(1).max(10000),
+  /**
    * Days an item stays in the trash before it is purged at startup. 0: never
    * purged automatically (sessions and projects design, Q3d, Q3f).
    */
@@ -152,6 +160,9 @@ export const DEFAULTS: Settings = {
   port: 4317,
   loopLimit: 20,
   copyLimit: DEFAULT_COPY_LIMIT,
+  skillFileMaxMib: 20,
+  skillMaxMib: 100,
+  skillMaxFiles: 500,
   trashRetentionDays: 30,
   embeddingModel: "",
   autoRename: true,
@@ -222,7 +233,7 @@ Today is {{date}}. The time is {{time}}.
 - Be concise in your responses
 </rules>
   `.trim(),
-  skillsInstruction: `You have skills: written instructions for particular kinds of work. When the user's request matches a skill's description, call ${SKILL_LOAD} with its name before you start, then follow what it returns. When two skills share a name, give the scope too, shown in parentheses.`,
+  skillsInstruction: `You have skills: written instructions for particular kinds of work. When the user's request matches a skill's description, call ${SKILL_LOAD} with its name before you start, then follow what it returns. A skill may list other files; read one with ${SKILL_LOAD} and its path when the instructions point to it. When two skills share a name, give the scope too, shown in parentheses.`,
   schemasInstruction:
     "Schemas are named shapes for structured state, such as tasks or decisions. Data is made from a schema. Check the lists below, and use the schema and data tools to read or change them, before creating something that may already exist.",
   toolsInstruction: "You have tools:",
@@ -256,6 +267,9 @@ const ENV: Record<keyof Settings, string> = {
   port: "HARNESS_PORT",
   loopLimit: "HARNESS_LOOP_LIMIT",
   copyLimit: "HARNESS_COPY_LIMIT",
+  skillFileMaxMib: "HARNESS_SKILL_FILE_MAX_MIB",
+  skillMaxMib: "HARNESS_SKILL_MAX_MIB",
+  skillMaxFiles: "HARNESS_SKILL_MAX_FILES",
   trashRetentionDays: "HARNESS_TRASH_RETENTION_DAYS",
   embeddingModel: "HARNESS_EMBEDDING_MODEL",
   autoRename: "HARNESS_AUTO_RENAME",
@@ -288,6 +302,9 @@ const NUMERIC = new Set<keyof Settings>([
   "port",
   "loopLimit",
   "copyLimit",
+  "skillFileMaxMib",
+  "skillMaxMib",
+  "skillMaxFiles",
   "trashRetentionDays",
   "childReminders",
   "subagentDepth",

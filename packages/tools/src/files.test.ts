@@ -13,6 +13,7 @@ import {
   NO_SUBAGENTS,
   NO_DATA,
   NO_PROJECTS,
+  NO_SKILL_FILES,
 } from "@harness/core";
 import { FakeSharedFiles } from "@harness/core/testing";
 import {
@@ -72,6 +73,7 @@ function context(
     data: NO_DATA,
     copyLimit: 20,
     skills: [],
+    skillFiles: NO_SKILL_FILES,
     files: createFileAccess({
       session: replaySessionFiles([]),
       sessionOps,

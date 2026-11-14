@@ -829,7 +829,7 @@ describe("project_create: structured data and the agent", () => {
     const editor = c.agents.create(from, agentContent("Editor"));
     c.skills.create(
       { scope: "agent", id: editor.id },
-      { displayName: "Tighten Prose", description: "Cut it", body: "Cut." },
+      { name: "tighten-prose", description: "Cut it", body: "Cut." },
     );
     c.data.shared({ projectId: from, agentId: null }).createSchema(
       "project",
@@ -876,11 +876,13 @@ describe("project_create: structured data and the agent", () => {
 
     const created = c.store.listProjects().find((p) => p.name === "Copy");
     const [copy] = c.agents.list(created?.id ?? "");
+    const copied = c.skills.list({ scope: "agent", id: copy?.id ?? "" });
+    expect(copied.map((k) => k.name)).toEqual(["tighten-prose"]);
     expect(
       c.skills
-        .list({ scope: "agent", id: copy?.id ?? "" })
-        .map((k) => [k.name, k.body]),
-    ).toEqual([["tighten-prose", "Cut."]]);
+        .inScope(created?.id ?? "", copy?.id ?? "")
+        .find((k) => k.name === "tighten-prose")?.instructions,
+    ).toBe("Cut.");
     const mine = c.data.shared({
       projectId: created?.id ?? "",
       agentId: copy?.id ?? "",

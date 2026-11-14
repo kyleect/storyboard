@@ -7,6 +7,7 @@ import {
   NO_SUBAGENTS,
   NO_DATA,
   NO_PROJECTS,
+  NO_SKILL_FILES,
 } from "@harness/core";
 import { currentDate, currentTime } from "./clock.js";
 
@@ -26,6 +27,7 @@ const ctx: ToolContext = {
   data: NO_DATA,
   copyLimit: 20,
   skills: [],
+  skillFiles: NO_SKILL_FILES,
   files: createFileAccess({
     session: replaySessionFiles([]),
     sessionOps: [],

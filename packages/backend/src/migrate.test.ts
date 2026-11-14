@@ -586,6 +586,7 @@ describe("loadMigrations", () => {
       "session_tool_approvals",
       "sessions",
       "settings",
+      "skill_files",
       "skill_versions",
       "skills",
       "tool_subject_grants",

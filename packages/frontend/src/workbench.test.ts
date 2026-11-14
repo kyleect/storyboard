@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadViewIn, moveTab, saveViewIn, tabId } from "./explorer";
 import {
+  carryOver,
   closeTarget,
   newChatTarget,
   pathForTab,
@@ -105,6 +106,81 @@ describe("tabForPath and pathForTab", () => {
   });
 });
 
+describe("the Agents and Skills pages", () => {
+  it("are one kind each, with the project as the root of a project's", () => {
+    expect(tabForPath("/projects/p1/agents")).toEqual({
+      kind: "agents",
+      root: "project",
+      key: "p1",
+    });
+    expect(tabForPath("/skills")).toEqual({
+      kind: "skills",
+      root: "global",
+      key: "",
+    });
+    expect(pathForTab(tab("skills", "project", "p 1"))).toBe(
+      "/projects/p%201/skills",
+    );
+    expect(pathForTab(tab("agents", "global"))).toBe("/agents");
+  });
+});
+
+describe("carryOver", () => {
+  const saved = (
+    kind: "project-agents" | "project-skills" | "agents" | "chat",
+    root: string,
+    key: string,
+  ) => ({ kind, root, key, transient: false });
+
+  it("turns a project's old Agents and Skills tabs into the merged kinds", () => {
+    const view = carryOver({
+      tabs: [
+        saved("project-agents", "project", "p1"),
+        saved("project-skills", "project", "p1"),
+        saved("chat", "session", "s1"),
+      ],
+      active: "project-skills|project|p1",
+      expanded: { a: true },
+      width: 300,
+      showDeleted: false,
+    });
+    expect(view.tabs.map(tabId)).toEqual([
+      "agents|project|p1",
+      "skills|project|p1",
+      "chat|session|s1",
+    ]);
+    expect(view.active).toBe("skills|project|p1");
+    expect(view.width).toBe(300);
+    expect(view.expanded).toEqual({ a: true });
+  });
+
+  it("keeps one tab when the old and the new kind were both open", () => {
+    const view = carryOver({
+      tabs: [
+        saved("project-agents", "project", "p1"),
+        saved("agents", "project", "p1"),
+      ],
+      active: "agents|project|p1",
+      expanded: {},
+      width: 280,
+      showDeleted: false,
+    });
+    expect(view.tabs.map(tabId)).toEqual(["agents|project|p1"]);
+    expect(view.active).toBe("agents|project|p1");
+  });
+
+  it("leaves a view with no old tabs as it was", () => {
+    const view = {
+      tabs: [saved("agents", "global", "")],
+      active: null,
+      expanded: {},
+      width: 280,
+      showDeleted: true,
+    };
+    expect(carryOver(view)).toEqual(view);
+  });
+});
+
 describe("projectOfTab", () => {
   const of = (id: string) => (id === "s1" ? "p1" : null);
 
@@ -154,7 +230,7 @@ describe("newChatTarget", () => {
       newChatTarget({
         ...base,
         focused: null,
-        active: tab("project-agents", "project", "p3"),
+        active: tab("agents", "project", "p3"),
       }),
     ).toBe("p3");
   });

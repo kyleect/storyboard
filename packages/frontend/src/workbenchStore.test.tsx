@@ -97,6 +97,34 @@ describe("what is kept between visits", () => {
     expect(saved.tabs).toHaveLength(3);
   });
 
+  it("carries over tabs saved under the old kinds of a project's Agents and Skills pages", async () => {
+    localStorage.setItem(
+      "harness.workbench.global.-",
+      JSON.stringify({
+        tabs: [
+          {
+            kind: "project-agents",
+            root: "project",
+            key: "p1",
+            transient: false,
+          },
+          { kind: "chat", root: "session", key: "s1", transient: false },
+        ],
+        active: "project-agents|project|p1",
+        expanded: {},
+        width: 280,
+        showDeleted: false,
+      }),
+    );
+    vi.resetModules();
+    const fresh = await import("./workbenchStore");
+    expect(fresh.useWorkbench.getState().tabs.map((t) => t.kind)).toEqual([
+      "agents",
+      "chat",
+    ]);
+    expect(fresh.useWorkbench.getState().active).toBe("agents|project|p1");
+  });
+
   it("removes the key of the old project picker", async () => {
     localStorage.setItem("harness.pickedProject", "p1");
     vi.resetModules();

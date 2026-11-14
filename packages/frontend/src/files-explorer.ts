@@ -94,7 +94,7 @@ export interface NodeInfo {
 }
 
 export interface RootData {
-  root: Root;
+  root: Pick<Root, "id" | "label">;
   files: readonly StoredFile[];
   folders: readonly string[];
 }
@@ -231,11 +231,12 @@ export function renameFolderInTabs(
 
 export type SavedView = SavedViewOf<TabState>;
 
-const KINDS = ["file", "preview"] as const;
+/** The kinds of tab a file explorer has. */
+export const FILE_TAB_KINDS = ["file", "preview"] as const;
 
 /** Reads what was saved for a page; anything unreadable is dropped. */
 export const loadView = (page: FileScope): SavedView =>
-  loadViewIn("files", page, KINDS);
+  loadViewIn("files", page, FILE_TAB_KINDS);
 
 export const saveView = (page: FileScope, view: SavedView): void =>
   saveViewIn("files", page, view);

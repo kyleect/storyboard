@@ -275,12 +275,8 @@ function ProjectMenu({
         <Menu.Item onClick={() => onNewChat(project.id)}>New chat</Menu.Item>
         <Menu.Divider />
         <Menu.Item onClick={() => onOpenPage("project-files")}>Files</Menu.Item>
-        <Menu.Item onClick={() => onOpenPage("project-agents")}>
-          Agents
-        </Menu.Item>
-        <Menu.Item onClick={() => onOpenPage("project-skills")}>
-          Skills
-        </Menu.Item>
+        <Menu.Item onClick={() => onOpenPage("agents")}>Agents</Menu.Item>
+        <Menu.Item onClick={() => onOpenPage("skills")}>Skills</Menu.Item>
         <Menu.Item onClick={() => onOpenPage("project-data")}>
           Structured Data
         </Menu.Item>

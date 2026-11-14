@@ -78,8 +78,6 @@ const ICONS: Record<WorkbenchKind, ReactNode> = {
   sessions: <IconInbox size={14} />,
   project: <IconFolder size={14} />,
   "project-files": <IconFiles size={14} />,
-  "project-agents": <IconRobot size={14} />,
-  "project-skills": <IconBolt size={14} />,
   "project-data": <IconDatabase size={14} />,
   agents: <IconRobot size={14} />,
   skills: <IconBolt size={14} />,
@@ -101,8 +99,6 @@ const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
   errors: "Errors",
   settings: "Settings",
   "project-files": "Files",
-  "project-agents": "Agents",
-  "project-skills": "Skills",
   "project-data": "Structured Data",
 };
 
@@ -118,16 +114,20 @@ function TabPage({ tab }: { tab: WorkbenchTab }) {
       return <ProjectPage projectId={id} />;
     case "project-files":
       return <ProjectFilesPage projectId={id} />;
-    case "project-agents":
-      return <ProjectAgentsPage projectId={id} />;
-    case "project-skills":
-      return <ProjectSkillsPage projectId={id} />;
     case "project-data":
       return <ProjectStructuredDataPage projectId={id} />;
     case "agents":
-      return <GlobalAgentsPage />;
+      return tab.root === "project" ? (
+        <ProjectAgentsPage projectId={id} />
+      ) : (
+        <GlobalAgentsPage />
+      );
     case "skills":
-      return <GlobalSkillsPage />;
+      return tab.root === "project" ? (
+        <ProjectSkillsPage projectId={id} />
+      ) : (
+        <GlobalSkillsPage />
+      );
     case "files":
       return <GlobalFilesPage />;
     case "data":

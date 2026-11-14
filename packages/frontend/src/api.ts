@@ -424,6 +424,12 @@ export interface Settings {
   loopLimit: number;
   /** The most files one copy or move call may name. */
   copyLimit: number;
+  /** The most MiB in one file of a skill. */
+  skillFileMaxMib: number;
+  /** The most MiB in all the files of one skill. */
+  skillMaxMib: number;
+  /** The most files in one skill. */
+  skillMaxFiles: number;
   /** Days in the trash before deletion at startup; 0: never. */
   trashRetentionDays: number;
   /** The router model used for embeddings; empty: keyword search only. */
@@ -788,38 +794,73 @@ export interface PickableAgent {
   builtin: boolean;
 }
 
-/** What each version of a skill holds (skills design). */
+/** What the simple skill form saves (skills folders design). */
 export interface SkillContent {
-  displayName: string;
   description: string;
   body: string;
 }
 
 export type SkillScopeName = "builtin" | "global" | "project" | "agent";
 
-export interface Skill extends SkillContent {
+/** A skill is a folder; its name is the folder name and SKILL.md's `name`. */
+export interface Skill {
   id: string;
-  /** The name the model uses: the slug of the display name. */
   name: string;
+  /** From SKILL.md's frontmatter. */
+  description: string;
   scope: SkillScopeName;
   projectId: string | null;
   agentId: string | null;
+  /** The current version's number. */
   version: number;
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
 }
 
-export interface SkillVersion extends SkillContent {
-  seq: number;
-  /** The slug in that version. */
+/** One file of a skill version. */
+export interface SkillFileInfo {
+  path: string;
+  mediaType: string;
+  size: number;
+  /** The bytes were pruned (binary files keep their last three contents). */
+  missing: boolean;
+  /** The content hash (`blobUrl`); null when the bytes were pruned. */
+  hash: string | null;
+}
+
+/** A skill as the tree lists it: with the files it has. */
+export interface SkillWithFiles extends Skill {
+  files: SkillFileInfo[];
+}
+
+/** What importing a skill zip would do (shown before it is done). */
+export interface SkillImportPreview {
   name: string;
-  /** A deletion; the content is what the skill had then. */
+  description: string;
+  instructions: string;
+  files: { path: string; size: number }[];
+  warnings: string[];
+  /** The skill this would collide with in the same scope. */
+  clash: { id: string; deleted: boolean } | null;
+}
+
+export interface SkillVersion {
+  seq: number;
+  /** The folder name at the time. */
+  name: string;
+  description: string;
+  /** A deletion; the files are what the skill had then. */
   deleted: boolean;
   createdAt: string;
+  fileCount: number;
+  totalSize: number;
 }
 
 export interface SkillDetail extends Skill {
+  /** The instructions in SKILL.md, for the simple form. */
+  body: string;
+  files: SkillFileInfo[];
   versions: SkillVersion[];
 }
 
@@ -1500,11 +1541,105 @@ export const api = {
       `${skillsBase(o)}${deleted ? "?deleted=true" : ""}`,
     ),
   getSkill: (id: string) => request<SkillDetail>("GET", `/api/skills/${id}`),
-  createSkill: (o: SkillOwner, c: SkillContent) =>
+  createSkill: (o: SkillOwner, c: SkillContent & { name: string }) =>
     request<SkillDetail>("POST", skillsBase(o), c),
-  /** Saves a new version. */
+  /** Saves a new version of SKILL.md's description and instructions. */
   saveSkill: (id: string, c: SkillContent) =>
     request<SkillDetail>("PUT", `/api/skills/${id}`, c),
+  /** Every skill of an owner with its files, in one call (built-ins first). */
+  listSkillTree: (o: SkillOwner, deleted: boolean) =>
+    request<SkillWithFiles[]>(
+      "GET",
+      `${skillsBase(o)}?files=true${deleted ? "&deleted=true" : ""}`,
+    ),
+  /** Saves a text file of a skill (a new version of the folder). */
+  putSkillFile: (id: string, path: string, value: string) =>
+    request<SkillDetail>(
+      "PUT",
+      `/api/skills/${id}/file?path=${encodeURIComponent(path)}`,
+      { value },
+    ),
+  /** Saves any file of a skill from its bytes. */
+  putSkillFileBytes: async (id: string, path: string, file: Blob) => {
+    const res = await fetch(
+      `/api/skills/${id}/file/raw?path=${encodeURIComponent(path)}`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${token ?? ""}`,
+          "content-type": "application/octet-stream",
+        },
+        body: file,
+      },
+    );
+    return readJson<SkillDetail>(res);
+  },
+  /** Deletes a file, or a folder and all in it, from a skill. */
+  deleteSkillPath: (id: string, path: string) =>
+    request<SkillDetail>(
+      "DELETE",
+      `/api/skills/${id}/file?path=${encodeURIComponent(path)}`,
+    ),
+  /** Moves or renames a file or folder inside a skill. */
+  moveSkillPath: (id: string, from: string, to: string) =>
+    request<SkillDetail>("POST", `/api/skills/${id}/move`, { from, to }),
+  /** A copy of skill `id` in this owner's scope (409 if the name is taken). */
+  copySkill: (o: SkillOwner, id: string) =>
+    request<SkillDetail>("POST", `${skillsBase(o)}/copy`, { id }),
+  /** What importing this zip into the scope would do. */
+  previewSkillImport: async (o: SkillOwner, zip: Blob) => {
+    const res = await fetch(`${skillsBase(o)}/import/preview`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token ?? ""}`,
+        "content-type": "application/zip",
+      },
+      body: zip,
+    });
+    return readJson<SkillImportPreview>(res);
+  },
+  /** 409 when the name is taken and no `resolve` is given. */
+  importSkill: async (
+    o: SkillOwner,
+    zip: Blob,
+    resolve?: { resolve: "replace" } | { resolve: "rename"; name: string },
+  ) => {
+    const query = !resolve
+      ? ""
+      : resolve.resolve === "replace"
+        ? "?resolve=replace"
+        : `?resolve=rename&name=${encodeURIComponent(resolve.name)}`;
+    const res = await fetch(`${skillsBase(o)}/import${query}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token ?? ""}`,
+        "content-type": "application/zip",
+      },
+      body: zip,
+    });
+    return readJson<SkillDetail & { warnings: string[] }>(res);
+  },
+  /** A skill's folder as a zip (the current version, or `seq`). */
+  exportSkill: async (id: string, seq?: number): Promise<Blob> => {
+    const res = await fetch(
+      `/api/skills/${id}/export${seq === undefined ? "" : `?seq=${seq}`}`,
+      { headers: { authorization: `Bearer ${token ?? ""}` } },
+    );
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(data.error ?? res.statusText, res.status, data);
+    }
+    return res.blob();
+  },
+  /** Renames the folder and SKILL.md's name. */
+  renameSkill: (id: string, name: string) =>
+    request<SkillDetail>("POST", `/api/skills/${id}/rename`, { name }),
+  /** One file of a skill, in the current version or at `seq`. */
+  getSkillFile: (id: string, path: string, seq?: number) =>
+    request<SkillFileInfo & { value: string }>(
+      "GET",
+      `/api/skills/${id}/file?path=${encodeURIComponent(path)}${seq === undefined ? "" : `&seq=${seq}`}`,
+    ),
   deleteSkill: (id: string) => request<unknown>("DELETE", `/api/skills/${id}`),
   /** Makes an earlier version current; also restores a deleted skill. */
   restoreSkill: (id: string, seq: number) =>

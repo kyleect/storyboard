@@ -160,7 +160,32 @@ describe("skill keys", () => {
     globalList: skillKeys.list({ scope: "global" }, false),
     agentList: skillKeys.list({ scope: "agent", id: "a1" }, false),
     detail: skillKeys.detail("k1"),
+    treeWithFiles: skillKeys.withFiles(
+      { scope: "agent", id: "a1" },
+      "own",
+      false,
+    ),
+    otherTreeWithFiles: skillKeys.withFiles({ scope: "global" }, "own", false),
+    builtinTreeWithFiles: skillKeys.withFiles(
+      { scope: "global" },
+      "builtin",
+      true,
+    ),
   };
+
+  it("withFiles sits under the root it reads, so a change to its files refreshes it", async () => {
+    expect(
+      await reach(skillKeys.treeOf({ scope: "agent", id: "a1" }, "own"), keys),
+    ).toEqual(["treeWithFiles"]);
+    expect(
+      await reach(skillKeys.treeOf({ scope: "global" }, "builtin"), keys),
+    ).toEqual(["builtinTreeWithFiles"]);
+    expect(await reach(skillKeys.trees(), keys)).toEqual([
+      "builtinTreeWithFiles",
+      "otherTreeWithFiles",
+      "treeWithFiles",
+    ]);
+  });
 
   it("lists() and details() are separate", async () => {
     expect(await reach(skillKeys.lists(), keys)).toEqual([

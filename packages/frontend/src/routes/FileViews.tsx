@@ -28,10 +28,10 @@ import {
   api,
   type DerivedText,
   type FileDetail,
-  type FileScope,
   type FileVersion,
 } from "../api";
-import { blobKeys, fileKeys } from "../queries";
+import type { ExplorerSource } from "../explorer-source";
+import { blobKeys } from "../queries";
 import { Markdown } from "./Markdown";
 import { showError } from "./SessionActions";
 
@@ -283,31 +283,30 @@ export function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
 export const when = (iso: string) =>
   iso ? new Date(iso).toLocaleString() : "";
 
-/** Refreshes a scope's lists and open files after a change. */
-export function useRefresh(scope: FileScope) {
+/** Refreshes a source's lists and open files after a change. */
+export function useRefresh(source: ExplorerSource) {
   const queryClient = useQueryClient();
-  return () =>
-    queryClient.invalidateQueries({ queryKey: fileKeys.inScope(scope) });
+  return () => queryClient.invalidateQueries({ queryKey: source.keys.all });
 }
 
 /** Earlier versions of one file; one can be made current. */
 export function VersionsModal({
-  scope,
+  source,
   file,
   readOnly,
   onClose,
 }: {
-  scope: FileScope;
+  source: ExplorerSource;
   file: FileDetail;
   readOnly: boolean;
   onClose: () => void;
 }) {
-  const refresh = useRefresh(scope);
+  const refresh = useRefresh(source);
   const newestFirst = [...file.versions].reverse();
   const [picked, setPicked] = useState<FileVersion | undefined>(newestFirst[0]);
   const latest = file.versions.at(-1);
   const restore = useMutation({
-    mutationFn: (seq: number) => api.restoreFile(scope, file.key, seq),
+    mutationFn: (seq: number) => source.restore(file.key, seq),
     onSuccess: async () => {
       await refresh();
       onClose();

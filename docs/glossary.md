@@ -286,9 +286,12 @@ Mustache templates, so a placeholder can also be a condition:
 `{{#skills}}…{{/skills}}` is kept only when there are skills.
 
 **Skill**
-A named block of written instructions. The system message lists each skill
-with its description; the model loads one in full with `skill_load`. Skills are
-built-in, global, project or agent scoped.
+A folder of written instructions and other files, following the Agent Skills
+layout: a `SKILL.md` (frontmatter with `name` and `description`, then the
+instructions) plus any other files. The system message lists each skill with its
+description; the model loads one with `skill_load` and reads its other files
+with `skill_load` and a `path`. Skills are built-in, global, project or agent
+scoped.
 
 ## Files, schemas and data
 

@@ -77,7 +77,14 @@ const SUBAGENT_KEYS = [
   "subagentMessageLabel",
   "subagentDepth",
 ] as const;
-const LIMIT_KEYS = ["loopLimit", "copyLimit", "workspaceReadCap"] as const;
+const LIMIT_KEYS = [
+  "loopLimit",
+  "copyLimit",
+  "workspaceReadCap",
+  "skillFileMaxMib",
+  "skillMaxMib",
+  "skillMaxFiles",
+] as const;
 const EDITING_KEYS = ["editMode", "answerAfterEdit"] as const;
 const MEDIA_KEYS = ["inlineMediaCap", "keepMediaInline"] as const;
 const DESCRIBER_KEYS = ["mediaDescriberAgent", "mediaDescriberModel"] as const;
@@ -970,6 +977,18 @@ function Limits({ view }: { view: SettingsView }) {
         : `A whole number, 1 to ${COPY_LIMIT_MAX}`,
     workspaceReadCap: (v) =>
       Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
+    skillFileMaxMib: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= 1024
+        ? null
+        : "A whole number, 1 to 1024",
+    skillMaxMib: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= 4096
+        ? null
+        : "A whole number, 1 to 4096",
+    skillMaxFiles: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= 10000
+        ? null
+        : "A whole number, 1 to 10000",
   });
 
   return (
@@ -1008,6 +1027,42 @@ function Limits({ view }: { view: SettingsView }) {
           min={100}
           disabled={!!env.workspaceReadCap}
           {...form.getInputProps("workspaceReadCap")}
+        />
+        <NumberInput
+          label="Skill file size (MiB)"
+          description={
+            envNote("skillFileMaxMib") ??
+            "The most one file in a skill may hold, 1 to 1024."
+          }
+          allowDecimal={false}
+          min={1}
+          max={1024}
+          disabled={!!env.skillFileMaxMib}
+          {...form.getInputProps("skillFileMaxMib")}
+        />
+        <NumberInput
+          label="Skill size (MiB)"
+          description={
+            envNote("skillMaxMib") ??
+            "The most all the files of one skill may hold together, 1 to 4096."
+          }
+          allowDecimal={false}
+          min={1}
+          max={4096}
+          disabled={!!env.skillMaxMib}
+          {...form.getInputProps("skillMaxMib")}
+        />
+        <NumberInput
+          label="Files per skill"
+          description={
+            envNote("skillMaxFiles") ??
+            "The most files one skill may have, 1 to 10000."
+          }
+          allowDecimal={false}
+          min={1}
+          max={10000}
+          disabled={!!env.skillMaxFiles}
+          {...form.getInputProps("skillMaxFiles")}
         />
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save

@@ -93,6 +93,8 @@ describe("runDataSteps", () => {
       // The tool result with changes: `entries` becomes `files`.
       { name: "files-rename", changed: 1 },
       { name: "decision-comment-rename", changed: 0 },
+      // The four built-in skills' versions become folders.
+      { name: "skills-to-folders", changed: 4 },
     ]);
     expect(read("m1").files).toEqual([
       { op: "put", key: "a", mediaType: "application/json", value: "{}" },
@@ -111,6 +113,7 @@ describe("runDataSteps", () => {
       { name: "file-ops-media-types", done_at: "T" },
       { name: "files-rename", done_at: "T" },
       { name: "memory-removal", done_at: "T" },
+      { name: "skills-to-folders", done_at: "T" },
     ]);
 
     expect(runDataSteps(db)).toEqual([]);

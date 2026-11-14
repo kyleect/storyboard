@@ -1,30 +1,23 @@
 import {
   ActionIcon,
-  Alert,
   Badge,
   Button,
   Checkbox,
   Code,
   Group,
-  Loader,
   Modal,
   MultiSelect,
   NavLink,
   NumberInput,
   Paper,
   ScrollArea,
-  SegmentedControl,
   Select,
   Stack,
-  Switch,
   TagsInput,
   Text,
-  Textarea,
   TextInput,
-  Title,
   UnstyledButton,
 } from "@mantine/core";
-import { modals } from "@mantine/modals";
 import {
   useMutation,
   useQueries,
@@ -32,44 +25,36 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useState } from "react";
-import {
-  MAX_DATA_DESCRIPTION,
-  MAX_DATA_NAME,
-  SCHEMA_FORMATS,
-} from "@harness/core";
+import { MAX_DATA_NAME, SCHEMA_FORMATS } from "@harness/core";
 import {
   api,
   type CopyTarget,
   type DataOwner,
   type SchemaDetail,
 } from "../api";
-import { agentKeys, dataKeys, projectKeys, schemaKeys } from "../queries";
+import { agentKeys, dataKeys, projectKeys } from "../queries";
 import {
   addField,
   changeType,
-  checkTree,
   FIELD_TYPES,
   findNode,
   flatten,
-  fromSchema,
   moveField,
   newNode,
   removeField,
-  toSchema,
   updateNode,
   type BuilderNode,
   type FieldType,
   type TextFormat,
 } from "../schema-builder";
-import { JsonEditor } from "./JsonEditor";
 import { showError } from "./SessionActions";
 
 /*
- * Schemas (schemas and data design, decisions 8 to 15, 44): a panel per
- * scope with the list on the left and the selected schema on the right, as
- * for skills and data. The editor is a builder (plan P10, layout A: a field
- * tree on the left, the selected field's settings on the right) or a JSON
- * editor, switchable (decision 15). Earlier versions can be viewed.
+ * Schemas (schemas and data design, decisions 8 to 15, 44): the pieces the
+ * Structured Data and Agents views share. The editor is a builder (plan P10,
+ * layout A: a field tree on the left, the selected field's settings on the
+ * right) or a JSON editor, switchable (decision 15). Earlier versions can be
+ * viewed.
  */
 
 function useRefresh() {
@@ -81,283 +66,6 @@ function useRefresh() {
 
 const typeLabel = (t: FieldType) =>
   FIELD_TYPES.find((f) => f.value === t)?.label ?? t;
-
-export function SchemasPanel({
-  owner,
-  readOnly,
-}: {
-  owner: DataOwner;
-  readOnly?: string | undefined;
-}) {
-  const [showDeleted, setShowDeleted] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [mode, setMode] = useState<"view" | "edit" | "new">("view");
-  const list = useQuery({
-    queryKey: schemaKeys.list(owner, showDeleted),
-    queryFn: () => api.listSchemas(owner, showDeleted),
-  });
-  const locked =
-    readOnly ??
-    (list.data?.readOnly
-      ? `${list.data.readOnly} Its schemas can be read but not changed.`
-      : undefined);
-  const narrow = owner.scope === "agent" || owner.scope === "session";
-
-  return (
-    <Group align="flex-start" wrap="nowrap" gap="md">
-      <Stack gap="xs" w={narrow ? 200 : 260} style={{ flexShrink: 0 }}>
-        {locked && (
-          <Text size="sm" c="dimmed">
-            {locked}
-          </Text>
-        )}
-        <Switch
-          size="xs"
-          label="Show deleted"
-          checked={showDeleted}
-          onChange={(e) => setShowDeleted(e.currentTarget.checked)}
-        />
-        {!locked && (
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              onClick={() => {
-                setSelected(null);
-                setMode("new");
-              }}
-            >
-              New schema
-            </Button>
-          </Group>
-        )}
-        {list.isPending && <Loader size="sm" />}
-        {list.isError && <Alert color="red">{list.error.message}</Alert>}
-        {list.data?.schemas.length === 0 && (
-          <Text size="sm" c="dimmed">
-            No schemas.
-          </Text>
-        )}
-        <Stack gap={0}>
-          {list.data?.schemas.map((s) => (
-            <NavLink
-              key={s.id}
-              active={selected === s.id && mode !== "new"}
-              onClick={() => {
-                setSelected(s.id);
-                setMode("view");
-              }}
-              label={
-                <Text
-                  size="sm"
-                  truncate
-                  {...(s.deleted ? { c: "dimmed" } : {})}
-                >
-                  {s.name}
-                </Text>
-              }
-              description={`v${s.version}`}
-              rightSection={
-                s.deleted ? (
-                  <Badge size="xs" variant="light" color="red">
-                    deleted
-                  </Badge>
-                ) : s.scope === "builtin" ? (
-                  <Badge size="xs" variant="light" color="blue">
-                    built-in
-                  </Badge>
-                ) : undefined
-              }
-            />
-          ))}
-        </Stack>
-      </Stack>
-      <Stack style={{ flex: 1, minWidth: 0 }}>
-        {mode === "new" && !locked ? (
-          <SchemaEditor
-            owner={owner}
-            onSaved={(id) => {
-              setSelected(id);
-              setMode("view");
-            }}
-            onCancel={() => setMode("view")}
-          />
-        ) : selected ? (
-          <SchemaView
-            key={selected}
-            owner={owner}
-            schemaId={selected}
-            readOnly={!!locked}
-            editing={mode === "edit"}
-            onEdit={() => setMode("edit")}
-            onDone={() => setMode("view")}
-            onGone={() => setSelected(null)}
-          />
-        ) : (
-          <Text size="sm" c="dimmed">
-            Pick a schema on the left.
-          </Text>
-        )}
-      </Stack>
-    </Group>
-  );
-}
-
-function SchemaView({
-  owner,
-  schemaId,
-  readOnly,
-  editing,
-  onEdit,
-  onDone,
-  onGone,
-}: {
-  owner: DataOwner;
-  schemaId: string;
-  readOnly: boolean;
-  editing: boolean;
-  onEdit: () => void;
-  onDone: () => void;
-  onGone: () => void;
-}) {
-  const refresh = useRefresh();
-  const [versions, setVersions] = useState(false);
-  const [copying, setCopying] = useState(false);
-  const schema = useQuery({
-    queryKey: schemaKeys.detail(owner, schemaId),
-    queryFn: () => api.getSchema(owner, schemaId),
-  });
-  const remove = useMutation({
-    mutationFn: () => api.deleteSchema(owner, schemaId),
-    onSuccess: refresh,
-    onError: showError("Could not delete the schema"),
-  });
-  const restore = useMutation({
-    mutationFn: () => api.restoreSchema(owner, schemaId),
-    onSuccess: refresh,
-    onError: showError("Could not restore the schema"),
-  });
-
-  if (schema.isPending) return <Loader size="sm" />;
-  if (schema.isError) {
-    return (
-      <Alert color="red" withCloseButton onClose={onGone}>
-        {schema.error.message}
-      </Alert>
-    );
-  }
-  const s = schema.data;
-  // Built-in schemas are read-only; copy one to change it (decision 45).
-  const builtin = s.scope === "builtin";
-  const fixed = readOnly || builtin;
-  if (editing && !fixed && !s.deleted) {
-    return (
-      <SchemaEditor
-        owner={owner}
-        existing={s}
-        onSaved={onDone}
-        onCancel={onDone}
-      />
-    );
-  }
-
-  return (
-    <Stack gap="xs">
-      <Group justify="space-between" wrap="nowrap">
-        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          <Title order={5} style={{ wordBreak: "break-word" }}>
-            {s.name}
-          </Title>
-          <Badge size="xs" variant="light" color="gray">
-            v{s.version}
-          </Badge>
-          {s.deleted && (
-            <Badge size="xs" variant="light" color="red">
-              deleted
-            </Badge>
-          )}
-          {builtin && (
-            <Badge size="xs" variant="light" color="blue">
-              built-in
-            </Badge>
-          )}
-        </Group>
-        <Group gap="xs" wrap="nowrap">
-          <Button size="xs" variant="default" onClick={() => setVersions(true)}>
-            Versions ({s.versions.length})
-          </Button>
-          {!s.deleted && (
-            <Button
-              size="xs"
-              variant="default"
-              onClick={() => setCopying(true)}
-            >
-              Copy…
-            </Button>
-          )}
-          {!fixed && !s.deleted && (
-            <>
-              <Button size="xs" variant="light" onClick={onEdit}>
-                Edit
-              </Button>
-              <Button
-                size="xs"
-                variant="light"
-                color="red"
-                loading={remove.isPending}
-                onClick={() =>
-                  modals.openConfirmModal({
-                    title: `Delete “${s.name}”?`,
-                    children: (
-                      <Text size="sm">
-                        {s.dataCount === 0
-                          ? "No data is made from it."
-                          : `Its ${s.dataCount === 1 ? "piece" : `${s.dataCount} pieces`} of data ${s.dataCount === 1 ? "is" : "are"} deleted with it.`}{" "}
-                        Restoring the schema brings{" "}
-                        {s.dataCount === 0 ? "it" : "them"} back.
-                      </Text>
-                    ),
-                    labels: { confirm: "Delete", cancel: "Cancel" },
-                    confirmProps: { color: "red" },
-                    onConfirm: () => remove.mutate(),
-                  })
-                }
-              >
-                Delete
-              </Button>
-            </>
-          )}
-          {!fixed && s.deleted && (
-            <Button
-              size="xs"
-              loading={restore.isPending}
-              onClick={() => restore.mutate()}
-            >
-              Restore
-            </Button>
-          )}
-        </Group>
-      </Group>
-      <Text size="xs" c="dimmed">
-        {builtin ? "comes with the app; copy it to change it" : s.scope}
-        {s.deleted
-          ? " · deleted, with its data"
-          : ` · ${s.dataCount} ${s.dataCount === 1 ? "piece" : "pieces"} of data`}
-        {s.copiedFrom && " · copied from another schema"}
-      </Text>
-      <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-        {s.description}
-      </Text>
-      <Code block>{JSON.stringify(s.body, null, 2)}</Code>
-      {versions && (
-        <VersionsModal schema={s} onClose={() => setVersions(false)} />
-      )}
-      {copying && (
-        <CopyModal owner={owner} schema={s} onClose={() => setCopying(false)} />
-      )}
-    </Stack>
-  );
-}
 
 /** Every version's JSON Schema, view only. */
 export function VersionsModal({
@@ -506,165 +214,6 @@ export function CopyModal({
 }
 
 // ---- The editor --------------------------------------------------------------
-
-const EMPTY_SCHEMA = { type: "object", properties: {} };
-
-/** Creates a schema, or saves `existing` (a new version if it changed). */
-function SchemaEditor({
-  owner,
-  existing,
-  onSaved,
-  onCancel,
-}: {
-  owner: DataOwner;
-  existing?: SchemaDetail;
-  onSaved: (id: string) => void;
-  onCancel: () => void;
-}) {
-  const refresh = useRefresh();
-  const start = existing?.body ?? EMPTY_SCHEMA;
-  const read = fromSchema(start);
-  const [name, setName] = useState(existing?.name ?? "");
-  const [description, setDescription] = useState(existing?.description ?? "");
-  const [mode, setMode] = useState<"builder" | "json">(
-    read.ok ? "builder" : "json",
-  );
-  const [root, setRoot] = useState<BuilderNode>(
-    read.ok ? read.root : newNode("group"),
-  );
-  const [text, setText] = useState(JSON.stringify(start, null, 2));
-  const [notice, setNotice] = useState<string | null>(
-    read.ok ? null : `The builder can't show this schema:\n${read.reason}`,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const problems = mode === "builder" ? checkTree(root) : {};
-
-  const switchTo = (next: "builder" | "json") => {
-    if (next === mode) return;
-    if (next === "json") {
-      setText(JSON.stringify(toSchema(root), null, 2));
-      setNotice(null);
-      setMode("json");
-      return;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      setNotice(`The JSON can't be read: ${(err as Error).message}`);
-      return;
-    }
-    const r = fromSchema(parsed);
-    if (!r.ok) {
-      setNotice(`The builder can't show this schema:\n${r.reason}`);
-      return;
-    }
-    setRoot(r.root);
-    setNotice(null);
-    setMode("builder");
-  };
-
-  const save = useMutation({
-    mutationFn: () => {
-      let body: unknown;
-      if (mode === "builder") body = toSchema(root);
-      else {
-        try {
-          body = JSON.parse(text);
-        } catch (err) {
-          throw new Error(`The JSON can't be read: ${(err as Error).message}`, {
-            cause: err,
-          });
-        }
-      }
-      const c = { name, description, body };
-      return existing
-        ? api.saveSchema(owner, existing.id, c)
-        : api.createSchema(owner, c);
-    },
-    onSuccess: async (saved) => {
-      await refresh();
-      onSaved(saved.id);
-    },
-    onError: (err: Error) => setError(err.message),
-  });
-
-  return (
-    <Stack gap="xs">
-      <TextInput
-        label="Name"
-        description="Unique among this scope's schemas."
-        withAsterisk
-        maxLength={MAX_DATA_NAME}
-        value={name}
-        onChange={(e) => setName(e.currentTarget.value)}
-      />
-      <Textarea
-        label="Description"
-        description="What the schema is for. The agent reads this."
-        withAsterisk
-        autosize
-        minRows={2}
-        maxRows={6}
-        maxLength={MAX_DATA_DESCRIPTION}
-        value={description}
-        onChange={(e) => setDescription(e.currentTarget.value)}
-      />
-      <Group justify="space-between">
-        <SegmentedControl
-          size="xs"
-          value={mode}
-          onChange={(v) => switchTo(v as "builder" | "json")}
-          data={[
-            { value: "builder", label: "Builder" },
-            { value: "json", label: "JSON" },
-          ]}
-        />
-        {existing && (
-          <Text size="xs" c="dimmed">
-            Changing the fields saves version {existing.version + 1}; data that
-            doesn't fit it is marked out of date.
-          </Text>
-        )}
-      </Group>
-      {notice && (
-        <Alert color="yellow" style={{ whiteSpace: "pre-wrap" }}>
-          {notice}
-        </Alert>
-      )}
-      {mode === "builder" ? (
-        <Builder root={root} onChange={setRoot} problems={problems} />
-      ) : (
-        <JsonEditor value={text} onChange={setText} label="JSON Schema" />
-      )}
-      {error && (
-        <Alert color="red" style={{ whiteSpace: "pre-wrap" }}>
-          {error}
-        </Alert>
-      )}
-      <Group gap="xs">
-        <Button
-          size="xs"
-          disabled={
-            name.trim() === "" ||
-            description.trim() === "" ||
-            Object.keys(problems).length > 0
-          }
-          loading={save.isPending}
-          onClick={() => {
-            setError(null);
-            save.mutate();
-          }}
-        >
-          Save
-        </Button>
-        <Button size="xs" variant="default" onClick={onCancel}>
-          Cancel
-        </Button>
-      </Group>
-    </Stack>
-  );
-}
 
 /** Layout A: the field tree on the left, the selected field on the right. */
 export function Builder({

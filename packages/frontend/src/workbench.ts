@@ -1,4 +1,10 @@
-import { closeTab, tabId, type ExplorerTab, type TabsOf } from "./explorer";
+import {
+  closeTab,
+  tabId,
+  type ExplorerTab,
+  type SavedViewOf,
+  type TabsOf,
+} from "./explorer";
 
 /*
  * What the chat workbench shares with its tests: which tabs there are, how an
@@ -13,8 +19,6 @@ export const WORKBENCH_KINDS = [
   "sessions",
   "project",
   "project-files",
-  "project-agents",
-  "project-skills",
   "project-data",
   "agents",
   "skills",
@@ -27,6 +31,44 @@ export const WORKBENCH_KINDS = [
 
 export type WorkbenchKind = (typeof WORKBENCH_KINDS)[number];
 
+/**
+ * Kinds that older versions saved and no longer exist: a project's Agents and
+ * Skills pages are now the Agents and Skills page with the project as its
+ * root. Saved tabs of these kinds are carried over (`carryOver`).
+ */
+export const LEGACY_KINDS = ["project-agents", "project-skills"] as const;
+const CARRIED: Record<(typeof LEGACY_KINDS)[number], WorkbenchKind> = {
+  "project-agents": "agents",
+  "project-skills": "skills",
+};
+type SavedKind = WorkbenchKind | (typeof LEGACY_KINDS)[number];
+export const SAVED_KINDS: readonly SavedKind[] = [
+  ...WORKBENCH_KINDS,
+  ...LEGACY_KINDS,
+];
+
+/** A saved view with its tabs of an old kind turned into tabs of today's. */
+export function carryOver(
+  view: SavedViewOf<ExplorerTab<SavedKind>>,
+): SavedViewOf<WorkbenchTab> {
+  const renamed = new Map<string, string>();
+  const seen = new Set<string>();
+  const tabs: WorkbenchTab[] = [];
+  for (const t of view.tabs) {
+    const kind =
+      t.kind in CARRIED ? CARRIED[t.kind as keyof typeof CARRIED] : t.kind;
+    const next = { ...t, kind: kind as WorkbenchKind };
+    renamed.set(tabId(t), tabId(next));
+    if (seen.has(tabId(next))) continue;
+    seen.add(tabId(next));
+    tabs.push(next);
+  }
+  return {
+    ...view,
+    tabs,
+    active: view.active === null ? null : (renamed.get(view.active) ?? null),
+  };
+}
 /**
  * A tab. `root` says what `key` is: "session" for a chat (its id), "project"
  * for the pages of a project (its id), "global" for the rest (`key` is empty).
@@ -51,15 +93,15 @@ const GLOBAL_PAGES: Record<string, WorkbenchKind> = {
 
 const PROJECT_PAGES: Record<string, WorkbenchKind> = {
   files: "project-files",
-  agents: "project-agents",
-  skills: "project-skills",
+  agents: "agents",
+  skills: "skills",
   data: "project-data",
 };
 
 const PROJECT_SUFFIX: Partial<Record<WorkbenchKind, string>> = {
   "project-files": "files",
-  "project-agents": "agents",
-  "project-skills": "skills",
+  agents: "agents",
+  skills: "skills",
   "project-data": "data",
 };
 
@@ -113,10 +155,14 @@ export function pathForTab(
     case "sessions":
       return "/sessions";
     case "project-files":
-    case "project-agents":
-    case "project-skills":
     case "project-data":
       return `/projects/${id}/${PROJECT_SUFFIX[tab.kind]}`;
+    // The Agents and Skills pages are one kind; the root says whose.
+    case "agents":
+    case "skills":
+      return tab.root === "project"
+        ? `/projects/${id}/${tab.kind}`
+        : `/${tab.kind}`;
     default:
       return `/${tab.kind}`;
   }

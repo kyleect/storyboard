@@ -20,7 +20,8 @@ import {
   type FileScope,
   type SchemaDetail,
 } from "../api";
-import { StructuredExplorer } from "./StructuredExplorer";
+import { StructuredExplorer, StructuredRoots } from "./StructuredExplorer";
+import type { StructuredRoot } from "../structured-explorer";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -888,6 +889,140 @@ describe("the divider", () => {
     await screen.findByText("Character");
     expect(screen.getByRole("separator").getAttribute("aria-valuenow")).toBe(
       "520",
+    );
+  });
+});
+
+describe("over an agent's root", () => {
+  const AGENT: DataOwner = { scope: "agent", id: "a1" };
+  const agentRoot = (extra: Partial<StructuredRoot> = {}): StructuredRoot[] => [
+    { id: "agent", label: "Agent", scope: AGENT, ...extra },
+  ];
+  const OWN_AGENT = schema("sa", "Clue", "agent");
+  const NOTES = data("d9", "Case notes", "sa", "agent");
+
+  beforeEach(() => {
+    mockApi();
+    vi.spyOn(api, "dataSchemas").mockResolvedValue([
+      OWN_AGENT,
+      PLACE,
+      SETTING,
+      BUILTIN,
+    ]);
+    vi.spyOn(api, "listSchemas").mockResolvedValue({
+      readOnly: null,
+      schemas: [OWN_AGENT],
+    });
+    vi.spyOn(api, "listData").mockResolvedValue({
+      readOnly: null,
+      data: [NOTES],
+    });
+    vi.spyOn(api, "getSchema").mockResolvedValue(schemaDetail(OWN_AGENT));
+    vi.spyOn(api, "getData").mockResolvedValue({
+      ...dataDetail(NOTES),
+      value: { nickname: "Ari" },
+      schema: { ...OWN_AGENT, pinned: BODY, latest: BODY },
+    } as DataDetail);
+  });
+
+  it("shows one root with the agent's schemas and data, and the others' schemas as inherited", async () => {
+    show(
+      <StructuredRoots
+        roots={agentRoot()}
+        viewKey="agent.a1"
+        pageRoot="agent"
+      />,
+    );
+    expect(await screen.findByText("Agent")).toBeTruthy();
+    expect(screen.getAllByText("Schemas")).toHaveLength(1);
+    expect(await screen.findByText("Clue")).toBeTruthy();
+    for (const name of ["Place", "Setting", "Note"])
+      expect(screen.getByText(name)).toBeTruthy();
+    // The agent's own schema is not tagged; the three others are.
+    expect(screen.getAllByTestId("inherited-schema")).toHaveLength(3);
+    expect(vi.mocked(api.listSchemas)).toHaveBeenCalledWith(AGENT, false);
+    expect(vi.mocked(api.listData)).toHaveBeenCalledWith(AGENT, false);
+  });
+
+  it("opens the agent's own schema for editing, through the agent", async () => {
+    show(
+      <StructuredRoots
+        roots={agentRoot()}
+        viewKey="agent.a1"
+        pageRoot="agent"
+      />,
+    );
+    fireEvent.click(await screen.findByText("Clue"));
+    await screen.findByLabelText(/^Name/);
+    expect(vi.mocked(api.getSchema)).toHaveBeenCalledWith(AGENT, "sa");
+    expect(screen.getByRole("tab").textContent).toContain("Clue · Agent");
+    expect(screen.queryByText("Read-only")).toBeNull();
+  });
+
+  it("opens an inherited schema read-only, in the root it was opened from", async () => {
+    show(
+      <StructuredRoots
+        roots={agentRoot()}
+        viewKey="agent.a1"
+        pageRoot="agent"
+      />,
+    );
+    fireEvent.click(await screen.findByText("Place"));
+    await screen.findByLabelText(/^Name/);
+    expect(vi.mocked(api.schemaBody)).toHaveBeenCalledWith(AGENT, "sp");
+    expect(vi.mocked(api.getSchema)).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab").textContent).toContain("Place · Agent");
+    expect(screen.getByText("Read-only")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("makes and changes data through the agent", async () => {
+    show(
+      <StructuredRoots
+        roots={agentRoot()}
+        viewKey="agent.a1"
+        pageRoot="agent"
+      />,
+    );
+    fireEvent.click(await screen.findByText("Clue"));
+    fireEvent.click(await screen.findByText("Case notes"));
+    await screen.findByLabelText(/^Nickname/);
+    expect(vi.mocked(api.getData)).toHaveBeenCalledWith(AGENT, "d9");
+    expect(screen.queryByText("Read-only")).toBeNull();
+  });
+
+  it("is read-only, all of it, when the caller says why", async () => {
+    show(
+      <StructuredRoots
+        roots={agentRoot({ readOnly: "The agent is deleted." })}
+        viewKey="agent.a1"
+        pageRoot="agent"
+      />,
+    );
+    fireEvent.click(await screen.findByText("Clue"));
+    await screen.findByLabelText(/^Name/);
+    expect(screen.getByText("Read-only")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  });
+
+  it("remembers its tabs under the key it is given", async () => {
+    show(
+      <StructuredRoots
+        roots={agentRoot()}
+        viewKey="agent.a1"
+        pageRoot="agent"
+      />,
+    );
+    fireEvent.click(await screen.findByText("Clue"));
+    await screen.findByLabelText(/^Name/);
+    await waitFor(() =>
+      expect(
+        JSON.parse(localStorage.getItem("harness.structured.agent.a1") ?? "{}")
+          .tabs,
+      ).toEqual([
+        { kind: "schema", root: "agent", key: "sa", transient: true },
+      ]),
     );
   });
 });

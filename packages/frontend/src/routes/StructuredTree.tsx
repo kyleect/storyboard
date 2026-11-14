@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { MAX_DATA_NAME } from "@harness/core";
+import type { DataOwner } from "../api";
 import { nodeValue, type Root, type RootId, type TreeNode } from "../explorer";
 import {
   parseNodeValue,
@@ -104,7 +105,10 @@ function HeaderAction({
 }
 
 /** What the tooltip of an inherited schema says. */
-export const inheritedNote = (info: NodeInfo, root: Root): string => {
+export const inheritedNote = (
+  info: NodeInfo,
+  root: Root<DataOwner>,
+): string => {
   const scope = info.schemaScope;
   if (scope === "builtin") {
     return `A built-in schema that comes with the app. ${root.label} can make data from it.`;
@@ -116,7 +120,7 @@ export const inheritedNote = (info: NodeInfo, root: Root): string => {
 export interface StructuredTreeProps {
   data: TreeNode[];
   info: ReadonlyMap<string, NodeInfo>;
-  roots: readonly Root[];
+  roots: readonly Root<DataOwner>[];
   /** Why a root cannot be changed, when it cannot. */
   reasons: Readonly<Record<RootId, string | undefined>>;
   /** The root actions go to when nothing is selected: the page's own. */

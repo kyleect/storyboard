@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInfo } from "@harness/core";
-import type { DataItem } from "./api";
-import { nodeValue, rootsFor, tabId, type TreeNode } from "./explorer";
+import type { DataItem, DataOwner } from "./api";
+import {
+  isHigherScope,
+  nodeValue,
+  rootsFor,
+  tabId,
+  type Root,
+  type TreeNode,
+} from "./explorer";
 import {
   loadView as loadFilesView,
   saveView as saveFilesView,
@@ -243,15 +250,43 @@ describe("mergeSchemas", () => {
   });
 });
 
+describe("with an agent's root", () => {
+  const agent: Root<DataOwner> = {
+    id: "agent",
+    scope: { scope: "agent", id: "a1" },
+    label: "Agent",
+  };
+
+  it("keeps the agent's own schemas its own, and the others' inherited", () => {
+    expect(isInherited(schema("a", { scope: "agent" }), agent)).toBe(false);
+    expect(isInherited(schema("p", { scope: "project" }), agent)).toBe(true);
+    expect(isInherited(schema("g", { scope: "global" }), agent)).toBe(true);
+    expect(isInherited(schema("b", { scope: "builtin" }), agent)).toBe(true);
+  });
+
+  it("opens every schema in the agent's root when it is the only one", () => {
+    for (const scope of ["agent", "project", "global", "builtin"] as const)
+      expect(schemaTabRoot(scope, "agent", [agent])).toBe("agent");
+  });
+
+  it("does not rank the agent's own above the page it is on", () => {
+    expect(isHigherScope(agent.scope, agent.scope)).toBe(false);
+    expect(isHigherScope(agent.scope, { scope: "session", id: "s" })).toBe(
+      false,
+    );
+    expect(isHigherScope({ scope: "global" }, agent.scope)).toBe(true);
+  });
+});
+
 describe("where a schema's tab belongs", () => {
   it("is the root of the scope it lives in, wherever it was opened from", () => {
-    expect(schemaTabRoot("global", "session")).toBe("global");
-    expect(schemaTabRoot("project", "session")).toBe("project");
-    expect(schemaTabRoot("session", "session")).toBe("session");
+    expect(schemaTabRoot("global", "session", roots)).toBe("global");
+    expect(schemaTabRoot("project", "session", roots)).toBe("project");
+    expect(schemaTabRoot("session", "session", roots)).toBe("session");
   });
   it("is Global for a built-in schema, and the opening root for an agent's", () => {
-    expect(schemaTabRoot("builtin", "session")).toBe("global");
-    expect(schemaTabRoot("agent", "project")).toBe("project");
+    expect(schemaTabRoot("builtin", "session", roots)).toBe("global");
+    expect(schemaTabRoot("agent", "project", roots)).toBe("project");
   });
   it("names scopes for people", () => {
     expect(scopeName("global")).toBe("Global");
@@ -310,6 +345,24 @@ describe("what is remembered", () => {
     });
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("remembers a view under a key of its own, for the roots the caller names", () => {
+    const tab = {
+      kind: "schema",
+      root: "agent",
+      key: "sa",
+      transient: false,
+    } as const;
+    saveView("agent.a1", {
+      tabs: [tab],
+      active: tabId(tab),
+      expanded: {},
+      width: 280,
+      showDeleted: false,
+    });
+    expect(loadView("agent.a1").tabs).toEqual([]);
+    expect(loadView("agent.a1", (r) => r === "agent").tabs).toEqual([tab]);
+  });
 
   it("round-trips tabs, the active tab, open folders, width and show deleted", () => {
     const tabs = [

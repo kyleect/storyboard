@@ -12,7 +12,8 @@ import {
 import {
   closeTarget,
   mayBeTransient,
-  WORKBENCH_KINDS,
+  carryOver,
+  SAVED_KINDS,
   type NewWorkbenchTab,
   type WorkbenchTab,
 } from "./workbench";
@@ -78,7 +79,7 @@ function initial() {
   } catch {
     // storage unavailable
   }
-  const view = loadViewIn("workbench", PAGE, WORKBENCH_KINDS);
+  const view = carryOver(loadViewIn("workbench", PAGE, SAVED_KINDS));
   return {
     tabs: view.tabs,
     active: view.active,

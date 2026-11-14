@@ -236,11 +236,13 @@ error result with the reason (`failed`, `cancelled`, `iteration_limit` or
 
 ### Skills
 
-| Tool         | Approval | What it does                                                                                                               |
-| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `skill_load` | never    | Returns the full instructions of one listed skill by name. If two skills share a name, the model must also give the scope. |
+| Tool         | Approval | What it does                                                                                                                                                                                                                      |
+| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skill_load` | never    | Returns the instructions of one listed skill by name (and lists its other files). With `path`, returns one file of the skill, in parts with `offset` and `limit`. If two skills share a name, the model must also give the scope. |
 
-`skill_load` is offered only when at least one skill is in scope.
+`skill_load` is offered only when at least one skill is in scope. Files are read
+at the version the run started with. A binary file comes back as a note, not as
+content (images and audio are not yet handed to the model).
 `skillsList(skills)` renders the list (`- name: description`, with the scope
 shown only for names that exist in more than one scope). The introduction is the
 `skillsInstruction` setting in the backend, not a tools export.

@@ -32,7 +32,7 @@ import { FileStore } from "./files-store.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
-import { SkillStore, type SkillContent } from "./skills-store.js";
+import { SkillStore } from "./skills-store.js";
 import { Store } from "./store.js";
 import { grant, clearBuiltins, tempDatabase } from "./test-helpers.js";
 
@@ -284,8 +284,10 @@ const TOOLS = [
   skillLoad,
 ];
 
-const skill = (over: Partial<SkillContent> = {}): SkillContent => ({
-  displayName: "My Skill",
+const skill = (
+  over: Partial<{ name: string; description: string; body: string }> = {},
+) => ({
+  name: "my-skill",
   description: "Use when testing.",
   body: "Do the thing.",
   ...over,
@@ -639,7 +641,9 @@ describe("placeholders in runs", () => {
     const s = await setup([answer]);
     s.skills.create({ scope: "global" }, skill({ body: "Use {{tools}}." }));
     await say(s, await newSession(s.app));
-    expect(s.skills.inScope(null, null)[0]?.body).toBe("Use {{tools}}.");
+    expect(s.skills.inScope(null, null)[0]?.instructions).toBe(
+      "Use {{tools}}.",
+    );
   });
 });
 

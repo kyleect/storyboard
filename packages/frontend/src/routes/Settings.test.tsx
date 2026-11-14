@@ -76,6 +76,9 @@ const effective: SettingsShape = {
   port: 3000,
   loopLimit: 20,
   copyLimit: 50,
+  skillFileMaxMib: 20,
+  skillMaxMib: 100,
+  skillMaxFiles: 500,
   trashRetentionDays: 30,
   inlineMediaCap: 4,
   keepMediaInline: false,
@@ -323,6 +326,9 @@ describe("Settings forms", () => {
       loopLimit: 5,
       copyLimit: 50,
       workspaceReadCap: 20000,
+      skillFileMaxMib: 20,
+      skillMaxMib: 100,
+      skillMaxFiles: 500,
     });
   });
 

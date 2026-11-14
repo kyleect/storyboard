@@ -250,17 +250,47 @@ export interface SubagentAccess {
  */
 export type SkillScope = "builtin" | "global" | "project" | "agent";
 
+/** One file of a skill's folder. */
+export interface SkillFileInfo {
+  /** Inside the skill's folder, "/"-separated. */
+  path: string;
+  mediaType: string;
+  size: number;
+}
+
 /**
- * A skill as a run sees it: its content when the run started (skills design,
- * decision 13). `name` is the slug the model uses.
+ * A skill as a run sees it: its instructions and file list when the run
+ * started (skills design, decision 13; skills folders design, decision 8).
+ * `name` is the folder name the model uses; `version` is the version of the
+ * folder the run reads files from, so an edit during the run changes nothing.
  */
 export interface RunSkill {
+  id: string;
   name: string;
-  displayName: string;
   description: string;
-  body: string;
   scope: SkillScope;
+  version: number;
+  /** SKILL.md without its frontmatter. */
+  instructions: string;
+  /** Every file in the folder, SKILL.md included. */
+  files: readonly SkillFileInfo[];
 }
+
+/** What reading one file of a skill gives. */
+export type SkillFileRead =
+  | { kind: "text"; mediaType: string; size: number; text: string }
+  | { kind: "binary"; mediaType: string; size: number }
+  /** The file is in the version but its bytes were pruned. */
+  | { kind: "missing"; mediaType: string; size: number };
+
+/** Reads the files of the skills a run was given, at the versions it pinned. */
+export interface SkillFileAccess {
+  /** Undefined when the folder has no such file. */
+  read(skill: RunSkill, path: string): SkillFileRead | undefined;
+}
+
+/** For a run that has no skills. */
+export const NO_SKILL_FILES: SkillFileAccess = { read: () => undefined };
 
 export interface ToolContext {
   /** Fires when the run is cancelled. */
@@ -322,6 +352,8 @@ export interface ToolContext {
    * design, decisions 1, 13). Empty when there are none.
    */
   skills: readonly RunSkill[];
+  /** Reads the files of those skills (skills folders design, decision 12). */
+  skillFiles: SkillFileAccess;
   /**
    * Shows the user a form in the chat and waits for the answer, for as long
    * as it takes (input forms design, D2). Rejects when the run is cancelled,

@@ -131,10 +131,16 @@ function HeaderAction({
 const folderOf = (ref: NodeRef): string =>
   ref.kind === "file" ? dirName(ref.path) : ref.path;
 
+/** An extra entry in a node's menu, added by the explorer's owner. */
+export interface NodeAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface FileTreeProps {
   data: TreeNode[];
   info: ReadonlyMap<string, NodeInfo>;
-  roots: readonly Root[];
+  roots: readonly Pick<Root, "id" | "label">[];
   /** Why a root cannot be changed, when it cannot. */
   reasons: Readonly<Record<RootId, string | undefined>>;
   /** The root actions go to when nothing is selected: the page's own. */
@@ -157,6 +163,10 @@ export interface FileTreeProps {
   onDeleteFolder: (ref: NodeRef) => void;
   onDeleteFile: (ref: NodeRef) => void;
   onUpload: (root: RootId, folder: string, files: File[]) => void;
+  /** Extra header buttons, after the usual ones (skills: Import). */
+  extraTools?: React.ReactNode;
+  /** Extra menu entries for a node (skills: Export). Shown even when locked. */
+  nodeActions?: ((ref: NodeRef) => NodeAction[]) | undefined;
 }
 
 export function FileTree(props: FileTreeProps) {
@@ -305,6 +315,7 @@ export function FileTree(props: FileTreeProps) {
             locked={targetLocked ? (lockReason ?? "") : undefined}
             onClick={() => chooseFiles(target)}
           />
+          {props.extraTools}
           <Tooltip
             label={showDeleted ? "Hide deleted files" : "Show deleted files"}
             openDelay={400}
@@ -484,6 +495,7 @@ export function FileTree(props: FileTreeProps) {
               onDeleteFolder={() => props.onDeleteFolder(menu.ref)}
               onDeleteFile={() => props.onDeleteFile(menu.ref)}
               deleted={info.get(nodeValue(menu.ref))?.deleted ?? false}
+              extra={props.nodeActions?.(menu.ref) ?? []}
             />
           )}
         </Menu.Dropdown>
@@ -503,7 +515,9 @@ function TreeMenu({
   onRename,
   onDeleteFolder,
   onDeleteFile,
+  extra,
 }: {
+  extra: NodeAction[];
   menuRef: NodeRef;
   locked: boolean;
   deleted: boolean;
@@ -515,10 +529,16 @@ function TreeMenu({
   onDeleteFolder: () => void;
   onDeleteFile: () => void;
 }) {
+  const extras = extra.map((a) => (
+    <Menu.Item key={a.label} onClick={a.onClick}>
+      {a.label}
+    </Menu.Item>
+  ));
   if (menuRef.kind === "file") {
     return (
       <>
         <Menu.Item onClick={onOpen}>Open</Menu.Item>
+        {extras}
         {!locked && !deleted && (
           <Menu.Item color="red" onClick={onDeleteFile}>
             Delete
@@ -528,10 +548,16 @@ function TreeMenu({
     );
   }
   if (locked) {
-    return <Menu.Label>This folder cannot be changed right now.</Menu.Label>;
+    return (
+      <>
+        <Menu.Label>This folder cannot be changed right now.</Menu.Label>
+        {extras}
+      </>
+    );
   }
   return (
     <>
+      {extras}
       <Menu.Item onClick={onNewFile}>New file here</Menu.Item>
       <Menu.Item onClick={onNewFolder}>New folder here</Menu.Item>
       <Menu.Item onClick={onUpload}>Upload here</Menu.Item>

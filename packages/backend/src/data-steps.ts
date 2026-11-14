@@ -1,7 +1,8 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { randomUUID } from "node:crypto";
 import { editNotice, fileNameProblem, type FileOp } from "@harness/core";
-import { sha256 } from "./blobs.js";
+import { putBlob, sha256 } from "./blobs.js";
+import { buildSkillFile } from "./skill-frontmatter.js";
 
 /*
  * Data steps (files unification design, Q9): changes to stored data that a
@@ -586,6 +587,45 @@ export function renameNoteToDecisionComment(db: Database): number {
   });
 }
 
+/**
+ * Skills as folders (skills folders design, decision 20): every version of
+ * every skill, built-in ones included, gets a SKILL.md made from what it had:
+ * the skill's current name, the version's description, and its body as the
+ * instructions. The display name is dropped. A version already holding files
+ * is left alone, so the step can run again over a half-converted database.
+ */
+export function skillsToFolders(db: Database): number {
+  const versions = db
+    .prepare(
+      `SELECT v.skill_id, v.seq, v.description, v.body, s.name
+       FROM skill_versions v JOIN skills s ON s.id = v.skill_id
+       WHERE NOT EXISTS (
+         SELECT 1 FROM skill_files f WHERE f.skill_id = v.skill_id AND f.seq = v.seq
+       )`,
+    )
+    .all() as {
+    skill_id: string;
+    seq: number;
+    description: string;
+    body: string;
+    name: string;
+  }[];
+  const insert = db.prepare(
+    `INSERT INTO skill_files (skill_id, seq, path, media_type, size, blob_hash)
+     VALUES (?, ?, 'SKILL.md', 'text/markdown', ?, ?)`,
+  );
+  const now = new Date().toISOString();
+  for (const v of versions) {
+    const data = Buffer.from(
+      buildSkillFile(v.name, v.description, v.body),
+      "utf-8",
+    );
+    const blob = putBlob(db, "text/markdown", data, now);
+    insert.run(v.skill_id, v.seq, data.length, blob.hash);
+  }
+  return versions.length;
+}
+
 export const DATA_STEPS: DataStep[] = [
   {
     name: "file-ops-media-types",
@@ -596,6 +636,7 @@ export const DATA_STEPS: DataStep[] = [
   { name: "memory-removal", run: removeMemoryFromHistory },
   { name: "files-rename", run: renameEntriesToFiles },
   { name: "decision-comment-rename", run: renameNoteToDecisionComment },
+  { name: "skills-to-folders", run: skillsToFolders },
 ];
 
 /** Runs the steps that have not run yet; returns each one's name and count. */

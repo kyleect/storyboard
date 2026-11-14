@@ -124,14 +124,7 @@ export function projectAccess(deps: ProjectAccessDeps): ProjectAccess {
         let data = 0;
         if (deps.skills) {
           for (const s of deps.skills.list({ scope: "agent", id: from.id })) {
-            deps.skills.create(
-              { scope: "agent", id: to.id },
-              {
-                displayName: s.displayName,
-                description: s.description,
-                body: s.body,
-              },
-            );
+            deps.skills.copyTo(s.id, { scope: "agent", id: to.id });
             skills++;
           }
         }

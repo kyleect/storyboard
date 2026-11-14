@@ -28,6 +28,9 @@ export interface DebugRun {
   systemPrompt: string | null;
   /** The tools the run offered. Null when not recorded. */
   tools: ToolDefinition[] | null;
+  /** The skills the run was given and the version of each. Null: none. */
+  skillVersions:
+    { id: string; name: string; scope: string; version: number }[] | null;
   /** `recorded`: the prompt and tools were kept; `not_recorded`: they were not. */
   request: "recorded" | "not_recorded";
 }
@@ -85,6 +88,9 @@ export function buildSessionDebug(
       error: r.error,
       systemPrompt: r.system_prompt,
       tools: parseJson<ToolDefinition[]>(r.tools),
+      skillVersions: parseJson<
+        { id: string; name: string; scope: string; version: number }[]
+      >(r.skill_versions),
       request: recorded ? "recorded" : "not_recorded",
     };
   });

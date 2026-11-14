@@ -28,7 +28,10 @@ packages/frontend/src
   tool-grant.ts          tool grants: allowed tools and the edits a click makes
   mcp-form.ts            parsing and formatting the MCP server form's text fields
   attachments.ts, audio.ts   accepted file types; voice recording to WAV
-  explorer.ts            what the Files and Structured Data views share: roots, tab rules, saved view
+  explorer.ts            what the explorers share: roots, tab rules, saved view
+  agents-explorer.ts     the Agents view's logic: its tree, inherited skills and schemas, tabs
+  agent-focus.ts         a request to show an agent at a version (from a message's badge)
+  explorer-source.ts     ExplorerSource (where a root's files come from) and the files adapter
   files-explorer.ts      the Files view's logic: its tree, new files, folder renames
   structured-explorer.ts the Structured Data view's logic: its tree of schemas and data, tabs
   routes/
@@ -44,13 +47,18 @@ packages/frontend/src
     Files.tsx          the pieces for viewing a file (preview, versions)
     FilesPages.tsx     the global and project pages for files
     ExplorerShell.tsx    the frame both explorers share: tree pane, divider, tab strip, status bar
-    FilesExplorer.tsx    the Files view: file tree, tabs, status bar
+    SourceExplorer.tsx   an explorer over any roots: file tree, tabs, status bar
+    FilesExplorer.tsx    the Files view: SourceExplorer over the session, project and global roots
     FileTree.tsx, FileTab.tsx, TextEditor.tsx   its tree, its tab content, its editor
     StructuredExplorer.tsx   the Structured Data view: schemas and data as a tree and tabs
+    useStructured.tsx        its logic apart from layout: lists, tree, tabs, drafts, actions
     StructuredTree.tsx, StructuredTabs.tsx   its tree, its schema and data tabs (form and JSON)
     StructuredDataPages.tsx  the global and project pages for Structured Data
-    Agents.tsx, Skills.tsx   management pages
-    Schemas.tsx, Data.tsx    the schema builder and data forms (used by the explorer and the agent page)
+    AgentsExplorer.tsx       the Agents view: agents, with their skills and schemas, as a tree and tabs
+    AgentsTree.tsx, AgentForm.tsx   its tree, and an agent's tab (prompt and settings)
+    AgentParts.tsx           what the agent screens share: badges, tool summary, versions
+    Agents.tsx, Skills.tsx   the pages around those views, the project page's default-agent select, the picker and the badge
+    Schemas.tsx, Data.tsx    the schema builder, the copy dialog, and data forms (used by the explorers)
     Workspaces.tsx       workspaces and what they search
     Errors.tsx           errors console
     Settings.tsx         settings (areas and sections)
@@ -382,6 +390,28 @@ what is remembered) are in `files-explorer.ts` and, for what it shares with
 Structured Data, `explorer.ts`; both are tested without a DOM. The frame
 (`ExplorerShell.tsx`) is shared too.
 
+The tree, tabs and editor live in `SourceExplorer.tsx`, which never calls the
+API. It is given a list of `ExplorerRoot`s (id, label, why it is read-only, and
+a note that makes a save ask first), each with an `ExplorerSource`
+(`explorer-source.ts`): list, folders, get, write, remove, restore, folder
+operations, upload, and the query keys it caches under. `FilesExplorer.tsx` is
+`SourceExplorer` with one `filesSource(scope)` per root; another feature can
+show its own roots in the same editor by supplying other sources. A root id is
+any string; the three file roots are `FileRootId`.
+
+**Skills.** `SkillsExplorer.tsx` is the same editor over `skillsSource`
+(`skills-source.ts`): roots Built-in (read-only), Global, and on a project page
+Project. A skill is a top-level folder and a file's key is `skill-name/path`, so
+creating, renaming or deleting a top-level folder is doing that to the skill and
+anything deeper is a change inside it (each is a new version of the skill). A
+folder inside a skill exists while a file is in it, so "New folder" is refused
+below the top level. A source can take any file type (`accepts`), and the tree
+takes extra header buttons and menu entries (`extraTools`, `nodeActions`), which
+skills use for Import (zip or folder, with a preview and a name-clash choice in
+`SkillImport.tsx`), Export as zip and Copy to Global or to the project. A
+file's versions are the skill's versions that contain it. Agent skills are not
+shown here.
+
 **Roots.** The tree has a root folder for each place files live that the page
 can see: a session shows Session, Project (when it is in a project) and Global; a
 project page shows Project and Global; the global page shows Global. Each root
@@ -432,6 +462,15 @@ Data page of a project and of global. It is built like the Files view: the same
 frame, roots and tab rules, a tree on the left and open items as tabs on the
 right. The rules behind it are in `structured-explorer.ts`.
 
+Which roots it shows is the caller's to say. `StructuredExplorer` is the view of a
+page, whose roots come from `rootsFor`; `StructuredRoots` takes any list of roots,
+each with an owner (which may be an agent's), a label and, when nothing in it can
+be changed, the reason. `useStructured` holds everything but the layout, so a
+view with a tree of its own can use it. In an agent's root the agent's own schemas
+and data can be changed; the schemas of its project, of global and the built-in
+ones are shown as inherited and can be looked at, and data can be made from them,
+but not changed from there.
+
 **Tree.** Each root (Session, Project, Global, as for files) holds a **Schemas**
 folder. The folder holds a row for every schema the root can make data from; each
 schema holds the data the root's scope has made from it. Data whose schema is not
@@ -467,8 +506,47 @@ project root when the project is in the trash, and a root the backend reports as
 read-only. Built-in schemas and data without a schema can be looked at, not
 changed.
 
-The agent page still manages an agent's own schemas and data with the older
-`SchemasPanel` and `DataPanel`.
+## The Agents view
+
+`AgentsExplorer.tsx` is the Agents page, global and a project's. It is built like the
+Structured Data view: the frame of `ExplorerShell`, a tree on the left and open items
+as tabs on the right. The rules behind it are in `agents-explorer.ts`.
+
+**Tree.** The roots are **Built-in** (read-only), **Global** and, on a project's
+page, **Project**; each lists its agents. An agent holds a **Skills** folder and a
+**Schemas** folder. Skills holds the agent's own skill folders and files, then the
+skills it inherits in groups by where they come from (Project, Global, Built-in),
+read-only, with a tag on a name that another place overrides ("Overridden by
+Agent"). Schemas holds the agent's own schemas, each with the agent's data made
+from it, then the inherited schemas in the same groups. An agent's skills and
+schemas are read when its node is first opened, not up front. New agent and Import
+are buttons in the tree header; a row's menu (right-click) has New skill, New file,
+New schema, New data, Delete and Export, for what the row is.
+
+**Default agent.** Each agent row has a radio icon at its end: a filled circle-check
+on the default, an empty circle (shown on hover or focus) on the others. Clicking
+one makes it the default; clicking the default clears it. On the global page it is
+the global default agent (locked when an environment variable sets it); on a
+project's page it is the project's default, for an agent of any scope (locked when
+the project is in the trash).
+
+**Tabs.** An agent opens as a form (`AgentForm.tsx`): the system prompt in the main
+area, and name, description, subagent settings and tools in a side panel. One Save
+makes one version of the agent; edits not yet saved are a draft, shown with a dot on
+the tab. The form edits the agent's own settings only: restoring a version of the
+agent never changes its skills, schemas or data. Versions and Export are on its
+toolbar. A built-in agent opens read-only with **Copy to global**, which starts a
+new agent from it. A skill file opens in the text editor of the Files view, and a
+schema or its data in the Structured Data tabs (an agent's root, see
+`StructuredRoots` above); an inherited skill or schema opens read-only.
+
+**Chat badge.** The agent label on a message opens the Agents page, the agent's tab
+and its Versions list on that version (`agent-focus.ts` carries the request).
+
+**Tab kinds.** A project's Agents and Skills pages are the Agents and Skills tabs of
+the workbench with the project as their root, not kinds of their own. Tabs saved
+under the old kinds (`project-agents`, `project-skills`) are carried over when the
+workbench loads (`carryOver` in `workbench.ts`).
 
 ## Management pages
 
@@ -477,8 +555,8 @@ one page per scope. (The Files and Structured Data views are the exception; see 
 
 | Page                        | Edits    | Notes                                                                                                                                                                                                                           |
 | --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Agents.tsx`                | Agents   | Prompt, tool grant (see below), per-tool approval, subagent settings, import and export, version history, and a read-only view of the agent version a message was written with.                                                 |
-| `Skills.tsx`                | Skills   | Display name, description, body.                                                                                                                                                                                                |
+| `Agents.tsx`                | Agents   | The pages around the [Agents view](#the-agents-view), the project page's default-agent select, the chat's agent picker and the agent badge on a message. The tool grant (see below) is edited in the agent's tab.               |
+| `Skills.tsx`                | Skills   | The global and project pages, each the skills explorer. An agent's own skills are edited in the Agents view.                                                                                                                    |
 | `Schemas.tsx`               | Schemas  | A **builder** (a field tree and the selected field's settings) or a JSON editor (CodeMirror); earlier versions can be viewed. The builder only offers features the schema subset supports, so what it produces is always valid. |
 | `Data.tsx`, `DataValue.tsx` | Data     | Forms generated from the schema; the backend's validation is final and its problems are shown next to the fields. `DataValue` renders data read-only, laid out by its schema.                                                   |
 | `Errors.tsx`                | (read)   | Every recorded tool error and failed run, with a link to the message in the transcript. Also shown as a panel under each chat.                                                                                                  |

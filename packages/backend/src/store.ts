@@ -201,6 +201,8 @@ export interface RunRow {
   system_prompt: string | null;
   /** JSON list of the tool definitions the run offered; null as above. */
   tools: string | null;
+  /** JSON list of { id, name, scope, version } for the run's skills; null: none. */
+  skill_versions: string | null;
 }
 
 interface EventRow {
@@ -767,13 +769,15 @@ export class Store {
         .run(id);
       // The project's skills, and those of its agents (skills design,
       // decisions 20, 21), before the agents they point at.
-      this.db
-        .prepare(
-          `DELETE FROM skill_versions WHERE skill_id IN (
-             SELECT id FROM skills WHERE project_id = ?
-               OR agent_id IN (SELECT id FROM agents WHERE project_id = ?))`,
-        )
-        .run(id, id);
+      for (const table of ["skill_files", "skill_versions"]) {
+        this.db
+          .prepare(
+            `DELETE FROM ${table} WHERE skill_id IN (
+               SELECT id FROM skills WHERE project_id = ?
+                 OR agent_id IN (SELECT id FROM agents WHERE project_id = ?))`,
+          )
+          .run(id, id);
+      }
       this.db
         .prepare(
           `DELETE FROM skills WHERE project_id = ?
@@ -1574,13 +1578,23 @@ export class Store {
     /** For a subagent's run: the run and call that started it. */
     parent?: { runId: string; callId: string };
     /** What the run sends to the model, kept for debugging. */
-    request?: { systemPrompt?: string; tools?: readonly ToolDefinition[] };
+    request?: {
+      systemPrompt?: string;
+      tools?: readonly ToolDefinition[];
+      /** The skills the run was given, with the version of each. */
+      skillVersions?: readonly {
+        id: string;
+        name: string;
+        scope: string;
+        version: number;
+      }[];
+    };
   }) {
     const generation = run.generation ?? NO_GENERATION;
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version, parent_run_id, parent_call_id, system_prompt, tools)
-         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, kind, status, started_at, model, reasoning_effort, agent_id, agent_version, parent_run_id, parent_call_id, system_prompt, tools, skill_versions)
+         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -1595,6 +1609,9 @@ export class Store {
         run.parent?.callId ?? null,
         run.request?.systemPrompt ?? null,
         run.request?.tools ? JSON.stringify(run.request.tools) : null,
+        run.request?.skillVersions && run.request.skillVersions.length > 0
+          ? JSON.stringify(run.request.skillVersions)
+          : null,
       );
   }
 

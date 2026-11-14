@@ -41,6 +41,7 @@ import {
 } from "@harness/core";
 import type { Agent, AgentStore } from "./agents-store.js";
 import type { DataStore } from "./data-store.js";
+import { skillFileAccess } from "./skill-access.js";
 import type { SkillStore } from "./skills-store.js";
 import { AppEvents } from "./app-events.js";
 import { ErrorStore, type NewError } from "./errors-store.js";
@@ -1887,6 +1888,14 @@ export class RunManager {
       request: {
         ...(system ? { systemPrompt: system } : {}),
         tools: toolDefinitions(tools),
+        // Which version of each skill the run reads (skills folders design,
+        // decision 8).
+        skillVersions: skills.map((k) => ({
+          id: k.id,
+          name: k.name,
+          scope: k.scope,
+          version: k.version,
+        })),
       },
     });
 
@@ -2060,6 +2069,9 @@ export class RunManager {
           ...(continuing ? { continueMessage: continuing } : {}),
           tools,
           skills,
+          ...(this.options.skills
+            ? { skillFiles: skillFileAccess(this.options.skills) }
+            : {}),
           ...(runAgent ? { agent: runAgent } : {}),
           ...(child
             ? {

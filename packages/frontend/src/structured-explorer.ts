@@ -1,5 +1,5 @@
 import type { SchemaInfo, SchemaScope } from "@harness/core";
-import type { DataItem, FileScope } from "./api";
+import type { DataItem, DataOwner } from "./api";
 import {
   loadViewIn,
   nodeValue,
@@ -7,6 +7,7 @@ import {
   parseNodeValueOf,
   saveViewIn,
   type ExplorerTab,
+  type PageKey,
   type Root,
   type RootId,
   type SavedViewOf,
@@ -16,11 +17,12 @@ import {
 
 /*
  * The logic behind the editor-style Structured Data view
- * (`routes/StructuredExplorer.tsx`): the tree of Session, Project and Global
- * roots, each with a Schemas folder, a row for every schema it can make data
- * from, and the data under each schema. The roots, the tab rules and what is
- * remembered are shared with the Files view (`explorer.ts`). Pure, so it is
- * tested without a DOM.
+ * (`routes/StructuredExplorer.tsx`): the tree of roots, each with a Schemas
+ * folder, a row for every schema it can make data from, and the data under
+ * each schema. Which roots there are is the caller's to say: a page has
+ * Session, Project and Global (`rootsFor`), an agent has its own. The tab
+ * rules and what is remembered are shared with the Files view
+ * (`explorer.ts`). Pure, so it is tested without a DOM.
  */
 
 export type NodeKind =
@@ -56,8 +58,14 @@ export interface NodeInfo {
   outOfDate?: boolean;
 }
 
+/** A root of the Structured Data tree, with why it cannot be changed. */
+export interface StructuredRoot extends Root<DataOwner> {
+  /** Why nothing in this root can be changed, when that is so. */
+  readOnly?: string | undefined;
+}
+
 export interface RootData {
-  root: Root;
+  root: Root<DataOwner>;
   /** The schemas this root can make data from, with its own. */
   schemas: readonly SchemaInfo[];
   /** The data this root's scope holds. */
@@ -77,9 +85,12 @@ const byName = (a: { label: string }, b: { label: string }) =>
  * schemas are the Global root's own (the Global page lists them), and
  * inherited anywhere below it.
  */
-export const isInherited = (schema: SchemaInfo, root: Root): boolean =>
+export const isInherited = (
+  schema: SchemaInfo,
+  root: Root<DataOwner>,
+): boolean =>
   schema.scope === "builtin"
-    ? root.id !== "global"
+    ? root.scope.scope !== "global"
     : schema.scope !== root.scope.scope;
 
 /** Name of a scope for a person: "Global", "Project", "Session", "Agent". */
@@ -90,14 +101,18 @@ export const scopeName = (scope: SchemaScope): string =>
 
 /**
  * The root a schema's tab belongs to: the root of the scope it lives in, so
- * one schema is one tab, however many roots show it. Built-in schemas are
- * global. An agent's schema has no root of its own; it belongs to the root
+ * one schema is one tab, however many roots show it. Built-in schemas live
+ * with the global ones. A schema whose scope has no root here (an agent's,
+ * seen from a session; a project's, seen from an agent) belongs to the root
  * it was opened from.
  */
-export function schemaTabRoot(scope: SchemaScope, from: RootId): RootId {
-  if (scope === "builtin") return "global";
-  if (scope === "agent") return from;
-  return scope;
+export function schemaTabRoot(
+  scope: SchemaScope,
+  from: RootId,
+  roots: readonly Root<DataOwner>[],
+): RootId {
+  const home = scope === "builtin" ? "global" : scope;
+  return roots.find((r) => r.scope.scope === home)?.id ?? from;
 }
 
 /**
@@ -245,8 +260,11 @@ export type SavedView = SavedViewOf<TabState>;
 
 const KINDS = ["schema", "data"] as const;
 
-export const loadView = (page: FileScope): SavedView =>
-  loadViewIn("structured", page, KINDS);
+/** `isRoot` says which roots a saved tab may name; the file roots if left out. */
+export const loadView = (
+  page: PageKey,
+  isRoot?: (v: unknown) => boolean,
+): SavedView => loadViewIn("structured", page, KINDS, isRoot);
 
-export const saveView = (page: FileScope, view: SavedView): void =>
+export const saveView = (page: PageKey, view: SavedView): void =>
   saveViewIn("structured", page, view);

@@ -95,6 +95,7 @@ export async function runAnsweringForms(
 export function clearBuiltins(db: Database): void {
   clearBuiltinAgents(db);
   db.exec(`
+    DELETE FROM skill_files WHERE skill_id IN (SELECT id FROM skills WHERE builtin = 1);
     DELETE FROM skill_versions WHERE skill_id IN (SELECT id FROM skills WHERE builtin = 1);
     DELETE FROM skills WHERE builtin = 1;
     DELETE FROM schema_versions WHERE schema_id IN (SELECT id FROM schemas WHERE builtin = 1);

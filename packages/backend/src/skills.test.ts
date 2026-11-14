@@ -14,11 +14,10 @@ import { AppEvents, type AppEvent } from "./app-events.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
+import { skillNameProblem } from "./skill-frontmatter.js";
 import {
   MAX_DESCRIPTION,
-  slugify,
   SkillStore,
-  type SkillContent,
   type SkillOwner,
 } from "./skills-store.js";
 import { Store } from "./store.js";
@@ -46,8 +45,15 @@ const tool = (name: string, alwaysOn = false): Tool =>
 /** `files_read` stands in for the always-on files and memory tools. */
 const TOOLS = [tool("alpha"), tool("files_read", true), skillLoad];
 
-const content = (over: Partial<SkillContent> = {}): SkillContent => ({
-  displayName: "My Skill",
+/** What the simple create and save forms take. */
+interface Content {
+  name: string;
+  description: string;
+  body: string;
+}
+
+const content = (over: Partial<Content> = {}): Content => ({
+  name: "my-skill",
   description: "Use when testing.",
   body: "Do the thing.",
   ...over,
@@ -161,75 +167,79 @@ const systemOf = (r: unknown) =>
 const toolNames = (r: unknown) =>
   ((r as ChatRequest).tools ?? []).map((t) => t.name).sort();
 
-describe("slugify (skills design, decision 4)", () => {
-  it("makes lowercase names with single hyphens", () => {
-    expect(slugify("My Skill")).toBe("my-skill");
-    expect(slugify("  Dialogue   Polish!! ")).toBe("dialogue-polish");
-    expect(slugify("A_b--c.d")).toBe("a-b-c-d");
-    expect(slugify("Scene 2: Outline")).toBe("scene-2-outline");
+describe("skill names (skills folders design, decision 2)", () => {
+  it("accepts lowercase letters, digits and single hyphens", () => {
+    for (const name of ["my-skill", "a", "scene-2-outline", "x".repeat(64)]) {
+      expect(skillNameProblem(name)).toBeUndefined();
+    }
   });
 
-  it("transliterates accents and drops what it cannot", () => {
-    expect(slugify("Café Scène")).toBe("cafe-scene");
-    expect(slugify("日本語 notes")).toBe("notes");
-  });
-
-  it("is empty when no letters or digits are left", () => {
-    expect(slugify("!!! ---")).toBe("");
-    expect(slugify("日本語")).toBe("");
-  });
-
-  it("is at most 64 characters, with no hyphen at the end", () => {
-    const slug = slugify(`${"a".repeat(63)} b`);
-    expect(slug).toBe("a".repeat(63));
-    expect(slugify("a".repeat(100))).toHaveLength(64);
+  it("refuses anything else, and says why", () => {
+    expect(skillNameProblem("")).toMatch(/empty/);
+    expect(skillNameProblem("x".repeat(65))).toMatch(/the most is 64/);
+    for (const name of [
+      "My-Skill",
+      "-a",
+      "a-",
+      "a--b",
+      "a b",
+      "a_b",
+      "café",
+      "a/b",
+    ]) {
+      expect(skillNameProblem(name)).toMatch(/lowercase letters/);
+    }
   });
 });
 
 describe("skill store", () => {
-  it("creates and saves versions; the name follows the display name", () => {
+  it("creates a skill with a SKILL.md and saves versions", () => {
     const t = tempDatabase();
     clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
-    const s = skills.create(GLOBAL, content({ displayName: "  My Skill " }));
+    const s = skills.create(GLOBAL, content({ name: "  my-skill " }));
     expect(s).toMatchObject({
-      displayName: "My Skill",
       name: "my-skill",
+      description: "Use when testing.",
       scope: "global",
       projectId: null,
       agentId: null,
       version: 1,
       deleted: false,
     });
-    const b = skills.update(
-      s.id,
-      content({ displayName: "Better Skill", body: "B2" }),
+    expect(skills.skillFileText(s.id)).toBe(
+      "---\nname: my-skill\ndescription: Use when testing.\n---\n\nDo the thing.",
     );
-    expect(b).toMatchObject({
-      displayName: "Better Skill",
-      name: "better-skill",
+    const b = skills.updateText(s.id, {
+      description: "Better.",
       body: "B2",
-      version: 2,
     });
+    expect(b).toMatchObject({ description: "Better.", version: 2 });
+    expect(skills.skillFileText(s.id)).toContain("B2");
     expect(
-      skills.versions(s.id).map((v) => [v.seq, v.name, v.body, v.deleted]),
+      skills
+        .versions(s.id)
+        .map((v) => [v.seq, v.name, v.description, v.fileCount]),
     ).toEqual([
-      [1, "my-skill", "Do the thing.", false],
-      [2, "better-skill", "B2", false],
+      [1, "my-skill", "Use when testing.", 1],
+      [2, "my-skill", "Better.", 1],
     ]);
   });
 
-  it("checks the name, the description and the slug", () => {
+  it("checks the name and the description", () => {
     const t = tempDatabase();
     clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
-    expect(() => skills.create(GLOBAL, content({ displayName: "  " }))).toThrow(
+    expect(() => skills.create(GLOBAL, content({ name: "  " }))).toThrow(
       /name is empty/,
     );
+    expect(() => skills.create(GLOBAL, content({ name: "Bad Name" }))).toThrow(
+      /lowercase letters/,
+    );
     expect(() => skills.create(GLOBAL, content({ description: " " }))).toThrow(
-      /description is required/,
+      /needs a description/,
     );
     expect(() =>
       skills.create(
@@ -243,12 +253,9 @@ describe("skill store", () => {
         content({ description: "x".repeat(MAX_DESCRIPTION) }),
       ),
     ).not.toThrow();
-    expect(() =>
-      skills.create(GLOBAL, content({ displayName: "!!!" })),
-    ).toThrow(/no letters or digits/);
     // An empty body is allowed.
     expect(() =>
-      skills.create(GLOBAL, content({ displayName: "Empty", body: "" })),
+      skills.create(GLOBAL, content({ name: "empty", body: "" })),
     ).not.toThrow();
   });
 
@@ -262,10 +269,7 @@ describe("skill store", () => {
     store.createProject({ id: "p", name: "P", description: "", now: "T" });
     const agent = agents.create(null, agentContent());
     const s = skills.create(GLOBAL, content());
-    // The slug is what clashes, not the display name.
-    expect(() =>
-      skills.create(GLOBAL, content({ displayName: "my  SKILL" })),
-    ).toThrow(/already exists/);
+    expect(() => skills.create(GLOBAL, content())).toThrow(/already exists/);
     // The same name in another scope is fine (decision 2).
     expect(() =>
       skills.create({ scope: "project", id: "p" }, content()),
@@ -276,8 +280,8 @@ describe("skill store", () => {
     skills.delete(s.id);
     expect(() => skills.create(GLOBAL, content())).toThrow(/deleted skill/);
     // A rename onto another skill's name is refused too.
-    const other = skills.create(GLOBAL, content({ displayName: "Other" }));
-    expect(() => skills.update(other.id, content())).toThrow(/deleted skill/);
+    const other = skills.create(GLOBAL, content({ name: "other" }));
+    expect(() => skills.rename(other.id, "my-skill")).toThrow(/deleted skill/);
   });
 
   it("deletes as a version and restores", () => {
@@ -286,39 +290,28 @@ describe("skill store", () => {
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
     const s = skills.create(GLOBAL, content());
-    skills.update(s.id, content({ body: "V2" }));
+    skills.updateText(s.id, { description: "D", body: "V2" });
     const gone = skills.delete(s.id);
-    expect(gone).toMatchObject({ deleted: true, version: 3, body: "V2" });
+    expect(gone).toMatchObject({ deleted: true, version: 3 });
+    expect(skills.skillFileText(s.id)).toContain("V2");
     expect(skills.list(GLOBAL)).toEqual([]);
     expect(skills.list(GLOBAL, true)).toHaveLength(1);
-    expect(() => skills.update(s.id, content())).toThrow(/is deleted/);
+    expect(() =>
+      skills.updateText(s.id, { description: "D", body: "" }),
+    ).toThrow(/is deleted/);
     expect(() => skills.delete(s.id)).toThrow(/already deleted/);
     expect(() => skills.restore(s.id, 3)).toThrow(/a deletion/);
     expect(() => skills.restore(s.id, 9)).toThrow(/No version 9/);
     // Restoring an earlier version makes it the next one, and undeletes.
     const back = skills.restore(s.id, 1);
-    expect(back).toMatchObject({
-      deleted: false,
-      version: 4,
-      body: "Do the thing.",
-    });
+    expect(back).toMatchObject({ deleted: false, version: 4 });
+    expect(skills.skillFileText(s.id)).toContain("Do the thing.");
     expect(skills.versions(s.id).map((v) => v.deleted)).toEqual([
       false,
       false,
       true,
       false,
     ]);
-  });
-
-  it("refuses to restore a version whose name another skill now has", () => {
-    const t = tempDatabase();
-    clearBuiltins(t.db);
-    cleanups.push(t.cleanup);
-    const skills = new SkillStore(t.db);
-    const a = skills.create(GLOBAL, content({ displayName: "A" }));
-    skills.update(a.id, content({ displayName: "B" }));
-    skills.create(GLOBAL, content({ displayName: "A" }));
-    expect(() => skills.restore(a.id, 1)).toThrow(/already exists/);
   });
 });
 
@@ -335,7 +328,7 @@ describe("skills in scope (decision 1)", () => {
     const globalAgent = agents.create(null, agentContent({ name: "G" }));
     const projectAgent = agents.create("p", agentContent({ name: "PA" }));
     const otherAgent = agents.create(null, agentContent({ name: "O" }));
-    const named = (displayName: string) => content({ displayName });
+    const named = (name: string) => content({ name });
     skills.create(GLOBAL, named("g"));
     skills.create({ scope: "project", id: "p" }, named("p"));
     skills.create({ scope: "project", id: "q" }, named("q"));
@@ -370,16 +363,24 @@ describe("skills in scope (decision 1)", () => {
     clearBuiltins(t.db);
     cleanups.push(t.cleanup);
     const skills = new SkillStore(t.db);
-    const a = skills.create(GLOBAL, content({ displayName: "A" }));
-    skills.create(GLOBAL, content({ displayName: "B", body: "BB" }));
+    const a = skills.create(GLOBAL, content({ name: "a" }));
+    const b = skills.create(GLOBAL, content({ name: "b", body: "BB" }));
     skills.delete(a.id);
     expect(skills.inScope(null, null)).toEqual([
       {
+        id: b.id,
         name: "b",
-        displayName: "B",
         description: "Use when testing.",
-        body: "BB",
         scope: "global",
+        version: 1,
+        instructions: "BB",
+        files: [
+          {
+            path: "SKILL.md",
+            mediaType: "text/markdown",
+            size: skills.files(b.id)[0]?.size,
+          },
+        ],
       },
     ]);
   });
@@ -417,10 +418,20 @@ describe("skill routes", () => {
         app,
         "PUT",
         `/api/skills/${id}`,
-        content({ displayName: "Renamed Skill" }),
+        content({ description: "Better." }),
       );
       expect(saved.status).toBe(200);
-      expect(saved.body).toMatchObject({ name: "renamed-skill", version: 2 });
+      expect(saved.body).toMatchObject({
+        name: "my-skill",
+        description: "Better.",
+        version: 2,
+      });
+      // The save form never renames; renaming is its own call.
+      const renamed = await api(app, "POST", `/api/skills/${id}/rename`, {
+        name: "renamed-skill",
+      });
+      expect(renamed.status).toBe(200);
+      expect(renamed.body).toMatchObject({ name: "renamed-skill", version: 3 });
 
       expect((await api(app, "DELETE", `/api/skills/${id}`)).status).toBe(204);
       expect((await api(app, "GET", base)).body).toEqual([]);
@@ -434,12 +445,12 @@ describe("skill routes", () => {
       });
       expect(restored.body).toMatchObject({
         deleted: false,
-        displayName: "My Skill",
-        version: 4,
+        name: "renamed-skill",
+        version: 5,
       });
     }
     expect(received.filter((e) => e.type === "skills.changed").length).toBe(
-      bases.length * 4,
+      bases.length * 5,
     );
     const first = received.find((e) => e.type === "skills.changed");
     expect(first).toMatchObject({
@@ -451,23 +462,16 @@ describe("skill routes", () => {
     const { app } = await setup();
     const base = "/api/global/skills";
     expect((await api(app, "POST", base, content())).status).toBe(201);
-    const clash = await api(
-      app,
-      "POST",
-      base,
-      content({ displayName: "my skill" }),
-    );
+    const clash = await api(app, "POST", base, content({ name: "my-skill" }));
     expect(clash.status).toBe(409);
     expect(clash.body.error).toMatch(/already exists/);
     expect(
       (await api(app, "POST", base, content({ description: "" }))).status,
     ).toBe(400);
-    expect(
-      (await api(app, "POST", base, content({ displayName: "???" }))).status,
-    ).toBe(400);
-    expect((await api(app, "POST", base, { displayName: "X" })).status).toBe(
+    expect((await api(app, "POST", base, content({ name: "" }))).status).toBe(
       400,
     );
+    expect((await api(app, "POST", base, { name: "x" })).status).toBe(400);
     expect((await api(app, "GET", "/api/skills/nope")).status).toBe(404);
     expect((await api(app, "GET", "/api/projects/nope/skills")).status).toBe(
       404,
@@ -487,7 +491,7 @@ describe("skill routes", () => {
           app,
           "POST",
           `/api/projects/${p}/skills`,
-          content({ displayName: "X" }),
+          content({ name: "x" }),
         )
       ).status,
     ).toBe(409);
@@ -516,7 +520,7 @@ describe("skill routes", () => {
           app,
           "POST",
           `/api/agents/${agent.id}/skills`,
-          content({ displayName: "X" }),
+          content({ name: "x" }),
         )
       ).status,
     ).toBe(409);
@@ -568,15 +572,15 @@ describe("skills in runs", () => {
     const agent = await newAgent(app, {}, p);
     skills.create(
       GLOBAL,
-      content({ displayName: "G One", description: "Global one." }),
+      content({ name: "g-one", description: "Global one." }),
     );
     skills.create(
       { scope: "project", id: p },
-      content({ displayName: "P One", description: "Project one." }),
+      content({ name: "p-one", description: "Project one." }),
     );
     skills.create(
       { scope: "agent", id: agent.id },
-      content({ displayName: "A One", description: "Agent one." }),
+      content({ name: "a-one", description: "Agent one." }),
     );
     const send = async (session: string, agentId?: string) => {
       const res = await api(app, "POST", `/api/sessions/${session}/messages`, {

@@ -9,6 +9,7 @@ import {
   NO_SUBAGENTS,
   NO_DATA,
   NO_PROJECTS,
+  NO_SKILL_FILES,
 } from "@harness/core";
 import { askUser } from "./ask-user.js";
 
@@ -29,6 +30,7 @@ function context(answer: InputAnswer) {
     data: NO_DATA,
     copyLimit: 20,
     skills: [],
+    skillFiles: NO_SKILL_FILES,
     files: createFileAccess({
       session: replaySessionFiles([]),
       sessionOps: [],

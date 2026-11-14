@@ -222,7 +222,7 @@ describe("built-in skills", () => {
     );
     const mine = skills.create(
       { scope: "global" },
-      { displayName: "Tasks", description: "Mine.", body: "My way." },
+      { name: "tasks", description: "Mine.", body: "My way." },
     );
     expect(mine.name).toBe("tasks");
   });

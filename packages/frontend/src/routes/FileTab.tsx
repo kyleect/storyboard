@@ -12,9 +12,7 @@ import { modals } from "@mantine/modals";
 import { IconHistory, IconMarkdown, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, type FileScope } from "../api";
-import { rootLabel, type RootId } from "../files-explorer";
-import { fileKeys } from "../queries";
+import type { ExplorerSource } from "../explorer-source";
 import {
   confirmDelete,
   TypeBadge,
@@ -41,50 +39,52 @@ export interface Draft {
 }
 
 export function FileTab({
-  scope,
-  root,
+  source,
+  rootLabel,
   fileKey,
   readOnly,
-  higher,
+  broadNote,
   draft,
   onDraft,
   onKeep,
   onCursor,
   onPreview,
 }: {
-  scope: FileScope;
-  root: RootId;
+  source: ExplorerSource;
+  /** The name of the root the file is in. */
+  rootLabel: string;
   fileKey: string;
   /** Why the file cannot be changed, when it cannot. */
   readOnly: string | undefined;
-  /** The file is in a higher scope than the page it is edited from. */
-  higher: boolean;
+  /** Saving reaches more than the page does: ask first, with this reason. */
+  broadNote: string | undefined;
   draft: Draft | undefined;
   onDraft: (draft: Draft | undefined) => void;
   /** The tab was edited, so it stays open. */
   onKeep: () => void;
   onCursor: (cursor: Cursor) => void;
-  onPreview: () => void;
+  /** Left out: no Preview button (the explorer has no preview tab). */
+  onPreview?: (() => void) | undefined;
 }) {
   const queryClient = useQueryClient();
-  const refresh = useRefresh(scope);
+  const refresh = useRefresh(source);
   const [versions, setVersions] = useState(false);
   const file = useQuery({
-    queryKey: fileKeys.detail(scope, fileKey),
-    queryFn: () => api.getFile(scope, fileKey),
+    queryKey: source.keys.detail(fileKey),
+    queryFn: () => source.get(fileKey),
   });
   const save = useMutation({
     mutationFn: (text: string) =>
-      api.writeFile(scope, fileKey, file.data?.mediaType ?? "text/plain", text),
+      source.write(fileKey, file.data?.mediaType ?? "text/plain", text),
     onSuccess: async (saved) => {
-      queryClient.setQueryData(fileKeys.detail(scope, fileKey), saved);
+      queryClient.setQueryData(source.keys.detail(fileKey), saved);
       onDraft(undefined);
       await refresh();
     },
     onError: showError("Could not save the file"),
   });
   const remove = useMutation({
-    mutationFn: () => api.deleteFile(scope, fileKey),
+    mutationFn: () => source.remove(fileKey),
     onSuccess: refresh,
     onError: showError("Could not delete the file"),
   });
@@ -105,20 +105,14 @@ export function FileTab({
 
   const doSave = () => {
     if (!editable || draft === undefined) return;
-    if (!higher) {
+    if (broadNote === undefined) {
       save.mutate(draft.text);
       return;
     }
     // A higher scope reaches more sessions than this one (Kylee, 2026-11-11).
     modals.openConfirmModal({
-      title: `Save to the ${rootLabel(root)} file “${fileKey}”?`,
-      children: (
-        <Text size="sm">
-          {rootLabel(root) === "Global"
-            ? "Every session sees this file."
-            : "Every session in this project sees this file."}
-        </Text>
-      ),
+      title: `Save to the ${rootLabel} file “${fileKey}”?`,
+      children: <Text size="sm">{broadNote}</Text>,
       labels: { confirm: "Save", cancel: "Cancel" },
       onConfirm: () => save.mutate(draft.text),
     });
@@ -148,7 +142,7 @@ export function FileTab({
           style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
         >
           <Text size="xs" c="dimmed" truncate>
-            {rootLabel(root)} › {fileKey.split("/").join(" › ")}
+            {rootLabel} › {fileKey.split("/").join(" › ")}
           </Text>
           <TypeBadge {...(f.mediaType ? { mediaType: f.mediaType } : {})} />
           {f.deleted && (
@@ -180,7 +174,7 @@ export function FileTab({
               Save
             </Button>
           )}
-          {f.mediaType === "text/markdown" && !f.deleted && (
+          {onPreview && f.mediaType === "text/markdown" && !f.deleted && (
             <Tooltip
               label="Open the rendered Markdown in a new tab"
               openDelay={400}
@@ -289,7 +283,7 @@ export function FileTab({
 
       {versions && (
         <VersionsModal
-          scope={scope}
+          source={source}
           file={f}
           readOnly={readOnly !== undefined}
           onClose={() => setVersions(false)}
@@ -301,17 +295,17 @@ export function FileTab({
 
 /** The rendered Markdown of a file, in its own tab; follows unsaved text. */
 export function PreviewTab({
-  scope,
+  source,
   fileKey,
   draft,
 }: {
-  scope: FileScope;
+  source: ExplorerSource;
   fileKey: string;
   draft: Draft | undefined;
 }) {
   const file = useQuery({
-    queryKey: fileKeys.detail(scope, fileKey),
-    queryFn: () => api.getFile(scope, fileKey),
+    queryKey: source.keys.detail(fileKey),
+    queryFn: () => source.get(fileKey),
   });
   if (file.isPending) return <Loader size="sm" m="md" />;
   if (file.isError) {

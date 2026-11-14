@@ -38,6 +38,7 @@ import type { ChatRequest, ModelAdapter } from "./model.js";
 import { emitter, streamMessage, type RunContext } from "./run.js";
 import {
   latestToolState,
+  NO_SKILL_FILES,
   serializeResult,
   toolDefinitions,
   ToolError,
@@ -48,6 +49,7 @@ import {
   type SubagentAccess,
   type ReviewPlan,
   type RunSkill,
+  type SkillFileAccess,
   type Tool,
   type ToolContext,
   type ToolOutput,
@@ -215,6 +217,8 @@ export interface LoopContext extends RunContext {
   copyLimit?: number;
   /** The skills in scope for the run (skills design). Left out: none. */
   skills?: readonly RunSkill[];
+  /** Reads those skills' files. Left out: none can be read. */
+  skillFiles?: SkillFileAccess;
   /** Starting subagents. Left out: the tool that starts them fails. */
   subagents?: SubagentAccess;
   /**
@@ -743,6 +747,7 @@ export async function runLoop(
       subagents: ctx.subagents ?? NO_SUBAGENTS,
       copyLimit: ctx.copyLimit ?? DEFAULT_COPY_LIMIT,
       skills: ctx.skills ?? [],
+      skillFiles: ctx.skillFiles ?? NO_SKILL_FILES,
       requestInput,
       ...(approval ? { approval } : {}),
     });
