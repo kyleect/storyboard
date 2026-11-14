@@ -2,11 +2,6 @@ import { TextInput, Title, UnstyledButton } from "@mantine/core";
 import { useState } from "react";
 import { showError } from "../../../lib/notify";
 
-/**
- * A session title or project name; click to edit it in place (sessions and
- * projects design, Q1, Q13b). Enter or leaving the field saves, Escape
- * cancels. Trimmed; empty is not saved.
- */
 export function EditableTitle({
   title,
   label,
@@ -14,7 +9,6 @@ export function EditableTitle({
   onSave,
 }: {
   title: string;
-  /** The field's accessible name. */
   label: string;
   disabled: boolean;
   onSave: (title: string) => Promise<void>;
@@ -38,7 +32,6 @@ export function EditableTitle({
   }
 
   const save = () => {
-    // Enter saves, and the field then loses focus: save once.
     if (saving) return;
     const trimmed = draft.trim();
     if (!trimmed || trimmed === title) {

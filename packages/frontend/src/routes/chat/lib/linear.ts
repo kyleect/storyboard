@@ -2,17 +2,6 @@ import type { ContentBlock, StoredEvent } from "@harness/core";
 import type { DebugMessage, DebugRun, SessionDebug } from "../../../api";
 import { eventSummary, shortId } from "./debug";
 
-/*
- * The linear view: one chronological list of what happened in a session, as
- * a conversation reads. Each run opens with the system prompt and tools it
- * was given, then come the messages (user, assistant with its reasoning and
- * tool calls, tool results) and the other events (approvals, forms, run
- * endings) in the order they happened.
- *
- * Messages carry the content, so the events that only repeat it are left
- * out: streaming deltas, block ends, and `tool.called`.
- */
-
 export type LinearKind =
   "system" | "tools" | "user" | "assistant" | "tool" | "edit" | "event";
 
@@ -27,34 +16,21 @@ export const LINEAR_KINDS: readonly LinearKind[] = [
 ];
 
 export interface LinearItem {
-  /** Unique and stable for a given export. */
   key: string;
   kind: LinearKind;
   title: string;
-  /** ISO time; null for a message whose time was not recorded. */
   time: string | null;
   runId: string | null;
-  /** How many subagent levels deep the run is. */
   depth: number;
-  /** Plain text, shown as is. */
   text?: string;
-  /** An assistant message's content. */
   blocks?: ContentBlock[];
-  /** Model, reasoning effort, agent and token counts of an assistant message. */
   meta?: string;
-  /** For an assistant message: calls that started a subagent, by call id. */
   calls?: Record<string, string>;
-  /**
-   * What the message holds besides its text: a tool result's decision comment,
-   * form answers, file and data changes and saved state; an edit's changes.
-   */
   extras?: Record<string, unknown>;
-  /** The message or event behind the item, for "Show JSON". */
   raw: unknown;
   isError?: boolean;
 }
 
-/** Events whose content is already in a message, so they add nothing. */
 const REPEATS: ReadonlySet<string> = new Set([
   "step.started",
   "step.finished",
@@ -67,7 +43,6 @@ const REPEATS: ReadonlySet<string> = new Set([
   "tool.update",
 ]);
 
-/** Events that mark where a stored message belongs in time. */
 const ANCHORS: ReadonlySet<string> = new Set([
   "message.finished",
   "tool.result",
@@ -83,10 +58,7 @@ const messageIdOf = (e: StoredEvent): string | undefined => {
   return typeof id === "string" ? id : undefined;
 };
 
-/** The system prompt and tools of a run, as two items. */
 function requestItems(run: DebugRun, depth: number, key: string, time: string) {
-  // The time of the run.started event, which the items follow: the run row's
-  // own start is written a moment earlier, and would read as out of order.
   const base = { time, runId: run.id, depth };
   if (run.request === "not_recorded") {
     return [
@@ -124,7 +96,6 @@ function requestItems(run: DebugRun, depth: number, key: string, time: string) {
   ];
 }
 
-/** Model, reasoning effort, agent and token counts, when there are any. */
 function metaOf(m: DebugMessage): string | undefined {
   const parts = [
     m.model ? `model ${m.model}` : undefined,
@@ -137,11 +108,9 @@ function metaOf(m: DebugMessage): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-/** The fields that are set. */
 const present = (fields: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
 
-/** A user message's text, led by a line for each file sent with it. */
 function withFiles(text: string, files: readonly string[] | undefined): string {
   if (!files || files.length === 0) return text;
   const lines = files.map((ref) => `[attached: ${ref}]`);
@@ -184,8 +153,6 @@ function messageItem(
       };
     }
     case "tool": {
-      // `data` is the structured result; shown only when the text the model
-      // got does not already say it.
       const dataText =
         typeof msg.data === "string" ? msg.data : JSON.stringify(msg.data);
       const extras = present({
@@ -223,7 +190,6 @@ function messageItem(
   }
 }
 
-/** The whole session as one chronological list. */
 export function buildLinear(debug: SessionDebug): LinearItem[] {
   const runs = new Map(debug.runs.map((r) => [r.id, r]));
   const depthOf = (runId: string | null): number => {
@@ -237,14 +203,11 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
   };
   const byId = new Map(debug.messages.map((m) => [m.id, m]));
 
-  // Messages an event places; the others (user messages, and any a run
-  // never finished) are placed by their time.
   const anchored = new Set<string>();
   for (const e of debug.events) {
     const id = messageIdOf(e);
     if (id !== undefined && byId.has(id)) anchored.add(id);
   }
-  // Placed by time, so those with no time go last: one cannot block the rest.
   const unplaced = debug.messages.filter((m) => !anchored.has(m.id));
   const loose = [
     ...unplaced.filter((m) => m.createdAt !== null),
@@ -306,7 +269,6 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
   }
   flushLoose(null);
 
-  // Tie each subagent to the call that started it, both ways.
   const tag = (id: string) => {
     const i = debug.runs.findIndex((r) => r.id === id);
     return i < 0 ? shortId(id) : `${i + 1} (${shortId(id)})`;
@@ -349,7 +311,6 @@ export const NO_LINEAR_FILTER: LinearFilter = {
   runId: null,
 };
 
-/** The items that pass every part of the filter, in their order. */
 export function filterLinear(
   items: readonly LinearItem[],
   filter: LinearFilter,
@@ -370,7 +331,6 @@ export function filterLinear(
   });
 }
 
-/** What the header of the text export tells a reader about the format. */
 const READING_NOTES = [
   "Items are in the order they happened. Each run starts with the system prompt and tools it was given.",
   "A subagent's items are marked and sit where it ran; a top-level run's own request does not include its subagents' messages.",
@@ -380,7 +340,6 @@ const READING_NOTES = [
 
 const json = (value: unknown) => JSON.stringify(value);
 
-/** One item's body, as plain text. */
 function bodyText(item: LinearItem): string {
   const lines: string[] = [];
   if (item.meta) lines.push(item.meta);
@@ -396,7 +355,6 @@ function bodyText(item: LinearItem): string {
     }
     if (item.raw.length === 0) lines.push("None offered.");
   } else if (item.kind === "event") {
-    // The summary is a convenience; the data is the whole event.
     const data = (item.raw as { data?: unknown }).data;
     const empty =
       data === undefined ||
@@ -431,10 +389,6 @@ function bodyText(item: LinearItem): string {
   return lines.join("\n");
 }
 
-/**
- * The linear view as plain text, to paste into a chat or an issue: a header,
- * then every item in order. Nothing the view holds is shortened.
- */
 export function renderLinearText(
   debug: SessionDebug,
   items: readonly LinearItem[] = buildLinear(debug),
@@ -465,7 +419,6 @@ export function renderLinearText(
         where.length > 0 ? ` · ${where.join(" · ")}` : ""
       } -----`,
     );
-    // A run's full id lets a reader find it in the JSON export.
     if (item.kind === "event" && item.title === "run.started" && item.runId) {
       out.push(`run id: ${item.runId}`);
     }

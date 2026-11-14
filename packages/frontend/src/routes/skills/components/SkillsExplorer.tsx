@@ -17,14 +17,6 @@ import type { NodeAction } from "../../../components/explorer/FileTree";
 import { SourceExplorer } from "../../../components/explorer/SourceExplorer";
 import { showError } from "../../../lib/notify";
 
-/*
- * The Skills view: `SourceExplorer` over the skills a page can see (skills
- * folders design, decision 22). The global page shows Built-in and Global; a
- * project's page adds Project. Built-in skills cannot be changed, but can be
- * copied to Global or exported. The agent's own skills are edited under the
- * agent (agents explorer design), not here.
- */
-
 const SKILL_ROOTS = ["builtin", "global", "project"] as const;
 const isSkillRoot = (v: unknown) =>
   typeof v === "string" && (SKILL_ROOTS as readonly string[]).includes(v);
@@ -32,7 +24,6 @@ const isSkillRoot = (v: unknown) =>
 const BUILTIN_REASON =
   "Built-in skills come with the app and cannot be changed. Copy one to Global to change it.";
 
-/** Saves a blob under a name, the way a link to it would. */
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -49,9 +40,7 @@ export function SkillsExplorer({
   readOnly,
   onDirtyChange,
 }: {
-  /** The project whose page this is; none for the global page. */
   projectId?: string | undefined;
-  /** Why the project's skills cannot be changed, when that is so. */
   readOnly?: string | undefined;
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }) {
@@ -61,7 +50,6 @@ export function SkillsExplorer({
     () => (projectId ? { scope: "project", id: projectId } : undefined),
     [projectId],
   );
-  /** What a person adds to on this page: its own scope. */
   const pageOwner = project ?? global;
 
   const roots = useMemo<ExplorerRoot[]>(() => {
@@ -97,7 +85,6 @@ export function SkillsExplorer({
   const partOfRoot = (root: string): SkillsPart =>
     root === "builtin" ? "builtin" : "own";
 
-  // ---- import
   const [archive, setArchive] = useState<Blob | null>(null);
   const pick = useRef<{
     zip: HTMLInputElement | null;
@@ -116,7 +103,6 @@ export function SkillsExplorer({
   };
 
   const nodeActions = (ref: NodeRef): NodeAction[] => {
-    // A skill is a top-level folder.
     if (ref.kind !== "folder" || ref.path.includes("/")) return [];
     const actions: NodeAction[] = [
       {
@@ -138,8 +124,6 @@ export function SkillsExplorer({
       },
     ];
     if (ref.root !== "global" || project) {
-      // Built-in and project skills can be copied to Global; global ones
-      // to the project.
       const target = ref.root === "global" && project ? project : global;
       const targetLabel = target === global ? "Global" : "this project";
       actions.push({

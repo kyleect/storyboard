@@ -1,7 +1,6 @@
 import { Button, Group, Stack, TextInput } from "@mantine/core";
 import { useState } from "react";
 
-/** A title field: trimmed, not empty (design Q2). */
 export function RenameForm({
   initial,
   onSubmit,

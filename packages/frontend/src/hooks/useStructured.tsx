@@ -45,15 +45,6 @@ import {
 } from "../components/structured/StructuredTabs";
 import { showError } from "../lib/notify";
 
-/*
- * Everything the Structured Data view does apart from how it is laid out:
- * the lists for each root, the tree made from them, the tabs and their
- * unsaved edits, and what a click, a new name or a delete leads to. The
- * layout (`StructuredExplorer.tsx`) puts these in a shell; another view can
- * put them in a tree of its own.
- */
-
-/** Lists of every root, as one stable value each. */
 const combineResults = (
   results: { data: unknown; error: Error | null; isPending: boolean }[],
 ) => ({
@@ -65,13 +56,9 @@ const combineResults = (
 const isNewKey = (key: string) => key.startsWith("new:");
 
 export interface StructuredOptions {
-  /** The roots to show. Callers keep this one value while the roots are the same. */
   roots: readonly StructuredRoot[];
-  /** What the open tabs and the tree's folds are remembered under. */
   viewKey: PageKey;
-  /** The root that is the view's own; others are "higher" or inherited. */
   pageRoot: RootId;
-  /** Whether there are unsaved edits, for a guard against leaving. */
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }
 
@@ -92,7 +79,6 @@ export function useStructured({
     loadView(viewKey, (v) => roots.some((r) => r.id === v)),
   );
   const [tabsState, setTabsState] = useState(() => {
-    // A tab for something not yet made has no draft after a reload.
     const tabs = initial.tabs.filter(
       (t) => roots.some((r) => r.id === t.root) && !isNewKey(t.key),
     );
@@ -115,7 +101,6 @@ export function useStructured({
   } | null>(null);
   const counter = useRef(0);
 
-  // What is remembered between visits (not the unsaved edits).
   useEffect(() => {
     saveView(viewKey, {
       tabs: tabsState.tabs.filter((t) => !isNewKey(t.key)),
@@ -131,7 +116,6 @@ export function useStructured({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
 
-  // ---- data: the schemas and data of every root (three lists each)
   const lists = useQueries({
     queries: roots.flatMap((r) => [
       {
@@ -170,7 +154,6 @@ export function useStructured({
     return m;
   }, [inputs]);
 
-  /** Why a root cannot be changed: what the caller said, else the backend. */
   const reasons = useMemo<Record<RootId, string | undefined>>(
     () =>
       Object.fromEntries(
@@ -186,7 +169,6 @@ export function useStructured({
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: dataKeys.all });
 
-  // ---- tabs
   const setActive = (id: string) => setTabsState((s) => ({ ...s, active: id }));
   const keep = (id: string) => setTabsState((s) => keepTab(s, id));
   const open = (tab: Omit<TabState, "transient">, permanent: boolean) =>
@@ -226,14 +208,6 @@ export function useStructured({
   };
   const activeTab = tabsState.tabs.find((t) => tabId(t) === tabsState.active);
 
-  // ---- who a schema belongs to
-  /**
-   * Where a schema lives: the owner to read and change it through, and
-   * whether this view may change it. The built-in schemas are read through
-   * Global. A schema whose scope has no root here, such as an agent's seen
-   * from a session or a project's seen from an agent, is read through the
-   * root it is shown under, and cannot be changed from there.
-   */
   const schemaOwner = (
     info: SchemaInfo | undefined,
     from: RootId,
@@ -247,7 +221,6 @@ export function useStructured({
     return home ? { owner: home, own: true } : { owner: fallback, own: false };
   };
 
-  // ---- actions from the tree and the tabs
   const openRef = (ref: NodeRef, permanent: boolean) => {
     if (ref.kind === "schema") {
       const info = schemaById.get(ref.path);
@@ -327,7 +300,6 @@ export function useStructured({
 
   const activeRef = activeTab && !isNewKey(activeTab.key) ? activeTab : null;
 
-  /** What the tree component needs, to spread onto it. */
   const treeProps: StructuredTreeProps = {
     data: tree.data,
     info: tree.info,
@@ -374,7 +346,6 @@ export function useStructured({
     `${labelOf(t.root)} › ${t.kind === "schema" ? "Schemas" : "Data"} › ${nameOf(t)}`;
 
   const colorOf = useProjectColor();
-  /** The color of the project a tab's root belongs to, if it does. */
   const colorProps = (root: RootId): { iconColor?: ProjectColor } => {
     const owner = rootOwner(root);
     const color = owner?.scope === "project" ? colorOf(owner.id) : null;
@@ -474,7 +445,6 @@ export function useStructured({
   const activeDirty = activeTab
     ? drafts[tabId(activeTab)] !== undefined
     : false;
-  // A schema the view can only look at is read-only too, such as a built-in.
   const activeSchemaInfo =
     activeTab?.kind === "schema" ? schemaById.get(activeTab.key) : undefined;
   const activeReason = activeTab
@@ -502,7 +472,6 @@ export function useStructured({
   ) : null;
 
   return {
-    /** The lists are still loading / the first one that failed. */
     loading: lists.pending,
     loadError: lists.error,
     treeProps,
@@ -514,7 +483,6 @@ export function useStructured({
     keep,
     requestClose,
     content,
-    /** Where the active tab is, as "Root › Schemas › Name", for a status bar. */
     activeWhere: activeTab ? where(activeTab) : null,
     activeKind: activeTab?.kind ?? null,
     activeDirty,

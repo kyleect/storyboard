@@ -73,7 +73,6 @@ describe("sectionTools", () => {
       ["mcp", "MCP"],
     ]);
     expect(sections[0]?.children).toBeUndefined();
-    // The MCP group still holds every MCP tool.
     expect(sections[1]?.tools).toEqual(mcp);
     const servers = sections[1]?.children ?? [];
     expect(servers.map((x) => [x.id, x.label, x.group])).toEqual([
@@ -102,7 +101,6 @@ describe("setTools", () => {
   it("switches one server on without granting the whole MCP group", () => {
     const g = setTools(grant(), server, true);
     expect(g.groups).toEqual([]);
-    // The tool that needs review is left as it was.
     expect(g.extras).toEqual(["mcp_notes_search"]);
     expect(hasTool(g, calendarTool)).toBe(false);
   });
@@ -151,14 +149,12 @@ describe("hasTool", () => {
 
   it("has everything but what a deny grant denies", () => {
     const g = grant({ mode: "deny", groups: ["web"], except: ["web_search"] });
-    // files_kill needs review, so a deny grant does not give it.
     expect(has(g)).toEqual(["files_read", "files_edit", "web_search"]);
   });
 
   it("gives a tool that needs review in deny mode only when it is in except", () => {
     const g = grant({ mode: "deny", except: ["files_kill"] });
     expect(has(g)).toContain("files_kill");
-    // Whether or not its group is denied.
     expect(
       has(grant({ mode: "deny", groups: ["files"], except: ["files_kill"] })),
     ).toEqual(["files_read", "files_kill", ...web.map((x) => x.name)]);
@@ -190,11 +186,9 @@ describe("setTool", () => {
 
   it("denies and allows in deny mode", () => {
     const g = grant({ mode: "deny" });
-    // Denying a tool outside a denied group lists it.
     const denied = setTool(g, web[0] as GrantTool, false);
     expect(denied.extras).toEqual(["web_search"]);
     expect(setTool(denied, web[0] as GrantTool, true)).toEqual(g);
-    // Allowing a tool inside a denied group makes an exception.
     const inGroup = setTool(
       grant({ mode: "deny", groups: ["web"] }),
       web[0] as GrantTool,
@@ -316,7 +310,6 @@ describe("group approval", () => {
     expect(groupApproval({ a: false, b: false }, tools)).toBe("skip");
     expect(groupApproval({ a: true }, tools)).toBe("mixed");
     expect(groupApproval({ a: true, b: false }, tools)).toBe("mixed");
-    // A group of only fixed tools has nothing to set.
     expect(groupApproval({}, [{ name: "locked", fixed: true }])).toBe("own");
   });
 
@@ -352,7 +345,6 @@ describe("switchMode", () => {
     const d = switchMode(g, "deny", ALL);
     expect(d.mode).toBe("deny");
     same(g, d);
-    // Nothing is denied that is not off by default: no groups, no extras.
     expect(d.groups).toEqual([]);
     expect(d.extras).toEqual([]);
     expect(d.except).toEqual([]);
@@ -364,7 +356,6 @@ describe("switchMode", () => {
     same(g, d);
     expect(d.except).toEqual(["files_kill"]);
     expect(d.groups).toEqual(["web"]);
-    // And back again.
     const back = switchMode(d, "allow", ALL);
     same(g, back);
     expect(back.groups).toEqual(["files"]);
@@ -376,14 +367,12 @@ describe("switchMode", () => {
     const a = switchMode(g, "allow", ALL);
     expect(a.mode).toBe("allow");
     same(g, a);
-    // Everything but web is kept, so Files becomes a group.
     expect(a.groups).toEqual(["files"]);
   });
 
   it("uses a whole group where every tool is covered", () => {
     const g = grant({ mode: "deny", groups: ["files"] });
     const a = switchMode(g, "allow", ALL);
-    // Denied: all of files. Allowed: web.
     expect(a.groups).toEqual(["web"]);
     expect(a.extras).toEqual([]);
     const back = switchMode(a, "deny", ALL);

@@ -1,14 +1,6 @@
 import { createContext, useContext, useEffect } from "react";
 import { create } from "zustand";
 
-/*
- * Which workbench tabs have unsaved edits. A page in a tab reports its own
- * (`useReportDirty`); the workbench keeps such a tab mounted when it is not
- * the active one, asks before closing it, and asks before the page is
- * reloaded. A page shown outside a tab reports nothing.
- */
-
-/** The id of the tab a page is shown in; null outside the workbench. */
 export const TabIdContext = createContext<string | null>(null);
 
 interface DirtyState {
@@ -30,7 +22,6 @@ export const useDirtyTabs = create<DirtyState>((set) => ({
     }),
 }));
 
-/** Reports whether the page in this tab has unsaved edits. */
 export function useReportDirty(dirty: boolean): void {
   const id = useContext(TabIdContext);
   const set = useDirtyTabs((s) => s.set);

@@ -4,8 +4,6 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VoiceButtons } from "./VoiceButtons";
 
-// Decoding and resampling need a real browser's audio engine; they are the
-// one step stubbed here.
 vi.mock("../lib/audio", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/audio")>()),
   recordingFile: vi.fn(
@@ -29,7 +27,6 @@ function show(props: Partial<React.ComponentProps<typeof VoiceButtons>> = {}) {
   return onRecorded;
 }
 
-/** A MediaRecorder that records nothing, and a microphone to match. */
 function fakeMicrophone() {
   const tracks = [{ stop: vi.fn() }];
   vi.stubGlobal("navigator", {
@@ -66,7 +63,6 @@ describe("VoiceButtons", () => {
     button("Record").click();
     const stop = await screen.findByRole("button", { name: "Stop recording" });
     expect(stop.textContent).toBe("Stop 0:00 / 0:30");
-    // Only the Stop button is shown while recording.
     expect(screen.queryByRole("button", { name: "Record & send" })).toBeNull();
 
     act(() => stop.click());

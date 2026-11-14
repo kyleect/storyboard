@@ -94,7 +94,6 @@ function mockApi() {
   }));
 }
 
-/** Opens the context menu of a tree node, as a right click does. */
 async function menuOf(label: string) {
   fireEvent.contextMenu(await screen.findByText(label));
 }
@@ -236,7 +235,6 @@ describe("importing a skill", () => {
     });
     const file = await pickZip();
     await screen.findByText(/already exists here/);
-    // Import under another name is the default, and needs a name.
     const go = screen.getByRole("button", { name: "Import" });
     expect((go as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(/Replace it/));

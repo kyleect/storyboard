@@ -6,11 +6,6 @@ import { api, type UploadedFile } from "../api";
 import { dropDraft, useDraft, useDrafts } from "./drafts";
 import { useAttachmentDraft } from "../routes/chat/components/Attachments";
 
-/*
- * The message being written belongs to its session and outlives the
- * composer: leaving a chat's tab unmounts the chat, not the draft.
- */
-
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient()}>
     {children}

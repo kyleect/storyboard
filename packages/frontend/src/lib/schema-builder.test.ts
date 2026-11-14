@@ -14,8 +14,6 @@ import {
   type BuilderNode,
 } from "./schema-builder";
 
-/* The schema builder's model (decision 15; plan P10). */
-
 const TASK = {
   type: "object",
   title: "Task",

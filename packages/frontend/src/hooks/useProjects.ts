@@ -4,12 +4,10 @@ import { api, type Project, type SettingsView } from "../api";
 import { showError } from "../lib/notify";
 import { agentKeys, projectKeys, sessionKeys, settingsKeys } from "../queries";
 
-/** Every project, most recently used first. */
 export function useProjects() {
   return useQuery({ queryKey: projectKeys.list(), queryFn: api.listProjects });
 }
 
-/** One project. With no id nothing is fetched. */
 export function useProject(projectId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.detail(projectId ?? ""),
@@ -18,11 +16,6 @@ export function useProject(projectId: string | undefined) {
   });
 }
 
-/**
- * Saves changes to a project and puts the result in the cache. Editing a
- * project counts as using it, so the list, which is ordered by use, is
- * refetched.
- */
 export function useSaveProject(projectId: string) {
   const queryClient = useQueryClient();
   return async (fields: {
@@ -37,10 +30,6 @@ export function useSaveProject(projectId: string) {
   };
 }
 
-/**
- * Sets the default agent of a project, or of the app when there is no
- * `projectId`. `null` clears it.
- */
 export function useSetDefaultAgent(projectId?: string) {
   const queryClient = useQueryClient();
   return useMutation<Project | SettingsView, Error, string | null>({

@@ -15,13 +15,6 @@ import { useState } from "react";
 import { api, type ProfileView } from "../../../api";
 import { profileKeys } from "../../../queries";
 
-/*
- * The Settings Profiles section (profiles design): create, rename, switch,
- * trash and restore. A profile is a whole workspace of its own: its agents,
- * skills, files, structured data, projects, chats, settings, MCP servers and
- * workspaces. Only the built-in agents, skills and schemas are in every one.
- */
-
 export function Profiles() {
   const queryClient = useQueryClient();
   const listing = useQuery({
@@ -29,7 +22,6 @@ export function Profiles() {
     queryFn: () => api.listProfiles(),
   });
   const [name, setName] = useState("");
-  /** The profile being renamed, and the name typed so far. */
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(
     null,
   );
@@ -137,7 +129,6 @@ export function Profiles() {
                 size="xs"
                 variant="default"
                 color="red"
-                // The backend refuses both; the button says so up front.
                 disabled={p.active || p.id === "default"}
                 onClick={() => trash.mutate(p.id)}
               >

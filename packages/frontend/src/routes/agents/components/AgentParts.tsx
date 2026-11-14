@@ -23,15 +23,9 @@ import { agentKeys, sessionKeys, toolKeys } from "../../../queries";
 import type { ToolGrant } from "../../../lib/tool-grant";
 import { showError } from "../../../lib/notify";
 
-/*
- * What the agents screens share: the lists' badges, the words for an agent's
- * tools and subagent settings, and the versions of an agent.
- */
-
 export const when = (iso: string) =>
   iso ? new Date(iso).toLocaleString() : "";
 
-/** Refreshes a scope's lists and open agents after a change. */
 export function useRefresh(scope: AgentScope) {
   const queryClient = useQueryClient();
   return async () => {
@@ -48,12 +42,10 @@ export function useRefresh(scope: AgentScope) {
   };
 }
 
-/** The tools an agent can select, by name. */
 export function useSelectableTools() {
   return useQuery({ queryKey: toolKeys.selectable(), queryFn: api.agentTools });
 }
 
-/** Every tool with its setting now, for the approval choices. */
 export function useToolApprovals() {
   return useQuery({
     queryKey: toolKeys.approvals(),
@@ -77,7 +69,6 @@ export function BuiltinBadge() {
   );
 }
 
-/** What an agent's subagent settings say, for its page. */
 export function SubagentSummary({ agent }: { agent: AgentContent }) {
   return (
     <Stack gap={2}>
@@ -111,7 +102,6 @@ export function DeletedBadge() {
   );
 }
 
-/** Text in a box, keeping line breaks. */
 export function TextBox({ value }: { value: string }) {
   return (
     <Paper p="sm" withBorder>
@@ -128,10 +118,6 @@ export function TextBox({ value }: { value: string }) {
   );
 }
 
-/**
- * The tool selection in words, with tools that no longer exist marked
- * (P6). Tools that are always on are not listed.
- */
 export function ToolsSummary({
   toolGrant,
   toolApproval,
@@ -222,7 +208,6 @@ export function ToolsSummary({
   );
 }
 
-/** One version's content, read-only. */
 export function VersionContent({
   v,
   known,
@@ -256,7 +241,6 @@ export function VersionContent({
   );
 }
 
-/** An agent's versions; one can be made current (decision 21). */
 export function VersionsModal({
   scope,
   agent,
@@ -267,7 +251,6 @@ export function VersionsModal({
   scope: AgentScope;
   agent: AgentDetail;
   readOnly: boolean;
-  /** The version to show first; the newest if left out or not there. */
   initial?: number | undefined;
   onClose: () => void;
 }) {
@@ -341,7 +324,6 @@ export function VersionsModal({
   );
 }
 
-/** Downloads text as a file. */
 export function download(filename: string, text: string) {
   const url = URL.createObjectURL(
     new Blob([text], { type: "text/markdown;charset=utf-8" }),
@@ -353,7 +335,6 @@ export function download(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-/** The name with characters file systems refuse replaced by "_". */
 export const fileName = (name: string) =>
   `${[...name]
     .map((c) => (c < " " || '\\/:*?"<>|'.includes(c) ? "_" : c))

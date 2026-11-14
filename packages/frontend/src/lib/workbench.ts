@@ -6,14 +6,6 @@ import {
   type TabsOf,
 } from "./explorer";
 
-/*
- * What the chat workbench shares with its tests: which tabs there are, how an
- * address maps to a tab and back, which project "New chat" goes to, and which
- * tab to show after one closes. Pure, so it is tested without a DOM. The
- * rules for opening, keeping and closing tabs, and what is remembered
- * between visits, are those of `explorer.ts`.
- */
-
 export const WORKBENCH_KINDS = [
   "chat",
   "sessions",
@@ -31,11 +23,6 @@ export const WORKBENCH_KINDS = [
 
 export type WorkbenchKind = (typeof WORKBENCH_KINDS)[number];
 
-/**
- * Kinds that older versions saved and no longer exist: a project's Agents and
- * Skills pages are now the Agents and Skills page with the project as its
- * root. Saved tabs of these kinds are carried over (`carryOver`).
- */
 export const LEGACY_KINDS = ["project-agents", "project-skills"] as const;
 const CARRIED: Record<(typeof LEGACY_KINDS)[number], WorkbenchKind> = {
   "project-agents": "agents",
@@ -47,7 +34,6 @@ export const SAVED_KINDS: readonly SavedKind[] = [
   ...LEGACY_KINDS,
 ];
 
-/** A saved view with its tabs of an old kind turned into tabs of today's. */
 export function carryOver(
   view: SavedViewOf<ExplorerTab<SavedKind>>,
 ): SavedViewOf<WorkbenchTab> {
@@ -69,16 +55,9 @@ export function carryOver(
     active: view.active === null ? null : (renamed.get(view.active) ?? null),
   };
 }
-/**
- * A tab. `root` says what `key` is: "session" for a chat (its id), "project"
- * for the pages of a project (its id), "global" for the rest (`key` is empty).
- * A project's chats are listed on its own page; the Sessions tab is the table
- * of the chats that have no project.
- */
 export type WorkbenchTab = ExplorerTab<WorkbenchKind>;
 export type NewWorkbenchTab = Omit<WorkbenchTab, "transient">;
 
-/** The kinds that open in italics until used; every page does. */
 export const mayBeTransient = (): boolean => true;
 
 const GLOBAL_PAGES: Record<string, WorkbenchKind> = {
@@ -113,7 +92,6 @@ function decode(part: string): string | null {
   }
 }
 
-/** The tab an address belongs to; null for an address that has none. */
 export function tabForPath(pathname: string): NewWorkbenchTab | null {
   const parts = pathname.split("/").filter((p) => p !== "");
   const [first, second, third] = parts;
@@ -139,7 +117,6 @@ export function tabForPath(pathname: string): NewWorkbenchTab | null {
   return null;
 }
 
-/** The address of a tab; `/settings` is given the section last used. */
 export function pathForTab(
   tab: Pick<WorkbenchTab, "kind" | "root" | "key">,
   settingsPath = "/settings",
@@ -157,7 +134,6 @@ export function pathForTab(
     case "project-files":
     case "project-data":
       return `/projects/${id}/${PROJECT_SUFFIX[tab.kind]}`;
-    // The Agents and Skills pages are one kind; the root says whose.
     case "agents":
     case "skills":
       return tab.root === "project"
@@ -168,7 +144,6 @@ export function pathForTab(
   }
 }
 
-/** The project a tab belongs to; null for a chat of no project or a global tab. */
 export function projectOfTab(
   tab: Pick<WorkbenchTab, "kind" | "root" | "key">,
   projectOfSession: (sessionId: string) => string | null,
@@ -178,12 +153,6 @@ export function projectOfTab(
   return null;
 }
 
-/**
- * The project "New chat" starts a session in: the focused row of the tree
- * (a project row, or a chat or page row under it; `projectId` null for the
- * "No project" group); with no row focused, the project of the active tab;
- * with neither, no project.
- */
 export function newChatTarget(input: {
   focused: { projectId: string | null } | null;
   active: WorkbenchTab | null;
@@ -194,7 +163,6 @@ export function newChatTarget(input: {
   return null;
 }
 
-/** Where to go once `closedId` is closed: the tab that becomes active, or `/`. */
 export function closeTarget<T extends WorkbenchTab>(
   state: TabsOf<T>,
   closedId: string,
@@ -205,7 +173,6 @@ export function closeTarget<T extends WorkbenchTab>(
   return tab ? pathForTab(tab, settingsPath) : "/";
 }
 
-/** The ids of the tabs to close when a session goes to the trash. */
 export function tabsForSession(
   tabs: readonly WorkbenchTab[],
   sessionId: string,
@@ -215,10 +182,6 @@ export function tabsForSession(
     .map(tabId);
 }
 
-/**
- * The ids of the tabs to close when a project goes to the trash: its pages,
- * and the chats of its sessions.
- */
 export function tabsForProject(
   tabs: readonly WorkbenchTab[],
   projectId: string,

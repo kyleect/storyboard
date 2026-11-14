@@ -95,7 +95,6 @@ function show(ui: React.ReactElement) {
   };
 }
 
-/** Types into the open editor as a person would: the editor's own change. */
 function typeInEditor(text: string) {
   const dom = document.querySelector<HTMLElement>(".cm-editor");
   if (!dom) throw new Error("no editor is open");
@@ -179,7 +178,6 @@ describe("the roots of the tree", () => {
     expect(await screen.findByText("Session")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Global")).toBeTruthy();
-    // Each root starts open; folders are closed.
     expect(await screen.findByText("plan.txt")).toBeTruthy();
     expect(screen.getByText("rules.txt")).toBeTruthy();
     expect(screen.getByText("bible.txt")).toBeTruthy();
@@ -237,7 +235,6 @@ describe("what the tree remembers and shows", () => {
   it("opens the folders that were open the last time", async () => {
     remember({ expanded: { "session|folder|drafts": true } });
     show(<FilesExplorer page={session} projectId="p1" />);
-    // Without a click: the tree is made once the files are known.
     expect(await screen.findByText("notes.md")).toBeTruthy();
   });
 
@@ -259,7 +256,6 @@ describe("what the tree remembers and shows", () => {
     fireEvent.click(await screen.findByText("drafts"));
     fireEvent.doubleClick(await screen.findByText("notes.md"));
     fireEvent.doubleClick(screen.getByText("plan.txt"));
-    // Fold the folder away, then go back to its file by the tab.
     fireEvent.click(screen.getByText("drafts"));
     await waitFor(() => expect(screen.queryByText("notes.md")).toBeNull());
     fireEvent.click(screen.getByRole("tab", { name: /notes.md/ }));
@@ -353,7 +349,6 @@ describe("editing", () => {
     expect(
       await screen.findByRole("img", { name: "Unsaved changes" }),
     ).toBeTruthy();
-    // Editing keeps the tab open (it is no longer a replaceable one).
     expect(screen.getByRole("tab").style.fontStyle).not.toBe("italic");
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
 
@@ -481,7 +476,6 @@ describe("editing", () => {
     );
     typeInEditor("mine");
     await screen.findByText("Unsaved changes");
-    // The file is changed elsewhere (the model wrote it).
     FILES.session = [cat, note, { ...plan, value: "theirs" }];
     try {
       await act(() =>
@@ -490,7 +484,6 @@ describe("editing", () => {
       expect(
         await screen.findByText(/This file changed since you started editing/),
       ).toBeTruthy();
-      // The user's text is kept until they choose.
       expect(document.querySelector(".cm-content")?.textContent).toBe("mine");
       fireEvent.click(screen.getByRole("button", { name: "Discard mine" }));
       await waitFor(() =>
@@ -624,7 +617,6 @@ describe("making things in the tree", () => {
     fireEvent.click(screen.getByRole("button", { name: "New file" }));
     let box = await screen.findByLabelText("New file name");
     fireEvent.change(box, { target: { value: "bad." } });
-    // The name box shows why, and Enter does nothing.
     expect(await screen.findByText(/Not a valid name/)).toBeTruthy();
     fireEvent.keyDown(box, { key: "Enter" });
     expect(write).not.toHaveBeenCalled();
@@ -810,7 +802,6 @@ describe("read-only", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     expect(screen.getByText("Read-only")).toBeTruthy();
     expect(write).not.toHaveBeenCalled();
-    // The right-click menu offers no changes either.
     fireEvent.contextMenu(screen.getByText("ideas"));
     expect(
       await screen.findByText("This folder cannot be changed right now."),
@@ -884,7 +875,6 @@ describe("a project's color in the Files explorer", () => {
     expect(tab("rules.txt").style.borderTop).toContain(
       "--mantine-color-teal-filled",
     );
-    // The file of the global scope is not the project's.
     fireEvent.doubleClick(screen.getByText("bible.txt"));
     await waitFor(() => expect(tab("bible.txt")).toBeTruthy());
     expect(iconBg(tab("bible.txt"))).not.toContain("teal");
@@ -896,7 +886,6 @@ describe("a project's color in the Files explorer", () => {
     fireEvent.click(await screen.findByText("rules.txt"));
     await screen.findByRole("tab");
 
-    // The path appears once the file has loaded.
     await waitFor(() => {
       const root = screen
         .getAllByText("Project")

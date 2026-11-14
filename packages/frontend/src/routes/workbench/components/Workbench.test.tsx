@@ -30,12 +30,6 @@ import { useWorkbench } from "../../../stores/workbench";
 import { TREE_CHATS } from "./ChatsTree";
 import { Workbench } from "./Workbench";
 
-/*
- * The workbench with its pages stubbed: how an address opens a tab, which
- * tabs stay mounted, what closing a tab with unsaved edits does, where New
- * chat goes, and the small-screen menu. The pages have their own tests.
- */
-
 vi.mock("../../chat/Chat", () => ({
   Chat: ({ sessionId }: { sessionId: string }) => (
     <div>chat page {sessionId}</div>
@@ -70,7 +64,6 @@ vi.mock("../../errors/Errors", () => ({
 vi.mock("../../settings/Settings", () => ({
   Settings: () => <div>settings page</div>,
 }));
-// The Files page reports unsaved edits when its button is pressed.
 vi.mock("../../files/FilesPages", () => ({
   ProjectFilesPage: () => null,
   GlobalFilesPage: function Files() {
@@ -234,7 +227,6 @@ describe("the workbench: tabs and addresses", () => {
 
     const dot = (name: string) =>
       within(tabNamed(name)).queryByRole("img", { name: "New reply" });
-    // Alpha is in the background; Beta is on screen and is marked seen.
     await waitFor(() => expect(dot("Alpha chat")).not.toBeNull());
     expect(dot("Beta chat")).toBeNull();
   });
@@ -258,7 +250,6 @@ describe("the workbench: tabs and addresses", () => {
     await screen.findByText("agents page");
     expect(tabs()).toHaveLength(1);
     expect(isItalic(tabNamed("Agents"))).toBe(true);
-    // A double click on the tab keeps it.
     fireEvent.doubleClick(tabNamed("Agents"));
     fireEvent.click(screen.getByRole("button", { name: "Errors" }));
     await screen.findByText("errors page");
@@ -269,7 +260,6 @@ describe("the workbench: tabs and addresses", () => {
   it("opens a tab in italics from a single click, and replaces it with the next", async () => {
     mockApi();
     await show("/");
-    // The Novel project, open to its chats.
     fireEvent.click(await screen.findByText("Novel"));
     await screen.findByText("Alpha chat");
     expect(isItalic(tabNamed("Novel"))).toBe(true);
@@ -277,11 +267,9 @@ describe("the workbench: tabs and addresses", () => {
     const tree = () => within(screen.getByRole("tree"));
     fireEvent.click(tree().getByText("Alpha chat"));
     await screen.findByText("chat page s1");
-    // The chat took the place of the project's tab.
     expect(tabs()).toHaveLength(1);
     expect(isItalic(tabNamed("Alpha chat"))).toBe(true);
 
-    // A double click keeps the tab; the next single click then adds one.
     fireEvent.doubleClick(tree().getByText("Beta chat"));
     await screen.findByText("chat page s2");
     expect(isItalic(tabNamed("Beta chat"))).toBe(false);
@@ -296,7 +284,6 @@ describe("the workbench: tabs and addresses", () => {
     mockApi();
     await show("/sessions/s1");
     await waitFor(() => tabNamed("Alpha chat"));
-    // Opened from the address, so it is kept already.
     expect(isItalic(tabNamed("Alpha chat"))).toBe(false);
   });
 
@@ -307,7 +294,6 @@ describe("the workbench: tabs and addresses", () => {
     await go("/sessions/s2");
     await screen.findByText("chat page s2");
     expect(screen.queryByText("chat page s1")).toBeNull();
-    // Both tabs are still open.
     await waitFor(() => expect(tabs()).toHaveLength(2));
     fireEvent.click(tabNamed("Alpha chat"));
     await screen.findByText("chat page s1");
@@ -552,7 +538,6 @@ describe("the chats tree", () => {
     expect(within(novel).queryByText(`Chat ${TREE_CHATS}`)).toBeNull();
     fireEvent.click(within(novel).getByText(`Show all ${many.length} chats`));
     expect(await screen.findByText("project page p1")).toBeTruthy();
-    // A filter looks through all the chats that are loaded.
     fireEvent.change(screen.getByLabelText("Filter chats"), {
       target: { value: `chat ${TREE_CHATS + 1}` },
     });
@@ -626,13 +611,11 @@ describe("the chats tree", () => {
     const bar = screen.getByRole("status");
     expect(within(bar).getByText("qwen")).toBeTruthy();
     expect(within(bar).getByText(/Alpha chat/)).toBeTruthy();
-    // The ring and its counts, as the chat header had them.
     expect(
       await within(bar).findByText(/1,234 \/ 2,000 · 766 left/),
     ).toBeTruthy();
     expect(within(bar).getByText(/62% ·/)).toBeTruthy();
     expect(within(bar).getByLabelText("Context used")).toBeTruthy();
-    // The count follows the live usage.
     act(() =>
       useChatStatus.getState().publish({
         sessionId: "s1",
@@ -782,10 +765,8 @@ describe("the tab strip", () => {
     expect(names()).toEqual(["Agents", "Skills", "Errors"]);
     dragOnto(tabNamed("Errors"), tabNamed("Agents"));
     expect(names()).toEqual(["Errors", "Agents", "Skills"]);
-    // The active tab is still the one shown.
     expect(tabNamed("Agents").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("agents page")).toBeTruthy();
-    // The order is remembered.
     expect(
       JSON.parse(
         localStorage.getItem("harness.workbench.global.-") ?? "{}",
@@ -825,7 +806,6 @@ describe("the Chats button on the rail", () => {
     expect(screen.queryByRole("separator")).toBeNull();
     expect(chats.getAttribute("aria-expanded")).toBe("false");
     expect(localStorage.getItem("harness.workbench.sidebar")).toBe("closed");
-    // The page is still there.
     expect(screen.getByText("errors page")).toBeTruthy();
 
     fireEvent.click(chats);
@@ -885,7 +865,6 @@ describe("the workbench on a small screen", () => {
 });
 
 describe("project colors", () => {
-  /** The folder icon in a row or a tab; the chevron is another icon. */
   const folder = (el: HTMLElement) =>
     el.querySelector("svg.tabler-icon-folder");
 
@@ -898,7 +877,6 @@ describe("project colors", () => {
   }
 
   const styleOf = (el: Element | null) => el?.getAttribute("style") ?? "";
-  /** What a tab's icon is drawn on. */
   const iconBg = (tab: HTMLElement) =>
     (
       tab.querySelector(".mantine-ThemeIcon-root") as HTMLElement | null
@@ -916,7 +894,6 @@ describe("project colors", () => {
     expect(
       styleOf(within(poems).getAllByRole("treeitem")[0] ?? null),
     ).not.toContain("-light");
-    // The folder itself keeps its normal color.
     expect(folder(novel)?.getAttribute("stroke")).toBe("currentColor");
   });
 
@@ -930,7 +907,6 @@ describe("project colors", () => {
       ?.querySelector("svg.tabler-icon-message");
     expect(icon?.getAttribute("stroke")).toBe("var(--mantine-color-teal-6)");
 
-    // A chat with no project keeps the normal color.
     const loose = (await screen.findByText("Loose chat"))
       .closest("[role=treeitem]")
       ?.querySelector("svg.tabler-icon-message");
@@ -950,7 +926,6 @@ describe("project colors", () => {
     );
     await screen.findByText("chat page s1");
 
-    // Darker means more opaque on a light page, more transparent on a dark one.
     const open = styleOf(await row("Alpha chat"));
     expect(open).toContain("light-dark(");
     expect(open).toContain("--mantine-color-teal-light-hover");
@@ -959,7 +934,6 @@ describe("project colors", () => {
     );
     expect(styleOf(await row("Beta chat"))).not.toContain("teal");
 
-    // A chat of no project keeps the theme's highlight.
     fireEvent.click(
       await within(screen.getByRole("tree")).findByText("Loose chat"),
     );
@@ -979,7 +953,6 @@ describe("project colors", () => {
       "currentColor",
     );
 
-    // A chat of the project, and a chat or page of no project.
     await go("/sessions/s1");
     await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
     expect(iconBg(tabNamed("Alpha chat"))).toBe(
@@ -1001,7 +974,6 @@ describe("project colors", () => {
     fireEvent.change(await screen.findByLabelText("Name"), {
       target: { value: "Essays" },
     });
-    // No color until one is picked.
     expect(
       screen
         .getByRole("radio", { name: "No color" })

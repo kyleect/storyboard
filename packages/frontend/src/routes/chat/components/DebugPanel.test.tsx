@@ -14,8 +14,6 @@ import { api, type SessionDebug } from "../../../api";
 import { copyText, filterEvents, NO_FILTER } from "../lib/debug";
 import { CopyDebugButton, DebugPanel } from "./DebugPanel";
 
-/* The session debugging tools: the copy button and the Debug tab. */
-
 const at = (n: number) => `2026-01-01T00:00:0${n}.000Z`;
 
 const events: StoredEvent[] = [
@@ -155,7 +153,6 @@ describe("filterEvents", () => {
     expect(
       filterEvents(events, { ...all, runId: "run-bbbb2222" }).map((e) => e.id),
     ).toEqual([4]);
-    // The text matches inside the data, not only the type.
     expect(
       filterEvents(events, { ...all, text: "NEEDLE" }).map((e) => e.id),
     ).toEqual([3]);
@@ -208,7 +205,6 @@ describe("CopyDebugButton", () => {
     expect(getDebug).toHaveBeenCalledWith("s");
     const [[text]] = writeText.mock.calls as [[string]];
     expect(text).toMatch(/^# Session debug export/);
-    // The user's message, then the system prompt the run was given.
     expect(text.indexOf("Say hi to the reader")).toBeGreaterThan(0);
     expect(text.indexOf("You are a story helper.")).toBeGreaterThan(
       text.indexOf("Say hi to the reader"),
@@ -266,7 +262,6 @@ describe("DebugPanel", () => {
     renderWith(<DebugPanel sessionId="s" />);
 
     expect(await screen.findByText(/items, oldest first/)).toBeTruthy();
-    // The user's message comes before the run that answers it.
     const user = screen.getByText("Say hi to the reader");
     const system = screen.getByText("You are a story helper.");
     expect(
@@ -285,11 +280,9 @@ describe("DebugPanel", () => {
     renderWith(<DebugPanel sessionId="s" />);
     fireEvent.click(await screen.findByText(/^Events \(/));
 
-    // Deltas are hidden to begin with.
     expect(
       await screen.findByText(/Showing 3 of 3 matching events/),
     ).toBeTruthy();
-    // Not in the table (the Type filter still lists it as a choice).
     expect(
       within(screen.getByRole("table")).queryByText("text.delta"),
     ).toBeNull();

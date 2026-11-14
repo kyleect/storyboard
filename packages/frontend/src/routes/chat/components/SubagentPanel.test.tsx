@@ -4,8 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { InputRequest, Message } from "@harness/core";
 import { MessageView } from "./MessageView";
 
-/* The work of a subagent under the call that started it (agent delegation design, decision 42). */
-
 const call: Message = {
   role: "assistant",
   content: [
@@ -228,7 +226,6 @@ describe("a message to a running subagent", () => {
         user("m1", "Do it", "task"),
         user("m2", "Hand back.", "reminder"),
         user("m3", "Use tool_b", "user"),
-        // Saved before the source was recorded: by position.
         user("m4", "Old reminder"),
       ],
     });

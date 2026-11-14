@@ -41,14 +41,6 @@ import {
 import { ACCEPT } from "../../lib/attachments";
 import { nameError } from "./FileViews";
 
-/*
- * The explorer of the Files view: one tree with a root folder for each
- * place files live (Session, Project, Global), a header with the actions,
- * a right-click menu, and inline name boxes for new files and folders and
- * for renaming a folder. It holds no data of its own; the parent gives it
- * the tree and does what the actions ask.
- */
-
 export function FileIcon({
   mediaType,
   size = 16,
@@ -64,7 +56,6 @@ export function FileIcon({
   return <IconFile size={size} />;
 }
 
-/** A name box in the tree: Enter accepts, Escape or leaving it cancels. */
 function InlineName({
   initial,
   label,
@@ -89,7 +80,6 @@ function InlineName({
       onChange={(e) => setName(e.currentTarget.value)}
       onFocus={(e) => e.currentTarget.select()}
       onBlur={onCancel}
-      // The tree item reads Space and the arrow keys; they are for typing here.
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Escape") onCancel();
@@ -99,7 +89,6 @@ function InlineName({
   );
 }
 
-/** A button of the explorer's header; `locked` is the reason it is off. */
 function HeaderAction({
   label,
   icon,
@@ -127,11 +116,9 @@ function HeaderAction({
   );
 }
 
-/** The folder an action on a node applies to. */
 const folderOf = (ref: NodeRef): string =>
   ref.kind === "file" ? dirName(ref.path) : ref.path;
 
-/** An extra entry in a node's menu, added by the explorer's owner. */
 export interface NodeAction {
   label: string;
   onClick: () => void;
@@ -141,13 +128,10 @@ export interface FileTreeProps {
   data: TreeNode[];
   info: ReadonlyMap<string, NodeInfo>;
   roots: readonly Pick<Root, "id" | "label">[];
-  /** Why a root cannot be changed, when it cannot. */
   reasons: Readonly<Record<RootId, string | undefined>>;
-  /** The root actions go to when nothing is selected: the page's own. */
   pageRoot: RootId;
   initialExpanded: Record<string, boolean>;
   onExpandedChange: (state: Record<string, boolean>) => void;
-  /** The value of the file shown in the active tab, to select it. */
   activeValue: string | null;
   renaming: { value: string } | null;
   showDeleted: boolean;
@@ -163,9 +147,7 @@ export interface FileTreeProps {
   onDeleteFolder: (ref: NodeRef) => void;
   onDeleteFile: (ref: NodeRef) => void;
   onUpload: (root: RootId, folder: string, files: File[]) => void;
-  /** Extra header buttons, after the usual ones (skills: Import). */
   extraTools?: React.ReactNode;
-  /** Extra menu entries for a node (skills: Export). Shown even when locked. */
   nodeActions?: ((ref: NodeRef) => NodeAction[]) | undefined;
 }
 
@@ -182,15 +164,11 @@ export function FileTree(props: FileTreeProps) {
     ref: NodeRef;
   } | null>(null);
   const picker = useRef<HTMLInputElement>(null);
-  // Where the file picker's files go.
   const pickFor = useRef<{ root: RootId; folder: string }>({
     root: pageRoot,
     folder: "",
   });
 
-  // The file in the active tab is the selected row, and its folders are
-  // opened so it can be seen, as in an editor. The controller is held in a
-  // ref: its functions change with every render.
   const controller = useRef(tree);
   useEffect(() => {
     controller.current = tree;
@@ -223,8 +201,6 @@ export function FileTree(props: FileTreeProps) {
 
   const startPending = (kind: Pending["kind"], ref: NodeRef) => {
     const parent = folderOf(ref);
-    // Open the folder so the name box shows (one update: two would each
-    // start from the same state, and the second would undo the first).
     tree.setExpandedState({
       ...tree.expandedState,
       [nodeValue({ root: ref.root, kind: "root", path: "" })]: true,
@@ -271,7 +247,6 @@ export function FileTree(props: FileTreeProps) {
         aria-label="Choose files to upload"
         onChange={(e) => {
           const files = Array.from(e.currentTarget.files ?? []);
-          // So choosing the same file again is noticed.
           e.currentTarget.value = "";
           if (files.length > 0)
             props.onUpload(pickFor.current.root, pickFor.current.folder, files);
@@ -336,7 +311,6 @@ export function FileTree(props: FileTreeProps) {
 
       <ScrollArea
         style={{ flex: 1, minHeight: 0 }}
-        // Files dropped on empty space go to the page's own root.
         onDragOver={(e: React.DragEvent) => {
           if (acceptsDrop(e, pageRoot)) e.preventDefault();
         }}

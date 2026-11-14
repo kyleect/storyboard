@@ -27,7 +27,6 @@ import {
   type TabsState,
 } from "./structured-explorer";
 
-/** A value a test needs to be there; says so if it is not. */
 const must = <T>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
   return v;
@@ -151,7 +150,6 @@ describe("buildTree", () => {
     const underGlobal = nth(nth(nth(data, 1).children, 0).children, 0);
     expect(names(underSession.children)).toEqual(["Cove"]);
     expect(names(underGlobal.children)).toEqual(["Harbour"]);
-    // Each is its own node: they differ by root.
     expect(underSession.value).not.toBe(underGlobal.value);
   });
 
@@ -334,7 +332,6 @@ describe("tabs", () => {
 
 describe("what is remembered", () => {
   const page = { scope: "session", id: "s1" } as const;
-  // This test file runs in Node, which has no localStorage.
   beforeEach(() => {
     const store = new Map<string, string>();
     vi.stubGlobal("localStorage", {

@@ -5,11 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { GlobalFilesPage } from "./FilesPages";
 import { GlobalStructuredDataPage } from "../data/StructuredDataPages";
 
-/*
- * The global Files and Structured Data pages are what the workbench
- * tab says they are: no heading and no help text above them.
- */
-
 vi.mock("@tanstack/react-router", () => ({
   Link: () => null,
   useParams: () => ({}),

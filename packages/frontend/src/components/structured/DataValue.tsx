@@ -6,12 +6,6 @@ import {
   type SchemaNode,
 } from "@harness/core";
 
-/*
- * A piece of data shown read-only, laid out by its schema (schemas and data
- * design, decision 19): each field's label and value, groups nested, list
- * items numbered. Not a form: nothing here can be answered or changed.
- */
-
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -23,7 +17,6 @@ function Empty() {
   );
 }
 
-/** A value that is not a group or a list, as text. */
 function scalarText(field: FormField, value: unknown): string {
   switch (field.kind) {
     case "boolean":
@@ -109,12 +102,10 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
   );
 }
 
-/** A piece of data, laid out by the schema version it is on. */
 export function DataValue({
   schema,
   value,
 }: {
-  /** The JSON Schema of the version the data is on. */
   schema: unknown;
   value: unknown;
 }) {

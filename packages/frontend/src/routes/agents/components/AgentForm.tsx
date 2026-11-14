@@ -39,15 +39,6 @@ import {
 import { ToolGrantEditor } from "./ToolGrantEditor";
 import { showError } from "../../../lib/notify";
 
-/*
- * An agent's tab (agents explorer design, decisions 2 and 3): the system
- * prompt in the main area, the other settings in a side panel, one Save that
- * makes one version of the agent. It edits the agent's own settings only; its
- * skills, schemas and data are edited from their own tabs. The edits not yet
- * saved are the draft the parent keeps, so they survive switching tabs.
- */
-
-/** What a new agent starts with: an allow list with nothing ticked (P8). */
 export const emptyAgent = (): AgentContent => ({
   name: "",
   description: "",
@@ -59,7 +50,6 @@ export const emptyAgent = (): AgentContent => ({
   subagent: false,
 });
 
-/** An agent's content, without what a version does not hold. */
 export const contentOf = (a: AgentContent): AgentContent => ({
   name: a.name,
   description: a.description,
@@ -90,23 +80,16 @@ export function AgentForm({
   onCopy,
   openVersion,
 }: {
-  /** Where the agent lives (or will). */
   scope: AgentScope;
-  /** The agent being edited; left out for a new one. */
   agent: AgentDetail | undefined;
-  /** For a new agent: what it starts with (a copy of a built-in one). */
   start?: AgentContent | undefined;
-  /** Why the agent cannot be changed here, when that is so. */
   readOnly: string | undefined;
   draft: AgentContent | undefined;
   onDraft: (draft: AgentContent | undefined) => void;
-  /** The tab was edited, so it stays open. */
   onKeep: () => void;
   onSaved: (id: string) => void;
   onDeleted: () => void;
-  /** A built-in agent's Copy to global: a new agent made from it. */
   onCopy: (source: AgentDetail) => void;
-  /** Open the Versions list on this version, as the tab is shown. */
   openVersion?: number | undefined;
 }) {
   const refresh = useRefresh(scope);
@@ -127,7 +110,6 @@ export function AgentForm({
   const change = (patch: Partial<AgentContent>) => {
     const next = { ...current, ...patch };
     onKeep();
-    // Putting everything back as it was is not a change.
     onDraft(!isNew && same(next, base) ? undefined : next);
   };
 

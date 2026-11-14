@@ -214,7 +214,6 @@ describe("the tree", () => {
       { scope: "agent", id: "a1" },
       false,
     );
-    // Nothing was read for the other agents.
     for (const call of vi.mocked(api.listSkillTree).mock.calls) {
       if (call[0].scope === "agent") expect(call[0].id).toBe("a1");
     }
@@ -226,10 +225,8 @@ describe("the tree", () => {
     fireEvent.click(await screen.findByText("Editor"));
     await screen.findByText("Skills");
     fireEvent.click(screen.getByText("Skills"));
-    // The Global root and the group of skills that come from it.
     await waitFor(() => expect(screen.getAllByText("Global")).toHaveLength(2));
     expect(screen.getAllByText("Built-in")).toHaveLength(2);
-    // The groups are closed until opened.
     fireEvent.click(must(screen.getAllByText("Global").at(-1)));
     fireEvent.click(must(screen.getAllByText("Built-in").at(-1)));
     expect(await screen.findByText("Overridden by Agent")).toBeTruthy();
@@ -243,7 +240,6 @@ describe("the tree", () => {
     expect(await screen.findByText("Clue")).toBeTruthy();
     fireEvent.click(screen.getByText("Clue"));
     expect(await screen.findByText("Case notes")).toBeTruthy();
-    // Inherited schemas are in groups by origin, closed until opened.
     const groups = screen.getAllByText("Global");
     fireEvent.click(must(groups.at(-1)));
     expect(await screen.findByText("Setting")).toBeTruthy();

@@ -21,13 +21,6 @@ import type { WorkbenchKind } from "../../../lib/workbench";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { GlobalRunIndicator, GlobalUnreadIndicator } from "./RunIndicator";
 
-/*
- * The icon rail at the left of the workbench: the pages that are not about
- * one chat or project, each opening as a tab, and Settings at the bottom.
- * "Chats" shows and hides the list of chats; the others open a page in a
- * preview tab.
- */
-
 export const RAIL_WIDTH = 52;
 
 interface Item {
@@ -62,13 +55,10 @@ export function Rail({
   activity,
   unread,
 }: {
-  /** The kind of the active tab, to mark its item. */
   activeKind: WorkbenchKind | null;
-  /** The chats tree is shown; "Chats" shows and hides it. */
   chatsOpen: boolean;
   onChats: () => void;
   onOpen: (kind: WorkbenchKind) => void;
-  /** "Manage profiles…" in the profile menu. */
   onManageProfiles: () => void;
   activity: RunSummary | undefined;
   unread: number | undefined;

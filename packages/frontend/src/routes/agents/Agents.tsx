@@ -27,14 +27,6 @@ import { ApprovalSelect } from "./components/ApprovalSelect";
 
 export { ApprovalSelect };
 
-/*
- * Agents (agents design, decisions 15 and 30 to 37): a page per scope with
- * the list on the left and the selected agent on the right, as on the files
- * page; the picker in the chat view; and the read-only view of the version
- * a message was written with.
- */
-
-/** Global agents (decision 30). */
 export function GlobalAgentsPage() {
   return (
     <Stack gap="md">
@@ -47,7 +39,6 @@ export function GlobalAgentsPage() {
   );
 }
 
-/** The agents explorer, with the guard against leaving unsaved edits. */
 function AgentsView({
   projectId,
   readOnly,
@@ -72,11 +63,6 @@ function AgentsView({
 
 const NO_DEFAULT = "";
 
-/**
- * The project's default agent: new sessions in it start with this agent
- * (default agent design, decisions 1, 3, 4). The project's agents and the
- * global ones are offered, or none.
- */
 export function DefaultAgentSelect({
   project,
   disabled,
@@ -93,7 +79,6 @@ export function DefaultAgentSelect({
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
   const settings = useSettings();
-  // With none, new sessions start with the global default, if there is one.
   const globalDefault = (global.data ?? []).find(
     (a) => a.id === settings.data?.effective.defaultAgentId,
   );
@@ -114,8 +99,6 @@ export function DefaultAgentSelect({
           },
         ]
       : [];
-  // A default that is not in the lists (for example, deleted just now)
-  // shows as none until the lists refresh.
   const known = [...(own.data ?? []), ...(global.data ?? [])].some(
     (a) => a.id === project.default_agent_id,
   );
@@ -153,7 +136,6 @@ export function DefaultAgentSelect({
   );
 }
 
-/** A project's agents (decision 31). */
 export function ProjectAgentsPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),
@@ -179,10 +161,6 @@ export function ProjectAgentsPage({ projectId }: { projectId: string }) {
 
 const NO_AGENT = "";
 
-/**
- * The session's agent (decisions 10, 17, 32): no agent, then the project's
- * agents, then the global ones, labelled by scope.
- */
 export function AgentPicker({
   sessionId,
   value,
@@ -227,11 +205,6 @@ export function AgentPicker({
   );
 }
 
-/**
- * The agent label on an assistant message, "Name v3" (decision 15). Clicking
- * it opens the agent's tab in the Agents view, with its Versions list on that
- * version (agents explorer design, decision 10).
- */
 export function AgentBadge({ agent }: { agent: MessageAgent }) {
   const navigate = useNavigate();
   const ask = useAgentFocus((s) => s.ask);

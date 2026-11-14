@@ -50,14 +50,6 @@ import {
 } from "../../lib/schema-builder";
 import { showError } from "../../lib/notify";
 
-/*
- * Schemas (schemas and data design, decisions 8 to 15, 44): the pieces the
- * Structured Data and Agents views share. The editor is a builder (plan P10,
- * layout A: a field tree on the left, the selected field's settings on the
- * right) or a JSON editor, switchable (decision 15). Earlier versions can be
- * viewed.
- */
-
 function useRefresh() {
   const queryClient = useQueryClient();
   return async () => {
@@ -68,7 +60,6 @@ function useRefresh() {
 const typeLabel = (t: FieldType) =>
   FIELD_TYPES.find((f) => f.value === t)?.label ?? t;
 
-/** Every version's JSON Schema, view only. */
 export function VersionsModal({
   schema,
   onClose,
@@ -106,7 +97,6 @@ export function VersionsModal({
   );
 }
 
-/** Copies the latest version to global, a project or an agent (decision 12). */
 export function CopyModal({
   owner,
   schema,
@@ -211,9 +201,6 @@ export function CopyModal({
   );
 }
 
-// ---- The editor --------------------------------------------------------------
-
-/** Layout A: the field tree on the left, the selected field on the right. */
 export function Builder({
   root,
   onChange,
@@ -223,7 +210,6 @@ export function Builder({
   root: BuilderNode;
   onChange: (root: BuilderNode) => void;
   problems: Record<string, string>;
-  /** Fields can be looked at, not changed. */
   readOnly?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -327,7 +313,6 @@ export function Builder({
         <Stack
           gap="xs"
           style={{ flex: 1.3, minWidth: 0 }}
-          // A disabled fieldset turns off every input and button inside it.
           {...(readOnly ? { component: "fieldset", disabled: true } : {})}
         >
           {shown ? (
@@ -365,7 +350,6 @@ export function Builder({
 const num = (v: string | number) =>
   typeof v === "number" ? v : v === "" ? undefined : Number(v);
 
-/** The selected field's settings. */
 function FieldSettings({
   node,
   role,

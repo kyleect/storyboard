@@ -8,11 +8,6 @@ import {
 
 const SWATCHES = PRIMARY_COLORS.map(swatchOf);
 
-/**
- * The look of the app in this browser. The theme colour is picked from
- * swatches, one per Mantine palette (a theme's primary colour is a palette,
- * not any colour), and applies at once, so there is no Save.
- */
 export function LookAndFeel() {
   const primaryColor = useAppearance((s) => s.primaryColor);
   const setPrimaryColor = useAppearance((s) => s.setPrimaryColor);

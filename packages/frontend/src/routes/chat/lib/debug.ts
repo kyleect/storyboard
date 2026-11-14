@@ -1,21 +1,8 @@
 import type { StoredEvent } from "@harness/core";
 import type { DebugRun } from "../../../api";
 
-/*
- * Helpers for the session debugging tools: copying the export to the
- * clipboard, and summarizing and filtering the event log.
- */
-
-/**
- * Copies text to the clipboard. `text` may be a promise, so the copy can
- * start inside the click while the text is still being fetched: Safari's
- * WebView (the Tauri shell on macOS) only allows a clipboard write made
- * during the gesture, and a write made after an `await` is refused. When
- * the promise rejects, the rejection is thrown.
- */
 export async function copyText(text: string | Promise<string>): Promise<void> {
   const pending = Promise.resolve(text);
-  // Avoid an unhandled rejection if only one of the paths below awaits it.
   pending.catch(() => {});
 
   const clipboard =
@@ -31,7 +18,7 @@ export async function copyText(text: string | Promise<string>): Promise<void> {
       ]);
       return;
     } catch {
-      // Fall through; a rejected `pending` is thrown by the next await.
+      // falls through to the next way to copy
     }
   }
 
@@ -41,7 +28,7 @@ export async function copyText(text: string | Promise<string>): Promise<void> {
       await clipboard.writeText(value);
       return;
     } catch {
-      // Fall through to the legacy path.
+      // falls through to the next way to copy
     }
   }
 
@@ -61,7 +48,6 @@ export async function copyText(text: string | Promise<string>): Promise<void> {
   }
 }
 
-/** Events that arrive in large numbers while a message streams. */
 export const STREAMING_TYPES: ReadonlySet<string> = new Set([
   "text.delta",
   "reasoning.delta",
@@ -73,7 +59,6 @@ const clip = (text: string, max = 80) => {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 };
 
-/** A one-line description of an event for the table. */
 export function eventSummary(event: StoredEvent, max = 80): string {
   const show = (value: unknown) =>
     clip(
@@ -135,11 +120,8 @@ export function eventSummary(event: StoredEvent, max = 80): string {
 }
 
 export interface EventFilter {
-  /** Matches the type, the summary, the run id and the data. */
   text: string;
-  /** Event types to show; empty: all. */
   types: readonly string[];
-  /** A run id to show; null: all runs. */
   runId: string | null;
   hideStreaming: boolean;
 }
@@ -151,7 +133,6 @@ export const NO_FILTER: EventFilter = {
   hideStreaming: true,
 };
 
-/** The events that pass every part of the filter, in their order. */
 export function filterEvents(
   events: readonly StoredEvent[],
   filter: EventFilter,
@@ -174,6 +155,5 @@ export function filterEvents(
 
 export const shortId = (id: string) => id.slice(0, 8);
 
-/** "2. 1a2b3c4d (subagent) · finished", for a run picker. */
 export const runLabel = (run: DebugRun, index: number) =>
   `${index + 1}. ${shortId(run.id)}${run.parentRunId ? " (subagent)" : ""} · ${run.status}`;

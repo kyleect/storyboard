@@ -1,10 +1,3 @@
-/*
- * The MCP server form's text fields (MCP design). A server's arguments,
- * environment and headers are lists in the settings, and one line each in
- * the form; these turn one into the other.
- */
-
-/** Non-empty lines, trimmed of the line break only. */
 export function parseLines(text: string): string[] {
   return text
     .split(/\r?\n/)
@@ -12,12 +5,10 @@ export function parseLines(text: string): string[] {
     .filter((l) => l !== "");
 }
 
-/** `NAME=value` lines; the value may contain "=". Throws on a line without one. */
 export function parseEnv(text: string): Record<string, string> {
   return parsePairs(text, "=", "NAME=value");
 }
 
-/** `Name: value` lines. Throws on a line without a colon. */
 export function parseHeaders(text: string): Record<string, string> {
   return parsePairs(text, ":", "Name: value");
 }

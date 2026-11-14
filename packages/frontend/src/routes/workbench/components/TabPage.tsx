@@ -26,16 +26,6 @@ import {
 } from "../../data/StructuredDataPages";
 import { WorkspacesPage } from "../../workspaces/Workspaces";
 
-/*
- * The chat workbench (chat workbench design): the icon rail, the chats tree,
- * and the tabs, in the frame the Files and Structured Data views use.
- *
- * The address decides which tab is active. A tab that is clicked navigates;
- * an address that is opened (a link, the address bar, Back) opens or
- * activates its tab. Only the active tab is mounted, and tabs with unsaved
- * edits, which stay mounted, hidden (D5).
- */
-
 export const ICONS: Record<WorkbenchKind, ReactNode> = {
   chat: <IconMessage size={14} />,
   sessions: <IconInbox size={14} />,
@@ -50,7 +40,6 @@ export const ICONS: Record<WorkbenchKind, ReactNode> = {
   errors: <IconAlertTriangle size={14} />,
   settings: <IconSettings size={14} />,
 };
-/** What each page is called, in a project or globally. */
 export const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
   sessions: "No project",
   agents: "Agents",
@@ -63,7 +52,6 @@ export const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
   "project-files": "Files",
   "project-data": "Structured Data",
 };
-/** The page a tab shows. */
 export function TabPage({ tab }: { tab: WorkbenchTab }) {
   const id = tab.key;
   switch (tab.kind) {

@@ -7,10 +7,6 @@ import {
   setCurrentProfile,
 } from "./profile";
 
-/* The active profile as the window knows it, and the saved views kept per
- * profile (profiles design 4.3). */
-
-// This test file runs in Node, which has no localStorage.
 const store = new Map<string, string>();
 beforeEach(() => {
   store.clear();

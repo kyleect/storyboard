@@ -18,16 +18,8 @@ import { api, type ToolGroupChange, type ToolView } from "../../../api";
 import { toolKeys } from "../../../queries";
 import { groupTools } from "../../../lib/tool-grant";
 
-/*
- * The Settings Tools tab (tool management design, decisions 12 to 16):
- * for each tool, whether it is always on, whether it asks before it runs and
- * whether it is off for the whole harness; each group's header sets all
- * three for the group. Saved as they change.
- */
-
 type Setting = "ask" | "alwaysOn" | "off";
 
-/** All, none or some of a group's tools, for a setting. */
 function stateOf(tools: ToolView[], setting: Setting) {
   const usable = setting === "ask" ? tools.filter((t) => !t.fixed) : tools;
   const on = usable.filter((t) => t[setting]).length;
@@ -45,7 +37,6 @@ export function ToolSettings() {
   const queryClient = useQueryClient();
   const tools = useQuery({ queryKey: toolKeys.list(), queryFn: api.listTools });
 
-  // The agent editor shows each tool's setting, and what is on or off.
   const refreshAgents = () => {
     void queryClient.invalidateQueries({ queryKey: toolKeys.approvals() });
     void queryClient.invalidateQueries({ queryKey: toolKeys.selectable() });
@@ -81,7 +72,6 @@ export function ToolSettings() {
   });
   const busy = change.isPending || changeGroup.isPending;
 
-  /** Asks first when switching off tools that agents list (decision 16). */
   const confirmOff = (affected: ToolView[], go: () => void) => {
     const agents = unique(affected.flatMap((t) => t.usedByAgents));
     if (agents.length === 0) return go();

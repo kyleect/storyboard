@@ -3,10 +3,6 @@ import { IconBan, IconCheck } from "@tabler/icons-react";
 import { PROJECT_COLORS, type ProjectColor } from "@harness/core";
 import { projectColorVar } from "../lib/project-color";
 
-/**
- * Picks a project's color from the palette, or none. One choice, so the
- * swatches are a radio group; the check marks the current one.
- */
 export function ProjectColorPicker({
   value,
   onChange,
@@ -38,7 +34,6 @@ export function ProjectColorPicker({
       style={{
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.5 : 1,
-        // The chosen swatch gets a ring, so it does not rely on the check alone.
         outline: selected ? "2px solid var(--mantine-color-dimmed)" : undefined,
         outlineOffset: 2,
       }}
@@ -52,7 +47,6 @@ export function ProjectColorPicker({
   );
 
   return (
-    // The swatches are not one input, so the heading is not a <label>.
     <Input.Wrapper
       label="Color"
       labelElement="div"

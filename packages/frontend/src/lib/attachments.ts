@@ -1,12 +1,5 @@
 import type { MediaKind } from "@harness/core";
 
-/*
- * What can be uploaded as a binary file or attached to a message. These
- * match the backend's `media-detect.ts`: llama-server reads PNG, JPEG, GIF and BMP images
- * and WAV, MP3 and FLAC audio (not WebP, not OGG or M4A).
- */
-
-/** The largest file the backend accepts, in bytes. */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 const BY_EXTENSION: Record<string, string> = {
@@ -35,13 +28,11 @@ const BY_TYPE: Record<string, string> = {
   "audio/x-flac": "audio/flac",
 };
 
-/** The `accept` value for a file picker. */
 export const ACCEPT = [
   ...new Set(Object.values(BY_TYPE)),
   ...Object.keys(BY_EXTENSION).map((e) => `.${e}`),
 ].join(",");
 
-/** What can be attached, for messages to the user. */
 export const ACCEPTED_DESCRIPTION =
   "PNG, JPEG, GIF or BMP images, or WAV, MP3 or FLAC audio";
 

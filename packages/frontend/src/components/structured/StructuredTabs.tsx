@@ -56,18 +56,8 @@ import { JsonEditor } from "./JsonEditor";
 import { Builder, VersionsModal as SchemaVersions } from "./Schemas";
 import { showError } from "../../lib/notify";
 
-/*
- * What a tab of the Structured Data view shows: a schema or a piece of
- * data, in place, with the form and the JSON one toggle apart. What was
- * typed and not yet saved is the tab's draft, kept by the parent so it
- * survives switching tabs. A tab for something not yet made (a new schema
- * or new data, named in the tree) starts with a draft and is saved with
- * Create.
- */
-
 export type View = "form" | "json";
 
-/** A schema being edited: the builder's tree, or the JSON text, by `source`. */
 export interface SchemaDraft {
   type: "schema";
   name: string;
@@ -77,7 +67,6 @@ export interface SchemaDraft {
   text: string;
 }
 
-/** Data being edited: the form's answers, or the JSON text, by `source`. */
 export interface DataDraft {
   type: "data";
   name: string;
@@ -85,9 +74,7 @@ export interface DataDraft {
   source: View;
   answers: Answers;
   text: string;
-  /** Changes when the form must start over from `answers`. */
   formKey: number;
-  /** Filled in against the schema's latest version, to migrate to it. */
   latest: boolean;
   schemaId: string;
 }
@@ -98,7 +85,6 @@ export const EMPTY_SCHEMA = { type: "object", properties: {} };
 
 const pretty = (v: unknown): string => JSON.stringify(v, null, 2) ?? "";
 
-/** A fresh draft for a new schema, named. */
 export function newSchemaDraft(name: string): SchemaDraft {
   const read = fromSchema(EMPTY_SCHEMA);
   return {
@@ -111,7 +97,6 @@ export function newSchemaDraft(name: string): SchemaDraft {
   };
 }
 
-/** A fresh draft for new data of a schema, named. */
 export function newDataDraft(name: string, schemaId: string): DataDraft {
   return {
     type: "data",
@@ -128,7 +113,6 @@ export function newDataDraft(name: string, schemaId: string): DataDraft {
 
 const BORDER = "1px solid var(--mantine-color-default-border)";
 
-/** The bar over a tab's content: where it is, what it is, what can be done. */
 function Toolbar({
   path,
   badges,
@@ -194,7 +178,6 @@ function ViewToggle({
   );
 }
 
-/** Asks before a save that reaches more sessions than this page's own. */
 function confirmHigher(
   root: RootId,
   what: string,
@@ -220,8 +203,6 @@ function useRefresh() {
   return () => queryClient.invalidateQueries({ queryKey: dataKeys.all });
 }
 
-// ------------------------------------------------------------------ schemas
-
 export function SchemaTab({
   owner,
   root,
@@ -240,25 +221,19 @@ export function SchemaTab({
   onCopy,
   onDelete,
 }: {
-  /** Where the schema lives (or will). */
   owner: DataOwner;
   root: RootId;
   schemaId: string;
   isNew: boolean;
-  /** What the tree knows of it. */
   info: SchemaInfo | undefined;
-  /** False for a schema this view can only look at, such as an agent's. */
   own: boolean;
-  /** Why it cannot be changed, when it cannot. */
   readOnly: string | undefined;
-  /** It is in a higher scope than the page it is edited from. */
   higher: boolean;
   view: View;
   onView: (v: View) => void;
   draft: SchemaDraft | undefined;
   onDraft: (draft: SchemaDraft | undefined) => void;
   onKeep: () => void;
-  /** A new schema was made: the tab becomes its schema's tab. */
   onCreated: (made: SchemaInfo) => void;
   onCopy: (info: SchemaInfo) => void;
   onDelete: (info: SchemaInfo) => void;
@@ -332,7 +307,6 @@ export function SchemaTab({
   const fixed =
     !isNew && (readOnly !== undefined || builtin || deleted || !own);
   const canBuild = baseRoot?.ok === true;
-  // A schema the builder cannot show is JSON only, until it is rewritten.
   const shown: View = draft ? draft.source : canBuild ? view : "json";
   const current: SchemaDraft = draft ?? {
     type: "schema",
@@ -607,8 +581,6 @@ export function SchemaTab({
   );
 }
 
-// --------------------------------------------------------------------- data
-
 export function DataTab({
   owner,
   root,
@@ -629,7 +601,6 @@ export function DataTab({
   root: RootId;
   dataId: string;
   isNew: boolean;
-  /** For new data: the schema it is made from. */
   newSchemaId: string;
   readOnly: string | undefined;
   higher: boolean;
@@ -638,7 +609,6 @@ export function DataTab({
   draft: DataDraft | undefined;
   onDraft: (draft: DataDraft | undefined) => void;
   onKeep: () => void;
-  /** New data was made: the tab becomes its data's tab. */
   onCreated: (id: string) => void;
   onDelete: (d: DataDetail) => void;
 }) {
@@ -711,7 +681,6 @@ export function DataTab({
     value: d?.value,
   };
   const schemaNode = body as SchemaNode | undefined;
-  // Data whose schema is not here can be looked at as JSON only.
   const shown: View = draft ? draft.source : form ? view : "json";
   const current: DataDraft =
     draft ??

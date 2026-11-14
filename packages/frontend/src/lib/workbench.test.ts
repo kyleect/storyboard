@@ -62,7 +62,6 @@ describe("tabForPath and pathForTab", () => {
       root: "global",
       key: "",
     });
-    // A project's chats are listed on its own page.
     expect(tabForPath("/projects/p1/sessions")).toBeNull();
   });
 
@@ -349,7 +348,6 @@ describe("moveTab", () => {
 });
 
 describe("the saved view", () => {
-  // This test file runs in Node, which has no localStorage.
   beforeEach(() => {
     const store = new Map<string, string>();
     vi.stubGlobal("localStorage", {

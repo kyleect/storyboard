@@ -30,7 +30,6 @@ afterEach(() => {
 });
 beforeEach(() => localStorage.clear());
 
-/** A value a test needs to be there; says so if it is not. */
 const must = <T,>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
   return v;
@@ -105,7 +104,6 @@ const VALUES: Record<string, unknown> = {
 };
 
 const ALL = [CHARACTER, PLACE, SETTING, BUILTIN];
-/** What each scope's schemas the scope can make data from. */
 const USABLE: Record<string, SchemaInfo[]> = {
   session: [CHARACTER, PLACE, SETTING],
   project: [PLACE, SETTING],
@@ -158,7 +156,6 @@ function show(ui: React.ReactElement) {
   };
 }
 
-/** Types into the open JSON editor as a person would: the editor's own change. */
 function typeInEditor(text: string) {
   const dom = document.querySelector<HTMLElement>(".cm-editor");
   if (!dom) throw new Error("no editor is open");
@@ -214,7 +211,6 @@ describe("the tree", () => {
     expect(screen.getByText("Global")).toBeTruthy();
     expect(screen.getAllByText("Schemas")).toHaveLength(3);
     expect(await screen.findByText("Character")).toBeTruthy();
-    // Data is under its schema: closed until the schema is opened up.
     expect(screen.queryByText("Aria")).toBeNull();
   });
 
@@ -233,10 +229,7 @@ describe("the tree", () => {
   it("shows a higher scope's schema in the lower tree as inherited, with a tooltip", async () => {
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
-    // Setting is global: inherited under Session and Project, own under Global.
     const inherited = screen.getAllByTestId("inherited-schema");
-    // Place (project) under Session; Setting under Session and Project;
-    // the built-in Note is not listed for them.
     expect(inherited.map((e) => e.textContent).sort()).toEqual([
       "Place",
       "Setting",
@@ -252,7 +245,6 @@ describe("the tree", () => {
   it("lists the data of a root under an inherited schema", async () => {
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
-    // Session's Setting is the first of the two Setting rows.
     fireEvent.click(must(screen.getAllByText("Setting")[0]));
     expect(await screen.findByText("Cove")).toBeTruthy();
     expect(screen.queryByText("Harbour")).toBeNull();
@@ -305,7 +297,6 @@ describe("opening", () => {
     expect(
       (screen.getByLabelText(/^Description/) as HTMLTextAreaElement).value,
     ).toBe("Character schema");
-    // The builder lists the fields.
     expect(await screen.findByText("nickname")).toBeTruthy();
     expect(screen.getByRole("tab").getAttribute("title")).toContain(
       "Session › Schemas › Character",
@@ -331,7 +322,6 @@ describe("opening", () => {
     expect(iconBg(tab)).toContain("--mantine-color-teal-filled");
     expect(tab.style.borderTop).toContain("--mantine-color-teal-filled");
 
-    // A global schema, seen from the project's page, is not the project's.
     const globalTab = () =>
       screen
         .getAllByRole("tab")
@@ -370,7 +360,6 @@ describe("opening", () => {
     first.unmount();
     show(<StructuredExplorer page={session} projectId="p1" />);
     expect(await screen.findByRole("tab")).toBeTruthy();
-    // Named once the lists have loaded.
     await waitFor(() =>
       expect(screen.getByRole("tab").textContent).toContain("Character"),
     );
@@ -486,7 +475,6 @@ describe("editing data", () => {
       .mockResolvedValue({ ...dataDetail(HARBOUR) });
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
-    // Global's Setting is the last of the three Setting rows.
     fireEvent.click(must(screen.getAllByText("Setting").at(-1)));
     fireEvent.click(await screen.findByText("Harbour"));
     const nick = (await screen.findByLabelText(
@@ -693,7 +681,6 @@ describe("making things in the tree", () => {
     const box = await screen.findByLabelText("New schema name");
     fireEvent.change(box, { target: { value: "Monster" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    // Nothing is made until the form is saved.
     expect(create).not.toHaveBeenCalled();
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
     expect(name.value).toBe("Monster");
@@ -709,7 +696,6 @@ describe("making things in the tree", () => {
         body: { type: "object", properties: {} },
       }),
     );
-    // The new tab becomes the schema's own.
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Create" })).toBeNull(),
     );
@@ -775,8 +761,6 @@ describe("making things in the tree", () => {
       target: { value: "Where ships tie up" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
-    // Made in Session, from Global's schema. Session is the page's own
-    // scope, so there is nothing to confirm.
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith(session, "sg", expect.anything()),
     );
@@ -874,7 +858,6 @@ describe("read-only", () => {
         projectReadOnly="The project is in the trash."
       />,
     );
-    // Project's own Place is the last of the two rows (Session shows it too).
     fireEvent.click(must((await screen.findAllByText("Place")).at(-1)));
     expect(
       await screen.findByText("The project is in the trash."),
@@ -968,7 +951,6 @@ describe("over an agent's root", () => {
     expect(await screen.findByText("Clue")).toBeTruthy();
     for (const name of ["Place", "Setting", "Note"])
       expect(screen.getByText(name)).toBeTruthy();
-    // The agent's own schema is not tagged; the three others are.
     expect(screen.getAllByTestId("inherited-schema")).toHaveLength(3);
     expect(vi.mocked(api.listSchemas)).toHaveBeenCalledWith(AGENT, false);
     expect(vi.mocked(api.listData)).toHaveBeenCalledWith(AGENT, false);

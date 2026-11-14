@@ -3,7 +3,6 @@ import { useState } from "react";
 import type { ProjectColor } from "@harness/core";
 import { ProjectColorPicker } from "./ProjectColorPicker";
 
-/** Name (trimmed, not empty) and description of a new project (Q9, Q17). */
 export function ProjectForm({
   submitLabel,
   onSubmit,

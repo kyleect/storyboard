@@ -24,11 +24,6 @@ import {
   type LinearKind,
 } from "../lib/linear";
 
-/*
- * The linear view of the debugging tab: the session in the order it
- * happened, as a conversation. See linear.ts for what it holds.
- */
-
 const COLORS: Record<LinearKind, string> = {
   system: "gray",
   tools: "gray",
@@ -52,7 +47,6 @@ const LABELS: Record<LinearKind, string> = {
 const pre = { whiteSpace: "pre-wrap", wordBreak: "break-word" } as const;
 
 function Body({ item }: { item: LinearItem }) {
-  // The system prompt is long and the same each time; start it short.
   const maxHeight = item.kind === "system" || item.kind === "tools" ? 72 : 240;
   return (
     <Spoiler maxHeight={maxHeight} showLabel="Show more" hideLabel="Show less">

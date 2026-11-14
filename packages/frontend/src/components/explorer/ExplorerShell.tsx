@@ -5,36 +5,19 @@ import { useRef, useState, type ReactNode } from "react";
 import { clampWidth } from "../../lib/explorer";
 import { UnreadDot } from "../UnreadDot";
 
-/*
- * The frame of an editor-style explorer: a sidebar (the tree), a divider
- * that can be dragged, a strip of tabs, the active tab's content and a
- * status bar. The Files view and the Structured Data view share it; each
- * gives it the sidebar, the tabs and the content, and keeps its own state.
- */
-
 const BORDER = "var(--mantine-color-default-border)";
 const CHROME =
   "light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))";
 
 export interface ShellTab {
   id: string;
-  /** What the tab says, and what closing it is called. */
   label: string;
-  /** Where the tab belongs, shown before the label: a project's name. */
   prefix?: string;
-  /** The hover text. */
   title: string;
   icon: ReactNode;
-  /**
-   * A project's color: the background of the icon and the line over the tab
-   * when it is open. Left out: the theme's.
-   */
   iconColor?: ProjectColor;
-  /** Shown in italics; the next single click on an item replaces it. */
   transient: boolean;
-  /** Has unsaved changes: a dot takes the place of the close button. */
   dirty: boolean;
-  /** Has a reply the user has not seen: a dot after the label. */
   unread?: boolean;
 }
 
@@ -64,30 +47,21 @@ export function ExplorerShell({
   tabs: readonly ShellTab[];
   active: string | null;
   onActivate: (id: string) => void;
-  /** A double click on a tab: keep it open. */
   onKeep: (id: string) => void;
   onRequestClose: (id: string) => void;
-  /** The active tab's content; null shows `empty`. */
   content: ReactNode;
   empty: string;
   statusLeft: string;
   statusRight: ReactNode;
   tabListLabel: string;
   resizeLabel: string;
-  /** Before the first tab, such as the button that opens a drawer. */
   leading?: ReactNode;
-  /** On a small screen the sidebar is elsewhere: no sidebar, no divider. */
-  /**
-   * Tabs can be dragged, or moved with Alt and the arrow keys; called with
-   * the tab and the index it should take. Without it they stay put.
-   */
   onReorder?: (id: string, toIndex: number) => void;
   hideSidebar?: boolean;
   hideStatus?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-  // The tab being dragged, and the one it is over.
   const [dragged, setDragged] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const resizeTo = (clientX: number) => {

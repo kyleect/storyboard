@@ -35,13 +35,6 @@ import {
   parseLines,
 } from "../lib/mcp-form";
 
-/*
- * The Settings MCP servers section (MCP design): the servers the backend
- * connects to, each with its connection status and the tools it gives. The
- * tools themselves are set up (always on, approval, off) in the tools
- * section, under the MCP group, and granted to agents like any other.
- */
-
 const STATE_COLOR: Record<McpState, string> = {
   connected: "green",
   connecting: "blue",
@@ -49,7 +42,6 @@ const STATE_COLOR: Record<McpState, string> = {
   disabled: "gray",
 };
 
-/** The form's values: lists as text, one entry per line. */
 interface FormValues {
   name: string;
   enabled: boolean;
@@ -92,7 +84,6 @@ function valuesOf(server: McpServerView): FormValues {
   };
 }
 
-/** The settings the form describes. Throws a readable error for a bad line. */
 function inputOf(v: FormValues): McpServerInput {
   const config: McpConfig =
     v.transport === "stdio"
@@ -120,7 +111,6 @@ export function McpServers() {
     queryKey: mcpKeys.list(),
     queryFn: api.listMcpServers,
   });
-  /** The server being edited; "new": the form for a new one. */
   const [editing, setEditing] = useState<McpServerView | "new" | null>(null);
 
   const refresh = () => {

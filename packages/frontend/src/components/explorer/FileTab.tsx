@@ -26,14 +26,6 @@ import { Markdown } from "../Markdown";
 import { TextEditor, type Cursor } from "./TextEditor";
 import { showError } from "../../lib/notify";
 
-/*
- * What a tab shows. A text file is an editor: the text typed and not yet
- * saved is the tab's draft, kept by the parent so it survives switching
- * tabs. An image or audio file is previewed, and a deleted file is shown
- * with its last value; neither has an editor.
- */
-
-/** Text typed and not saved, with the saved text it started from. */
 export interface Draft {
   text: string;
   base: string;
@@ -53,21 +45,15 @@ export function FileTab({
   onPreview,
 }: {
   source: ExplorerSource;
-  /** The name of the root the file is in. */
   rootLabel: string;
-  /** The color of the project the root belongs to; left out: none. */
   rootColor?: ProjectColor | undefined;
   fileKey: string;
-  /** Why the file cannot be changed, when it cannot. */
   readOnly: string | undefined;
-  /** Saving reaches more than the page does: ask first, with this reason. */
   broadNote: string | undefined;
   draft: Draft | undefined;
   onDraft: (draft: Draft | undefined) => void;
-  /** The tab was edited, so it stays open. */
   onKeep: () => void;
   onCursor: (cursor: Cursor) => void;
-  /** Left out: no Preview button (the explorer has no preview tab). */
   onPreview?: (() => void) | undefined;
 }) {
   const queryClient = useQueryClient();
@@ -113,7 +99,6 @@ export function FileTab({
       save.mutate(draft.text);
       return;
     }
-    // A higher scope reaches more sessions than this one (Kylee, 2026-11-11).
     modals.openConfirmModal({
       title: `Save to the ${rootLabel} file “${fileKey}”?`,
       children: <Text size="sm">{broadNote}</Text>,
@@ -300,7 +285,6 @@ export function FileTab({
   );
 }
 
-/** The rendered Markdown of a file, in its own tab; follows unsaved text. */
 export function PreviewTab({
   source,
   fileKey,

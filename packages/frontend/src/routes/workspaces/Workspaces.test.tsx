@@ -11,8 +11,6 @@ import {
 } from "../../api";
 import { AttachedWorkspaces, WorkspacesPage } from "./Workspaces";
 
-/* The Workspaces page and the attach controls (files unification design). */
-
 const workspace = (over: Partial<Workspace> = {}): Workspace => ({
   id: "w1",
   name: "Book",
@@ -222,7 +220,6 @@ describe("searched parts", () => {
       true,
     );
     expect(screen.getByLabelText("ch1.md")).toHaveProperty("checked", false);
-    // Part of "drafts" is chosen: the box is neither on nor off.
     expect(screen.getByLabelText("drafts/")).toHaveProperty(
       "indeterminate",
       true,
@@ -243,7 +240,6 @@ describe("searched parts", () => {
     await waitFor(() =>
       expect(toggle).toHaveBeenCalledWith("w1", "notes", false),
     );
-    // A partly chosen folder is ticked as a whole.
     fireEvent.click(screen.getByLabelText("drafts/"));
     await waitFor(() =>
       expect(toggle).toHaveBeenCalledWith("w1", "drafts", true),
@@ -314,7 +310,6 @@ describe("AttachedWorkspaces", () => {
     renderWith(<AttachedWorkspaces owner="sessions" id="s1" />);
     expect(await screen.findByText("Shared")).toBeTruthy();
     expect(screen.getByText("from the project")).toBeTruthy();
-    // Only the session's own attachment can be detached here.
     expect(screen.getAllByRole("button", { name: "Detach" })).toHaveLength(1);
   });
 

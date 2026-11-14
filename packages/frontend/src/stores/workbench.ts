@@ -18,15 +18,6 @@ import {
   type WorkbenchTab,
 } from "../lib/workbench";
 
-/*
- * The workbench's tabs, the folders open in its tree and the width of its
- * sidebar, kept in a store so that the places that close tabs (a session or
- * a project going to the trash) can reach it. Saved to localStorage as the
- * Files and Structured Data views are, under the key
- * `harness.workbench.global.-`. The address decides which tab is active;
- * `active` here follows it, and is what is saved.
- */
-
 const PAGE = { scope: "global" } as const;
 const SETTINGS_KEY = "harness.workbench.settings";
 const SIDEBAR_KEY = "harness.workbench.sidebar";
@@ -34,30 +25,20 @@ const SIDEBAR_KEY = "harness.workbench.sidebar";
 interface WorkbenchState {
   tabs: WorkbenchTab[];
   active: string | null;
-  /** Tree nodes open or closed, by node id. */
   expanded: Record<string, boolean>;
   width: number;
-  /** The chats tree is shown (on a wide screen). */
   sidebarOpen: boolean;
-  /** The section of Settings last used, as an address. */
   settingsPath: string;
 
-  /** Opens or activates a tab; `permanent` keeps it (a single click may not). */
   open: (tab: NewWorkbenchTab, permanent: boolean) => void;
   setActive: (id: string | null) => void;
   keep: (id: string) => void;
-  /** Moves a tab to the place of the tab at `toIndex`. */
   move: (id: string, toIndex: number) => void;
-  /** Closes tabs; returns where to go when the active tab was one of them. */
   close: (ids: readonly string[]) => string | null;
   setExpanded: (node: string, open: boolean) => void;
   setWidth: (width: number) => void;
   setSidebarOpen: (open: boolean) => void;
   setSettingsPath: (path: string) => void;
-  /**
-   * Loads the saved tabs and folders of the current profile. After a switch
-   * the open tabs name ids of the profile that was left (profiles design 4.3).
-   */
   reload: () => void;
 }
 
@@ -78,11 +59,10 @@ function loadSidebarOpen(): boolean {
 }
 
 function initial() {
-  // The project picked in the old navbar is not used any more.
   try {
     localStorage.removeItem("harness.pickedProject");
   } catch {
-    // storage unavailable
+    // storage can be unavailable
   }
   const view = carryOver(loadViewIn("workbench", PAGE, SAVED_KINDS));
   return {
@@ -128,8 +108,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     let state = { tabs: before.tabs, active: before.active };
     let go: string | null = null;
     for (const id of ids) {
-      // Closing the active tab makes its neighbour active; if that one is
-      // closed next, the loop aims at the one after it.
       if (id === state.active) {
         go = closeTarget(state, id, before.settingsPath);
       }
@@ -149,7 +127,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       localStorage.setItem(SIDEBAR_KEY, open ? "open" : "closed");
     } catch {
-      // storage unavailable; the choice is kept until the page reloads
+      // storage can be unavailable
     }
     set({ sidebarOpen: open });
   },
@@ -158,7 +136,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       localStorage.setItem(SETTINGS_KEY, path);
     } catch {
-      // storage unavailable; the section is remembered until the page reloads
+      // storage can be unavailable
     }
     set({ settingsPath: path });
   },
@@ -166,7 +144,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   reload: () => set(initial()),
 }));
 
-// What is remembered between visits.
 useWorkbench.subscribe((s, prev) => {
   if (
     s.tabs === prev.tabs &&
@@ -184,7 +161,6 @@ useWorkbench.subscribe((s, prev) => {
   });
 });
 
-// How the workbench changes the address, for the places that close tabs.
 let navigator: ((path: string) => void) | null = null;
 export const setWorkbenchNavigator = (
   fn: ((path: string) => void) | null,
@@ -192,13 +168,8 @@ export const setWorkbenchNavigator = (
   navigator = fn;
 };
 
-/** Changes the address, as a place that is not a component must. */
 export const navigateWorkbench = (path: string): void => navigator?.(path);
 
-/**
- * Closes tabs (a session or a project going to the trash) and shows the tab
- * that takes their place. False when none was open.
- */
 export function closeTabsAndGo(ids: readonly string[]): boolean {
   const before = useWorkbench.getState().tabs.length;
   const to = useWorkbench.getState().close(ids);

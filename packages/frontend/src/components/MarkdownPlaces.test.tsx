@@ -6,8 +6,6 @@ import type { Message, ToolResultMessage } from "@harness/core";
 import { MessageView } from "../routes/chat/components/MessageView";
 import { ValueView } from "./explorer/FileViews";
 
-/* Where Markdown is rendered, and where it is not (markdown rendering plan M1, M2, M3). */
-
 const wrap = (ui: ReactNode) => render(<MantineProvider>{ui}</MantineProvider>);
 
 function chat(message: Message, streaming = false) {
@@ -51,7 +49,6 @@ describe("Markdown in the chat", () => {
     });
     expect(screen.getByRole("heading", { name: "Chapter 1" })).toBeTruthy();
     expect(container.querySelectorAll("li")).toHaveLength(2);
-    // Reasoning stays as typed.
     expect(container.textContent).toContain("I will use **bold** here");
   });
 

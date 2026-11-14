@@ -21,13 +21,6 @@ import {
   type TreeNode,
 } from "./explorer";
 
-/*
- * The logic behind the editor-style Files view (`routes/FilesExplorer.tsx`):
- * which roots a page shows, the tree built from their files and folders, the
- * rules for opening and closing tabs, and what is remembered between visits.
- * Pure, so it is tested without a DOM.
- */
-
 export {
   clampWidth,
   closeTab,
@@ -44,13 +37,11 @@ export {
   type TreeNode,
 } from "./explorer";
 
-/** The roots the Files view shows: the files available at the page's scope. */
 export const rootsFor = (
   page: FileScope,
   projectId: string | null | undefined,
 ): Root[] => sharedRootsFor(page, projectId);
 
-/** How a new file's type follows its extension. */
 export function mediaTypeForName(name: string): MediaType {
   const lower = name.toLowerCase();
   if (lower.endsWith(".md") || lower.endsWith(".markdown"))
@@ -59,25 +50,19 @@ export function mediaTypeForName(name: string): MediaType {
   return "text/plain";
 }
 
-/** What a new, empty file holds: JSON must parse, so it starts as `{}`. */
 export const emptyValueFor = (mediaType: MediaType): string =>
   mediaType === "application/json" ? "{}" : "";
 
-/** The last name of a path. */
 export const baseName = (path: string): string => path.split("/").at(-1) ?? "";
 
-/** The folder a path is in; empty at the top level. */
 export const dirName = (path: string): string =>
   path.split("/").slice(0, -1).join("/");
-
-// ---------------------------------------------------------------- the tree
 
 export type NodeKind = "root" | "folder" | "file" | "new-file" | "new-folder";
 
 export interface NodeRef {
   root: RootId;
   kind: NodeKind;
-  /** Empty for a root. */
   path: string;
 }
 
@@ -86,7 +71,6 @@ export function parseNodeValue(value: string): NodeRef {
   return { root: r.root, kind: r.kind as NodeKind, path: r.path };
 }
 
-/** What a row needs besides its place in the tree. */
 export interface NodeInfo {
   name: string;
   deleted: boolean;
@@ -99,29 +83,21 @@ export interface RootData {
   folders: readonly string[];
 }
 
-/** An inline name box in the tree: a file or folder being created. */
 export interface Pending {
   kind: "new-file" | "new-folder";
   root: RootId;
-  /** The folder it goes in; empty for the root. */
   parent: string;
 }
 
 const byName = (a: { label: string }, b: { label: string }) =>
   a.label.localeCompare(b.label, undefined, { numeric: true });
 
-/**
- * One tree for every root: each root holds its folders (folders first) and
- * files, by name. A folder is shown when it was made or holds a file. A
- * pending name box comes first inside its folder.
- */
 export function buildTree(
   inputs: readonly RootData[],
   pending: Pending | null,
 ): { data: TreeNode[]; info: Map<string, NodeInfo> } {
   const info = new Map<string, NodeInfo>();
   const data = inputs.map(({ root, files, folders }) => {
-    // Every folder, with the ones above it, so none hangs without a parent.
     const folderPaths = new Set<string>();
     for (const f of files) {
       for (const p of parentFolders(f.key)) folderPaths.add(p);
@@ -194,24 +170,16 @@ export function buildTree(
   return { data, info };
 }
 
-// ----------------------------------------------------------------- the tabs
-
-/** A tab: a file, or the rendered view of a Markdown file (its own tab). */
 export type TabState = ExplorerTab<"file" | "preview">;
 
 export type TabsState = TabsOf<TabState>;
 
-/**
- * Opens a file or preview tab (see `openTabIn`). A preview tab is permanent
- * from the start.
- */
 export const openTab = (
   state: TabsState,
   tab: Omit<TabState, "transient">,
   permanent: boolean,
 ): TabsState => openTabIn(state, tab, permanent, (k) => k === "file");
 
-/** Follows a folder rename in the keys of the open tabs. */
 export function renameFolderInTabs(
   state: TabsState,
   root: RootId,
@@ -227,14 +195,10 @@ export function renameFolderInTabs(
   return { tabs, active: active ? tabId(rename(active)) : null };
 }
 
-// -------------------------------------------------- remembered between visits
-
 export type SavedView = SavedViewOf<TabState>;
 
-/** The kinds of tab a file explorer has. */
 export const FILE_TAB_KINDS = ["file", "preview"] as const;
 
-/** Reads what was saved for a page; anything unreadable is dropped. */
 export const loadView = (page: FileScope): SavedView =>
   loadViewIn("files", page, FILE_TAB_KINDS);
 

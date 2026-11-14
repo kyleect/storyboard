@@ -54,7 +54,6 @@ function open() {
   return onAnswer;
 }
 
-/** A label, with or without the required mark. */
 const label = (text: string) =>
   screen.getByLabelText(
     new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\*?$`),
@@ -82,7 +81,6 @@ describe("AskUserForm", () => {
   it('offers "Other" on every question but text, sent as free text', () => {
     const onAnswer = open();
     type("Working title", "Ash");
-    // Choice, multi-choice and yes/no each have an "Other" option.
     const others = screen.getAllByLabelText("Other");
     expect(others).toHaveLength(4);
     for (const o of others) fireEvent.click(o);
@@ -105,7 +103,6 @@ describe("AskUserForm", () => {
 
   it("shows problems next to the questions and does not submit", () => {
     const onAnswer = open();
-    // The choice's "Other", left empty.
     fireEvent.click(screen.getAllByLabelText("Other")[0] as HTMLElement);
     submit();
     expect(onAnswer).not.toHaveBeenCalled();
@@ -143,7 +140,6 @@ describe("AskUserForm", () => {
       />,
     );
     expect(screen.queryByRole("radio")).toBeNull();
-    // The input and its list both carry the label; the input comes first.
     fireEvent.click(screen.getAllByLabelText(/^Genre/)[0] as HTMLElement);
     const items = await screen.findAllByRole("option", { hidden: true });
     expect(items.at(-1)?.textContent).toBe("Other…");
@@ -232,7 +228,6 @@ describe("AskUserForm for forms other tools show (tool prompts)", () => {
     expect(screen.queryByLabelText("Other")).toBeNull();
     expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    // The value is sent, not the label; an unticked checkbox is "no".
     expect(onAnswer).toHaveBeenCalledWith({
       outcome: "answered",
       answers: { scope: "project", remember: false },

@@ -11,24 +11,9 @@ import {
 import type { ExplorerSource } from "./explorer-source";
 import { skillKeys } from "../queries";
 
-/*
- * Skills as an explorer source (skills folders design, decision 22). A root of
- * the skills tree holds skill folders; a file's key is `skill-name/path`, so
- * the first part of a key is the skill and the rest is a path inside it.
- *
- *   top-level folder   a skill: creating, renaming and deleting one is
- *                      creating, renaming and deleting the skill
- *   file or folder     inside a skill: a change is a new version of the folder
- *
- * A skill's versions are whole-folder versions, so a file's versions are the
- * skill's versions that have that file.
- */
-
-/** The `SKILL.md` a new skill starts with has this description. */
 export const NEW_SKILL_DESCRIPTION =
   "Describe what this skill does and when to use it.";
 
-/** The skill of that name in one root of an owner (live first). */
 export async function findSkill(
   owner: SkillOwner,
   part: SkillsPart,
@@ -44,7 +29,6 @@ export async function findSkill(
   return found;
 }
 
-/** `skill/refs/a.md` as `["skill", "refs/a.md"]`. */
 export function splitKey(key: string): [string, string] {
   const at = key.indexOf("/");
   return at < 0 ? [key, ""] : [key.slice(0, at), key.slice(at + 1)];
@@ -52,7 +36,6 @@ export function splitKey(key: string): [string, string] {
 
 const TEXT_TYPES = ["text/plain", "text/markdown", "application/json"] as const;
 
-/** A skill file's media type as the explorer knows it, if it shows it. */
 function shownType(mediaType: string): MediaType | undefined {
   const text = TEXT_TYPES.find((t) => t === mediaType);
   if (text) return text;
@@ -72,7 +55,6 @@ function note(f: Pick<SkillFileInfo, "missing" | "size">): string {
     : `A binary file of ${f.size} bytes that cannot be shown here.`;
 }
 
-/** What a file is, ready for the explorer's file view. */
 function fileView(
   f: SkillFileInfo,
   value: string,
@@ -89,10 +71,6 @@ function fileView(
 
 export type SkillsPart = "builtin" | "own";
 
-/**
- * One root of the skills tree: the built-in skills, or an owner's own. Both
- * come from the owner's list (the global list carries the built-ins).
- */
 export function skillsSource(
   owner: SkillOwner,
   part: SkillsPart = "own",
@@ -116,7 +94,6 @@ export function skillsSource(
     const { skill, path } = await inSkill(key);
     const detail = await api.getSkill(skill.id);
     const now = detail.files.find((f) => f.path === path);
-    // The file at each version of the folder; a version without it is skipped.
     const versions = (
       await Promise.all(
         detail.versions.map(async (v): Promise<FileVersion | undefined> => {
@@ -139,7 +116,6 @@ export function skillsSource(
       )
     ).filter((v): v is FileVersion => v !== undefined);
     if (!now) {
-      // Gone from the current version: show the last version that had it.
       const last = versions.at(-1);
       if (!last) throw new Error(`There is no file “${key}”.`);
       return {
@@ -179,7 +155,6 @@ export function skillsSource(
           deleted: s.deleted,
         })),
       ),
-    // A folder inside a skill exists only while a file is in it.
     listFolders: async () => [],
     get,
     write: async (key, _mediaType, text) => {

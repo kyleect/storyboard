@@ -23,7 +23,6 @@ import {
   useSettingsForm,
 } from "../lib/settings-form";
 
-/** Images and audio from earlier turns that are sent again with a request. */
 export function MediaInView({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, MEDIA_KEYS, {
     inlineMediaCap: (v) =>
@@ -61,7 +60,6 @@ export function MediaInView({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/** What is sent of images and audio, and who writes their text. */
 export function MediaSettings({ view }: { view: SettingsView }) {
   return (
     <Stack>
@@ -71,12 +69,6 @@ export function MediaSettings({ view }: { view: SettingsView }) {
     </Stack>
   );
 }
-/**
- * Who writes the text of images and audio (files unification design, D43,
- * D56), with its own Save. With no model nothing is generated. When the
- * agent or the model changes and files could be described, it asks before
- * writing anything.
- */
 export function MediaDescriptions({ view }: { view: SettingsView }) {
   const queryClient = useQueryClient();
   const { form, env, envNote } = useSettingsFields(view, DESCRIBER_KEYS);
@@ -91,8 +83,6 @@ export function MediaDescriptions({ view }: { view: SettingsView }) {
       queryClient.setQueryData(settingsKeys.all, saved);
       notifications.show({ color: "green", message: "Settings saved" });
       void queryClient.invalidateQueries({ queryKey: blobKeys.describer() });
-      // Only a change of who writes the text asks. The text of existing
-      // files is not touched until the user says so.
       const changed =
         saved.effective.mediaDescriberAgent !==
           view.effective.mediaDescriberAgent ||
@@ -152,7 +142,6 @@ export function MediaDescriptions({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/** Asks whether to write descriptions for the files already there (D56). */
 export function askToRegenerate(info: { files: number; empty: number }) {
   const run = (mode: "empty" | "all") => {
     modals.closeAll();

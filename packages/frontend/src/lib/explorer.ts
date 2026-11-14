@@ -1,28 +1,10 @@
 import type { DataOwner, FileScope } from "../api";
 import { profileSuffix } from "../stores/profile";
 
-/*
- * What the editor-style explorers share: the Files view
- * (`files-explorer.ts`) and the Structured Data view
- * (`structured-explorer.ts`). Which roots a page shows, how a tree node is
- * named, the rules for opening and closing tabs, and what is remembered
- * between visits. Pure, so it is tested without a DOM.
- */
-
-/**
- * A root folder in a tree. Files and Structured Data have three, below; other
- * explorers (skills) bring their own, so the id is any string their caller
- * chooses and keeps unique within one tree.
- */
 export type RootId = string;
 
-/** The three places files and structured data live. */
 export type FileRootId = "session" | "project" | "global";
 
-/**
- * A root folder: its id, what owns what it holds and its name. Files have a
- * file scope for an owner; Structured Data also takes an agent's.
- */
 export interface Root<S extends DataOwner = FileScope> {
   id: RootId;
   scope: S;
@@ -35,10 +17,6 @@ const LABEL: Record<FileRootId, string> = {
   global: "Global",
 };
 
-/**
- * Global is above project, which is above session. An agent's own sits with
- * the session: nothing it holds is shared further than the agent itself.
- */
 const RANK: Record<DataOwner["scope"], number> = {
   agent: 1,
   session: 1,
@@ -46,16 +24,9 @@ const RANK: Record<DataOwner["scope"], number> = {
   global: 3,
 };
 
-/** The name of a file root; any other root is named by whoever made it. */
 export const rootLabel = (id: RootId): string =>
   isRootId(id) ? LABEL[id] : id;
 
-/**
- * The roots a page shows: what is available at its scope. A session sees
- * its own, its project's (when it has one) and the global ones; a project
- * sees its own and the global ones; the global page sees only the global
- * ones.
- */
 export function rootsFor(
   page: FileScope,
   projectId: string | null | undefined,
@@ -81,23 +52,18 @@ export function rootsFor(
   return roots;
 }
 
-/** True when `target` is a higher scope than the page it is edited from. */
 export const isHigherScope = (target: DataOwner, page: DataOwner): boolean =>
   RANK[target.scope] > RANK[page.scope];
 
 export const isRootId = (v: unknown): v is FileRootId =>
   v === "session" || v === "project" || v === "global";
 
-// ---------------------------------------------------------------- tree nodes
-
 export interface NodeRefOf<K extends string> {
   root: RootId;
   kind: K;
-  /** Empty for a root. */
   path: string;
 }
 
-/** A tree node's value: root, kind and path (the path may hold "|"). */
 export const nodeValue = (r: NodeRefOf<string>): string =>
   `${r.root}|${r.kind}|${r.path}`;
 
@@ -111,21 +77,16 @@ export function parseNodeValueOf(value: string): NodeRefOf<string> {
   };
 }
 
-/** A node of the tree the explorers show. */
 export interface TreeNode {
   label: string;
   value: string;
   children?: TreeNode[];
 }
 
-// ----------------------------------------------------------------- the tabs
-
-/** A tab: what it shows (`kind`), where (`root`) and which one (`key`). */
 export interface ExplorerTab<K extends string = string> {
   kind: K;
   root: RootId;
   key: string;
-  /** Shown in italics; the next single click replaces it. */
   transient: boolean;
 }
 
@@ -138,11 +99,6 @@ export interface TabsOf<T extends ExplorerTab<string>> {
   active: string | null;
 }
 
-/**
- * Opens a tab. A tab already open is activated, and kept when `permanent`.
- * A new tab opened by a single click, when its kind may be transient, takes
- * the place of the open transient tab, if there is one.
- */
 export function openTabIn<T extends ExplorerTab<string>>(
   state: TabsOf<T>,
   tab: Omit<T, "transient">,
@@ -173,7 +129,6 @@ export function openTabIn<T extends ExplorerTab<string>>(
   return { tabs, active: id };
 }
 
-/** Makes a tab permanent, as editing it does. */
 export function keepTab<T extends ExplorerTab<string>>(
   state: TabsOf<T>,
   id: string,
@@ -187,10 +142,6 @@ export function keepTab<T extends ExplorerTab<string>>(
   };
 }
 
-/**
- * Moves a tab to `toIndex`, counted among the tabs as they are now (the index
- * of the tab it is dropped on). The active tab stays active.
- */
 export function moveTab<T extends ExplorerTab<string>>(
   state: TabsOf<T>,
   id: string,
@@ -207,7 +158,6 @@ export function moveTab<T extends ExplorerTab<string>>(
   return { tabs, active: state.active };
 }
 
-/** Closes a tab; the next one to the right, else the left, becomes active. */
 export function closeTab<T extends ExplorerTab<string>>(
   state: TabsOf<T>,
   id: string,
@@ -219,8 +169,6 @@ export function closeTab<T extends ExplorerTab<string>>(
   const next = tabs[at] ?? tabs[at - 1];
   return { tabs, active: next ? tabId(next) : null };
 }
-
-// -------------------------------------------------- remembered between visits
 
 export interface SavedViewOf<T extends ExplorerTab<string>> {
   tabs: T[];
@@ -237,10 +185,8 @@ export const MAX_WIDTH = 520;
 export const clampWidth = (w: number): number =>
   Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(w)));
 
-/** What a page is remembered under: a file scope, or any other page's own key. */
 export type PageKey = FileScope | string;
 
-/** Saved views are kept per profile (profiles design 4.3). */
 const storageKey = (namespace: string, page: PageKey): string =>
   (typeof page === "string"
     ? `harness.${namespace}.${page}`
@@ -266,11 +212,6 @@ function parseTab<K extends string>(
   return { kind, root: t.root, key: t.key, transient: t.transient };
 }
 
-/**
- * Reads what was saved for a page under `namespace`; anything unreadable is
- * dropped, and tabs of a kind not in `kinds` too, or of a root `isRoot`
- * refuses (the file roots when it is left out).
- */
 export function loadViewIn<K extends string>(
   namespace: string,
   page: PageKey,
@@ -323,6 +264,6 @@ export function saveViewIn<T extends ExplorerTab<string>>(
   try {
     localStorage.setItem(storageKey(namespace, page), JSON.stringify(view));
   } catch {
-    // storage unavailable; the view lasts until the page reloads
+    // storage can be unavailable
   }
 }

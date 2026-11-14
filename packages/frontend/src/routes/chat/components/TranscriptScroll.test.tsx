@@ -52,7 +52,6 @@ afterEach(() => {
 
 const VIEWPORT = ".mantine-ScrollArea-viewport";
 
-/** Like Chat: its effect runs after the transcript's, and may scroll. */
 function Parent({ scrollTo }: { scrollTo?: number }) {
   useEffect(() => {
     const view = document.querySelector<HTMLElement>(VIEWPORT);
@@ -76,13 +75,11 @@ function show(scrollTo?: number) {
   return view;
 }
 
-/** The content grows, as a streaming message does. */
 function grow(to: number) {
   geometry.scrollHeight = to;
   act(() => observers.forEach((callback) => callback()));
 }
 
-/** The reader scrolls to a position. */
 function scrollTo(view: HTMLElement, top: number) {
   view.scrollTop = top;
 }

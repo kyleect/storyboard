@@ -39,18 +39,8 @@ import {
   type Pending,
 } from "../../lib/structured-explorer";
 
-/*
- * The explorer of the Structured Data view: one tree with a root folder for
- * each scope (Session, Project, Global), a Schemas folder in each, a row for
- * every schema it can make data from and the data under each schema. A
- * schema from a higher scope is shown with a link icon and a tinted name,
- * and says so in a tooltip. It holds no data of its own; the parent gives it
- * the tree and does what the actions ask.
- */
-
 const INHERITED = "var(--mantine-color-blue-6)";
 
-/** A name box in the tree: Enter accepts, Escape or leaving it cancels. */
 function InlineName({
   label,
   onCommit,
@@ -71,7 +61,6 @@ function InlineName({
       value={name}
       onChange={(e) => setName(e.currentTarget.value)}
       onBlur={onCancel}
-      // The tree item reads Space and the arrow keys; they are for typing here.
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Escape") onCancel();
@@ -81,7 +70,6 @@ function InlineName({
   );
 }
 
-/** A button of the explorer's header; `locked` is the reason it is off. */
 function HeaderAction({
   label,
   icon,
@@ -109,7 +97,6 @@ function HeaderAction({
   );
 }
 
-/** What the tooltip of an inherited schema says. */
 export const inheritedNote = (
   info: NodeInfo,
   root: Root<DataOwner>,
@@ -126,13 +113,10 @@ export interface StructuredTreeProps {
   data: TreeNode[];
   info: ReadonlyMap<string, NodeInfo>;
   roots: readonly Root<DataOwner>[];
-  /** Why a root cannot be changed, when it cannot. */
   reasons: Readonly<Record<RootId, string | undefined>>;
-  /** The root actions go to when nothing is selected: the page's own. */
   pageRoot: RootId;
   initialExpanded: Record<string, boolean>;
   onExpandedChange: (state: Record<string, boolean>) => void;
-  /** The value of the node shown in the active tab, to select it. */
   activeValue: string | null;
   showDeleted: boolean;
   onToggleDeleted: () => void;
@@ -156,9 +140,6 @@ export function StructuredTree(props: StructuredTreeProps) {
     ref: NodeRef;
   } | null>(null);
 
-  // The item in the active tab is the selected row, and the rows above it
-  // are opened so it can be seen, as in an editor. The controller is held in
-  // a ref: its functions change with every render.
   const controller = useRef(tree);
   useEffect(() => {
     controller.current = tree;
@@ -173,7 +154,6 @@ export function StructuredTree(props: StructuredTreeProps) {
       nodeValue({ root: ref.root, kind: "schemas", path: "" }),
     ];
     if (ref.kind === "data") {
-      // A piece of data is under its schema; the tree knows which.
       const parent = findParent(data, activeValue);
       if (parent) above.push(parent);
     }
@@ -479,7 +459,6 @@ export function StructuredTree(props: StructuredTreeProps) {
   );
 }
 
-/** The value of the node whose children include `value`. */
 function findParent(nodes: readonly TreeNode[], value: string): string | null {
   for (const n of nodes) {
     if (n.children?.some((c) => c.value === value)) return n.value;

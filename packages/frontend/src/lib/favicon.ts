@@ -4,19 +4,16 @@ export const ICON_URL = "/favicon.svg";
 const ICON_TYPE = "image/svg+xml";
 const SIZE = 64;
 
-/** The dot is drawn in the icon's own 64-unit grid: a white ring, then the colour. */
 export const COLORS = {
   waiting: "#f59e0b",
   unread: "#40c057",
   working: ["#9ca3af", "#4b5563"],
 } as const;
 
-/** How long each of the two grays shows. */
 export const PULSE_MS = 1000;
 
 const DOT = { x: 50, y: 50, ring: 12, fill: 9 };
 
-/** The robot, in a 64-unit grid, with the accent colours given. */
 export function robotSvg(eye: string, tip: string): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">` +
@@ -34,8 +31,6 @@ export function robotSvg(eye: string, tip: string): string {
 
 const svgUrl = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
-/** The accent colours: the primary colour's shade 4 for the face, and the
- * primary shade (6 by default) for the antenna tip. */
 export function accentColors(theme: MantineTheme): {
   eye: string;
   tip: string;
@@ -57,7 +52,6 @@ function loadIcon(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** The icon with the dot, as a PNG data URL; null if there is no canvas. */
 export function withIndicator(
   icon: CanvasImageSource,
   dotColor: string,
@@ -80,7 +74,6 @@ export function withIndicator(
   return canvas.toDataURL("image/png");
 }
 
-/** The page's icon tag; made if index.html has none. */
 function iconLink(): HTMLLinkElement {
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!link) {
@@ -91,17 +84,11 @@ function iconLink(): HTMLLinkElement {
   return link;
 }
 
-/** The type has to match the address, or the browser may ignore the icon. */
 function setIcon(link: HTMLLinkElement, href: string, type: string) {
   link.type = type;
   link.href = href;
 }
 
-/**
- * Shows the robot with a dot of `dotColor`, or without one when it is null.
- * The dot needs the icon drawn onto a canvas, which takes a moment; the
- * returned function cancels a draw that has not finished.
- */
 export function showIcon(
   eye: string,
   tip: string,
@@ -120,9 +107,7 @@ export function showIcon(
       const href = withIndicator(image, dotColor);
       if (href) setIcon(link, href, "image/png");
     })
-    .catch(() => {
-      // Keep the plain icon.
-    });
+    .catch(() => {});
   return () => {
     cancelled = true;
   };

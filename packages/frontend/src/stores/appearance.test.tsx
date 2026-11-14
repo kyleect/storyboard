@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/* The theme colour kept for this browser. */
-
 beforeEach(() => {
   localStorage.clear();
   vi.resetModules();

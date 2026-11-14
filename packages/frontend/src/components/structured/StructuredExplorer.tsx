@@ -7,33 +7,15 @@ import { ExplorerShell } from "../explorer/ExplorerShell";
 import { StructuredTree } from "./StructuredTree";
 import { useStructured } from "../../hooks/useStructured";
 
-/*
- * The Structured Data view: an editor-style explorer for schemas and data.
- * A tree on the left has a root folder for each root it is given; each has
- * a Schemas folder holding the schemas it can make data from, each with its
- * data. Schemas and data open as tabs on the right, as a form with a JSON
- * view beside it. `StructuredExplorer` is the view for a page, whose roots
- * are the scopes it can see (a session sees Session, Project and Global; a
- * project, Project and Global; the global page, Global); `StructuredRoots`
- * is the same view over any roots. The logic is in `useStructured`, and the
- * rules for roots, the tree and the tabs in `explorer.ts` and
- * `structured-explorer.ts`.
- */
-
-/** The view over roots the caller chooses. */
 export function StructuredRoots({
   roots,
   viewKey,
   pageRoot,
   onDirtyChange,
 }: {
-  /** One value while the roots stay the same: they are what the view depends on. */
   roots: readonly StructuredRoot[];
-  /** What the open tabs and the tree's folds are remembered under. */
   viewKey: string;
-  /** The root that is the view's own, which a new schema or data goes to. */
   pageRoot: RootId;
-  /** Whether there are unsaved edits, for a guard against leaving. */
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }) {
   const s = useStructured({ roots, viewKey, pageRoot, onDirtyChange });
@@ -92,7 +74,6 @@ function StructuredLayout({ s }: { s: ReturnType<typeof useStructured> }) {
   );
 }
 
-/** The view for a page: the scopes it can see. */
 export function StructuredExplorer({
   page,
   projectId,
@@ -100,19 +81,12 @@ export function StructuredExplorer({
   projectReadOnly,
   onDirtyChange,
 }: {
-  /** The scope of the page: where its own schemas and data live. */
   page: FileScope;
-  /** The session's project, if it has one. */
   projectId?: string | null | undefined;
-  /** Why no root can be changed, when that is so. */
   readOnly?: string | undefined;
-  /** Why the project's schemas and data cannot be changed, when that is so. */
   projectReadOnly?: string | undefined;
-  /** Whether there are unsaved edits, for a guard against leaving. */
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }) {
-  // Callers may pass a new object each render; everything below depends on
-  // this one, which changes only with the page.
   const pageScope = page.scope;
   const pageId = "id" in page ? page.id : "";
   const stablePage = useMemo<FileScope>(

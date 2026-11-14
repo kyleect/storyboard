@@ -25,12 +25,6 @@ import {
 } from "../../api";
 import { Settings } from "./Settings";
 
-/* The settings page: vertical tabs for the areas, horizontal tabs inside. */
-
-/*
- * A router of one address: /settings/<path>. useParams reads it, and navigate
- * changes it, as the real one does, and is recorded.
- */
 type Navigation = {
   to: string;
   params: { _splat: string };
@@ -68,7 +62,6 @@ vi.mock("@tanstack/react-router", async () => {
   };
 });
 
-/** Opens the page at an address, as a link to it does. */
 const visit = (path: string) => {
   router.path = path;
 };
@@ -150,7 +143,6 @@ async function renderSettings() {
   await screen.findByRole("tab", { name: "General" });
 }
 
-/** The names of the tabs in the list that contains the given tab. */
 function siblingsOf(name: string) {
   const list = screen.getByRole("tab", { name }).closest("[role=tablist]");
   if (!(list instanceof HTMLElement)) throw new Error("No tab list");
@@ -223,7 +215,6 @@ describe("Settings tabs", () => {
     open("Trash");
     expect(await screen.findByLabelText("Days in the trash")).toBeTruthy();
     expect(await screen.findByText("The trash is empty.")).toBeTruthy();
-    // Only the vertical list is on the page apart from the other areas' own.
     expect(screen.queryByRole("tab", { name: "Contents" })).toBeNull();
   });
 
@@ -231,7 +222,6 @@ describe("Settings tabs", () => {
     await renderSettings();
     open("Agents");
     expect(await screen.findByLabelText("Subagent depth")).toBeTruthy();
-    // The General page stays mounted, but is hidden.
     expect(
       screen.queryByRole("textbox", { name: "llama-server URL" }),
     ).toBeNull();
@@ -249,7 +239,6 @@ describe("Settings address", () => {
     expect(selected("Limits")).toBe(true);
     expect(selected("Subagents")).toBe(false);
     expect(await screen.findByLabelText("Loop limit")).toBeTruthy();
-    // It is already the address that shows, so nothing replaces it.
     expect(router.calls).toEqual([]);
   });
 
@@ -279,7 +268,6 @@ describe("Settings address", () => {
     await renderSettings();
     expect(selected("Chat")).toBe(true);
     expect(selected("System prompt")).toBe(true);
-    // The address says what shows, so it is replaced, not added to history.
     await waitFor(() =>
       expect(router.calls).toEqual([
         {
@@ -299,7 +287,6 @@ describe("Settings address", () => {
       await waitFor(() => expect(router.calls.length).toBe(1));
       const call = router.calls[0];
       expect(call?.replace).toBe(true);
-      // Wrong parts fall back to the first; an area that is right is kept.
       expect(call?.params._splat).toBe(
         path.startsWith("agents") ? "agents/subagents" : "general/models",
       );
@@ -351,7 +338,6 @@ describe("Settings forms", () => {
         target: { value: "8" },
       },
     );
-    // The describer form has its own Save, so the first is the one above it.
     const saveButton = screen.getAllByRole("button", { name: "Save" })[0];
     if (!saveButton) throw new Error("No Save button");
     fireEvent.click(saveButton);

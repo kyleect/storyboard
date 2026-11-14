@@ -66,7 +66,6 @@ const detail: SessionDetail = {
   childRuns: [],
 } as SessionDetail;
 
-/** The chat header's title, kept live by the session's event stream. */
 function Header() {
   const query = useQuery({
     queryKey: sessionKeys.detail("s1"),
@@ -146,7 +145,6 @@ describe("session.agent_changed", () => {
     );
     expect(await screen.findByText("agent: none")).toBeTruthy();
 
-    // A tool changed the pick; the session now says so.
     agentId = "a1";
     act(() =>
       FakeEventSource.last?.push(1, {
@@ -295,7 +293,6 @@ describe("a subagent's run", () => {
       agent: { name: "Editor" },
     });
 
-    // The child's run ending leaves the parent in place.
     push(3, ev("run.finished", "r2", { reason: "handed_back" }));
     await vi.waitFor(() =>
       expect(useLive.getState().runs["s1"]?.children["r2"]).toBeUndefined(),
@@ -368,7 +365,6 @@ describe("a subagent's run", () => {
     expect(Object.keys(useLive.getState().runs["s1"]?.children ?? {})).toEqual([
       "r2",
     ]);
-    // The messages the child had not read yet come back with the snapshot.
     expect(useLive.getState().runs["s1"]?.children["r2"]?.userMessages).toEqual(
       ["wait"],
     );

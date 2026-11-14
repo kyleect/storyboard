@@ -7,14 +7,12 @@ import { api, type ActiveRun } from "../api";
 import { COLORS, ICON_URL } from "../lib/favicon";
 import { useFaviconIndicator } from "./useFaviconIndicator";
 
-/** What the plain icon's address starts with: the robot as an SVG data URL. */
 const PLAIN = /^data:image\/svg\+xml,/;
 
 const DATA_URL = "data:image/png;base64,DOT";
 
 /** jsdom does not load images or draw: these stand-ins stay in the test. */
 class FakeImage {
-  /** The address the last image was asked to load. */
   static lastSrc = "";
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -31,7 +29,6 @@ const ctx = {
   fill: vi.fn(() => {
     ctx.fillStyles.push(ctx.fillStyle);
   }),
-  /** The colour at each `fill()`, in order. */
   fillStyles: [] as string[],
   fillStyle: "",
 };
@@ -52,7 +49,6 @@ function wrapper(theme?: MantineThemeOverride) {
   );
 }
 
-/** `waiting` runs wait for the user; `working` runs do not. */
 const runs = (waiting: number, working = 0) => ({
   runs: [
     ...Array.from({ length: waiting }, (_, i) => run(`w${i}`, true)),
@@ -72,7 +68,6 @@ const run = (id: string, waiting: boolean): ActiveRun => ({
 const activeRuns = (waiting: number, working = 0) =>
   vi.spyOn(api, "listActiveRuns").mockResolvedValue(runs(waiting, working));
 
-/** `n` chats with a reply not yet seen. */
 const unread = (n: number) =>
   vi.spyOn(api, "listUnreadSessions").mockResolvedValue({
     sessions: Array.from({ length: n }, (_, i) => ({
@@ -130,7 +125,6 @@ describe("useFaviconIndicator", () => {
     await waitFor(() => expect(link().getAttribute("href")).toBe(DATA_URL));
     expect(link().type).toBe("image/png");
     expect(ctx.drawImage).toHaveBeenCalledTimes(1);
-    // A white ring, then the orange dot, both centred in the lower-right corner.
     expect(ctx.arc).toHaveBeenNthCalledWith(1, 50, 50, 12, 0, Math.PI * 2);
     expect(ctx.arc).toHaveBeenNthCalledWith(2, 50, 50, 9, 0, Math.PI * 2);
     expect(ctx.fillStyles).toEqual(["#ffffff", "#f59e0b"]);
@@ -217,7 +211,6 @@ describe("useFaviconIndicator", () => {
     });
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const svg = decodeURIComponent(link().getAttribute("href") ?? "");
-    // Grape's shade 4 for the face, its primary shade (6) for the antenna tip.
     expect(svg).toContain('fill="#da77f2"');
     expect(svg).toContain('fill="#be4bdb"');
     expect(svg).not.toContain("#4dabf7");
@@ -278,7 +271,6 @@ describe("useFaviconIndicator", () => {
     activeRuns(0, 1);
     unread(1);
     renderHook(() => useFaviconIndicator(50), { wrapper: wrapper() });
-    // The run's state is debounced, so green shows first, as it did before it.
     await waitFor(() => expect(ctx.fillStyles).toContain(COLORS.working[0]));
     await waitFor(() => expect(ctx.fillStyles).toContain(COLORS.working[1]));
     ctx.fillStyles.length = 0;

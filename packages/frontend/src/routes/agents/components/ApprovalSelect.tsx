@@ -5,12 +5,6 @@ const FOLLOW = "follow";
 const ASK = "ask";
 const SKIP = "skip";
 
-/**
- * Whether calls to a tool ask, for this agent (agent tool approval design,
- * Q1, Q2, Q4, Q5): the tool's own setting, or the agent's own choice. A tool
- * that always asks is locked, and the choice is disabled for a tool the
- * agent does not have.
- */
 export function ApprovalSelect({
   tool,
   value,

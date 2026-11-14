@@ -16,7 +16,6 @@ export function useProjectActions() {
   const queryClient = useQueryClient();
   const { refreshProjects } = useSessionActions();
 
-  /** Opens the New project dialog; `onCreated` gets the new project. */
   const openCreate = (onCreated: (project: Project) => void) => {
     const modalId = modals.open({
       title: "New project",
@@ -50,7 +49,6 @@ export function useProjectActions() {
         api
           .trashProject(project.id)
           .then(async () => {
-            // Its pages close, and so do the chats of its sessions.
             const projectOfSession = (id: string) =>
               queryClient.getQueryData<{
                 session: { project_id: string | null };

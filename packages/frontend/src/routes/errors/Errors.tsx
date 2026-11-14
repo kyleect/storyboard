@@ -23,12 +23,6 @@ import { api, type ErrorEntry, type ErrorFilter } from "../../api";
 import { errorKeys } from "../../queries";
 import { showError } from "../../lib/notify";
 
-/*
- * The errors consoles (error reporting plan, P7): a page with every
- * session's errors, and a panel under each session's chat. Both update live
- * from `errors.changed` (live.ts).
- */
-
 const KIND_LABELS: Record<ErrorEntry["kind"], string> = {
   tool_threw: "failed",
   tool_returned_error: "returned an error",
@@ -38,10 +32,8 @@ const KIND_LABELS: Record<ErrorEntry["kind"], string> = {
   run_failed: "run failed",
 };
 
-/** The anchor id of a message in the transcript, for "Show in transcript". */
 export const messageAnchor = (messageId: string) => `message-${messageId}`;
 
-/** Asks before clearing; `what` finishes "Clear …?". */
 function confirmClear(what: string, onConfirm: () => void) {
   modals.openConfirmModal({
     title: `Clear ${what}?`,
@@ -56,7 +48,6 @@ function confirmClear(what: string, onConfirm: () => void) {
   });
 }
 
-/** The extra detail kept for the console: details, arguments and stack. */
 function detailText(error: ErrorEntry): string | null {
   const parts: string[] = [];
   if (error.details)
@@ -80,7 +71,6 @@ function ErrorItem({
 }: {
   error: ErrorEntry;
   showSession: boolean;
-  /** Left out: the link goes to the session's page. */
   onShowInTranscript?: ((messageId: string) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
@@ -164,7 +154,6 @@ function ErrorItem({
   );
 }
 
-/** A list of errors, newest first. */
 export function ErrorList({
   errors,
   showSession,
@@ -194,7 +183,6 @@ export function ErrorList({
   );
 }
 
-/** A copy of a filter without some of its keys. */
 function withoutKeys(
   f: ErrorFilter,
   keys: readonly (keyof ErrorFilter)[],
@@ -204,11 +192,9 @@ function withoutKeys(
   ) as ErrorFilter;
 }
 
-/** The tool/source filter's value for failed runs. */
 const RUNS = "\u0000runs";
 const NO_PROJECT = "none";
 
-/** The global errors console (Q7). */
 export function ErrorsPage() {
   const [filter, setFilter] = useState<ErrorFilter>({});
   const errors = useQuery({
@@ -224,7 +210,6 @@ export function ErrorsPage() {
     onError: showError("Could not clear the errors"),
   });
 
-  /** Sets one filter; undefined removes it. */
   const set = (key: "sessionId" | "projectId", value: string | undefined) =>
     setFilter((f) => ({
       ...withoutKeys(f, [key]),
@@ -320,7 +305,6 @@ export function ErrorsPage() {
   );
 }
 
-/** The session's errors console, under the chat (Q8), collapsed at first. */
 export function SessionErrorsPanel({
   sessionId,
   onShowInTranscript,

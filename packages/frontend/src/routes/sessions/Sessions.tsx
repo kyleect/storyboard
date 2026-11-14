@@ -26,15 +26,7 @@ import { UnreadDot } from "../../components/UnreadDot";
 import { SessionMenu } from "../../components/SessionMenu";
 import { showError } from "../../lib/notify";
 
-/*
- * The Sessions page (Sessions page plan): the sessions of the project picked
- * in the navbar, or the standalone ones, in a table that is sorted by
- * creation time and paged by the server. Rows can be selected, across pages,
- * to move them to the trash.
- */
-
 export function SessionsPage({ projectId }: { projectId: string | null }) {
-  // A different project starts over: page 1, nothing selected (D12).
   return <SessionsTable key={projectId ?? "none"} projectId={projectId} />;
 }
 
@@ -42,12 +34,9 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
   const { direction, pageSize, setDirection, setPageSize } = useSessionsPrefs();
   const actions = useSessionActions();
   const [page, setPage] = useState(1);
-  // The ids of the selected sessions, on any page (D10, P2).
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  // What the header checkbox selected last: every session that was not
-  // running at that moment. null: it has not been used.
   const [everyone, setEveryone] = useState<readonly string[] | null>(null);
 
   const request = { projectId, direction, page, pageSize };
@@ -57,7 +46,6 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
     placeholderData: keepPreviousData,
   });
 
-  // Fewer sessions than before (some were trashed): back to the last page.
   const lastPage = list.data
     ? Math.max(1, Math.ceil(list.data.total / pageSize))
     : null;
@@ -66,7 +54,6 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
   const selectAll = useMutation({
     mutationFn: () => api.listSessionIds(projectId),
     onSuccess: ({ sessions }) => {
-      // A running session cannot be selected (D5).
       const ids = sessions.filter((s) => !s.running).map((s) => s.id);
       setEveryone(ids);
       setSelected(new Set(ids));
@@ -205,7 +192,6 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
                     >
                       {s.title}
                     </Anchor>
-                    {/* While a run works, the reply is still being written. */}
                     {s.unread && !s.running && <UnreadDot />}
                   </Group>
                 </Table.Td>

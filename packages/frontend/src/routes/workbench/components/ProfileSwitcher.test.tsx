@@ -5,8 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type ProfileListing, type ProfileView } from "../../../api";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 
-/* The profile menu at the bottom of the rail. */
-
 const profile = (id: string, name: string, active = false): ProfileView => ({
   id,
   name,

@@ -2,7 +2,6 @@ import { ActionIcon, Menu } from "@mantine/core";
 import type { Session } from "../api";
 import { useSessionActions } from "../hooks/useSessionActions";
 
-/** The ⋯ menu on a session's entry: Rename, Move to trash. */
 export function SessionMenu({ session }: { session: Session }) {
   const actions = useSessionActions();
   return (
@@ -13,7 +12,6 @@ export function SessionMenu({ session }: { session: Session }) {
           color="gray"
           size="sm"
           aria-label={`Actions for ${session.title}`}
-          // The entry is a link; the menu must not follow it.
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -22,7 +20,6 @@ export function SessionMenu({ session }: { session: Session }) {
           ⋯
         </ActionIcon>
       </Menu.Target>
-      {/* The menu is drawn elsewhere, but its clicks still reach the row. */}
       <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
         <Menu.Item onClick={() => actions.openRename(session)}>
           Rename

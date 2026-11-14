@@ -30,24 +30,11 @@ import {
   workspaceKeys,
 } from "../../../queries";
 
-/*
- * Files attached to messages: choosing and uploading them in the composer,
- * and showing them in the transcript.
- *
- * A file is uploaded to the session's scope as soon as it is chosen, pasted
- * or dropped, so it is a session file like any other, and the message then
- * sends only its reference (files unification design, D9, D10). The bytes
- * are fetched again to show them in the transcript, with the token, and
- * shown from an object URL.
- */
-
-/** What a message needs to find the files it names. */
 export interface SessionFiles {
   sessionId: string;
   projectId: string | null;
 }
 
-/** The session being shown, for the references in its messages. */
 export const SessionFilesContext = createContext<SessionFiles | null>(null);
 
 const warn = (message: string) =>
@@ -57,10 +44,6 @@ const warn = (message: string) =>
     message,
   });
 
-/**
- * The files attached to the message being written in a session. They belong
- * to the session: another session starts with none.
- */
 export function useAttachmentDraft(sessionId: string) {
   const queryClient = useQueryClient();
   const { items, uploading } = useDraft(sessionId);
@@ -71,7 +54,6 @@ export function useAttachmentDraft(sessionId: string) {
   const uploads = (by: number) =>
     patch(sessionId, (d) => ({ ...d, uploading: d.uploading + by }));
 
-  /** Uploads files; returns the ones that were uploaded. */
   const add = async (files: readonly File[]): Promise<DraftAttachment[]> => {
     const uploaded: DraftAttachment[] = [];
     for (const file of files) {
@@ -94,7 +76,6 @@ export function useAttachmentDraft(sessionId: string) {
           file,
           mediaType,
         );
-        // The session's files changed; refresh any list of them.
         void queryClient.invalidateQueries({
           queryKey: fileKeys.inScope({ scope: "session", id: sessionId }),
         });
@@ -118,10 +99,8 @@ export function useAttachmentDraft(sessionId: string) {
 
   return {
     items,
-    /** How many uploads are in progress. */
     uploading,
     add,
-    /** Takes a file off the message. It stays among the session's files. */
     remove: (ref: string) =>
       update((prev) => {
         for (const i of prev) if (i.ref === ref) revokePreview(i);
@@ -135,7 +114,6 @@ export function useAttachmentDraft(sessionId: string) {
   };
 }
 
-/** The button that opens the file picker. */
 export function AttachButton({
   onFiles,
   disabled,
@@ -155,7 +133,6 @@ export function AttachButton({
         aria-label="Choose files to attach"
         onChange={(e) => {
           const files = Array.from(e.currentTarget.files ?? []);
-          // So choosing the same file again is noticed.
           e.currentTarget.value = "";
           if (files.length > 0) onFiles(files);
         }}
@@ -171,7 +148,6 @@ export function AttachButton({
   );
 }
 
-/** The files chosen for the message being written. */
 export function DraftAttachments({
   items,
   uploading,
@@ -206,7 +182,6 @@ export function DraftAttachments({
               <Text size="xs" maw={160} truncate="end">
                 {label}
               </Text>
-              {/* Lets a recording be played back before it is sent. */}
               {previewUrl && kind === "audio" && (
                 <audio
                   controls
@@ -232,11 +207,6 @@ export function DraftAttachments({
 const kindOfMedia = (mediaType: string): MediaKind =>
   mediaKindOf(mediaType) ?? "image";
 
-/**
- * The files a stored message was sent with, or a tool read. Each one has a
- * choice whether the model keeps seeing it in later turns (files unification
- * design, D14, D40): the default follows the agent and the settings.
- */
 export function MessageFiles({ files }: { files: readonly string[] }) {
   const where = useContext(SessionFilesContext);
   const choices = useQuery({
@@ -294,7 +264,6 @@ export function MessageFiles({ files }: { files: readonly string[] }) {
   );
 }
 
-/** An image or audio file in a workspace, fetched from disk by the backend. */
 function WorkspaceFile({
   sessionId,
   refText,
@@ -307,7 +276,6 @@ function WorkspaceFile({
   const bytes = useQuery({
     queryKey: workspaceKeys.file(sessionId, refText),
     queryFn: () => api.workspaceFileUrl(sessionId, refText),
-    // The object URL has to stay valid for as long as the page is open.
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
@@ -359,7 +327,6 @@ function StoredFile({ refText }: { refText: string }) {
   return <ScopeFile refText={refText} />;
 }
 
-/** A session, project or global file, found in its scope's list. */
 function ScopeFile({ refText }: { refText: string }) {
   const where = useContext(SessionFilesContext);
   const parsed = parseRef(refText);
@@ -389,8 +356,6 @@ function ScopeFile({ refText }: { refText: string }) {
     queryKey: blobKeys.file(hash ?? ""),
     queryFn: () => api.blobUrl(hash as string),
     enabled: hash !== undefined,
-    // The bytes under a hash never change, and the object URL has to stay
-    // valid for as long as the page is open.
     staleTime: Infinity,
     gcTime: Infinity,
   });

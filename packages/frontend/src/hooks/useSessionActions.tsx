@@ -16,7 +16,6 @@ export function useSessionActions() {
   const navigate = useNavigate();
   const params = useParams({ strict: false });
 
-  /** Refetches every view that shows the session. */
   const refresh = async (id: string) => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
@@ -25,7 +24,6 @@ export function useSessionActions() {
     ]);
   };
 
-  /** Renames; throws when the backend refuses. */
   const rename = async (id: string, title: string) => {
     await api.renameSession(id, title);
     await refresh(id);
@@ -75,12 +73,6 @@ export function useSessionActions() {
     });
   };
 
-  /**
-   * Asks, then moves the sessions to the trash. The ones the backend
-   * refuses (a run started, or already in the trash) are reported in a
-   * notification, and the rest are moved (Sessions page plan, D4, P3).
-   * `onDone` runs after the call, moved or refused.
-   */
   const confirmTrashMany = (ids: readonly string[], onDone: () => void) => {
     const count = ids.length;
     const noun = count === 1 ? "session" : "sessions";
@@ -125,7 +117,6 @@ export function useSessionActions() {
     });
   };
 
-  /** Refetches every view that shows projects. */
   const refreshProjects = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: projectKeys.list() }),
@@ -136,11 +127,6 @@ export function useSessionActions() {
     ]);
   };
 
-  /**
-   * Restores a session. When its project is in the trash, asks first
-   * whether the project comes back with all the sessions trashed with it,
-   * or with only this one (design Q12b). Resolves when done or cancelled.
-   */
   const restore = (session: Session, trashedProject?: Project | null) => {
     if (!trashedProject) {
       return api.restoreSession(session.id).then(() => refreshProjects());
@@ -157,7 +143,6 @@ export function useSessionActions() {
       };
       const modalId = modals.open({
         title: "Restore the project too?",
-        // Closed without a choice: nothing to do.
         onClose: () => {
           if (!chosen) resolve();
         },

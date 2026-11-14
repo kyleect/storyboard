@@ -20,23 +20,11 @@ const INPUT_FIRST: ("label" | "input" | "description" | "error")[] = [
   "error",
 ];
 
-/** Router states in which a model needs no load request. */
 const RUNNING = new Set(["loaded", "loading", "sleeping"]);
 
-/**
- * Picks a model from the list llama-server reports (router mode lists every
- * model it knows, with its status). Clearing it means "no model chosen".
- * Used by the chat (the session's model) and by Settings (the default).
- *
- * With `loadOnSelect`, picking a model that a router reports as not running
- * asks the router to load it (clearing loads `defaultModel`). While any model
- * is loading the list is refreshed every second, and the status of the model
- * in use is shown under the picker.
- */
 export function ModelPicker(props: {
   value: string | null;
   onChange: (model: string | null) => void;
-  /** Shown when nothing is chosen. */
   placeholder: string;
   label?: string;
   description?: string;
@@ -44,7 +32,6 @@ export function ModelPicker(props: {
   w?: number;
   size?: "xs" | "sm";
   loadOnSelect?: boolean;
-  /** The model used when none is chosen. */
   defaultModel?: string | undefined;
 }) {
   const queryClient = useQueryClient();
@@ -69,11 +56,8 @@ export function ModelPicker(props: {
       }),
   });
 
-  // The model in use and what the router says about it.
   const inUse = props.value ?? props.defaultModel;
   const info = models.data?.find((m) => m.id === inUse);
-  // Once it has loaded, what llama-server reports about it (its reasoning
-  // levels) can change.
   const previous = useRef(info?.status);
   useEffect(() => {
     if (previous.current === "loading" && info?.status === "loaded") {
@@ -89,7 +73,6 @@ export function ModelPicker(props: {
     if (!props.loadOnSelect) return;
     const target = value ?? props.defaultModel;
     const listed = models.data?.find((m) => m.id === target);
-    // Only routers report a status; a single-model server has nothing to load.
     if (target && listed?.status && !RUNNING.has(listed.status)) {
       load.mutate(target);
     }
@@ -105,12 +88,9 @@ export function ModelPicker(props: {
 
   const status = new Map((models.data ?? []).map((m) => [m.id, m.status]));
   const ids = (models.data ?? []).map((m) => m.id);
-  // Keep a chosen model visible even if the server no longer lists it.
   if (props.value && !ids.includes(props.value)) ids.unshift(props.value);
 
   return (
-    // Labelled (Settings): the refresh button lines up with the input's
-    // bottom. Unlabelled (chat): with its top.
     <Group
       gap={4}
       wrap="nowrap"
@@ -120,8 +100,6 @@ export function ModelPicker(props: {
         aria-label={props.label ?? "Model"}
         {...(props.label ? { label: props.label } : {})}
         {...(description ? { description } : {})}
-        // Unlabelled (chat): messages go under the input so pickers side by
-        // side stay aligned. Labelled (Settings): the usual order.
         {...(props.label ? {} : { inputWrapperOrder: INPUT_FIRST })}
         size={props.size ?? "xs"}
         w={props.w ?? 320}
@@ -168,7 +146,6 @@ export function ModelPicker(props: {
           disabled={models.isFetching}
           onClick={() => {
             void models.refetch();
-            // Levels depend on whether a model is loaded, which may have changed.
             void queryClient.invalidateQueries({
               queryKey: modelKeys.reasoningLevels(),
             });

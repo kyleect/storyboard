@@ -19,8 +19,8 @@ describe("encodeWav", () => {
     expect(ascii(wav, 0, 4)).toBe("RIFF");
     expect(view.getUint32(4, true)).toBe(36 + 8);
     expect(ascii(wav, 8, 16)).toBe("WAVEfmt ");
-    expect(view.getUint16(20, true)).toBe(1); // PCM
-    expect(view.getUint16(22, true)).toBe(1); // mono
+    expect(view.getUint16(20, true)).toBe(1);
+    expect(view.getUint16(22, true)).toBe(1);
     expect(view.getUint32(24, true)).toBe(16000);
     expect(view.getUint32(28, true)).toBe(32000);
     expect(view.getUint16(34, true)).toBe(16);
@@ -39,7 +39,6 @@ describe("encodeWav", () => {
 
   it("is accepted by the backend's check for a WAV file", () => {
     const wav = encodeWav(new Float32Array(1), 16000);
-    // "RIFF", four size bytes, "WAVE" (backend/src/media-detect.ts).
     expect(ascii(wav, 0, 4)).toBe("RIFF");
     expect(ascii(wav, 8, 12)).toBe("WAVE");
   });

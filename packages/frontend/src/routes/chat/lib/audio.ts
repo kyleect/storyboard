@@ -1,26 +1,9 @@
-/*
- * Recording speech for a model that hears it.
- *
- * Browsers record compressed audio (WebM/Opus, or MP4/AAC in Safari) that
- * llama-server cannot read: it reads WAV, MP3 and FLAC. A recording is
- * therefore decoded in the page, mixed down to mono, resampled to 16 kHz
- * (what Gemma 4 takes) and written out as a 16-bit WAV file, which is then
- * attached like any other file.
- *
- * Gemma 4 takes at most 30 seconds of audio (about 25 tokens a second), so a
- * recording stops by itself at that length.
- */
-
-/** The sample rate Gemma 4 reads audio at. */
 export const RECORDING_SAMPLE_RATE = 16000;
 
-/** The longest recording, in seconds: Gemma 4's audio limit. */
 export const MAX_RECORDING_SECONDS = 30;
 
-/** Recordings shorter than this, in seconds, are taken as a stray click. */
 export const MIN_RECORDING_SECONDS = 0.3;
 
-/** A 16-bit mono PCM WAV file of `samples` (each between -1 and 1). */
 export function encodeWav(
   samples: Float32Array,
   sampleRate: number,
@@ -35,13 +18,13 @@ export function encodeWav(
   view.setUint32(4, 36 + dataBytes, true);
   text(8, "WAVE");
   text(12, "fmt ");
-  view.setUint32(16, 16, true); // size of the fmt chunk
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // mono
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); // bytes a second
-  view.setUint16(32, 2, true); // bytes a frame
-  view.setUint16(34, 16, true); // bits a sample
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
   text(36, "data");
   view.setUint32(40, dataBytes, true);
   for (let i = 0; i < samples.length; i++) {
@@ -51,7 +34,6 @@ export function encodeWav(
   return new Uint8Array(buffer);
 }
 
-/** The recorder format to ask for: the first the browser can make. */
 export function pickRecorderType(): string | undefined {
   if (typeof MediaRecorder === "undefined") return undefined;
   return [
@@ -62,12 +44,10 @@ export function pickRecorderType(): string | undefined {
   ].find((type) => MediaRecorder.isTypeSupported(type));
 }
 
-/** Decodes recorded audio to mono samples at 16 kHz. */
 export async function toMono16k(blob: Blob): Promise<Float32Array> {
   const context = new AudioContext();
   try {
     const decoded = await context.decodeAudioData(await blob.arrayBuffer());
-    // Rendering into a one-channel context at 16 kHz mixes down and resamples.
     const offline = new OfflineAudioContext(
       1,
       Math.max(1, Math.ceil(decoded.duration * RECORDING_SAMPLE_RATE)),
@@ -85,14 +65,12 @@ export async function toMono16k(blob: Blob): Promise<Float32Array> {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** The name of a recording made at `now`: `voice-20261107-142530.wav`. */
 export function recordingName(now: Date): string {
   const date = `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}`;
   const time = `${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
   return `voice-${date}-${time}.wav`;
 }
 
-/** A recording as a WAV file ready to attach. Throws when it is too short. */
 export async function recordingFile(blob: Blob, now: Date): Promise<File> {
   const samples = await toMono16k(blob);
   if (samples.length < MIN_RECORDING_SECONDS * RECORDING_SAMPLE_RATE) {
@@ -111,7 +89,6 @@ export async function recordingFile(blob: Blob, now: Date): Promise<File> {
   );
 }
 
-/** Seconds as `m:ss`. */
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${two(s % 60)}`;

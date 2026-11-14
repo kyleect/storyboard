@@ -6,8 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type ProfileListing, type ProfileView } from "../../../api";
 import { Profiles } from "./Profiles";
 
-/* The Settings Profiles section. */
-
 const profile = (
   id: string,
   name: string,

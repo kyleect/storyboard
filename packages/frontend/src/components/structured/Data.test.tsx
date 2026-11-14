@@ -9,8 +9,6 @@ import {
 import { AskUserForm, fromInput, localOffset, toInput } from "../AskUserForm";
 import { errorsFromMessage } from "./Data";
 
-/* Data forms (schemas and data design, decisions 19 to 21; plan P3). */
-
 const CHARACTER: SchemaNode = {
   type: "object",
   properties: {

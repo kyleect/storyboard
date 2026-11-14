@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadViewIn, rootLabel, saveViewIn } from "./explorer";
 
 describe("roots that are not files'", () => {
-  // This test file runs in Node, which has no localStorage.
   beforeEach(() => {
     const store = new Map<string, string>();
     vi.stubGlobal("localStorage", {

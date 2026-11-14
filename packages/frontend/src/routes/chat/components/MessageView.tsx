@@ -32,12 +32,10 @@ import { AskUserResult, ToolPrompt, askState, showResult } from "./ToolPrompts";
 import { useState } from "react";
 import { messageAnchor } from "../../errors/Errors";
 
-/** Decision comments by call id. */
 export type DecisionComments = ReadonlyMap<
   string,
   NonNullable<ToolResultMessage["decisionComment"]>
 >;
-/** Exported for tests. */
 export function MessageView({
   message,
   model,
@@ -139,7 +137,6 @@ export function MessageView({
           <BlockView
             key={i}
             block={block}
-            // Only the block being written right now shows a live preview.
             live={streaming && i === message.content.length - 1}
             usage={usage}
             decisionComments={decisionComments}
@@ -231,12 +228,6 @@ export function BlockView({
   }
 }
 
-/**
- * The work of the subagent a `start_subagent` call started, under the call:
- * collapsed, and open while the subagent waits for the user (agent
- * delegation design, decision 42). Its forms and approvals show inside it,
- * labelled with its agent.
- */
 export function SubagentPanel({
   callId,
   decisionComments,
@@ -249,7 +240,6 @@ export function SubagentPanel({
   const theme = useMantineTheme();
 
   const view = asks.subagents.get(callId);
-  // Null until the user chooses; then what they chose.
   const [chosen, setChosen] = useState<boolean | null>(null);
   if (!view) return null;
   const holdsTarget =
@@ -336,10 +326,6 @@ export function SubagentPanel({
     </Paper>
   );
 }
-/**
- * The label over a user message in a subagent's panel: by where it came from
- * (`source`), or, for messages saved before that was recorded, by position.
- */
 export function subagentUserLabel(message: Message, index: number): string {
   if (message.role === "user") {
     if (message.source === "task") return "Task from the agent";
@@ -348,10 +334,6 @@ export function subagentUserLabel(message: Message, index: number): string {
   }
   return index === 0 ? "Task from the agent" : "Reminder";
 }
-/**
- * A box to send a message to a running subagent. It reads the message at the
- * start of its next step; the current step is not stopped.
- */
 export function SubagentMessageBox({
   runId,
   agentName,

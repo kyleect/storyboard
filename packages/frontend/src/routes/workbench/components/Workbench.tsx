@@ -65,7 +65,6 @@ export function Workbench() {
   const setSidebarOpen = useWorkbench((s) => s.setSidebarOpen);
   const settingsPath = useWorkbench((s) => s.settingsPath);
   const dirty = useDirtyTabs((s) => s.dirty);
-  // The tree row that was used last, for New chat.
   const [focused, setFocused] = useState<FocusedRow | null>(null);
 
   const go = (path: string, replace = false) =>
@@ -73,21 +72,17 @@ export function Workbench() {
   useEffect(() => {
     setWorkbenchNavigator((path) => go(path));
     return () => setWorkbenchNavigator(null);
-    // go() only calls navigate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
-  // Back to the tab that was active when the page was last open.
   useEffect(() => {
     if (pathname !== "/") return;
     const { tabs: saved, active } = useWorkbench.getState();
     const tab = saved.find((t) => tabId(t) === active);
     if (tab) go(pathForTab(tab, useWorkbench.getState().settingsPath), true);
-    // Only when the page opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- the address decides the active tab
   const current = useMemo(() => tabForPath(pathname), [pathname]);
   const activeId = current ? tabId(current) : null;
   useEffect(() => {
@@ -97,20 +92,16 @@ export function Workbench() {
       return;
     }
     const id = tabId(current);
-    // A tab that is open is only activated; one that is not, is kept.
     store.open(current, !store.tabs.some((t) => tabId(t) === id));
     if (current.kind === "settings") store.setSettingsPath(pathname);
-    // The tab, not the whole address, is what matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, current?.kind === "settings" ? pathname : null]);
 
-  // The address with the tab's own destination, and the hash of a message.
   const openTab = (tab: NewWorkbenchTab, permanent: boolean) => {
     useWorkbench.getState().open(tab, permanent);
     go(pathForTab(tab, useWorkbench.getState().settingsPath));
   };
 
-  // ---- labels and the project of each tab
   const projects = useProjects();
   const chatTabs = tabs.filter((t) => t.kind === "chat");
   const details = useQueries({
@@ -130,7 +121,6 @@ export function Workbench() {
   const projectName = (id: string) =>
     projects.data?.find((p) => p.id === id)?.name;
 
-  // A chat that is gone (purged) closes its tab.
   const gone = chatTabs
     .filter((_, i) => {
       const err = details[i]?.error;
@@ -142,13 +132,9 @@ export function Workbench() {
     if (gone.length === 0) return;
     const to = useWorkbench.getState().close(gone);
     if (to !== null) go(to, true);
-    // Only when the set of missing chats changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goneKey]);
 
-  // A tab says what it is: a chat by its title, a project by its name, and a
-  // page of a project by the project's name, then the page. The icon and the
-  // hover text tell the kinds apart.
   const partsOf = (t: WorkbenchTab): { prefix?: string; label: string } => {
     if (t.kind === "chat") return { label: titleOf(t.key) ?? "Chat" };
     if (t.kind === "project") return { label: projectName(t.key) ?? "Project" };
@@ -184,17 +170,14 @@ export function Workbench() {
       ...(prefix ? { prefix } : {}),
       title: describe(t),
       icon: ICONS[t.kind],
-      // A tab of a project has the project's color behind its icon.
       ...(color ? { iconColor: color } : {}),
       transient: t.transient,
       dirty: dirty[id] === true,
-      // Not the tab on screen: its reply is marked seen as it arrives.
       unread:
         t.kind === "chat" && id !== activeId && unreadSessions.ids.has(t.key),
     };
   });
 
-  // ---- closing
   const close = (ids: readonly string[]) => {
     for (const id of ids) {
       const t = useWorkbench.getState().tabs.find((x) => tabId(x) === id);
@@ -218,7 +201,6 @@ export function Workbench() {
     });
   };
 
-  // Asks before the page is reloaded or left while something is unsaved.
   const anyDirty = Object.keys(dirty).length > 0;
   useEffect(() => {
     if (!anyDirty) return;
@@ -230,16 +212,12 @@ export function Workbench() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [anyDirty]);
 
-  // ---- New chat
   const create = useCreateSession((session) => {
     openTab({ kind: "chat", root: "session", key: session.id }, true);
     drawerHandlers.close();
   });
-  // ---- the chat on screen has been seen
   const { mutate: markSeen } = useMutation({
     mutationFn: (sessionId: string) => api.markSessionSeen(sessionId),
-    // The lists carry `unread`, so they change with it. No error message:
-    // this is bookkeeping, and a chat that is gone closes its tab above.
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
   });
@@ -259,7 +237,6 @@ export function Workbench() {
         : newChatTarget({ focused, active: activeTab, projectOfSession }),
     );
 
-  // ---- what the status bar says
   const activeProject = activeTab
     ? projectOfTab(activeTab, projectOfSession)
     : null;
@@ -289,7 +266,6 @@ export function Workbench() {
     </>
   ) : null;
 
-  // ---- the tabs that are mounted
   const hosted = tabs.filter(
     (t) => tabId(t) === activeId || dirty[tabId(t)] === true,
   );
@@ -350,13 +326,11 @@ export function Workbench() {
       }}
       onOpen={(kind) => {
         setFocused(null);
-        // A page from the rail is a preview, like one from the tree.
         openTab({ kind, root: "global", key: "" }, false);
         drawerHandlers.close();
       }}
       onManageProfiles={() => {
         setFocused(null);
-        // Settings may already be open on another section, so say which.
         useWorkbench.getState().setSettingsPath("/settings/general/profiles");
         openTab({ kind: "settings", root: "global", key: "" }, false);
         drawerHandlers.close();

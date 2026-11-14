@@ -8,10 +8,6 @@ import {
 import { useState } from "react";
 import { type Usage } from "@harness/core";
 
-/**
- * Reasoning still being written: collapsed to its latest line and the
- * running token count, with the full text one click away.
- */
 export function LiveReasoning({
   text,
   usage,

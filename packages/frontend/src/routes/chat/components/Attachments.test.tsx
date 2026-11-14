@@ -48,7 +48,6 @@ describe("MessageFiles keep choice", () => {
       file("cat.png", "image/png", "h1"),
     ]);
     vi.spyOn(api, "blobUrl").mockResolvedValue("blob:image");
-    // The server keeps what is set, so the next read shows it.
     let saved = choices;
     vi.spyOn(api, "getMediaChoices").mockImplementation(async () => saved);
     return vi
@@ -206,7 +205,6 @@ describe("DraftAttachments", () => {
     const { container } = show(
       <DraftAttachments items={[]} uploading={0} onRemove={() => {}} />,
     );
-    // (Mantine adds its own style elements to the container.)
     expect(
       container.querySelectorAll("button, img, [aria-label]"),
     ).toHaveLength(0);

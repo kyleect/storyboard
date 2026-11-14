@@ -14,25 +14,13 @@ import {
   type TreeNode,
 } from "../../../lib/explorer";
 
-/*
- * The logic behind the editor-style Agents view (`routes/AgentsExplorer.tsx`):
- * a tree of roots (Built-in, Global and, on a project's page, Project), each
- * listing its agents. An agent holds a Skills folder and a Schemas folder.
- * The Skills folder has the agent's own skill folders and files, then the
- * skills it inherits, grouped by where they come from; the Schemas folder has
- * the agent's own schemas, then the inherited ones, each schema holding the
- * agent's data made from it. Pure, so it is tested without a DOM.
- */
-
 export type AgentRootId = "builtin" | "global" | "project";
 
 export const isAgentRoot = (v: unknown): v is AgentRootId =>
   v === "builtin" || v === "global" || v === "project";
 
-/** Where something an agent inherits comes from. */
 export type Origin = "project" | "global" | "builtin";
 
-/** Narrowest first: the one an agent gets when a name is in several. */
 export const ORIGINS: readonly Origin[] = ["project", "global", "builtin"];
 
 export const ORIGIN_LABEL: Record<Origin, string> = {
@@ -59,14 +47,12 @@ export type NodeKind =
 export interface NodeRef {
   root: RootId;
   kind: NodeKind;
-  /** The agent's id, then what is under it, joined by "|" (`agentPath`). */
   path: string;
 }
 
 export const agentPath = (agentId: string, ...rest: string[]): string =>
   [agentId, ...rest].join("|");
 
-/** The agent's id and the parts after it, `count` of them at most. */
 export function splitPath(path: string, count: number): string[] {
   const parts: string[] = [];
   let from = 0;
@@ -87,12 +73,9 @@ export function parseNodeValue(value: string): NodeRef {
   return { root: r.root, kind: r.kind as NodeKind, path: r.path };
 }
 
-/** Which skill folder a skill file or folder is under, and where. */
 export interface SkillPlace {
   agentId: string;
-  /** "own" for the agent's own, else where it is inherited from. */
   origin: "own" | Origin;
-  /** `skill` or `skill/path/inside`. */
   key: string;
 }
 
@@ -101,19 +84,13 @@ export function skillPlace(ref: NodeRef): SkillPlace {
   return { agentId, origin: origin as SkillPlace["origin"], key };
 }
 
-/** What a row needs besides its place in the tree. */
 export interface NodeInfo {
   name: string;
   deleted: boolean;
-  /** Skill and schema rows from somewhere above the agent. */
   inherited?: boolean;
-  /** Where an inherited row comes from. */
   origin?: Origin;
-  /** A name that is in several places: which one the agent gets. */
   clash?: string;
-  /** Data rows: pinned to an older version of the schema. */
   outOfDate?: boolean;
-  /** An agent row. */
   agent?: AgentRow;
 }
 
@@ -134,14 +111,12 @@ export interface AgentRootInput {
   agents: readonly AgentRow[];
 }
 
-/** What is read for an agent when its node is first opened. */
 export interface AgentLoad {
   skills: {
     own: readonly SkillWithFiles[];
     inherited: Record<Origin, readonly SkillWithFiles[]>;
   };
   schemas: {
-    /** The schemas the agent can make data from, with its own. */
     schemas: readonly SchemaInfo[];
     data: readonly DataItem[];
   };
@@ -150,12 +125,6 @@ export interface AgentLoad {
 const byName = (a: { label: string }, b: { label: string }) =>
   a.label.localeCompare(b.label, undefined, { numeric: true });
 
-/**
- * For each name found in more than one place, the tag the rows that are not
- * used carry: "Overridden by Project". The agent's own comes first, then
- * project, global and built-in. `places` lists each name's places, narrowest
- * first; the rows after the first are the ones overridden.
- */
 export function clashTags(
   places: ReadonlyMap<string, readonly (Origin | "own")[]>,
 ): Map<string, string> {
@@ -183,7 +152,6 @@ function placesOf(
   return places;
 }
 
-/** The files of a skill as nested folders and files, by name. */
 function skillChildren(
   skill: SkillWithFiles,
   base: (key: string) => { dir: string; file: string },
@@ -236,7 +204,6 @@ function skillChildren(
     into.push(node);
   }
   const sort = (nodes: TreeNode[]) => {
-    // Folders first, then files, each by name.
     nodes.sort((a, b) => {
       const da = a.children ? 0 : 1;
       const db = b.children ? 0 : 1;
@@ -248,7 +215,6 @@ function skillChildren(
   return top;
 }
 
-/** The Skills folder of an agent. */
 function skillsFolder(
   root: RootId,
   agentId: string,
@@ -324,7 +290,6 @@ function skillsFolder(
   return folder;
 }
 
-/** The Schemas folder of an agent. */
 function schemasFolder(
   root: RootId,
   agentId: string,
@@ -436,11 +401,6 @@ function schemasFolder(
   return folder;
 }
 
-/**
- * One tree: a root per input, each with its agents by name. An agent whose
- * skills and schemas have been read holds the two folders; one that has not
- * holds a single "Loading" row, which is what makes it open.
- */
 export function buildTree(
   roots: readonly AgentRootInput[],
   loaded: ReadonlyMap<string, AgentLoad>,
@@ -486,15 +446,8 @@ export function buildTree(
   return { data, info };
 }
 
-// ----------------------------------------------------------------- the tabs
-
 export type TabKind = "agent" | "skill" | "schema" | "data";
 
-/**
- * A tab. `root` is the root of the agent; `key` is the agent's id for an
- * agent (`new:1` for one not yet made), else the agent's id and what is
- * opened, as in a node's path.
- */
 export type TabState = ExplorerTab<TabKind>;
 export type TabsState = TabsOf<TabState>;
 
@@ -514,21 +467,16 @@ const NODE_KIND: Record<TabKind, NodeKind> = {
   data: "data",
 };
 
-/** The tree node a tab stands for. */
 export const tabNode = (t: TabState): string =>
   nodeValue({ root: t.root, kind: NODE_KIND[t.kind], path: t.key });
 
-/** The agent a tab is about. */
 export const tabAgent = (t: Pick<TabState, "key">): string =>
   splitPath(t.key, 1)[0] ?? "";
-
-// -------------------------------------------------- remembered between visits
 
 export type SavedView = SavedViewOf<TabState>;
 
 const KINDS = ["agent", "skill", "schema", "data"] as const;
 
-/** `page`: "global", or `project-<id>`. */
 export const loadView = (page: PageKey): SavedView =>
   loadViewIn("agents", page, KINDS, isAgentRoot);
 

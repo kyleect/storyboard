@@ -7,12 +7,6 @@ import { useReportDirty } from "../../stores/dirty";
 import { projectKeys } from "../../queries";
 import { StructuredExplorer } from "../../components/structured/StructuredExplorer";
 
-/*
- * The global and project pages for Structured Data: schemas and the data
- * made from them, in the editor-style explorer, showing what is available at
- * the page's scope (decision 44).
- */
-
 function Explorer({
   scope,
   readOnly,
@@ -20,7 +14,6 @@ function Explorer({
 }: {
   scope: { scope: "global" } | { scope: "project"; id: string };
   readOnly?: string | undefined;
-  /** How tall the view is; less is taken off with no page header. */
   height?: string;
 }) {
   const [dirty, setDirty] = useState(false);
@@ -36,15 +29,10 @@ function Explorer({
   );
 }
 
-/**
- * Global structured data (decision 44). The tab says what the page is, so it
- * has no heading or help text.
- */
 export function GlobalStructuredDataPage() {
   return <Explorer scope={{ scope: "global" }} height="calc(100vh - 8rem)" />;
 }
 
-/** A project's structured data (decision 44). */
 export function ProjectStructuredDataPage({
   projectId,
 }: {

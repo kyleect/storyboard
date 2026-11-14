@@ -31,14 +31,6 @@ import {
 } from "../../../lib/tool-grant";
 import { ApprovalSelect } from "./ApprovalSelect";
 
-/*
- * The tools part of the agent editor (tool management design, decisions 1
- * to 8): tools in groups, each group with its own on/off box and approval
- * choice, tools that are new since the last save marked, and tools that are
- * always on shown locked. Inside the MCP group, tools (`mcp_<server>_<tool>`)
- * are grouped by server, each server with the same header as a group.
- */
-
 const GROUP_CHOICES = [
   { value: "own", label: "Each tool's setting" },
   { value: "ask", label: "Ask for all" },
@@ -60,14 +52,12 @@ export function ToolGrantEditor({
   onApproval: (a: Record<string, boolean>) => void;
   tools: AgentToolInfo[];
   approvals: ToolApprovalInfo[];
-  /** Names of tools added since the agent was last saved. */
   newTools: ReadonlySet<string>;
 }) {
   const groups = sectionTools(tools);
   const allSections = groups.flatMap((g) => [g, ...(g.children ?? [])]);
   const approvalOf = (name: string) => approvals.find((t) => t.name === name);
   const isFixed = (name: string) => approvalOf(name)?.fixed ?? false;
-  // Groups with something new start open, so it is not missed.
   const [open, setOpen] = useState<ReadonlySet<string>>(
     new Set(
       allSections
@@ -89,7 +79,6 @@ export function ToolGrantEditor({
   };
 
   const known = new Set(tools.map((t) => t.name));
-  // Stored names with no such tool, shown so they can be removed.
   const missing = [...grant.except, ...grant.extras].filter(
     (n, i, all) => !known.has(n) && all.indexOf(n) === i,
   );
@@ -97,7 +86,6 @@ export function ToolGrantEditor({
     (n) => approvals.length > 0 && !approvalOf(n),
   );
 
-  /** A group's box; the MCP group holds a box for each server. */
   const renderSection = ({
     id,
     group,
@@ -113,7 +101,6 @@ export function ToolGrantEditor({
       inGroup.map((t) => ({ name: t.name, fixed: isFixed(t.name) })),
     );
     const isOpen = open.has(id);
-    // One MCP server is only part of its group.
     const partial = id !== group;
     return (
       <Paper key={id} withBorder p="xs">

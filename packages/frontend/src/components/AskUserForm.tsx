@@ -25,21 +25,8 @@ import {
   type InputAnswer,
 } from "@harness/core";
 
-/*
- * A form the model asked with `ask_user`, drawn inline in the chat where
- * the call is (input forms design, D9). Open while the run waits for it;
- * afterwards read-only, with the answers filled in. Every question except
- * text offers "Other" (D19, D21).
- *
- * Also draws forms other tools show (tool prompts design): those can label
- * their options, leave out "Other" (a yes/no without "Other" is a
- * checkbox) and name their buttons (D4 to D6, D8).
- */
-
-/** Choices with more options than this use a dropdown (D5). */
 export const CHOICE_LIMIT = 6;
 
-/** The value of the "Other" option; not a string a model would write. */
 const OTHER = "\u0000other";
 
 export type AskUserState =
@@ -51,23 +38,15 @@ export type AskUserState =
     }
   | { mode: "answered"; answers: Answers }
   | { mode: "skipped" }
-  /** Not answered, and not open: about to open, or withdrawn. */
   | { mode: "closed" };
 
-/** One question's inputs. `text` is the text answer or the Other text. */
 interface FieldState {
   text: string;
-  /** Choice and yes/no: the picked option, "yes", "no" or OTHER. */
   pick: string | null;
-  /** Multi-choice: the picked options. */
   picks: string[];
-  /** Number: as typed while it is not yet a number. */
   num: number | string;
-  /** Multi-choice and number: "Other" is ticked. */
   other: boolean;
-  /** A group: its fields' inputs, by name. */
   fields?: Record<string, FieldState>;
-  /** A list: each item's inputs. */
   items?: FieldState[];
 }
 
@@ -81,7 +60,6 @@ const EMPTY: FieldState = {
 
 type TextFormat = Extract<FormField, { kind: "text" }>["format"];
 
-/** The browser's offset from UTC now, as "+hh:mm" (for a `time`). */
 export function localOffset(date = new Date()): string {
   const minutes = -date.getTimezoneOffset();
   const sign = minutes >= 0 ? "+" : "-";
@@ -90,10 +68,6 @@ export function localOffset(date = new Date()): string {
   return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
-/**
- * A stored value as the browser's input shows it. JSON Schema times and
- * date-times carry a timezone (decision 17); the inputs show local time.
- */
 export function toInput(format: TextFormat, value: string): string {
   if (value === "") return value;
   if (format === "date-time") {
@@ -106,10 +80,6 @@ export function toInput(format: TextFormat, value: string): string {
   return value;
 }
 
-/**
- * What an input holds as a stored value: a date-time in UTC ("…Z"), a time
- * with the browser's current offset.
- */
 export function fromInput(format: TextFormat, value: string): string {
   if (format === "date-time") {
     const d = new Date(value);
@@ -121,7 +91,6 @@ export function fromInput(format: TextFormat, value: string): string {
   return value;
 }
 
-/** A question's inputs from its answer, or its default. */
 export function initialState(field: FormField, answer?: unknown): FieldState {
   const given = answer !== undefined;
   switch (field.kind) {
@@ -180,7 +149,6 @@ export function initialState(field: FormField, answer?: unknown): FieldState {
     }
     case "boolean": {
       const value = given ? answer : field.default;
-      // A checkbox is always answered: unticked is "no".
       if (field.noOther)
         return { ...EMPTY, pick: value === true ? "yes" : "no" };
       if (value === undefined) return EMPTY;
@@ -191,7 +159,6 @@ export function initialState(field: FormField, answer?: unknown): FieldState {
   }
 }
 
-/** A question's answer from its inputs; undefined when unanswered. */
 export function answerOf(field: FormField, s: FieldState): unknown {
   switch (field.kind) {
     case "object": {
@@ -200,7 +167,6 @@ export function answerOf(field: FormField, s: FieldState): unknown {
         const a = answerOf(f, s.fields?.[f.name] ?? EMPTY);
         if (a !== undefined) out[f.name] = a;
       }
-      // An optional group with nothing in it is left out.
       return Object.keys(out).length === 0 && !field.required ? undefined : out;
     }
     case "list": {
@@ -230,10 +196,6 @@ export function answerOf(field: FormField, s: FieldState): unknown {
   }
 }
 
-/**
- * Inputs start from the answers or defaults when the form mounts; give it a
- * `key` that changes with the state so an answered form shows its answers.
- */
 export function AskUserForm({
   form,
   state,
@@ -245,21 +207,10 @@ export function AskUserForm({
 }: {
   form: Form;
   state: AskUserState;
-  /**
-   * Problems found elsewhere, such as the backend's checks on save, by the
-   * path of the question ("inventory.0.item").
-   */
   extraErrors?: Record<string, string>;
-  /** What an open form starts from, such as the data being edited. */
   initial?: Answers;
-  /**
-   * False: no heading row (no title, no badge), for forms whose page already
-   * says what they are, such as a data form.
-   */
   heading?: boolean;
-  /** True: no Skip and Submit buttons; the page has its own Save. */
   hideActions?: boolean;
-  /** Called with the answers as they stand, unchecked, after each edit. */
   onEdit?: (answers: Answers) => void;
 }) {
   const open = state.mode === "open";
@@ -273,8 +224,6 @@ export function AskUserForm({
   const [errors, setErrors] = useState<Record<string, string>>(
     extraErrors ?? {},
   );
-  // New problems from elsewhere replace those shown (React's pattern for
-  // state that follows a prop).
   const [shownExtra, setShownExtra] = useState(extraErrors);
   if (extraErrors !== shownExtra) {
     setShownExtra(extraErrors);
@@ -283,7 +232,6 @@ export function AskUserForm({
   const ref = useRef<HTMLDivElement>(null);
   const requestId = open ? state.requestId : null;
 
-  // A form that opens is scrolled into view (D9).
   useEffect(() => {
     if (requestId) ref.current?.scrollIntoView?.({ block: "nearest" });
   }, [requestId]);
@@ -304,7 +252,6 @@ export function AskUserForm({
     };
     setValues(next);
     onEdit?.(given(next));
-    // A change clears the question's problems, and those inside it.
     setErrors((e) =>
       Object.fromEntries(
         Object.entries(e).filter(
@@ -395,7 +342,6 @@ export function AskUserForm({
   );
 }
 
-/** The browser input for a text `format` (decision 17). */
 const INPUT_TYPE = {
   date: "date",
   "date-time": "datetime-local",
@@ -413,7 +359,6 @@ function FieldInput({
   onChange,
 }: {
   field: FormField;
-  /** The question's path, for its problems ("inventory.0.item"). */
   path: string;
   value: FieldState;
   errors: Record<string, string>;
@@ -726,7 +671,6 @@ function FieldInput({
   }
 }
 
-/** Dropdown items: each option with its label, then "Other…" if offered. */
 function selectData(field: Extract<FormField, { kind: "choice" | "multi" }>) {
   return [
     ...field.options.map((o) => ({ value: o, label: optionLabel(field, o) })),

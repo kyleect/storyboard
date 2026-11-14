@@ -14,12 +14,6 @@ import { useDrafts } from "../../stores/drafts";
 import { Chat } from "./Chat";
 import type { RecordingMode } from "./components/VoiceButtons";
 
-/*
- * The composer's use of recordings: "Record" attaches one, "Record & send"
- * sends the message as soon as it has uploaded. The page around the composer
- * is stubbed; the microphone itself is covered by VoiceButtons.test.tsx.
- */
-
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ sessionId: "s1" }),
   useNavigate: () => () => {},
@@ -30,7 +24,6 @@ vi.mock("@tanstack/react-router", () => ({
   }) => select({ location: { hash: "" } }),
 }));
 
-// What the run in progress is, for the test to set.
 let liveRun: unknown = undefined;
 vi.mock("../../stores/live", () => {
   const state = () => ({ runs: { s1: liveRun }, connected: { s1: true } });
@@ -42,7 +35,6 @@ vi.mock("../../stores/live", () => {
 });
 vi.mock("../../hooks/useSessionEvents", () => ({ useSessionEvents: () => {} }));
 
-// The recorder's props, for the test to call as the recorder would.
 let voice: {
   onRecorded: (file: File, mode: RecordingMode) => void;
   sendDisabled?: boolean;
@@ -54,7 +46,6 @@ vi.mock("./components/VoiceButtons", () => ({
   },
 }));
 
-// Pieces of the page that have nothing to do with the composer.
 vi.mock("../agents/Agents", () => ({
   AgentBadge: () => null,
   AgentPicker: () => null,
@@ -182,7 +173,6 @@ describe("recording in the composer", () => {
     await act(async () => voice.onRecorded(recording(), "send"));
 
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    // No text: the audio and the image are the message.
     expect(send).toHaveBeenCalledWith("s1", "", expect.anything(), [
       "session://cat.png",
       "session://voice.wav",
@@ -223,12 +213,10 @@ describe("recording in the composer", () => {
 describe("the chat page", () => {
   it("has no header: the tab and the status bar say what the chat is", async () => {
     await show();
-    // No title to edit, and none of what the header held.
     expect(screen.queryByLabelText("Session title")).toBeNull();
     expect(screen.queryByText("Test")).toBeNull();
     expect(screen.queryByText("live")).toBeNull();
     expect(screen.queryByText("offline")).toBeNull();
-    // The views are still there.
     expect(screen.getByRole("radio", { name: "Files" })).toBeTruthy();
   });
 });

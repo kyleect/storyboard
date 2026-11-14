@@ -23,7 +23,6 @@ import { Led } from "@gfazioli/mantine-led";
  * debounced so short or back-to-back runs do not flicker.
  */
 
-/** A spinner, or a still dot when the user prefers reduced motion. */
 function Spinner({ label }: { label: string }) {
   const reduced = useReducedMotion();
   const theme = useMantineTheme();
@@ -63,7 +62,6 @@ function WaitingBadge() {
   );
 }
 
-/** A reply in the session the user has not seen yet. */
 function UnreadDot({ label = "New reply" }: { label?: string }) {
   return (
     <span
@@ -81,7 +79,6 @@ function UnreadDot({ label = "New reply" }: { label?: string }) {
   );
 }
 
-/** What a session row shows: nothing, a spinner, or the waiting badge. */
 export function SessionRunBadge({
   state,
   unread,
@@ -89,19 +86,15 @@ export function SessionRunBadge({
   state: SessionRunState | undefined;
   unread?: boolean;
 }) {
-  // Either state keeps the spinner flag on, so waiting then working again
-  // goes straight back to the spinner.
   const shown = useDebouncedFlag(state !== undefined);
   const theme = useMantineTheme();
   if (state === "waiting") return <WaitingBadge />;
   if (shown) return <Loader color={theme.primaryColor} type="dots" size="xs" />;
-  // A run is working but the spinner has not shown yet (it is debounced).
   // Show nothing, not the dot, or the dot would flash before the spinner.
   if (state !== undefined) return null;
   return unread ? <UnreadDot /> : null;
 }
 
-/** The summary at the top of the navbar; a popover lists the runs. */
 export function GlobalRunIndicator({
   summary,
 }: {
@@ -111,7 +104,6 @@ export function GlobalRunIndicator({
   const waiting = summary?.waiting ?? 0;
   const showWorking = useDebouncedFlag(workingNow > 0);
 
-  // Keep the last count while the spinner lingers after the last run ends.
   const [lastWorking, setLastWorking] = useState(0);
   if (workingNow > 0 && workingNow !== lastWorking) setLastWorking(workingNow);
 
@@ -172,18 +164,14 @@ export function GlobalRunIndicator({
   );
 }
 
-/** The rail's summary of the chats with a reply the user has not seen. */
 export function GlobalUnreadIndicator({
   count,
 }: {
   count: number | undefined;
 }) {
   const unread = count ?? 0;
-  // Debounced like the spinner. A reply the user watches arrive is marked
-  // seen a moment later, and the dot should not flash for it.
   const shown = useDebouncedFlag(unread > 0);
 
-  // Keep the last count while the dot lingers after the last one clears.
   const [last, setLast] = useState(0);
   if (unread > 0 && unread !== last) setLast(unread);
 

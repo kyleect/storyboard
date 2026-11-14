@@ -3,12 +3,6 @@ import type { ProjectColor } from "@harness/core";
 import { api } from "../api";
 import { projectKeys } from "../queries";
 
-/**
- * Looks up a project's color from the project list the chats tree keeps
- * loaded. It reads the cache and never fetches, so a view that shows a
- * project's things can wear its color without a request of its own. Null for
- * no project, an unknown one or a project without a color.
- */
 export function useProjectColor(): (
   projectId: string | null | undefined,
 ) => ProjectColor | null {

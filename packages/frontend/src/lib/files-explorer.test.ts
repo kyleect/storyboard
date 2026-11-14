@@ -18,7 +18,6 @@ import {
   type TreeNode,
 } from "./files-explorer";
 
-/** A value a test needs to be there; says so if it is not. */
 const must = <T>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
   return v;
@@ -129,7 +128,6 @@ describe("buildTree", () => {
       "b.md",
     ]);
     const drafts = nth(session.children, 0);
-    // Numeric-aware: ch2 before ch10.
     expect(names(drafts.children)).toEqual(["sub", "ch2.md", "ch10.md"]);
     expect(names(nth(data, 2).children)).toEqual(["g.txt"]);
   });
@@ -217,7 +215,6 @@ describe("tabs", () => {
   it("makes a preview tab permanent from the start", () => {
     const s = openTab(empty, { ...a, kind: "preview" }, true);
     expect(s.tabs[0]?.transient).toBe(false);
-    // And a single-click file open does not replace it.
     const t = openTab(s, b, false);
     expect(t.tabs).toHaveLength(2);
   });
@@ -255,7 +252,6 @@ describe("tabs", () => {
 
 describe("what is remembered", () => {
   const page = { scope: "session", id: "s1" } as const;
-  // This test file runs in Node, which has no localStorage.
   beforeEach(() => {
     const store = new Map<string, string>();
     vi.stubGlobal("localStorage", {

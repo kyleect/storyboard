@@ -23,10 +23,6 @@ import {
   useSettingsForm,
 } from "../lib/settings-form";
 
-/**
- * The defaults for sessions that have no model, reasoning effort or
- * embedding model of their own.
- */
 export function ModelSettings({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, MODEL_KEYS);
 
@@ -84,7 +80,6 @@ export function ModelSettings({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/** Where llama-server is, and the port the backend listens on. */
 export function ServerSettings({ view }: { view: SettingsView }) {
   const { form, save, envNote } = useSettingsForm(view, SERVER_KEYS, {
     llamaServerUrl: (v) =>
@@ -120,10 +115,6 @@ export function ServerSettings({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/**
- * The global system prompt (system prompts design, decision 3), with its
- * own Save.
- */
 export function SystemPrompt({ view }: { view: SettingsView }) {
   const { form, save, envNote } = useSettingsForm(view, PROMPT_KEYS);
 
@@ -149,11 +140,6 @@ export function SystemPrompt({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/**
- * The wording that introduces each list, with its own Save. Each is what its
- * placeholder expands to (`{{skills_instruction}}` and so on). For skills and
- * schemas it is also put before the list where no prompt places the list.
- */
 export const INSTRUCTIONS: readonly {
   key: (typeof INSTRUCTION_KEYS)[number];
   label: string;
@@ -232,9 +218,6 @@ export function Instructions({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/**
- * Auto-rename (auto-rename plan, decisions 1 to 4), with its own Save.
- */
 export function SessionTitles({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, TITLE_KEYS, {
     titlePrompt: (v) => (v.trim() !== "" ? null : "Must not be empty"),
@@ -302,7 +285,6 @@ export function SessionTitles({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/** What editing one of your messages does (message editing plan, B). */
 export function EditingSettings({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, EDITING_KEYS);
 

@@ -6,11 +6,6 @@ import {
 } from "./workbench";
 import type { WorkbenchTab } from "../lib/workbench";
 
-/*
- * What a session or a project going to the trash does to the open tabs, and
- * what is kept between visits.
- */
-
 const tab = (
   kind: WorkbenchTab["kind"],
   root: WorkbenchTab["root"],

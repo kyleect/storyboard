@@ -6,8 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type ToolView } from "../../../api";
 import { ToolSettings } from "./ToolSettings";
 
-/* The Settings tools section (tool management design, decisions 12 to 16). */
-
 const tool = (name: string, over: Partial<ToolView> = {}): ToolView => ({
   name,
   description: `${name} does a thing.`,

@@ -15,16 +15,6 @@ import {
   type TreeNode,
 } from "./explorer";
 
-/*
- * The logic behind the editor-style Structured Data view
- * (`routes/StructuredExplorer.tsx`): the tree of roots, each with a Schemas
- * folder, a row for every schema it can make data from, and the data under
- * each schema. Which roots there are is the caller's to say: a page has
- * Session, Project and Global (`rootsFor`), an agent has its own. The tab
- * rules and what is remembered are shared with the Files view
- * (`explorer.ts`). Pure, so it is tested without a DOM.
- */
-
 export type NodeKind =
   | "root"
   | "schemas"
@@ -37,7 +27,6 @@ export type NodeKind =
 export interface NodeRef {
   root: RootId;
   kind: NodeKind;
-  /** A schema's or a piece of data's id; empty for a root or Schemas folder. */
   path: string;
 }
 
@@ -46,33 +35,24 @@ export function parseNodeValue(value: string): NodeRef {
   return { root: r.root, kind: r.kind as NodeKind, path: r.path };
 }
 
-/** What a row needs besides its place in the tree. */
 export interface NodeInfo {
   name: string;
   deleted: boolean;
-  /** Schema rows: where the schema lives. */
   schemaScope?: SchemaScope;
-  /** A schema from a higher scope than the root it is shown under. */
   inherited?: boolean;
-  /** Data rows: pinned to an older version of the schema. */
   outOfDate?: boolean;
 }
 
-/** A root of the Structured Data tree, with why it cannot be changed. */
 export interface StructuredRoot extends Root<DataOwner> {
-  /** Why nothing in this root can be changed, when that is so. */
   readOnly?: string | undefined;
 }
 
 export interface RootData {
   root: Root<DataOwner>;
-  /** The schemas this root can make data from, with its own. */
   schemas: readonly SchemaInfo[];
-  /** The data this root's scope holds. */
   data: readonly DataItem[];
 }
 
-/** An inline name box in the tree: a schema or a piece of data being made. */
 export type Pending =
   | { kind: "new-schema"; root: RootId }
   | { kind: "new-data"; root: RootId; schemaId: string };
@@ -80,11 +60,6 @@ export type Pending =
 const byName = (a: { label: string }, b: { label: string }) =>
   a.label.localeCompare(b.label, undefined, { numeric: true });
 
-/**
- * A schema from a higher scope than the root it is shown under. The built-in
- * schemas are the Global root's own (the Global page lists them), and
- * inherited anywhere below it.
- */
 export const isInherited = (
   schema: SchemaInfo,
   root: Root<DataOwner>,
@@ -93,19 +68,11 @@ export const isInherited = (
     ? root.scope.scope !== "global"
     : schema.scope !== root.scope.scope;
 
-/** Name of a scope for a person: "Global", "Project", "Session", "Agent". */
 export const scopeName = (scope: SchemaScope): string =>
   scope === "builtin"
     ? "Built-in"
     : scope.charAt(0).toUpperCase() + scope.slice(1);
 
-/**
- * The root a schema's tab belongs to: the root of the scope it lives in, so
- * one schema is one tab, however many roots show it. Built-in schemas live
- * with the global ones. A schema whose scope has no root here (an agent's,
- * seen from a session; a project's, seen from an agent) belongs to the root
- * it was opened from.
- */
 export function schemaTabRoot(
   scope: SchemaScope,
   from: RootId,
@@ -115,10 +82,6 @@ export function schemaTabRoot(
   return roots.find((r) => r.scope.scope === home)?.id ?? from;
 }
 
-/**
- * Merges a root's own schemas (listed with the deleted ones when asked) into
- * the schemas it can make data from; one entry per schema.
- */
 export function mergeSchemas(
   own: readonly SchemaInfo[],
   usable: readonly SchemaInfo[],
@@ -129,12 +92,6 @@ export function mergeSchemas(
   return [...byId.values()];
 }
 
-/**
- * One tree for every root: each root holds a Schemas folder; the folder holds
- * a row per schema, by name; each schema holds its data, by name. Data whose
- * schema is not among the root's schemas goes under an "Unknown schema" row.
- * A pending name box comes first in its folder.
- */
 export function buildTree(
   inputs: readonly RootData[],
   pending: Pending | null,
@@ -204,7 +161,6 @@ export function buildTree(
       n.children?.sort(byName);
     };
     sortRows(folder);
-    // "Unknown schema" is last, whatever its name sorts as.
     const unknown = folder.children?.findIndex(
       (c) => parseNodeValue(c.value).kind === "unknown",
     );
@@ -237,30 +193,22 @@ export function buildTree(
   return { data, info };
 }
 
-// ----------------------------------------------------------------- the tabs
-
-/** A tab: a schema, or a piece of data. */
 export type TabState = ExplorerTab<"schema" | "data">;
 export type TabsState = TabsOf<TabState>;
 
-/** Opens a schema or data tab (see `openTabIn`). */
 export const openTab = (
   state: TabsState,
   tab: Omit<TabState, "transient">,
   permanent: boolean,
 ): TabsState => openTabIn(state, tab, permanent, () => true);
 
-/** The tree node a tab stands for. */
 export const tabNode = (t: TabState): string =>
   nodeValue({ root: t.root, kind: t.kind, path: t.key });
-
-// -------------------------------------------------- remembered between visits
 
 export type SavedView = SavedViewOf<TabState>;
 
 const KINDS = ["schema", "data"] as const;
 
-/** `isRoot` says which roots a saved tab may name; the file roots if left out. */
 export const loadView = (
   page: PageKey,
   isRoot?: (v: unknown) => boolean,

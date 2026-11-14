@@ -15,17 +15,6 @@ import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/*
- * Markdown as Mantine components (markdown rendering plan M1 to M11).
- *
- * - Raw HTML in the text is shown as text; it is never rendered.
- * - Images are never loaded or shown: an image appears as its alt text (M7).
- * - Links open in a new tab, and only for http, https and mailto (M6).
- * - Single line breaks inside a paragraph are kept, as they were when all
- *   text was shown as typed.
- */
-
-/** The text of a syntax tree node and everything under it. */
 function textOf(node: unknown): string {
   if (typeof node !== "object" || node === null) return "";
   const n = node as { value?: unknown; children?: unknown };
@@ -80,7 +69,6 @@ const components: Components = {
         {children}
       </Text>
     ),
-  // Never loaded: the alt text stands in for the image (M7).
   img: ({ alt }) => (
     <Text span inherit>
       {alt}
@@ -102,7 +90,6 @@ const components: Components = {
     </List>
   ),
   li: ({ children }) => <List.Item>{children}</List.Item>,
-  // The checkbox of a task list item.
   input: ({ checked }) => (
     <Checkbox
       size="xs"
@@ -119,7 +106,6 @@ const components: Components = {
     </Blockquote>
   ),
   hr: () => <Divider />,
-  // A fenced or indented block arrives as <pre><code>; show its text.
   pre: ({ node }) => <Code block>{textOf(node).replace(/\n$/, "")}</Code>,
   code: ({ children }) => <Code>{children}</Code>,
   table: ({ children }) => (
@@ -142,7 +128,6 @@ const components: Components = {
 
 const remarkPlugins = [remarkGfm];
 
-/** `children` is the Markdown source; `size` is the text size (default: Mantine's). */
 export const Markdown = memo(function Markdown({
   children,
   size,

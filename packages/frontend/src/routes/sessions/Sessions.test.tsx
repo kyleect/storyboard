@@ -17,8 +17,6 @@ import { sessionKeys } from "../../queries";
 import { useSessionsPrefs } from "../../stores/sessionsPrefs";
 import { SessionsPage } from "./Sessions";
 
-/* The Sessions page (Sessions page plan, section 4). */
-
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
@@ -93,7 +91,6 @@ const box = (name: string) =>
 const lastRequest = (spy: ReturnType<typeof vi.spyOn>) =>
   spy.mock.calls.at(-1)?.[0];
 
-/** The page-size input; Mantine labels its option list the same way. */
 const perPage = () =>
   screen
     .getAllByLabelText("Sessions per page")
@@ -126,7 +123,6 @@ describe("the Sessions page: the table", () => {
     expect(
       screen.getByText(new Date(item(2).created_at).toLocaleString()),
     ).toBeTruthy();
-    // No agent, no usage: a dash for each.
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/3 sessions/)).toBeTruthy();
   });
@@ -232,7 +228,6 @@ describe("the Sessions page: sorting", () => {
       "harness.sessionsPrefs",
       JSON.stringify({ direction: "asc", pageSize: 50 }),
     );
-    // A fresh store reads localStorage when it is created.
     vi.resetModules();
     const { useSessionsPrefs: fresh } =
       await import("../../stores/sessionsPrefs");
@@ -267,7 +262,6 @@ describe("the Sessions page: paging", () => {
     });
     renderPage();
     await screen.findByText("Session 1");
-    // 25 sessions, 10 a page: three pages.
     expect(screen.getByRole("button", { name: "3" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "4" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "3" }));
@@ -333,7 +327,6 @@ describe("the Sessions page: paging", () => {
     fireEvent.click(screen.getByRole("button", { name: "2" }));
     await waitFor(() => expect(lastRequest(spy)).toMatchObject({ page: 2 }));
 
-    // Everything on page 2 was trashed: 5 sessions are left, one page.
     spy.mockResolvedValue({ items: [item(1)], total: 5 });
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
@@ -387,17 +380,14 @@ describe("the Sessions page: selecting", () => {
     expect(box("Select Session 1").checked).toBe(true);
     expect(box("Select Session 2").checked).toBe(true);
 
-    // Unticking one leaves the rest selected, and the header unticked.
     fireEvent.click(box("Select Session 2"));
     expect(screen.getByText("4 selected")).toBeTruthy();
     expect(box("Select all sessions").checked).toBe(false);
     expect(box("Select all sessions").indeterminate).toBe(true);
 
-    // Ticking it again selects everything again.
     fireEvent.click(box("Select all sessions"));
     expect(await screen.findByText("5 selected")).toBeTruthy();
 
-    // With everything selected, the header clears the selection.
     fireEvent.click(box("Select all sessions"));
     expect(screen.getByText("0 selected")).toBeTruthy();
   });
@@ -418,7 +408,6 @@ describe("the Sessions page: selecting", () => {
     await screen.findByText("Session 1");
     fireEvent.click(box("Select all sessions"));
     expect(await screen.findByText("2 selected")).toBeTruthy();
-    // Everything that could be selected is, so the header shows it.
     expect(box("Select all sessions").checked).toBe(true);
   });
 
@@ -563,7 +552,6 @@ describe("the Sessions page: moving to the trash", () => {
     fireEvent.click(await confirmButton());
     await waitFor(() => expect(trash).toHaveBeenCalledWith(["s1", "s2"]));
     expect(await screen.findByText("0 selected")).toBeTruthy();
-    // The table is fetched again.
     await waitFor(() =>
       expect(list.mock.calls.length).toBeGreaterThan(callsBefore),
     );

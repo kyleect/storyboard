@@ -1,16 +1,5 @@
 import type { WorkspaceOwner } from "../api";
 
-/*
- * Query keys for workspaces:
- *
- *   ["workspaces", "list", { showDeleted }]
- *   ["workspaces", "attached", owner, id]   what a project or session has
- *   ["workspaces", "grants"]                "Always allow" per tool
- *   ["workspaces", "dirs", path]            the folder picker
- *   ["workspaces", "tree", id, path]        one folder of a workspace's tree
- *   ["workspaces", "index", id]             its ticks and index status
- *   ["workspaces", "file", sessionId, ref]  a media file shown in the chat
- */
 export const workspaceKeys = {
   all: ["workspaces"] as const,
   lists: () => [...workspaceKeys.all, "list"] as const,

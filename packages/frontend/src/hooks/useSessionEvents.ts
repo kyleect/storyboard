@@ -15,11 +15,6 @@ import {
 } from "../queries";
 import { findLiveRun, useLive } from "../stores/live";
 
-/**
- * Subscribes to a session's events once its detail has loaded. Starts from
- * the snapshot (in-flight message and last event id) and applies the rest,
- * reconnecting after the last event received when the stream drops.
- */
 export function useSessionEvents(
   sessionId: string,
   detail: SessionDetail | undefined,
@@ -45,10 +40,7 @@ export function useSessionEvents(
     );
 
     let lastId = detail.lastEventId;
-    // Runs whose model has started answering (so it is loaded now).
     const answering = new Set<string>();
-    // A model is loaded by its first request, so what llama-server reports
-    // about models (status, reasoning levels) can change during a run.
     const refreshModelInfo = () => {
       void queryClient.invalidateQueries({ queryKey: modelKeys.list() });
       void queryClient.invalidateQueries({
@@ -63,8 +55,6 @@ export function useSessionEvents(
 
       switch (event.type) {
         case "session.trashed":
-          // Trashed here or in another window (sessions and projects
-          // design, Q7a).
           void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
           void queryClient.invalidateQueries({ queryKey: trashKeys.all });
           void queryClient.invalidateQueries({
@@ -73,7 +63,6 @@ export function useSessionEvents(
           void navigate({ to: "/" });
           break;
         case "session.files_changed":
-          // An edit to session-scoped files added a message.
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
@@ -82,16 +71,12 @@ export function useSessionEvents(
           });
           break;
         case "session.data_changed":
-          // An edit to session schemas or data added a message.
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
           void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           break;
         case "session.transcript_changed":
-          // A message was edited, or the session moved to another branch or
-          // had one deleted or restored, here or in another window. The
-          // files, data and subagents follow the line shown.
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
@@ -104,15 +89,11 @@ export function useSessionEvents(
             void queryClient.invalidateQueries({ queryKey: trashKeys.all });
           break;
         case "session.agent_changed":
-          // A tool changed the session's agent; the picker reads it from
-          // the session (agent tools design, Q18).
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
           break;
         case "session.renamed":
-          // Renamed automatically or by the user, here or in another
-          // window (auto-rename plan, decision 8).
           queryClient.setQueryData<SessionDetail>(
             sessionKeys.detail(sessionId),
             (old) =>
@@ -137,8 +118,6 @@ export function useSessionEvents(
           };
           const { parentRunId, parentCallId } = event.data;
           if (parentRunId && parentCallId) {
-            // A subagent's run: kept under the run that started it, so the
-            // top-level run is not replaced (agent delegation design).
             state.addChild(sessionId, {
               ...started,
               parentRunId,
@@ -171,7 +150,6 @@ export function useSessionEvents(
           break;
         }
         case "message.finished": {
-          // The message is stored before this event; show it as stored.
           const top = useLive.getState().runs[sessionId];
           const run = findLiveRun(top, event.runId);
           const parentCallId =
@@ -184,9 +162,6 @@ export function useSessionEvents(
               const at = old.messages.findIndex(
                 (m) => m.id === event.data.messageId,
               );
-              // Where the message sits in the tree is not in the event; a
-              // continued message keeps what it had, a new one has no
-              // siblings yet.
               const stored: StoredMessage = {
                 id: event.data.messageId,
                 message: event.data.message,
@@ -212,22 +187,15 @@ export function useSessionEvents(
           break;
         }
         case "tool.result":
-          // The result message is stored before this event.
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
-          // The Data tab and the data pages update live (schemas and data
-          // design).
           if (/^(schemas?|data)_/.test(event.data.name)) {
             void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           }
-          // The session's Files tab updates live (decision 35).
-          // The Files view also shows the project's and the global files, so
-          // a files tool can have changed any of them.
           if (/^files_/.test(event.data.name)) {
             void queryClient.invalidateQueries({ queryKey: fileKeys.all });
           }
-          // The session's errors panel (error reporting plan, P6).
           if (event.data.isError) {
             void queryClient.invalidateQueries({
               queryKey: errorKeys.list({ sessionId }),
@@ -235,8 +203,6 @@ export function useSessionEvents(
           }
           break;
         case "user.message":
-          // The run read the oldest message that was waiting; it is stored
-          // before this event.
           state.update(sessionId, event.runId, (run) => ({
             ...run,
             userMessages: run.userMessages.slice(1),
@@ -302,8 +268,6 @@ export function useSessionEvents(
                 autoClose: false,
               });
             }
-            // A subagent's run ended; the run that started it carries on. Its
-            // messages come from the refetch.
             void queryClient
               .invalidateQueries({ queryKey: sessionKeys.detail(sessionId) })
               .then(() =>
@@ -313,7 +277,6 @@ export function useSessionEvents(
               );
             break;
           }
-          // The session lists show each session's latest usage.
           void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
           void queryClient
             .invalidateQueries({ queryKey: sessionKeys.detail(sessionId) })
@@ -364,8 +327,6 @@ export function useSessionEvents(
       disconnect();
       useLive.getState().setConnected(sessionId, false);
     };
-    // Connect once per session, after the first load; later refetches must
-    // not reset the stream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, ready]);
 }

@@ -34,37 +34,19 @@ import {
 } from "../lib/debug";
 import { LinearView } from "./LinearView";
 
-/*
- * Debugging tools for a session: a button that copies the session's export
- * (the composed system prompt and tools of each run, the transcript and every
- * event) to the clipboard, as the linear view's text or as JSON, and a tab
- * that shows the same export as a linear view, a filterable table of events,
- * and each run's request.
- */
-
-/** Rows drawn at once; the rest are reached by narrowing the filters. */
 export const MAX_ROWS = 500;
 
-/** How the session export is copied. */
 type CopyFormat = "text" | "json";
 
 const FORMATS: Record<CopyFormat, (debug: SessionDebug) => string> = {
-  // The linear view, as plain text.
   text: renderLinearText,
-  // The whole export, for tools and diffs.
   json: (debug) => JSON.stringify(debug, null, 2),
 };
 
-/**
- * Copies the session's debugging export to the clipboard: the linear view as
- * text (Copy), or the whole export as JSON (Export, in the menu). It sits next
- * to Refresh on the chat's Debug view.
- */
 export function CopyDebugButton({ sessionId }: { sessionId: string }) {
   const [busy, setBusy] = useState(false);
   const copy = (format: CopyFormat) => {
     setBusy(true);
-    // The copy starts inside the click; the export arrives while it waits.
     const text = api.getSessionDebug(sessionId).then(FORMATS[format]);
     copyText(text)
       .then(async () =>
@@ -180,7 +162,6 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
   const query = useQuery({
     queryKey: sessionKeys.debug(sessionId),
     queryFn: () => api.getSessionDebug(sessionId),
-    // Always current when the tab opens; the Refresh button updates it later.
     staleTime: 0,
     gcTime: 0,
   });

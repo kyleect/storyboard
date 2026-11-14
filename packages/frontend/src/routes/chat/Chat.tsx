@@ -74,7 +74,6 @@ import type {
   ShownMessage,
 } from "./lib/transcript-types";
 
-/** Tells the workbench's status bar about this chat, while it is shown. */
 function PublishStatus({
   sessionId,
   model,
@@ -100,60 +99,38 @@ function PublishStatus({
 export function Chat({ sessionId }: { sessionId: string }) {
   const detail = useSession(sessionId);
   const settings = useSettings();
-  // Start the stream from a fresh load, not from cached data: a cached
-  // snapshot's last event id can be older than events already handled, such
-  // as session.trashed when a trashed session is opened from the trash.
   useSessionEvents(
     sessionId,
     detail.isFetchedAfterMount ? detail.data : undefined,
   );
   const live = useLive((s) => s.runs[sessionId]);
-  // The session's runs in progress: the top-level one, then its subagents'.
   const runs = liveRuns(live);
   const connected = useLive((s) => s.connected[sessionId] ?? false);
-  // The message being written; kept in a store so it survives a visit to
-  // another tab (this chat is not mounted while another tab is active).
   const draft = useDraft(sessionId).text;
   const patchDraft = useDrafts((s) => s.patch);
   const setDraft = (text: string) =>
     patchDraft(sessionId, (d) => ({ ...d, text }));
-  // Images and audio attached to the message being written.
   const files = useAttachmentDraft(sessionId);
-  // The newest draft and files, for a send that waits for an upload.
   const composer = useRef({ draft, items: files.items });
   useEffect(() => {
     composer.current = { draft, items: files.items };
   });
-  // What each model can read, to tell when an attachment cannot be used.
   const models = useModels();
-  // Chat, or the session's files, data or debugging tools (plan U3).
   const [tab, setTab] = useState<string>("chat");
-  // The Files view is made on the first visit and kept, hidden, after that,
-  // so edits not yet saved survive a look at the chat.
   const [filesOpened, setFilesOpened] = useState(false);
   const [filesDirty, setFilesDirty] = useState(false);
   if (tab === "files" && !filesOpened) setFilesOpened(true);
-  // Like Files, Structured Data stays mounted once opened, so unsaved edits
-  // survive a visit to another tab.
   const [dataOpened, setDataOpened] = useState(false);
   const [dataDirty, setDataDirty] = useState(false);
-  // The workbench keeps this tab mounted, and asks before closing it, while
-  // Files or Structured Data hold edits not yet saved.
   useReportDirty(filesDirty || dataDirty);
   if (tab === "data" && !dataOpened) setDataOpened(true);
 
-  // "Show in transcript" (error reporting plan, P7): scrolls to a message,
-  // from the errors panel, or from the address (#message-<id>) when opened
-  // from the errors page.
   const hash = useRouterState({ select: (s) => s.location.hash }).replace(
     /^#/,
     "",
   );
   const hashTarget = hash.startsWith(messageAnchor("")) ? hash : null;
-  // The anchor to scroll to once it is shown, and the hash already handled.
   const pendingScroll = useRef<string | null>(null);
-  // The message being shown from the errors panel, so the subagent that holds
-  // it opens.
   const [revealed, setRevealed] = useState<string | null>(null);
   const handledHash = useRef<string | null>(null);
   const messageCount = detail.data?.messages.length ?? 0;
@@ -190,14 +167,12 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const actions = useSessionActions();
   const [restoring, setRestoring] = useState(false);
   const session = detail.data?.session;
-  // The message being edited, if any.
   const [editing, setEditing] = useState<string | null>(null);
   const choices: Choices = {
     ...(session?.model ? { model: session.model } : {}),
     ...(session?.reasoning_effort
       ? { reasoningEffort: session.reasoning_effort }
       : {}),
-    // Sent every time, so "no agent" is sent too (agents design 11).
     ...(session ? { agentId: session.agent_id } : {}),
   };
   const branch = useBranchActions(sessionId, choices);
@@ -222,11 +197,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
     onSuccess: () => {
       setDraft("");
       files.clear();
-      // Shows the stored user message.
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.detail(sessionId),
       });
-      // Sending in a project's session counts as using the project.
       if (session?.project_id)
         void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
@@ -251,7 +224,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
       answer: ApprovalAnswer;
     }) => api.answerApproval(a.runId, a.requestId, a.answer),
     onSuccess: (_r, a) => {
-      // "Always allow" changes the tool's setting.
       if (a.answer.choice === "always") {
         void queryClient.invalidateQueries({ queryKey: toolKeys.list() });
         void queryClient.invalidateQueries({
@@ -261,12 +233,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
     },
     onError,
   });
-  // Answers sent for each form, shown until its call's result is stored.
   const [submitted, setSubmitted] = useState<ReadonlyMap<string, Sent>>(
     new Map(),
   );
-  // The message is shown as waiting at once, so the run reading it before the
-  // answer arrives still finds it to remove.
   const sendToSubagent = useMutation({
     mutationFn: (a: { runId: string; text: string }) =>
       api.sendRunMessage(a.runId, a.text),
@@ -303,7 +272,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
     },
     onError,
   });
-  // The request whose dialog was closed without an answer.
   const [dismissed, setDismissed] = useState<string | null>(null);
   const stopThinking = useMutation({
     mutationFn: (runId: string) => api.endReasoning(runId),
@@ -322,8 +290,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
   if (detail.isPending) return <Loader />;
   if (detail.isError) return <Alert color="red">{detail.error.message}</Alert>;
 
-  // Stored messages, with the in-flight ones replacing or following them.
-  // A subagent's messages are grouped under the call that started it.
   const inFlight = (run: LiveRunState): ShownMessage | undefined =>
     run.message
       ? {
@@ -394,7 +360,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
         (child.approvals.length > 0 || child.inputs.length > 0),
     });
   }
-  // Decision comments, stored on tool results, are shown under their calls.
   const decisionComments = new Map<
     string,
     NonNullable<ToolResultMessage["decisionComment"]>
@@ -403,7 +368,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
     if (m.message.role === "tool" && m.message.decisionComment)
       decisionComments.set(m.message.callId, m.message.decisionComment);
   }
-  // A session in the trash can be read, not changed (design Q3a).
   const trashed = detail.data.session.trashed_at !== null;
   const busy =
     trashed ||
@@ -416,8 +380,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const reasoningRun = runs.find(
     (r) => r.message?.content.at(-1)?.type === "reasoning",
   );
-  // What waits for the user in any run: the oldest approval and form first,
-  // each answered by the run that owns it (agent delegation design, 25, 26).
   const approvals = runs.flatMap((run) =>
     run.approvals.map((request) => ({ request, run })),
   );
@@ -427,8 +389,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const pendingEntry = approvals[0];
   const pending = pendingEntry?.request;
   const openInput = opens[0]?.request;
-  // Between model calls: a tool is running (a form shows it is waiting). A
-  // run waiting for its subagent is not the one writing.
   const toolRunning =
     !!live && !runs.some((r) => r.message) && !pending && !openInput;
   const asks: Asks = {
@@ -455,10 +415,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
       }),
   };
   const defaults = settings.data?.effective;
-  // The model whose levels the reasoning picker shows.
   const levelsModel = detail.data.session.model || defaults?.model || undefined;
-  // Whether the model in use reads images and audio: undefined when
-  // llama-server does not say, and then attaching is allowed.
   const support = mediaSupport(
     levelsModel
       ? models.data?.find((m) => m.id === levelsModel)
@@ -485,10 +442,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
       files: files.items.map((i) => i.ref),
     });
   };
-  // A finished recording is attached; from "Record & send" it is also sent,
-  // with the text and files already in the composer. It is sent once it has
-  // uploaded, using what the composer holds by then, so text typed while it
-  // uploaded goes with it.
   const recorded = async (file: File, mode: RecordingMode) => {
     const uploaded = await files.add([file]);
     if (mode !== "send" || uploaded.length === 0) return;
@@ -513,13 +466,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
       ],
     });
   };
-  // How full the context is: the running count while a call streams, else
-  // the latest stored message's.
   const contextUsage =
     live?.usage ??
     latestUsage(detail.data.messages.filter((m) => !m.parentCallId));
-  // Session files cannot change in the trash or during a run
-  // (plan P5).
   const filesReadOnly = trashed
     ? "The session is in the trash, so these can be read but not changed."
     : live
@@ -716,7 +665,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
           </TranscriptScroll>
         )}
 
-        {/* Errors of a session in the trash are not shown (Q6). */}
         {tab === "chat" && !trashed && (
           <SessionErrorsPanel
             sessionId={sessionId}
@@ -851,7 +799,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
               e.preventDefault();
               submit();
             }}
-            // Files dropped on the composer are attached.
             onDragOver={(e) => {
               if (!trashed && e.dataTransfer.types.includes("Files"))
                 e.preventDefault();
@@ -889,7 +836,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
                     submit();
                   }
                 }}
-                // A pasted screenshot or file is attached; pasted text is not.
                 onPaste={(e) => {
                   const pasted = Array.from(e.clipboardData.files);
                   if (pasted.length === 0) return;

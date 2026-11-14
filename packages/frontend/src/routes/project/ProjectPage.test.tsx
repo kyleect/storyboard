@@ -5,11 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type Project } from "../../api";
 import { ProjectPage } from "./ProjectPage";
 
-/*
- * A project's page has its chats (the table of the Sessions page, so the
- * tree needs no "All chats" row) and links to its other pages.
- */
-
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,

@@ -11,11 +11,6 @@ import { showError } from "../../lib/notify";
 import { useProjectActions } from "../../hooks/useProjectActions";
 import { useProject, useSaveProject } from "../../hooks/useProjects";
 
-/**
- * A project's page (sessions and projects design, Q13b): its name and
- * description, editable here; links to its files, agents, skills and
- * structured data; its chats in a table; New chat; Move to trash.
- */
 export function ProjectPage({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const actions = useProjectActions();
@@ -160,10 +155,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   );
 }
 
-/**
- * A project text (its description or system prompt), saved with its
- * button. Remounted when it changes.
- */
 function SavedText({
   label,
   help,
@@ -174,7 +165,6 @@ function SavedText({
 }: {
   label: string;
   help?: string;
-  /** For the button and the error: "description", "system prompt". */
   what: string;
   initial: string;
   disabled: boolean;

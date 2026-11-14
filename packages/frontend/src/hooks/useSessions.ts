@@ -10,10 +10,6 @@ export function useSession(sessionId: string) {
   });
 }
 
-/**
- * Creates a session, in a project or not. Creating one in a project counts as
- * using the project, so the project list is refetched.
- */
 export function useCreateSession(
   onCreated: (session: { id: string }) => void | Promise<void>,
 ) {

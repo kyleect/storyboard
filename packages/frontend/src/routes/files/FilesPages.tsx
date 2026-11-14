@@ -6,13 +6,6 @@ import { useReportDirty } from "../../stores/dirty";
 import { projectKeys } from "../../queries";
 import { FilesExplorer } from "../../components/explorer/FilesExplorer";
 
-/*
- * The global and project pages for files (files and memory design,
- * decisions 31 and 32): the editor-style view, showing the files available
- * at the page's scope.
- */
-
-/** The files view, for the global and project pages. */
 function FilesPanel({
   scope,
   readOnly,
@@ -20,7 +13,6 @@ function FilesPanel({
 }: {
   scope: FileScope;
   readOnly?: string | undefined;
-  /** How tall the view is; less is taken off with no page header. */
   height?: string;
 }) {
   const [dirty, setDirty] = useState(false);
@@ -36,17 +28,12 @@ function FilesPanel({
   );
 }
 
-/**
- * Global files (decision 31). The page says what it is by its place in the
- * app, so it has no heading or help text.
- */
 export function GlobalFilesPage() {
   return (
     <FilesPanel scope={{ scope: "global" }} height="calc(100vh - 11rem)" />
   );
 }
 
-/** A project's files (decision 32). */
 export function ProjectFilesPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),

@@ -6,8 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type McpServerView } from "../../../api";
 import { McpServers } from "./McpServers";
 
-/* The Settings MCP servers section (MCP design). */
-
 const server = (over: Partial<McpServerView> = {}): McpServerView => ({
   id: "s1",
   name: "files",

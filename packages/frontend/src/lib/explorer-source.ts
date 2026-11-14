@@ -9,18 +9,8 @@ import {
 import { fileKeys } from "../queries";
 import type { RootId } from "./explorer";
 
-/*
- * Where an editor-style explorer gets its files from. The tree, the tabs and
- * the editor never call the API themselves; they ask the `ExplorerSource` of
- * the root a file is in. Files have one source per scope (`filesSource`);
- * skills bring their own. A source also names its query keys, built with the
- * feature's key factory, so a change refreshes exactly what it touched.
- */
-
 export interface ExplorerSource {
-  /** Query keys for everything this source caches. */
   keys: {
-    /** Every list, folder list and file of the source. */
     all: readonly unknown[];
     list: (showDeleted: boolean) => readonly unknown[];
     folders: () => readonly unknown[];
@@ -39,13 +29,7 @@ export interface ExplorerSource {
   createFolder: (path: string) => Promise<unknown>;
   renameFolder: (path: string, to: string) => Promise<unknown>;
   deleteFolder: (path: string) => Promise<unknown>;
-  /**
-   * What an upload may be. Left out: the attachment types and size the
-   * Files view takes. A skill takes any file, and the backend checks its
-   * caps (settings) and says why when it refuses one.
-   */
   accepts?: { anyType: true };
-  /** Stores an accepted file under `name`; resolves to the key it got. */
   upload: (
     file: File,
     mediaType: string,
@@ -53,23 +37,15 @@ export interface ExplorerSource {
   ) => Promise<Pick<UploadedFile, "key">>;
 }
 
-/** A root folder of an explorer's tree, with where its files come from. */
 export interface ExplorerRoot {
   id: RootId;
   label: string;
   source: ExplorerSource;
-  /** Why nothing in the root can be changed; undefined when it can. */
   readOnly?: string | undefined;
-  /**
-   * Saving here reaches more than the page being edited from does. Set, it
-   * makes a save ask first and shows this as the reason.
-   */
   broadNote?: string | undefined;
-  /** The project the root belongs to: its color marks the root's tabs. */
   projectId?: string | undefined;
 }
 
-/** The files of one scope. */
 export function filesSource(scope: FileScope): ExplorerSource {
   return {
     keys: {

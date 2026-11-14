@@ -17,15 +17,6 @@ import { api, type SkillOwner } from "../../../api";
 import { skillKeys } from "../../../queries";
 import { zipPickedFolder } from "../lib/skill-zip";
 
-/*
- * Importing a skill from a zip or a folder (skills folders design, decisions
- * 15 to 17). Nothing is saved until the person has seen what is in it: the
- * backend reads the archive and answers with the skill's name, description and
- * files, and whether the name is already taken here. A taken name asks:
- * replace it (a new version of that skill), import under another name, or
- * cancel.
- */
-
 type Resolution = "replace" | "rename";
 
 const size = (n: number) =>
@@ -35,7 +26,6 @@ const size = (n: number) =>
       ? `${Math.round(n / 1024)} KB`
       : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
-/** The dialog for one picked archive; closing it forgets the archive. */
 export function SkillImportDialog({
   owner,
   zip,
@@ -43,10 +33,8 @@ export function SkillImportDialog({
   onImported,
 }: {
   owner: SkillOwner;
-  /** The archive, already a zip (a picked folder is zipped before this). */
   zip: Blob;
   onClose: () => void;
-  /** The name the skill was saved under. */
   onImported?: (name: string) => void;
 }) {
   const queryClient = useQueryClient();
@@ -186,10 +174,6 @@ export function SkillImportDialog({
   );
 }
 
-/**
- * Turns what the person picked into the zip to import: a zip as it is, or the
- * files of a folder zipped here.
- */
 export async function archiveFrom(
   files: readonly File[],
   kind: "zip" | "folder",

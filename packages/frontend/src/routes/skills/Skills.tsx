@@ -7,13 +7,6 @@ import { useReportDirty } from "../../stores/dirty";
 import { projectKeys } from "../../queries";
 import { SkillsExplorer } from "./components/SkillsExplorer";
 
-/*
- * Skills: the global and the project page, each the skills explorer
- * (`SkillsExplorer.tsx`). An agent's own skills are edited under the agent, in
- * the Agents view.
- */
-
-/** The skills explorer, with the guard against leaving unsaved edits. */
 function SkillsView({
   projectId,
   readOnly,
@@ -36,12 +29,10 @@ function SkillsView({
   );
 }
 
-/** Global skills: the explorer, with the built-in skills and the global ones. */
 export function GlobalSkillsPage() {
   return <SkillsView height="calc(100vh - 11rem)" />;
 }
 
-/** A project's skills, with the global and built-in ones shown too. */
 export function ProjectSkillsPage({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryKey: projectKeys.detail(projectId),

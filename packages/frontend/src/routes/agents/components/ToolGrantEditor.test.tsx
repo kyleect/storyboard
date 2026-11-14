@@ -6,8 +6,6 @@ import type { AgentToolInfo, ToolApprovalInfo } from "../../../api";
 import { emptyGrant, type ToolGrant } from "../../../lib/tool-grant";
 import { ToolGrantEditor } from "./ToolGrantEditor";
 
-/* The tools part of the agent editor (tool management design, decisions 1 to 8). */
-
 const tool = (
   name: string,
   group: AgentToolInfo["group"],
@@ -30,7 +28,6 @@ const TOOLS = [
   tool("read_webpage", "web", { off: true }),
 ];
 
-/** Two MCP servers: notes (one tool needs review) and calendar. */
 const MCP_TOOLS = [
   tool("mcp_notes_search", "mcp"),
   tool("mcp_notes_write", "mcp", { needsReview: true }),
@@ -47,7 +44,6 @@ const approvalsOf = (list: AgentToolInfo[]): ToolApprovalInfo[] =>
     fixed: false,
   }));
 
-/** Renders the editor with real state, and exposes what it last changed to. */
 function setup(
   start: ToolGrant = emptyGrant(),
   newTools: string[] = [],
@@ -80,14 +76,12 @@ function setup(
   return seen;
 }
 
-/** The ticking box of a tool row. */
 const boxOf = (name: string) =>
   screen
     .getByText(name)
     .closest(".mantine-Checkbox-root")
     ?.querySelector("input") as HTMLInputElement;
 
-/** The dropdown list carries the label too; the input is the one to use. */
 const select = (label: string) =>
   screen
     .getAllByLabelText(label)
@@ -101,7 +95,6 @@ describe("ToolGrantEditor", () => {
     setup();
     expect(screen.getByText("Files")).toBeTruthy();
     expect(screen.getByText("Web")).toBeTruthy();
-    // Files has its always-on tool; Web has none.
     expect(screen.getByText("1 of 3")).toBeTruthy();
     expect(screen.getByText("0 of 2")).toBeTruthy();
     expect(screen.queryByText("web_search")).toBeNull();
@@ -118,7 +111,6 @@ describe("ToolGrantEditor", () => {
     const seen = setup();
     fireEvent.click(screen.getByLabelText("Files tools"));
     expect(seen.grant.groups).toEqual(["files"]);
-    // files_read (always on) and files_edit, not files_kill.
     expect(screen.getByText("2 of 3")).toBeTruthy();
     open("Files");
     expect(screen.getByText("needs review")).toBeTruthy();
@@ -181,13 +173,11 @@ describe("ToolGrantEditor", () => {
     setup(emptyGrant(), [], {}, MCP_TOOLS);
     expect(screen.getByText("MCP")).toBeTruthy();
     expect(screen.getByText("0 of 3")).toBeTruthy();
-    // The servers are inside the group, which starts collapsed.
     expect(screen.queryByText("notes")).toBeNull();
     open("MCP");
     expect(screen.getByText("notes")).toBeTruthy();
     expect(screen.getByText("calendar")).toBeTruthy();
     expect(screen.getByText("0 of 1")).toBeTruthy();
-    // So are the servers' tools.
     expect(screen.queryByText("mcp_notes_search")).toBeNull();
     open("notes");
     expect(screen.getByText("mcp_notes_search")).toBeTruthy();
@@ -198,7 +188,6 @@ describe("ToolGrantEditor", () => {
     const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
     fireEvent.click(screen.getByLabelText("MCP tools"));
     expect(seen.grant.groups).toEqual(["mcp"]);
-    // Not the tool that needs review.
     expect(screen.getByText("2 of 3")).toBeTruthy();
   });
 

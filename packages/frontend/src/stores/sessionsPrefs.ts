@@ -1,16 +1,8 @@
 import { create } from "zustand";
 
-/*
- * What the Sessions page remembers between visits (Sessions page plan, D13
- * and P6): the sort direction and the page size. Kept in localStorage for
- * this browser, as the picked project is.
- */
-
-/** The page sizes the page offers; the backend accepts the same ones. */
 export const PAGE_SIZES = [10, 25, 50, 100] as const;
 export type PageSize = (typeof PAGE_SIZES)[number];
 
-/** By creation time: "desc" is newest first. */
 export type Direction = "asc" | "desc";
 
 const KEY = "harness.sessionsPrefs";
@@ -46,7 +38,7 @@ function save(prefs: Saved) {
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));
   } catch {
-    // storage unavailable; the choice lasts until the page reloads
+    // storage can be unavailable
   }
 }
 

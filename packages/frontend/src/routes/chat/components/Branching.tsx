@@ -24,15 +24,6 @@ import {
 } from "../../../api";
 import { sessionKeys } from "../../../queries";
 
-/*
- * Editing and branching in the transcript (message editing plan, part B):
- * the action row under a message, the box an edit is written in, the "2/3"
- * control on a message that has siblings, and the row under the end of the
- * line that lists what else continues from it. Every action works only when
- * the session is idle; the page does not show them otherwise.
- */
-
-/** The requests behind the controls; each refreshes the session after. */
 export function useBranchActions(sessionId: string, choices: Choices) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -75,7 +66,6 @@ export function useBranchActions(sessionId: string, choices: Choices) {
     mutationFn: (messageId: string) => api.deleteBranch(sessionId, messageId),
     ...options,
   });
-  // A fork is a new session: open it.
   const fork = useMutation({
     mutationFn: (a: { messageId: string; title: string }) =>
       api.forkSession(sessionId, a.messageId, a.title),
@@ -105,11 +95,9 @@ export function useBranchActions(sessionId: string, choices: Choices) {
   };
 }
 
-/** What is offered under one message. */
 export interface MessageActionsProps {
   messageId: string;
   branching: Branching;
-  /** Whether the message is the last of the line. */
   last: boolean;
   onEdit: () => void;
   onBranchOff: () => void;
@@ -117,10 +105,6 @@ export interface MessageActionsProps {
   onRegenerate: () => void;
 }
 
-/**
- * Edit (the user's own messages), Branch off (where a request ending there
- * is valid) and Regenerate (the last reply). Nothing when none applies.
- */
 export function MessageActions({
   messageId,
   branching,
@@ -180,7 +164,6 @@ export function MessageActions({
   );
 }
 
-/** The title a fork starts with. */
 export const forkTitle = (title: string) => `${title} (fork)`;
 
 function ForkForm({
@@ -220,7 +203,6 @@ function ForkForm({
   );
 }
 
-/** Asks for the new session's title, then forks. */
 export function openForkDialog(
   sessionTitle: string,
   onCreate: (title: string) => void,
@@ -239,7 +221,6 @@ export function openForkDialog(
   });
 }
 
-/** Under a forked session's title: where it came from. */
 export function ForkedFromLine({
   from,
 }: {
@@ -272,7 +253,6 @@ export function ForkedFromLine({
   );
 }
 
-/** The box an edit is written in, with Save in the default mode. */
 export function EditMessageBox({
   initial,
   hasFiles,
@@ -282,7 +262,6 @@ export function EditMessageBox({
   onCancel,
 }: {
   initial: string;
-  /** The message has attached files, which an edit leaves as they are. */
   hasFiles: boolean;
   defaultMode: "branch" | "in_place";
   saving: boolean;
@@ -360,10 +339,6 @@ export function EditMessageBox({
   );
 }
 
-/**
- * "2/3": which branch this message starts, with previous and next, and a
- * delete for this branch. Shown on a message that has live siblings.
- */
 export function BranchSwitcher({
   branches,
   disabled,
@@ -431,10 +406,6 @@ export function BranchSwitcher({
   );
 }
 
-/**
- * Under the end of the line: the other messages that continue from it, such
- * as what followed before a branch off. Each switches to it.
- */
 export function Continuations({
   items,
   disabled,

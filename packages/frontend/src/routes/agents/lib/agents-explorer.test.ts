@@ -189,7 +189,6 @@ describe("buildTree", () => {
       "Built-in",
     ]);
     const pov = must(skills.children?.[0]);
-    // Folders first, then files.
     expect(labels(pov.children)).toEqual(["refs", "SKILL.md"]);
     expect(labels(must(pov.children?.[0]).children)).toEqual(["deep", "a.md"]);
     expect(

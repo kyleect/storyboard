@@ -7,10 +7,6 @@ import {
   useSettingsForm,
 } from "../lib/settings-form";
 
-/**
- * How subagents work (agent delegation design, decisions 12 to 17), with
- * its own Save. Each agent can set its own reminders and line.
- */
 export function Subagents({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, SUBAGENT_KEYS, {
     childReminders: (v) =>
@@ -79,7 +75,6 @@ export function Subagents({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/** How much one run, one copy or move call, and one workspace read may do. */
 export function Limits({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, LIMIT_KEYS, {
     loopLimit: (v) =>

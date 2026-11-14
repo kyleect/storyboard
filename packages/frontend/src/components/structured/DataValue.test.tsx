@@ -3,8 +3,6 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DataValue } from "./DataValue";
 
-/* The read-only view of a piece of data (schemas and data design). */
-
 function show(schema: unknown, value: unknown) {
   render(
     <MantineProvider>

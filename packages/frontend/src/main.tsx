@@ -22,8 +22,6 @@ import { useWorkbench } from "./stores/workbench";
 
 import "@gfazioli/mantine-led/styles.css";
 
-// The routes are the addresses of the workbench's tabs. The workbench, drawn
-// by the root route, shows the tab; the routes themselves render nothing.
 const Page = () => null;
 
 const rootRoute = createRootRoute({ component: Layout });
@@ -94,8 +92,6 @@ const routeTree = rootRoute.addChildren([
     path: "/errors",
     component: Page,
   }),
-  // The tabs are in the address: /settings/<area>/<section>. Every page is
-  // this one route, so changing tabs does not remount the page.
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/settings",
@@ -128,7 +124,6 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (!root) throw new Error("No #root element");
 
-/** The app, in the theme colour chosen in Settings (Look & Feel). */
 function App() {
   const primaryColor = useAppearance((s) => s.primaryColor);
   return (
@@ -150,10 +145,6 @@ function App() {
   );
 }
 
-/**
- * The saved tabs belong to a profile, so the active one is asked for before
- * anything is drawn (profiles design 4.3).
- */
 async function start(container: HTMLElement) {
   if (token) {
     try {
@@ -162,8 +153,7 @@ async function start(container: HTMLElement) {
       useWorkbench.getState().reload();
       useAppearance.getState().reload();
     } catch {
-      // The backend is not reachable yet. The app opens on the Default
-      // profile's views, and the event stream corrects it once it connects.
+      // backend not reachable yet: the app opens on the Default profile and the event stream corrects it once it connects
     }
   }
   createRoot(container).render(

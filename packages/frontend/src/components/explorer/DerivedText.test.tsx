@@ -124,13 +124,11 @@ describe("MediaDescriptions settings", () => {
       .spyOn(api, "regenerateDescriptions")
       .mockResolvedValue({ queued: 2 });
     setup(info());
-    // The server reports a different model in force after the save.
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     expect(
       await screen.findByText("Generate descriptions for 3 files?"),
     ).toBeTruthy();
     expect(screen.getByText(/2 of 3 have no text/)).toBeTruthy();
-    // Saving alone writes nothing.
     expect(regenerate).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByRole("button", { name: "Fill the 2 with no text" }),

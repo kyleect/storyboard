@@ -4,13 +4,6 @@ import {
   type SchemaNode,
 } from "@harness/core";
 
-/*
- * The schema builder's model (schemas and data design, decision 15; plan
- * P10, layout A): a JSON Schema as a tree of fields that the builder edits,
- * and back. The builder offers the supported features (decision 17) and
- * nothing else, so a schema it makes always passes the features check.
- */
-
 export type FieldType =
   | "text"
   | "number"
@@ -23,33 +16,23 @@ export type FieldType =
 
 export type TextFormat = "" | (typeof SCHEMA_FORMATS)[number];
 
-/** One field of the tree. */
 export interface BuilderNode {
   id: string;
-  /** The property name; not used for the top level or a list's item. */
   key: string;
   type: FieldType;
   title: string;
   description: string;
-  /** Not used for the top level or a list's item. */
   required: boolean;
-  /** Text. */
   minLength?: number | undefined;
   maxLength?: number | undefined;
   pattern: string;
   format: TextFormat;
-  /** Number and whole number. */
   minimum?: number | undefined;
   maximum?: number | undefined;
-  /** Choice and multi-choice. */
   options: string[];
-  /** A choice whose options are numbers. */
   numeric: boolean;
-  /** Text, number, yes/no, choice and multi-choice only. */
   default?: unknown;
-  /** Group. */
   children: BuilderNode[];
-  /** List. */
   item?: BuilderNode | undefined;
   minItems?: number | undefined;
   maxItems?: number | undefined;
@@ -69,7 +52,6 @@ export const FIELD_TYPES: { value: FieldType; label: string }[] = [
 let counter = 0;
 const newId = () => `f${++counter}`;
 
-/** A new field of a type. */
 export function newNode(type: FieldType, key = ""): BuilderNode {
   return {
     id: newId(),
@@ -87,7 +69,6 @@ export function newNode(type: FieldType, key = ""): BuilderNode {
   };
 }
 
-/** The field with a new type, keeping its name, label and help. */
 export function changeType(node: BuilderNode, type: FieldType): BuilderNode {
   return {
     ...newNode(type, node.key),
@@ -98,12 +79,6 @@ export function changeType(node: BuilderNode, type: FieldType): BuilderNode {
   };
 }
 
-// ---- Schema to tree --------------------------------------------------------
-
-/**
- * The tree for a schema, or why the builder can't show it. The schema must
- * already use only the supported features.
- */
 export function fromSchema(
   body: unknown,
 ): { ok: true; root: BuilderNode } | { ok: false; reason: string } {
@@ -212,18 +187,13 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
   }
 }
 
-// ---- Tree to schema --------------------------------------------------------
-
-/** The object without its undefined and empty-text entries. */
 const clean = (o: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(
     Object.entries(o).filter(([, v]) => v !== undefined && v !== ""),
   );
-/** A schema node without its unset keywords. */
 const defined = (o: Record<string, unknown>): SchemaNode =>
   clean(o) as unknown as SchemaNode;
 
-/** The JSON Schema for a tree. */
 export function toSchema(node: BuilderNode): SchemaNode {
   const head = clean({ title: node.title, description: node.description });
   switch (node.type) {
@@ -311,9 +281,6 @@ export function toSchema(node: BuilderNode): SchemaNode {
   }
 }
 
-// ---- Checks ----------------------------------------------------------------
-
-/** Problems the builder can see, by field id; empty when it can save. */
 export function checkTree(root: BuilderNode): Record<string, string> {
   const out: Record<string, string> = {};
   const visit = (node: BuilderNode, inGroup: boolean) => {
@@ -355,9 +322,6 @@ export function checkTree(root: BuilderNode): Record<string, string> {
   return out;
 }
 
-// ---- Editing the tree ------------------------------------------------------
-
-/** Every field, depth first, with its depth and parent. */
 export function flatten(root: BuilderNode): {
   node: BuilderNode;
   depth: number;
@@ -381,7 +345,6 @@ export function flatten(root: BuilderNode): {
   return out;
 }
 
-/** The tree with one field changed. */
 export function updateNode(
   root: BuilderNode,
   id: string,
@@ -395,7 +358,6 @@ export function updateNode(
   };
 }
 
-/** The tree with a field added to a group (the top level when it is one). */
 export function addField(
   root: BuilderNode,
   groupId: string,
@@ -407,7 +369,6 @@ export function addField(
   }));
 }
 
-/** The tree without a field of a group. */
 export function removeField(root: BuilderNode, id: string): BuilderNode {
   return {
     ...root,
@@ -418,7 +379,6 @@ export function removeField(root: BuilderNode, id: string): BuilderNode {
   };
 }
 
-/** The tree with a field moved up (-1) or down (1) among its group's. */
 export function moveField(
   root: BuilderNode,
   id: string,
@@ -442,7 +402,6 @@ export function moveField(
   };
 }
 
-/** A field by id. */
 export function findNode(
   root: BuilderNode,
   id: string,

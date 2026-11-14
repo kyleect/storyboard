@@ -25,7 +25,6 @@ type Section = {
   render: (view: SettingsView) => ReactNode;
 };
 
-/** An area is a vertical tab: horizontal tabs of sections, or one page. */
 type Area = {
   value: string;
   label: string;
@@ -33,10 +32,6 @@ type Area = {
   render?: (view: SettingsView) => ReactNode;
 };
 
-/**
- * The areas and sections. Their values are what the address says:
- * /settings/<area>/<section>.
- */
 const AREAS: readonly Area[] = [
   {
     value: "general",
@@ -128,16 +123,11 @@ const AREAS: readonly Area[] = [
   },
 ];
 
-/** The address of a section: its area's first, with none given. */
 function settingsPath(area: Area, section?: Section) {
   const chosen = section ?? area.sections?.[0];
   return chosen ? `${area.value}/${chosen.value}` : area.value;
 }
 
-/**
- * Which area and section an address names. What it does not name, or names
- * wrongly, is the first.
- */
 function resolveSettingsPath(path: string | undefined) {
   const [areaValue, sectionValue] = (path ?? "").split("/");
   const area = AREAS.find((a) => a.value === areaValue) ?? AREAS[0];
@@ -147,7 +137,6 @@ function resolveSettingsPath(path: string | undefined) {
   return { area, section, canonical: settingsPath(area, section) };
 }
 
-/** Horizontal tabs, for an area with several groups of settings. */
 function SubTabs({
   sections,
   value,
@@ -155,7 +144,6 @@ function SubTabs({
   onChange,
 }: {
   sections: readonly Section[];
-  /** The chosen section; none while the area is not the one shown. */
   value: string | undefined;
   view: SettingsView;
   onChange: (section: Section) => void;
@@ -184,11 +172,6 @@ function SubTabs({
   );
 }
 
-/**
- * The tabs are in the address (/settings/<area>/<section>), so a page of
- * settings can be linked to. Every page is one route, so going from tab to
- * tab does not remount the page and lose an edit not yet saved.
- */
 export function Settings() {
   const query = useSettings();
   const { _splat: path } = useParams({ strict: false });
@@ -198,11 +181,8 @@ export function Settings() {
   const go = (to: string, replace = false) =>
     void navigate({ to: "/settings/$", params: { _splat: to }, replace });
 
-  // An address that names no area or section, or a wrong one, is replaced
-  // by the one that shows.
   useEffect(() => {
     if (path !== canonical) go(canonical, true);
-    // go() only calls navigate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, canonical]);
 

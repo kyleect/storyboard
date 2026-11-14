@@ -10,11 +10,6 @@ import {
   type AskUserState,
 } from "../../../components/AskUserForm";
 
-/**
- * The form another tool shows during its call, under the call (tool
- * prompts D8): open while the run waits, then the answers until the result
- * is stored, then the answer kept with the result (D9).
- */
 export function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
   const result = asks.results.get(callId);
   if (result?.prompt) return <PromptAnswer prompt={result.prompt} />;
@@ -46,7 +41,6 @@ export function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
   }
   return null;
 }
-/** How the user answered a tool's form, kept with its result (D9). */
 export function PromptAnswer({ prompt }: { prompt: PromptRecord }) {
   return (
     <Paper p="xs" withBorder bg="var(--mantine-color-default-hover)">
@@ -68,7 +62,6 @@ export function PromptAnswer({ prompt }: { prompt: PromptRecord }) {
     </Paper>
   );
 }
-/** Where an `ask_user` call's form stands. */
 export function askState(callId: string, asks: Asks): AskUserState {
   const result = asks.results.get(callId);
   if (result && !result.isError) {
@@ -94,10 +87,6 @@ export function askState(callId: string, asks: Asks): AskUserState {
   }
   return { mode: "closed" };
 }
-/**
- * An `ask_user` result: the outcome, with the JSON the model received one
- * click away (D16). The answers themselves show in the form.
- */
 export function AskUserResult({ message }: { message: ToolResultMessage }) {
   return (
     <Paper p="sm" withBorder>
@@ -120,7 +109,6 @@ export function AskUserResult({ message }: { message: ToolResultMessage }) {
     </Paper>
   );
 }
-/** A result's text, indented when it is JSON. */
 export function showResult(content: string): string {
   try {
     return JSON.stringify(JSON.parse(content), null, 2);

@@ -96,16 +96,6 @@ import {
 } from "../../../components/structured/StructuredTabs";
 import { showError } from "../../../lib/notify";
 
-/*
- * The Agents view (agents explorer design): an editor-style explorer. The
- * tree has the Built-in agents, the Global ones and, on a project's page,
- * the project's; under each agent its Skills and its Schemas. An agent opens
- * as a form (the prompt, with its settings beside it); a skill file as a
- * text editor; a schema or its data in the Structured Data tabs. An agent's
- * skills and schemas are read when its node is first opened. The rules for
- * the tree and the tabs are in `agents-explorer.ts`.
- */
-
 const GLOBAL: AgentScope = { scope: "global" };
 const BUILTIN_REASON = "A built-in agent cannot be changed.";
 const INHERITED_REASON =
@@ -117,7 +107,6 @@ const EMPTY_INHERITED: Record<Origin, readonly SkillWithFiles[]> = {
   builtin: [],
 };
 
-/** A name asked for in a small dialog. */
 function askName(
   title: string,
   label: string,
@@ -168,9 +157,7 @@ export function AgentsExplorer({
   readOnly,
   onDirtyChange,
 }: {
-  /** A project's page: its agents are a root too. */
   projectId?: string | undefined;
-  /** Why the project's agents cannot be changed, when that is so. */
   readOnly?: string | undefined;
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }) {
@@ -212,8 +199,6 @@ export function AgentsExplorer({
   } | null>(null);
   const counter = useRef(0);
 
-  // The agents whose skills and schemas have been asked for: the ones opened
-  // in the tree, and those with a tab.
   const [wanted, setWanted] = useState<ReadonlySet<string>>(() => {
     const ids = new Set<string>();
     for (const [value, on] of Object.entries(initial.expanded)) {
@@ -245,7 +230,6 @@ export function AgentsExplorer({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
 
-  // ---- a request from a chat message's badge: this agent, at this version
   const request = useAgentFocus((s) => s.request);
   const clearRequest = useAgentFocus((s) => s.clear);
   const [showVersion, setShowVersion] = useState<{
@@ -253,7 +237,6 @@ export function AgentsExplorer({
     version: number;
   } | null>(null);
 
-  // ---- the default agent: the project's on a project's page, else the global
   const settings = useSettings();
   const project = useQuery({
     queryKey: projectKeys.detail(projectId ?? ""),
@@ -271,7 +254,6 @@ export function AgentsExplorer({
       : undefined;
   const setDefault = useSetDefaultAgent(projectId);
 
-  // ---- the agents
   const globalAgents = useQuery({
     queryKey: agentKeys.list(GLOBAL, showDeleted),
     queryFn: () => api.listAgents(GLOBAL, showDeleted),
@@ -310,7 +292,6 @@ export function AgentsExplorer({
       });
     }
     return list;
-    // rows() only reads its argument.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalAgents.data, projectAgents.data, projectId]);
   const agentRows = useMemo(() => {
@@ -319,9 +300,6 @@ export function AgentsExplorer({
       for (const a of r.agents) m.set(a.id, { row: a, root: r.id });
     return m;
   }, [roots]);
-  // Taken once the lists are in: the agent's tab opens, and its Versions list
-  // on that version. Done while rendering, as a state change that follows from
-  // the request; the request is cleared afterwards.
   const [handled, setHandled] = useState<object | null>(null);
   const listsIn =
     !globalAgents.isPending && !(projectId && projectAgents.isPending);
@@ -349,7 +327,6 @@ export function AgentsExplorer({
       : root === "project"
         ? readOnly
         : undefined;
-  /** Why an agent's own things cannot be changed, when that is so. */
   const agentReason = (agentId: string): string | undefined => {
     const a = agentRows.get(agentId);
     if (!a) return undefined;
@@ -358,7 +335,6 @@ export function AgentsExplorer({
     return reasonOf(a.root);
   };
 
-  // ---- what each opened agent has: skills and schemas
   const loadIds = useMemo(
     () => [...wanted].filter((id) => agentRows.has(id)),
     [wanted, agentRows],
@@ -463,7 +439,6 @@ export function AgentsExplorer({
     globalAgents.isPending ||
     (projectId !== undefined && projectAgents.isPending);
 
-  // ---- tabs
   const open = (tab: Omit<TabState, "transient">, permanent: boolean) => {
     want(tabAgent(tab));
     setTabsState((s) => openTab(s, tab, permanent));
@@ -519,7 +494,6 @@ export function AgentsExplorer({
   const rootLabel = (root: string) =>
     roots.find((r) => r.id === root)?.label ?? root;
 
-  // ---- opening and making things
   const openRef = (ref: NodeRef, permanent: boolean) => {
     const [agentId = ""] = splitPath(ref.path, 1);
     if (ref.kind === "agent") {
@@ -696,7 +670,6 @@ export function AgentsExplorer({
           .catch(showError("Could not delete the data")),
     });
 
-  // ---- import
   const importFile = useMutation({
     mutationFn: (a: { markdown: string; replace: boolean }) =>
       api.importAgent(projectScope ?? GLOBAL, a.markdown, a.replace),
@@ -720,7 +693,6 @@ export function AgentsExplorer({
         showError("Could not import the agent")(err);
         return;
       }
-      // Ask each time (decision 28).
       modals.openConfirmModal({
         title: "An agent with this name exists",
         children: (
@@ -737,7 +709,6 @@ export function AgentsExplorer({
     },
   });
 
-  // ---- what a row's menu offers
   const actionsFor = (ref: NodeRef): TreeAction[] => {
     const [agentId = "", rest = ""] = splitPath(ref.path, 1);
     const agent = agentRows.get(agentId);
@@ -860,7 +831,6 @@ export function AgentsExplorer({
     }
   };
 
-  // ---- the tree and the tabs
   const targetRoot: "global" | "project" = projectId ? "project" : "global";
   const newAgentLocked = reasonOf(targetRoot);
   const header: ReactNode = (
@@ -1212,7 +1182,6 @@ export function AgentsExplorer({
   );
 }
 
-/** The agent of a tab, read, as the form needs it. */
 function AgentTabContent({
   agentId,
   root,
@@ -1284,7 +1253,6 @@ function parseRef(value: string): NodeRef {
   };
 }
 
-/** A tab as the node it points at, to read its place. */
 function refOf(t: TabState): NodeRef {
   return { root: t.root, kind: "file", path: t.key };
 }

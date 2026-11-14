@@ -7,13 +7,6 @@ import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import type { MediaType } from "@harness/core";
 
-/*
- * The text editor of the Files view: CodeMirror filling its container, with
- * line numbers, undo, search, and Markdown or JSON highlighting by the
- * file's type. The text is the source of truth: the parent keeps it, and
- * text from the parent that differs from the editor's replaces it.
- */
-
 const layout = EditorView.theme({
   "&": {
     height: "100%",
@@ -64,11 +57,9 @@ export function TextEditor({
   value: string;
   mediaType: MediaType;
   onChange: (text: string) => void;
-  /** Ctrl/Cmd+S. */
   onSave?: () => void;
   onCursor?: (cursor: Cursor) => void;
   readOnly?: boolean;
-  /** For screen readers. */
   label: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -79,7 +70,6 @@ export function TextEditor({
   }, [onChange, onSave, onCursor]);
   const scheme = useComputedColorScheme("light");
 
-  // Made once per mount, type, read-only state and colour scheme; the text
   // is applied below, because remaking the editor would lose the cursor.
   useEffect(() => {
     if (!host.current) return;

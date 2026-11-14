@@ -9,20 +9,6 @@ import {
 } from "../../../api";
 import { settingsKeys } from "../../../queries";
 
-/*
- * The settings page is a set of forms, each with its own Save that stores
- * only its own fields (the backend takes a partial settings object). The
- * forms are grouped under vertical tabs, one per area; an area with several
- * groups of settings splits them again under horizontal tabs. The tabs are
- * in the address: /settings/<area>/<section>.
- *
- *   General  Models · Server · Look & Feel
- *   Chat     System prompt · Instructions · Session titles · Editing · Media
- *   Agents   Subagents · Limits
- *   Tools    Permissions · MCP servers
- *   Trash
- */
-
 export const MODEL_KEYS = [
   "model",
   "reasoningEffort",
@@ -66,7 +52,6 @@ export const DESCRIBER_KEYS = [
   "mediaDescriberModel",
 ] as const;
 export const TRASH_KEYS = ["trashRetentionDays"] as const;
-/** Saves settings, showing the outcome. */
 export function useSaveSettings() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -83,16 +68,11 @@ export function useSaveSettings() {
       }),
   });
 }
-/** Overridden-by-env notes for the settings page. */
 export function envNoteFor(view: SettingsView) {
   const env = view.overriddenByEnv;
   return (key: keyof SettingsShape) =>
     env[key] ? `Overridden by the ${env[key]} environment variable` : undefined;
 }
-/**
- * The form for some of the settings: filled from the view (and again when it
- * changes).
- */
 export function useSettingsFields<K extends keyof SettingsShape>(
   view: SettingsView,
   keys: readonly K[],
@@ -108,9 +88,6 @@ export function useSettingsFields<K extends keyof SettingsShape>(
     validate,
   });
 
-  // React runs a hidden tab's effects again when the tab is shown, even with
-  // the same view, so refill only for a view not yet filled in: an edit not
-  // yet saved survives leaving a tab and coming back to it.
   const filled = useRef(view);
   useEffect(() => {
     if (filled.current === view) return;
@@ -118,7 +95,6 @@ export function useSettingsFields<K extends keyof SettingsShape>(
     const values = pick();
     form.setValues(values);
     form.resetDirty(values);
-    // Only when fresh data arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -128,7 +104,6 @@ export function useSettingsFields<K extends keyof SettingsShape>(
     envNote: envNoteFor(view),
   };
 }
-/** The form for some of the settings, with a Save that stores only them. */
 export function useSettingsForm<K extends keyof SettingsShape>(
   view: SettingsView,
   keys: readonly K[],

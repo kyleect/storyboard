@@ -77,7 +77,6 @@ describe("skillsSource", () => {
     const s = skillsSource(GLOBAL, "builtin");
     expect(s.keys.all).toEqual(skillKeys.treeOf(GLOBAL, "builtin"));
     expect(s.keys.list(true)).toEqual(skillKeys.tree(GLOBAL, "builtin", true));
-    // Every key is under the skills root, so skills.changed refreshes it.
     expect(s.keys.detail("a/b").slice(0, 1)).toEqual(["skills"]);
     expect(s.keys.folders().slice(0, 1)).toEqual(["skills"]);
   });

@@ -4,13 +4,6 @@ import type { Usage } from "@harness/core";
 import { api } from "../api";
 import { modelKeys } from "../queries";
 
-/*
- * How full a session's context is (context usage design): the latest model
- * call's prompt plus output tokens, against one slot's context size from
- * llama-server's /props.
- */
-
-/** From 75% the meter shows a warning color, from 90% a danger color. */
 const WARN = 75;
 const DANGER = 90;
 
@@ -20,10 +13,8 @@ const compact = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });
 
-/** Tokens in the context after a model call. */
 export const used = (u: Usage) => u.promptTokens + u.completionTokens;
 
-/** The usage of the latest message that has one; undefined when none. */
 export function latestUsage(
   messages: readonly { usage: Usage | null }[],
 ): Usage | undefined {
@@ -38,11 +29,6 @@ function color(percent: number) {
   return percent >= DANGER ? "red" : percent >= WARN ? "yellow" : "blue";
 }
 
-/**
- * The context ring (in the workbench's status bar): used / size, percent and
- * tokens left, with the prompt/output split on hover. When the size is unknown, the token count
- * only. Nothing before the first model call reports usage.
- */
 export function ContextMeter({
   usage,
   model,
@@ -50,15 +36,8 @@ export function ContextMeter({
   compact = false,
 }: {
   usage: Usage | undefined;
-  /** The model whose context size is read; undefined: the server's. */
   model: string | undefined;
-  /**
-   * Tokens used by the session's finished subagent runs, over all their
-   * calls. Shown in the tooltip only: a subagent has its own context, so it
-   * does not count toward this one.
-   */
   subagentUsage?: Usage | null;
-  /** A small ring and small text, for the status bar. */
   compact?: boolean;
 }) {
   const size = useQuery({
@@ -140,7 +119,6 @@ export function ContextMeter({
   );
 }
 
-/** A session list's token count (no context size is read for lists). */
 export function UsageBadge({ usage }: { usage: Usage | null }) {
   if (!usage) return null;
   const total = used(usage);

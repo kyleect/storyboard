@@ -9,8 +9,6 @@ import {
   renderLinearText,
 } from "./linear";
 
-/* The linear view's ordering and filtering. */
-
 const t = (n: number) => `2026-01-01T00:00:${String(n).padStart(2, "0")}.000Z`;
 
 let id = 0;
@@ -95,7 +93,6 @@ function session(): SessionDebug {
         content: "result text",
         isError: false,
       }),
-      // A subagent's task: saved just before its run.started.
       msg("task", 5, "B", { role: "user", content: "Do the sub task" }),
       msg("a2", 7, "A", {
         role: "assistant",
@@ -184,7 +181,6 @@ describe("buildLinear", () => {
     });
     const sent = items.find((i) => i.text === "Label\n\nUse tool_b");
     expect(sent?.title).toBe("User (sent to the subagent)");
-    // Shown once, at its event, not again as a loose message.
     expect(items.filter((i) => i.text === "Label\n\nUse tool_b")).toHaveLength(
       1,
     );
@@ -246,7 +242,6 @@ describe("buildLinear", () => {
       (i) => i.raw && (i.raw as { id?: string }).id,
     );
     const at = (m: string) => titles.indexOf(m);
-    // After the subagent run started (t5) and before it finished (t6 event ties flush first).
     expect(at("partial")).toBeGreaterThan(at("task"));
     expect(at("partial")).toBeLessThan(at("a2"));
     expect(at("late")).toBe(titles.length - 1);
@@ -303,18 +298,15 @@ describe("filterLinear", () => {
 describe("renderLinearText", () => {
   const LONG = `failure: ${"x".repeat(300)} END`;
 
-  /** A session with the things the table used to shorten or hide. */
   function detailed(): SessionDebug {
     const s = session();
     s.session = { id: "s", title: "My story" } as SessionDebug["session"];
-    // An assistant message with its model and token counts.
     s.messages[1] = {
       ...(s.messages[1] as DebugMessage),
       model: "qwen",
       reasoningEffort: "low",
       usage: { promptTokens: 120, completionTokens: 30 },
     };
-    // A tool result with the user's decision comment and a form.
     s.messages[2] = msg("tr1", 4, "A", {
       role: "tool",
       callId: "c1",
@@ -369,22 +361,17 @@ describe("renderLinearText", () => {
 
   it("does not shorten anything: events, tools, decision comments", () => {
     const text = renderLinearText(detailed());
-    // A long error is whole, not cut at the table's width.
     expect(text).toContain(LONG);
-    // The full tool definition, not only its name.
     expect(text).toContain("tool echo: Echoes its input.");
     expect(text).toContain(
       'input schema: {"type":"object","properties":{"text":{"type":"string"}}}',
     );
-    // Model and tokens on the reply.
     expect(text).toContain(
       "model qwen · reasoning low · tokens in 120 / out 30",
     );
-    // The decision comment and the structured result, which the content lacks.
     expect(text).toContain("[details]");
     expect(text).toContain("ok but be careful");
     expect(text).toContain('"structured": true');
-    // A run's full id, to find it in the JSON export.
     expect(text).toContain("run id: A");
     expect(text).toContain("subagent, depth 1");
   });
@@ -420,7 +407,6 @@ describe("renderLinearText", () => {
 });
 
 describe("subagents in the linear view", () => {
-  /** B is started by the call c1 of run A. */
   function withCall(): SessionDebug {
     const s = session();
     s.runs[1] = run("B", {
@@ -452,7 +438,6 @@ describe("subagents in the linear view", () => {
 
   it("times a run's prompt and tools by the run.started event, not the run row", () => {
     const s = session();
-    // The run row is written before the event is: earlier than it.
     s.runs[0] = run("A", { startedAt: t(0) });
     const items = buildLinear(s);
     const startedAt = items.find(
@@ -464,7 +449,6 @@ describe("subagents in the linear view", () => {
         startedAt,
       );
     }
-    // So the times never run backwards.
     const times = items.flatMap((i) => (i.time === null ? [] : [i.time]));
     expect(times).toEqual([...times].sort());
   });

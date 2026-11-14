@@ -35,17 +35,8 @@ import {
   type NodeRef,
 } from "../lib/agents-explorer";
 
-/*
- * The explorer of the Agents view: roots, their agents, and under each agent
- * its Skills and Schemas. Rows from somewhere above the agent (inherited
- * skills and schemas) have a link icon and a tinted name, and say where they
- * come from. It holds no data of its own; the parent gives it the tree and
- * does what the actions ask.
- */
-
 const INHERITED = "var(--mantine-color-blue-6)";
 
-/** One thing a row's menu can do. */
 export interface TreeAction {
   label: string;
   onClick: () => void;
@@ -69,20 +60,14 @@ export interface AgentsTreeProps {
   info: ReadonlyMap<string, NodeInfo>;
   initialExpanded: Record<string, boolean>;
   onExpandedChange: (state: Record<string, boolean>) => void;
-  /** The value of the node shown in the active tab, to select it. */
   activeValue: string | null;
   showDeleted: boolean;
   onToggleDeleted: () => void;
   onOpen: (ref: NodeRef, permanent: boolean) => void;
-  /** What the menu of a row offers; none, no menu. */
   actionsFor: (ref: NodeRef) => TreeAction[];
-  /** The header's buttons: New agent and Import. */
   header: ReactNode;
-  /** The agent new sessions start with here; null for none. */
   defaultId: string | null;
-  /** Why the default cannot be changed, when it cannot. */
   defaultLocked: string | undefined;
-  /** Makes an agent the default, or (null) clears the default. */
   onSetDefault: (agentId: string | null) => void;
 }
 
@@ -92,7 +77,6 @@ export function AgentsTree(props: AgentsTreeProps) {
     initialExpandedState: props.initialExpanded,
     onExpandedStateChange: props.onExpandedChange,
   });
-  // The agent row the pointer or the keyboard is on, to show its radio icon.
   const [near, setNear] = useState<string | null>(null);
   const [menu, setMenu] = useState<{
     x: number;
@@ -100,8 +84,6 @@ export function AgentsTree(props: AgentsTreeProps) {
     ref: NodeRef;
   } | null>(null);
 
-  // The item in the active tab is the selected row, and the rows above it
-  // are opened so it can be seen, as in an editor.
   const controller = useRef(tree);
   useEffect(() => {
     controller.current = tree;
@@ -391,7 +373,6 @@ export function AgentsTree(props: AgentsTreeProps) {
   );
 }
 
-/** The values of the nodes above `value`, outermost first. */
 function ancestors(nodes: readonly TreeNode[], value: string): string[] {
   const walk = (list: readonly TreeNode[], path: string[]): string[] | null => {
     for (const n of list) {

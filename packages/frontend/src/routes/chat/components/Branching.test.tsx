@@ -39,11 +39,6 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-/*
- * The controls on their own: which actions each message is offered, what the
- * edit box sends, and how the "2/3" control moves between branches.
- */
-
 afterEach(() => vi.restoreAllMocks());
 
 function ui(node: React.ReactNode) {

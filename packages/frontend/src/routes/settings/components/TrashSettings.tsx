@@ -21,7 +21,6 @@ import { useSessionActions } from "../../../hooks/useSessionActions";
 import { showError } from "../../../lib/notify";
 import { TRASH_KEYS, useSettingsForm } from "../lib/settings-form";
 
-/** How long items stay in the trash. */
 export function TrashRetention({ view }: { view: SettingsView }) {
   const { form, save, env, envNote } = useSettingsForm(view, TRASH_KEYS, {
     trashRetentionDays: (v) =>
@@ -49,12 +48,6 @@ export function TrashRetention({ view }: { view: SettingsView }) {
     </form>
   );
 }
-/**
- * What is in the trash (sessions and projects design, Q3b, Q3c, Q12):
- * projects with the sessions trashed with them, and sessions trashed on
- * their own. Open read-only, restore, delete forever, or empty the trash.
- * Deleting asks first (Q4a).
- */
 export function TrashSection() {
   const actions = useSessionActions();
   const trash = useQuery({ queryKey: trashKeys.all, queryFn: api.getTrash });

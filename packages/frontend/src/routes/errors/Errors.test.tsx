@@ -15,8 +15,6 @@ import { api, type ErrorEntry, type ErrorFilterOptions } from "../../api";
 import { useAppEvents } from "../../hooks/useAppEvents";
 import { ErrorsPage, SessionErrorsPanel } from "./Errors";
 
-/* The errors consoles (error reporting plan, P7, P8). */
-
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
@@ -130,7 +128,6 @@ function renderWith(node: ReactNode) {
   );
 }
 
-/** The global page, with the app-wide stream that keeps it live. */
 function Page() {
   useAppEvents();
   return <ErrorsPage />;
@@ -160,7 +157,6 @@ describe("the errors page", () => {
     expect(code.textContent).toContain("Arguments:");
     expect(code.textContent).toContain("at fetchText");
 
-    // A failed run: no transcript link, nothing more to show.
     const run = within(items[0] as HTMLElement);
     expect(run.getByText("run")).toBeTruthy();
     expect(run.getByText("Solo")).toBeTruthy();
@@ -265,7 +261,6 @@ describe("the session's errors panel", () => {
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    // The session is known here, so no session link.
     expect(screen.queryByText("Stories / Lighthouse")).toBeNull();
     // Shown in a Collapse, which jsdom does not animate open.
     fireEvent.click(screen.getByText("Show in transcript"));

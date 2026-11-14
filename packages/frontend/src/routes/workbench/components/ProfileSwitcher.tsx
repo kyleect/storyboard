@@ -5,13 +5,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../../../api";
 import { profileKeys } from "../../../queries";
 
-/*
- * The profile switcher at the bottom of the rail (profiles design 4.3). A
- * profile is a whole workspace of its own, so choosing one replaces what every
- * page shows. The switch itself is announced to every window on the app-wide
- * stream, which resets this one; the backend refuses it while a run is active,
- * and the reason is shown here.
- */
 export function ProfileSwitcher({ onManage }: { onManage: () => void }) {
   const listing = useQuery({
     queryKey: profileKeys.list(),

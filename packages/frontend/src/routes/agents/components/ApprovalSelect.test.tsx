@@ -4,8 +4,6 @@ import { describe, expect, it } from "vitest";
 import type { ToolApprovalInfo } from "../../../api";
 import { ApprovalSelect } from "../Agents";
 
-/* The agent editor's approval choice for one tool (agent tool approval design, Q1, Q2, Q4, Q5). */
-
 const tool = (over: Partial<ToolApprovalInfo> = {}): ToolApprovalInfo => ({
   name: "web_fetch",
   description: "Fetches a page.",
@@ -32,7 +30,6 @@ function setup(props: {
       />
     </MantineProvider>,
   );
-  // The dropdown list carries the label too; the input is the one to use.
   const input = screen
     .getAllByLabelText("Approval for web_fetch")
     .find((el) => el.tagName === "INPUT") as HTMLInputElement;

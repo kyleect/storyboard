@@ -8,20 +8,6 @@ import {
   recordingFile,
 } from "../lib/audio";
 
-/*
- * Records from the microphone and hands back a WAV file (see audio.ts for
- * why WAV, 16 kHz and 30 seconds). There are two buttons:
- *
- * - Record: the recording is attached to the message being written.
- * - Record & send: the recording is sent as soon as it is made.
- *
- * Either one starts the recording and turns into a Stop button; it also stops
- * by itself at the length limit. What happens to the file is up to the
- * caller, which is told which button started the recording. Needs a secure
- * page (https or localhost) and the user's permission.
- */
-
-/** What to do with a recording: attach it, or attach it and send. */
 export type RecordingMode = "attach" | "send";
 
 type Phase = "idle" | "recording" | "processing";
@@ -39,13 +25,9 @@ export function VoiceButtons({
   sendDisabled,
   title,
 }: {
-  /** Called with the finished recording and the button that started it. */
   onRecorded: (file: File, mode: RecordingMode) => void;
-  /** Disables both buttons. */
   disabled?: boolean;
-  /** Disables Record & send only, for example while a run is in progress. */
   sendDisabled?: boolean;
-  /** A tooltip for both buttons, to say why they are disabled. */
   title?: string;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -54,13 +36,11 @@ export function VoiceButtons({
   const recorder = useRef<MediaRecorder | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const mounted = useRef(true);
-  // The latest callback, as the recording ends long after it was started.
   const callback = useRef(onRecorded);
   useEffect(() => {
     callback.current = onRecorded;
   });
 
-  // Leaving the page while recording stops the microphone.
   useEffect(() => {
     mounted.current = true;
     return () => {

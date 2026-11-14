@@ -22,7 +22,6 @@ export function useDebouncedFlag(
       if (active) shownAt.current = Date.now();
       setVisible(active);
     }, wait);
-    // When `active` flips back first, this cancels the pending change.
     return () => clearTimeout(timer);
   }, [active, visible, showDelay, minVisible]);
   return visible;

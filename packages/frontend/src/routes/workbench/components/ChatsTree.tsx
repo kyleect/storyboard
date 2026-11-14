@@ -40,42 +40,24 @@ import { UnreadDot } from "../../../components/UnreadDot";
 import { SessionMenu } from "../../../components/SessionMenu";
 import { useProjectActions } from "../../../hooks/useProjectActions";
 
-/*
- * The chats tree in the workbench's sidebar (chat workbench design, 4.1):
- * each project, newest use first, opening to its latest chats, and "No
- * project" for the standalone chats. A project's row opens its page, which has
- * its other pages and all its chats. A single click opens a tab in italics, a
- * double click keeps it. Chats are read only for the projects that are open.
- */
-
-/** The group of standalone chats; a project's group is `project:<id>`. */
 export const NO_PROJECT_NODE = "none";
 const projectNode = (id: string) => `project:${id}`;
 
-/** How many chats a project (or "No project") lists before "Show all". */
 export const TREE_CHATS = 5;
 
-/** What the tree reports: the row that was used last, for New chat. */
 export interface FocusedRow {
   projectId: string | null;
 }
 
 interface Handlers {
   activeId: string | null;
-  /** One click opens in italics; `permanent` (two clicks) keeps the tab. */
   onOpen: (tab: NewWorkbenchTab, permanent: boolean) => void;
   onFocusRow: (row: FocusedRow) => void;
   activity: RunSummary | undefined;
-  /** Lower-case text the names must contain; empty shows everything. */
   filter: string;
   unread: UnreadSessions;
 }
 
-/**
- * The background of the open chat under a project of this color: darker than
- * the project row's tint. On a light page that is a more opaque tint; on a dark
- * page "darker" is a more transparent one, so more of the page shows through.
- */
 const selectedChatBackground = (color: ProjectColor) =>
   `light-dark(var(--mantine-color-${color}-light-hover), color-mix(in srgb, var(--mantine-color-${color}-filled) 18%, transparent))`;
 
@@ -100,18 +82,10 @@ function Row({
   onClick: () => void;
   onDoubleClick?: () => void;
   right?: ReactNode;
-  /** Set for a row that opens and closes. */
   expanded?: boolean;
-  /** The chevron's click; a click on the row only ever opens it. */
   onToggle?: () => void;
   bold?: boolean;
-  /** A project's color: the row's background. */
   tint?: ProjectColor | null;
-  /**
-   * A project's color for a row that has no tint of its own (a chat): when
-   * the row is open it is a darker shade of the project row's tint (see
-   * `selectedChatBackground`).
-   */
   selectedTint?: ProjectColor | null | undefined;
 }) {
   return (
@@ -144,7 +118,6 @@ function Row({
               ? selectedChatBackground(selectedTint)
               : "var(--mantine-primary-color-light)"
             : undefined,
-        // A tinted row still shows which one is open.
         boxShadow:
           tint && active
             ? `inset 3px 0 0 var(--mantine-color-${tint}-filled)`
@@ -207,7 +180,6 @@ function ChatRow({
   session: SessionListItem;
   depth: number;
   h: Handlers;
-  /** The project's color, for the chat's icon. */
   color?: ProjectColor | null | undefined;
 }) {
   const tab: NewWorkbenchTab = {
@@ -240,11 +212,6 @@ function ChatRow({
   );
 }
 
-/**
- * The chats of a project, or of "No project": the first few, then a row that
- * opens the full list (the project's page, or the table of chats with no
- * project). A filter looks through every chat that is loaded.
- */
 function ChatList({
   projectId,
   sessions,
@@ -295,7 +262,6 @@ function ProjectMenu({
 }: {
   project: Project;
   onNewChat: (projectId: string) => void;
-  /** Opens one of the project's pages. */
   onOpenPage: (kind: NewWorkbenchTab["kind"]) => void;
 }) {
   const actions = useProjectActions();
@@ -312,7 +278,6 @@ function ProjectMenu({
           <IconDots size={14} />
         </ActionIcon>
       </Menu.Target>
-      {/* The menu is drawn elsewhere, but its clicks still reach the row. */}
       <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
         <Menu.Item onClick={() => onNewChat(project.id)}>New chat</Menu.Item>
         <Menu.Divider />
@@ -349,7 +314,6 @@ function ProjectGroup({
     enabled: open,
   });
   const loaded = sessions.data ?? [];
-  // A filter matches the project's name and the chats already loaded.
   const visible =
     matches(project.name, h.filter) ||
     loaded.some((s) => matches(s.title, h.filter));
@@ -424,7 +388,6 @@ function NoProjectGroup({ h }: { h: Handlers }) {
     matches("No project", h.filter) ||
     loaded.some((s) => matches(s.title, h.filter));
   if (!visible) return null;
-  // The table of the chats that have no project, as a project's page has.
   const tab: NewWorkbenchTab = { kind: "sessions", root: "global", key: "" };
   return (
     <div role="group" aria-label="No project">
@@ -479,7 +442,6 @@ export function ChatsTree({
   activeId: string | null;
   onOpen: (tab: NewWorkbenchTab, permanent: boolean) => void;
   onFocusRow: (row: FocusedRow) => void;
-  /** New chat: from the toolbar (no project given) or a project's menu. */
   onNewChat: (projectId?: string) => void;
   onNewProject: () => void;
   creating: boolean;
@@ -496,7 +458,6 @@ export function ChatsTree({
     filter: filter.trim().toLowerCase(),
     unread,
   };
-  // The most recently used first; a project never used sorts by creation.
   const sorted = [...(projects.data ?? [])].sort((a, b) =>
     b.last_used_at.localeCompare(a.last_used_at),
   );

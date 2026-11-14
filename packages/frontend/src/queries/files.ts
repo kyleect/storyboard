@@ -1,15 +1,6 @@
 import type { FileScope } from "../api";
 import { scopeKey } from "./scope";
 
-/*
- * Query keys for files. Unlike the other features these
- * start with the scope, because a change (or a live event) refreshes
- * everything in one scope, and a file is always fetched within a scope:
- *
- *   ["files", { scope, id }]                         one scope
- *   ["files", { scope, id }, "list", { showDeleted }]
- *   ["files", { scope, id }, "detail", key]
- */
 export const fileKeys = {
   all: ["files"] as const,
   inScope: (scope: FileScope) => [...fileKeys.all, scopeKey(scope)] as const,

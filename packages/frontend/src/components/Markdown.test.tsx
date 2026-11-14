@@ -3,8 +3,6 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Markdown } from "./Markdown";
 
-/* Markdown rendering (markdown rendering plan, section 4). */
-
 function show(source: string) {
   return render(
     <MantineProvider>

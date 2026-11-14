@@ -22,13 +22,6 @@ import {
 import { dataKeys } from "../../queries";
 import { showError } from "../../lib/notify";
 
-/*
- * Data (schemas and data design, decisions 19 to 25, 44): the pieces the
- * Structured Data and Agents views share. Forms are made from the schema
- * (decisions 19, 20); the backend's checks have the final word on save
- * (plan P3), and their problems show next to the fields.
- */
-
 export const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString() : "";
 
@@ -39,18 +32,12 @@ function useRefresh() {
   };
 }
 
-/** The form for a schema version, titled for what is being done. */
 export const formOf = (body: unknown, submitLabel: string): Form => ({
   ...readSchemaForm(body as SchemaNode),
   submitLabel,
   skipLabel: "Cancel",
 });
 
-/**
- * The backend's problems as form problems, by question path: "/inv/0/item"
- * becomes "inv.0.item"; a missing property is shown on that property. A
- * scalar form's one question is "value". Undefined when there are none.
- */
 export function errorsFromMessage(
   form: Form,
   message: string,
@@ -91,7 +78,6 @@ export function Badges({ d }: { d: DataItem }) {
   );
 }
 
-/** A piece of data's saved states; one can be made current (decision 24). */
 export function VersionsModal({
   owner,
   item,

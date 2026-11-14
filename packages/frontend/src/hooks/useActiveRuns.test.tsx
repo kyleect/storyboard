@@ -78,12 +78,12 @@ describe("useDebouncedFlag", () => {
   it("stays for the minimum time once shown", () => {
     const { result, rerender } = setup();
     rerender({ active: true });
-    advance(300); // shown at 300 ms
+    advance(300);
     advance(100);
-    rerender({ active: false }); // inactive at 400 ms
+    rerender({ active: false });
     advance(499);
     expect(result.current).toBe(true);
-    advance(1); // 900 ms: 600 after it was shown
+    advance(1);
     expect(result.current).toBe(false);
   });
 
@@ -93,7 +93,7 @@ describe("useDebouncedFlag", () => {
     advance(300);
     rerender({ active: false });
     advance(100);
-    rerender({ active: true }); // the next run starts before it hid
+    rerender({ active: true });
     advance(5000);
     expect(result.current).toBe(true);
   });

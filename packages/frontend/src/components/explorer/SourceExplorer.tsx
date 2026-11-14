@@ -38,17 +38,6 @@ import { FileTab, PreviewTab, type Draft } from "./FileTab";
 import type { Cursor } from "./TextEditor";
 import { showError } from "../../lib/notify";
 
-/*
- * An editor-style explorer over any set of roots. A tree on the left has a
- * root folder for each `ExplorerRoot` the caller gives it; open files are tabs
- * on the right, edited in place. It never calls the API: each root's files
- * come from its `ExplorerSource`. The Files view (`FilesExplorer.tsx`) is this
- * with the session, project and global roots; Kylee's decisions of
- * 2026-11-11 (see the plan). The rules for the tree and the tabs are in
- * `files-explorer.ts`.
- */
-
-/** Lists and folders of every root, as one stable value each. */
 const combineResults = (
   results: { data: unknown; error: Error | null; isPending: boolean }[],
 ) => ({
@@ -67,20 +56,13 @@ export function SourceExplorer({
   extraTools,
   nodeActions,
 }: {
-  /** The roots of the tree, in the order shown. Keep this stable. */
   roots: readonly ExplorerRoot[];
-  /** The root the page itself belongs to: where new things start. */
   pageRoot: RootId;
-  /** What the view is remembered under, with `namespace`. */
   pageKey: PageKey;
   namespace: string;
-  /** Whether a saved tab's root is one of this tree's (default: file roots). */
   isRoot?: ((v: unknown) => boolean) | undefined;
-  /** Whether there are unsaved edits, for a guard against leaving. */
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
-  /** Extra buttons in the tree's header. */
   extraTools?: React.ReactNode;
-  /** Extra entries in a tree node's menu. */
   nodeActions?: ((ref: NodeRef) => NodeAction[]) | undefined;
 }) {
   const queryClient = useQueryClient();
@@ -115,7 +97,6 @@ export function SourceExplorer({
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [renaming, setRenaming] = useState<{ value: string } | null>(null);
-  // The cursor, with the tab it was reported for: another tab has none yet.
   const [cursorAt, setCursorAt] = useState<{
     tab: string | null;
     cursor: Cursor;
@@ -123,7 +104,6 @@ export function SourceExplorer({
   const cursor = cursorAt?.tab === tabsState.active ? cursorAt.cursor : null;
   const [busy, setBusy] = useState(0);
 
-  // What is remembered between visits (not the unsaved text).
   useEffect(() => {
     saveViewIn(namespace, pageKey, {
       tabs: tabsState.tabs,
@@ -139,7 +119,6 @@ export function SourceExplorer({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
 
-  // ---- data: the files and folders of every root
   const lists = useQueries({
     queries: roots.map((r) => ({
       queryKey: r.source.keys.list(showDeleted),
@@ -167,8 +146,6 @@ export function SourceExplorer({
     [roots, lists.data, folders.data, pending],
   );
 
-  // The tree is made once the files are known, so the folders remembered as
-  // open are still known to it when its nodes appear.
   const loading = lists.pending || folders.pending;
   const loadError = lists.error ?? folders.error;
 
@@ -179,7 +156,6 @@ export function SourceExplorer({
       : Promise.resolve();
   };
 
-  // ---- tabs
   const setActive = (id: string) => setTabsState((s) => ({ ...s, active: id }));
   const open = (tab: Omit<TabState, "transient">, permanent: boolean) =>
     setTabsState((s) => openTab(s, tab, permanent));
@@ -207,7 +183,6 @@ export function SourceExplorer({
   };
   const activeTab = tabsState.tabs.find((t) => tabId(t) === tabsState.active);
 
-  // ---- actions from the tree
   const warn = (title: string, message: string) =>
     notifications.show({ color: "yellow", title, message });
 
@@ -257,7 +232,6 @@ export function SourceExplorer({
       await refreshRoot(ref.root);
       const before = tabsState;
       const after = renameFolderInTabs(before, ref.root, ref.path, to);
-      // Unsaved text follows its file to the new name.
       const moved: Record<string, Draft> = {};
       before.tabs.forEach((t, i) => {
         const next = after.tabs[i];
@@ -424,9 +398,7 @@ export function SourceExplorer({
     </>
   );
 
-  // What a project has (its root) wears the project's color.
   const colorOf = useProjectColor();
-  /** The color of the project a root belongs to, if it does. */
   const colorProps = (root: RootId): { iconColor?: ProjectColor } => {
     const color = colorOf(rootOf(root)?.projectId);
     return color ? { iconColor: color } : {};

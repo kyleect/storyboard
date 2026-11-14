@@ -5,12 +5,6 @@ import { useComputedColorScheme } from "@mantine/core";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 
-/*
- * A JSON text editor (schemas and data design, decision 15): CodeMirror with
- * JSON highlighting and bracket matching. The text is the source of truth;
- * the parent checks it when it is used.
- */
-
 const dark = EditorView.theme({}, { dark: true });
 
 export function JsonEditor({
@@ -22,7 +16,6 @@ export function JsonEditor({
   value: string;
   onChange: (text: string) => void;
   readOnly?: boolean;
-  /** For screen readers. */
   label: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -33,8 +26,6 @@ export function JsonEditor({
   }, [onChange]);
   const scheme = useComputedColorScheme("light");
 
-  // The editor is made once per mount (and colour scheme); text from the
-  // parent that differs from the editor's replaces it below.
   useEffect(() => {
     if (!host.current) return;
     const editor = new EditorView({

@@ -31,10 +31,6 @@ const CHOICES: { choice: ApprovalChoice; label: string; color?: string }[] = [
   { choice: "deny", label: "Deny", color: "red" },
 ];
 
-/**
- * A call with a subject, a workspace, is allowed per tool and subject: the
- * buttons say which workspace they cover (files unification design, D27).
- */
 const choiceLabel = (
   choice: { choice: ApprovalChoice; label: string },
   request: ApprovalRequest,
@@ -47,15 +43,6 @@ const choiceLabel = (
         : choice.label
     : choice.label;
 
-/**
- * Asks whether a tool call may run (tools design 6.5). Closing it leaves the
- * request open; the run keeps waiting until it is answered. A comment typed in
- * the box goes with Allow once or Deny; the other two choices are disabled
- * while there is one (approval notes design, D2 and D6). A tool that always
- * asks offers only Allow once and Deny; one the agent's own setting makes ask
- * has no "Always allow this tool", which sets the global setting the agent's
- * overrides (agent tool approval design, Q9).
- */
 export function ApprovalDialog({
   request,
   opened,
@@ -71,13 +58,10 @@ export function ApprovalDialog({
   busy: boolean;
   onClose: () => void;
   onAnswer: (answer: ApprovalAnswer) => void;
-  /** The subagent that asks, when it is not the top-level agent. */
   from?: string;
-  /** For a request with a review: the problems with a selection. */
   onCheck?: (
     selection: Selection,
   ) => Promise<{ errors: string[]; stale: boolean }>;
-  /** For a request with a review: the changes worked out again. */
   onRefresh?: () => Promise<ApprovalRequest>;
 }) {
   if (request.review) {
@@ -107,7 +91,6 @@ export function ApprovalDialog({
   );
 }
 
-/** Says which subagent is asking, when it is not the top-level agent. */
 function FromSubagent({ name }: { name: string }) {
   return (
     <Group gap="xs">
@@ -121,7 +104,6 @@ function FromSubagent({ name }: { name: string }) {
   );
 }
 
-/** The prompt for a call shown by its arguments. */
 function ArgumentsDialog({
   request,
   opened,
@@ -139,7 +121,6 @@ function ArgumentsDialog({
 }) {
   const [comment, setComment] = useState("");
   const text = comment.trim();
-  // A tool that always asks can only be allowed once or denied.
   const choices = request.alwaysAsks
     ? CHOICES.filter((c) => c.choice === "once" || c.choice === "deny")
     : request.agentSetting
@@ -198,7 +179,6 @@ function ArgumentsDialog({
             );
             return blocked ? (
               <Tooltip key={c.choice} label="Clear the comment to use this">
-                {/* A disabled button gets no pointer events. */}
                 <span>{button}</span>
               </Tooltip>
             ) : (
@@ -211,9 +191,6 @@ function ArgumentsDialog({
   );
 }
 
-// ---- Changes (schemas and data design, decisions 30 to 35) -----------------
-
-/** A path as the prompt shows it: its steps, or "the whole value". */
 const pathText = (path: string) => {
   const steps = pointerSteps(path);
   return steps.length === 0 ? "the whole value" : steps.join(" › ");
@@ -249,14 +226,6 @@ const isAll = (review: Review, selection: Selection) =>
     (i) => (selection[i.key]?.length ?? -1) === i.changes.length,
   );
 
-/**
- * The prompt for a call that describes its changes: each change has a tick
- * (decision 32). Approve selected applies the ticked ones, Approve all every
- * one, Deny all none; session and always apply every one too (decisions 34,
- * 35a). A selection the schema refuses cannot be approved (33). When the
- * data changed meanwhile, the changes can be worked out again or the call
- * rejected (30).
- */
 function ChangesDialog({
   request,
   review: shown,

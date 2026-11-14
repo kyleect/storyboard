@@ -1,10 +1,3 @@
-/*
- * Query keys, one factory per feature (see "Effective React Query Keys",
- * https://tkdodo.eu/blog/effective-react-query-keys). Keys go from the most
- * generic to the most specific, so a mutation or a live event can invalidate
- * exactly as much as it changed. Always build keys with these factories;
- * never write a key inline.
- */
 export { agentKeys } from "./agents";
 export { blobKeys } from "./blobs";
 export { dataKeys, schemaKeys } from "./data";

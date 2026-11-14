@@ -28,16 +28,9 @@ import {
 } from "../../api";
 import { workspaceKeys } from "../../queries";
 
-/*
- * Workspaces (files unification design, D22 to D26, D46): folders on this
- * computer that projects and sessions attach, read-only or writable. Moving
- * one to the trash never touches the folder.
- */
-
 const failed = (title: string) => (err: Error) =>
   notifications.show({ color: "red", title, message: err.message });
 
-/** Picks a folder on the computer the backend runs on, one level at a time. */
 function FolderPicker({
   opened,
   start,
@@ -187,7 +180,6 @@ function WorkspaceForm({
           </Group>
         </Stack>
       </form>
-      {/* Mounted when opened, so it starts at what is typed now. */}
       {picking && (
         <FolderPicker
           opened
@@ -200,7 +192,6 @@ function WorkspaceForm({
   );
 }
 
-/** One folder of the tree of searched parts, loaded when it is opened. */
 function TreeFolder({
   workspaceId,
   path,
@@ -264,10 +255,6 @@ function TreeFolder({
   return <Stack gap={2}>{tree.data.entries.map(row)}</Stack>;
 }
 
-/**
- * What agents can search in a workspace (files unification design, D45): the
- * user ticks folders and files; a new file in a ticked folder is included.
- */
 function SearchedParts({ workspace }: { workspace: Workspace }) {
   const queryClient = useQueryClient();
   const [shown, setShown] = useState(false);
@@ -275,7 +262,6 @@ function SearchedParts({ workspace }: { workspace: Workspace }) {
     queryKey: workspaceKeys.index(workspace.id),
     queryFn: () => api.getWorkspaceIndex(workspace.id),
     enabled: shown,
-    // A scan runs in the background after a change.
     refetchInterval: (q) => (q.state.data?.status?.scanning ? 1000 : false),
   });
   const all = useMutation({
@@ -351,7 +337,6 @@ function SearchedParts({ workspace }: { workspace: Workspace }) {
   );
 }
 
-/** What the user said "Always allow" to, per tool and workspace. */
 function Grants() {
   const queryClient = useQueryClient();
   const grants = useQuery({
@@ -509,10 +494,6 @@ export function WorkspacesPage() {
   );
 }
 
-/**
- * The workspaces a project or a session has attached, with a way to attach
- * another. A session also shows its project's, which it cannot detach.
- */
 export function AttachedWorkspaces({
   owner,
   id,
