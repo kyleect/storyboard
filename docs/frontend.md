@@ -40,7 +40,8 @@ packages/frontend/src
   route needs it.
 
 Shared layers (`components/`, `hooks/`, `stores/`, `lib/`) never import from
-`routes/`, and a route does not import another route's `components/` or `lib/`.
+`routes/`, and a route does not import another route's `components/` or `lib/`. ESLint
+enforces both (`no-restricted-imports` in `eslint.config.js`).
 The route components of other routes may be imported where a page embeds
 another (the project page shows `Sessions`, for example). Tests may cross these
 boundaries.
@@ -88,6 +89,18 @@ render nothing themselves.
 | `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants                         |
 | `/errors`                                                   | Errors console across all sessions                                                |
 | `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                                         |
+
+### Shared building blocks
+
+- `ExplorerPanel` is the sized box every explorer page sits in; it reports
+  unsaved edits to the workbench.
+- `ProjectGate` loads a project for a project-scoped page and shows the loading
+  and error states; `trashedNote` and `ProjectScopeNote` give the read-only
+  reason and the intro line.
+- `VersionsModal` is the version history dialog of files, data and agents; each
+  caller gives it the labels, the body and how to restore.
+- `confirmAction` (`lib/confirm.tsx`) opens a confirmation with a title, a
+  message and a button label; add `danger: true` for a red button.
 
 ## Hooks
 

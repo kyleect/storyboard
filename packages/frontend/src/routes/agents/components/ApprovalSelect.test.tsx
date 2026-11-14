@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ToolApprovalInfo } from "../../../api";
-import { ApprovalSelect } from "../Agents";
+import { ApprovalSelect } from "./ApprovalSelect";
 
 const tool = (over: Partial<ToolApprovalInfo> = {}): ToolApprovalInfo => ({
   name: "web_fetch",

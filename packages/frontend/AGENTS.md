@@ -65,6 +65,10 @@ src/
   `components/`. Each has its `Name.test.tsx` beside it.
 - **Layers.** `components/`, `hooks/`, `stores/` and `lib/` never import from
   `routes/`; a route does not import another route's `components/` or `lib/`.
+- **Building blocks.** Confirmations go through `confirmAction`
+  (`lib/confirm.tsx`), version histories through `components/VersionsModal`,
+  explorer pages through `ExplorerPanel`, and project-scoped pages through
+  `ProjectGate`. Use them instead of copying the pattern.
 - **Hooks, not inline queries.** A component calls a hook from `hooks/`
   (`useProjects`, `useSession`, `useUnreadSessions`, ...) rather than writing
   `useQuery` or `useMutation` with a key. The hook owns the key, the `select`,

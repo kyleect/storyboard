@@ -1,36 +1,23 @@
-import { Alert, Anchor, Box, Loader, Stack, Text, Title } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { api } from "../../api";
-import { useReportDirty } from "../../stores/dirty";
-import { projectKeys } from "../../queries";
+import { Stack, Title } from "@mantine/core";
+import { ExplorerPanel } from "../../components/ExplorerPanel";
+import {
+  ProjectGate,
+  ProjectScopeNote,
+  trashedNote,
+} from "../../components/ProjectGate";
 import { StructuredExplorer } from "../../components/structured/StructuredExplorer";
 
-function Explorer({
-  scope,
-  readOnly,
-  height = "calc(100vh - 14rem)",
-}: {
-  scope: { scope: "global" } | { scope: "project"; id: string };
-  readOnly?: string | undefined;
-  height?: string;
-}) {
-  const [dirty, setDirty] = useState(false);
-  useReportDirty(dirty);
-  return (
-    <Box h={height} mih={420}>
-      <StructuredExplorer
-        page={scope}
-        readOnly={readOnly}
-        onDirtyChange={setDirty}
-      />
-    </Box>
-  );
-}
-
 export function GlobalStructuredDataPage() {
-  return <Explorer scope={{ scope: "global" }} height="calc(100vh - 8rem)" />;
+  return (
+    <ExplorerPanel height="calc(100vh - 8rem)">
+      {(onDirtyChange) => (
+        <StructuredExplorer
+          page={{ scope: "global" }}
+          onDirtyChange={onDirtyChange}
+        />
+      )}
+    </ExplorerPanel>
+  );
 }
 
 export function ProjectStructuredDataPage({
@@ -38,36 +25,23 @@ export function ProjectStructuredDataPage({
 }: {
   projectId: string;
 }) {
-  const project = useQuery({
-    queryKey: projectKeys.detail(projectId),
-    queryFn: () => api.getProject(projectId),
-  });
-  if (project.isPending) return <Loader />;
-  if (project.isError)
-    return <Alert color="red">{project.error.message}</Alert>;
   return (
-    <Stack gap="md">
-      <Title order={3}>Structured Data</Title>
-      <Text size="sm" c="dimmed">
-        Project{" "}
-        <Anchor
-          renderRoot={(props) => (
-            <Link {...props} to="/projects/$projectId" params={{ projectId }} />
-          )}
-        >
-          {project.data.name}
-        </Anchor>
-        : sessions in this project can use these, as well as the global ones.
-      </Text>
-      <Explorer
-        key={projectId}
-        scope={{ scope: "project", id: projectId }}
-        readOnly={
-          project.data.trashed_at !== null
-            ? "The project is in the trash, so its data can be read but not changed."
-            : undefined
-        }
-      />
-    </Stack>
+    <ProjectGate projectId={projectId}>
+      {(project) => (
+        <Stack gap="md">
+          <Title order={3}>Structured Data</Title>
+          <ProjectScopeNote project={project} />
+          <ExplorerPanel key={projectId} height="calc(100vh - 14rem)">
+            {(onDirtyChange) => (
+              <StructuredExplorer
+                page={{ scope: "project", id: projectId }}
+                readOnly={trashedNote(project, "its data")}
+                onDirtyChange={onDirtyChange}
+              />
+            )}
+          </ExplorerPanel>
+        </Stack>
+      )}
+    </ProjectGate>
   );
 }
