@@ -1,15 +1,10 @@
-import { Stack, Title } from "@mantine/core";
 import { ExplorerPanel } from "../../components/ExplorerPanel";
-import {
-  ProjectGate,
-  ProjectScopeNote,
-  trashedNote,
-} from "../../components/ProjectGate";
+import { ProjectGate, trashedNote } from "../../components/ProjectGate";
 import { StructuredExplorer } from "../../components/structured/StructuredExplorer";
 
 export function GlobalStructuredDataPage() {
   return (
-    <ExplorerPanel height="calc(100vh - 8rem)">
+    <ExplorerPanel height="calc(100vh - 7rem)">
       {(onDirtyChange) => (
         <StructuredExplorer
           page={{ scope: "global" }}
@@ -28,19 +23,15 @@ export function ProjectStructuredDataPage({
   return (
     <ProjectGate projectId={projectId}>
       {(project) => (
-        <Stack gap="md">
-          <Title order={3}>Structured Data</Title>
-          <ProjectScopeNote project={project} />
-          <ExplorerPanel key={projectId} height="calc(100vh - 14rem)">
-            {(onDirtyChange) => (
-              <StructuredExplorer
-                page={{ scope: "project", id: projectId }}
-                readOnly={trashedNote(project, "its data")}
-                onDirtyChange={onDirtyChange}
-              />
-            )}
-          </ExplorerPanel>
-        </Stack>
+        <ExplorerPanel key={projectId} height="calc(100vh - 14rem)">
+          {(onDirtyChange) => (
+            <StructuredExplorer
+              page={{ scope: "project", id: projectId }}
+              readOnly={trashedNote(project, "its data")}
+              onDirtyChange={onDirtyChange}
+            />
+          )}
+        </ExplorerPanel>
       )}
     </ProjectGate>
   );

@@ -4,7 +4,7 @@ import { FilesExplorer } from "../../components/explorer/FilesExplorer";
 
 export function GlobalFilesPage() {
   return (
-    <ExplorerPanel height="calc(100vh - 11rem)">
+    <ExplorerPanel height="calc(100vh - 7rem)">
       {(onDirtyChange) => (
         <FilesExplorer
           page={{ scope: "global" }}
