@@ -3,7 +3,7 @@
 The framework-free engine. It turns a transcript into a model request, streams
 the response, runs the model's tool calls and reports everything as events. Read
 the root `AGENTS.md` first; this file adds what is specific to core. Background:
-`docs/core.md`.
+`docs/dev/core.md`.
 
 ## Hard rules
 
@@ -47,7 +47,7 @@ src/
 - **Events.** Core emits events _without_ an `id`; the backend assigns the
   increasing id when it stores them. If you add or change an event, update
   `events.ts`, the frontend's handler in `packages/frontend/src/live.ts`, and
-  the event tables in `docs/core.md`. Keep the reliability rules: `*.end` and
+  the event tables in `docs/dev/core.md`. Keep the reliability rules: `*.end` and
   `message.finished` carry the full authoritative content and replace what was
   built from deltas.
 - **Messages.** A tool result's `isError`, `data`, `state`, `files`,

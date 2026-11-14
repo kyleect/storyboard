@@ -3,7 +3,7 @@
 A single-page React app built with Vite. It is a thin client: it holds no
 durable state and never talks to llama-server. Everything it shows comes from
 the backend's HTTP API and event streams. Read the root `AGENTS.md` first.
-Background: `docs/frontend.md`.
+Background: `docs/dev/frontend.md`.
 
 ## Stack
 
@@ -73,7 +73,7 @@ src/
   (`useProjects`, `useSession`, `useUnreadSessions`, ...) rather than writing
   `useQuery` or `useMutation` with a key. The hook owns the key, the `select`,
   the invalidation and the error notification. Add a hook when a second place
-  needs the same query or mutation. See "Hooks" in `docs/frontend.md`.
+  needs the same query or mutation. See "Hooks" in `docs/dev/frontend.md`.
 - **Comments.** Do not comment what the code says. Keep a comment only when it
   gives a specific technical reason: a browser or jsdom limit, a workaround, why
   an effect's dependencies are what they are. Do not cite design documents.
@@ -105,7 +105,7 @@ src/
 ## Styling
 
 Use Mantine style props and `Group`/`Stack`/`Flex`; reach for a CSS module for
-states and `style` only for runtime px values. See "Styling" in `docs/frontend.md`.
+states and `style` only for runtime px values. See "Styling" in `docs/dev/frontend.md`.
 
 ## Running and building
 

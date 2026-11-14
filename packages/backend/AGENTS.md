@@ -4,7 +4,7 @@ A Node process built on Fastify. It owns all state: sessions, projects,
 messages and events in an encrypted SQLite database; it starts and supervises
 runs by driving core's agent loop; it serves the HTTP API and pushes events to
 the UI over server-sent events. Read the root `AGENTS.md` first. Background:
-`docs/backend.md` (long; the section outline is the useful part). Database
+`docs/dev/backend.md` (long; the section outline is the useful part). Database
 changes: also read `migrations/AGENTS.md`.
 
 ## Hard rules
@@ -79,7 +79,7 @@ src/
 - **Settings** resolve as environment variable, then stored value, then
   default, and are read each time a run starts. A new setting needs a file in
   `settings.ts`, its env variable (`HARNESS_*`), the Settings page in the
-  frontend, and a row in `docs/backend.md` and `docs/DEVELOPMENT.md` if it has
+  frontend, and a row in `docs/dev/backend.md` and `docs/dev/DEVELOPMENT.md` if it has
   an environment variable.
 - **Prompts and tools given to a run** are recorded on the `runs` row for
   debugging. If you change how the system message or the tool list is built,
@@ -105,7 +105,7 @@ src/
 `pnpm dev:backend` from the root builds `@harness/tools` and runs
 `tsx watch src/main.ts`; it prints a link of the form
 `http://localhost:5173/#token=...` for the frontend. Environment variables are
-listed in `docs/DEVELOPMENT.md`. The three bootstrap paths (`HARNESS_DATA_DIR`,
+listed in `docs/dev/DEVELOPMENT.md`. The three bootstrap paths (`HARNESS_DATA_DIR`,
 `HARNESS_DB_PATH`, `HARNESS_KEY_FILE`) can only come from the environment.
 Use a throwaway `HARNESS_DATA_DIR` when you try things out so you do not touch
 real data.

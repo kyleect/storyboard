@@ -1,7 +1,7 @@
 # AGENTS.md: `@harness/tools`
 
 Every tool an agent can call, plus the prompt text that describes some of them.
-Read the root `AGENTS.md` first. Background: `docs/tools.md`.
+Read the root `AGENTS.md` first. Background: `docs/dev/tools.md`.
 
 ## Hard rules
 
@@ -37,7 +37,7 @@ Read the root `AGENTS.md` first. Background: `docs/tools.md`.
    suggests and the user decides.
 6. Add a test beside it. `clock.test.ts` shows how to build a `ToolContext` by
    hand; `index.test.ts` checks the registry.
-7. Update the tool tables in `docs/tools.md`.
+7. Update the tool tables in `docs/dev/tools.md`.
 
 The `description` and `input` shapes are sent to the model as the tool
 definition, so renaming a tool or a field changes what existing agents and

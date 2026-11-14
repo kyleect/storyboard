@@ -75,7 +75,7 @@ llama-server (`@harness/core/testing`).
 
 ## Design principles to preserve
 
-These run through the whole codebase (details in `docs/README.md`).
+These run through the whole codebase (details in `docs/dev/README.md`).
 
 - **The transcript is the source of truth.** A session's messages are stored.
   Session-scoped files, schemas and data are rebuilt by replaying
@@ -104,12 +104,13 @@ These run through the whole codebase (details in `docs/README.md`).
   pnpm (`patchedDependencies` in `pnpm-workspace.yaml`). Changing that
   dependency's version means regenerating the patch.
 - **`docs/` is published** to https://kyleect.github.io/storyboard/ (it
-  includes Mermaid rendering in `docs/_includes/head-custom.html`). When you
-  change behavior the docs describe, update the matching page in `docs/`:
-  `core.md`, `tools.md`, `backend.md`, `frontend.md`, or the glossary. The docs
-  can still fall behind the code; when they disagree, the code is right, and
-  fixing the doc is part of the change. `docs/contributing.md` is the guide for
-  new contributors. There is no `AGENTS.md` inside `docs/` because that folder
-  is the site's source.
+  includes Mermaid rendering in `docs/_includes/head-custom.html`, which must
+  stay in `docs/`). The developer docs are in `docs/dev/`. When you change
+  behavior the docs describe, update the matching page there: `core.md`,
+  `tools.md`, `backend.md`, `frontend.md`, or the glossary. The docs can still
+  fall behind the code; when they disagree, the code is right, and fixing the
+  doc is part of the change. `docs/dev/contributing.md` is the guide for new
+  contributors. There is no `AGENTS.md` inside `docs/` because that folder is
+  the site's source.
 - Do not commit build output (`dist/`) or `.patch` files other than those
   under `patches/` (see `.gitignore`).
