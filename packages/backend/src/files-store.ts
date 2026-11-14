@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3-multiple-ciphers";
 import type { SearchIndex } from "./search-index.js";
 import { isInFolder } from "@harness/core";
 import { sweepBlobs } from "./blobs.js";
+import { activeProfile } from "./profiles.js";
 import { getDerived, indexedText } from "./media-describer.js";
 import type {
   BlobRef,
@@ -82,10 +83,14 @@ export class FileStore {
     return this.db
       .prepare(
         `SELECT ${COLUMNS} FROM files
-         WHERE project_id IS ? AND (? OR deleted_at IS NULL)
+         WHERE profile_id = ? AND project_id IS ? AND (? OR deleted_at IS NULL)
          ORDER BY key`,
       )
-      .all(projectId, includeDeleted ? 1 : 0) as FileRow[];
+      .all(
+        activeProfile(this.db),
+        projectId,
+        includeDeleted ? 1 : 0,
+      ) as FileRow[];
   }
 
   /** Includes a deleted file. */
@@ -93,9 +98,9 @@ export class FileStore {
     return this.db
       .prepare(
         `SELECT ${COLUMNS} FROM files
-         WHERE project_id IS ? AND key = ?`,
+         WHERE profile_id = ? AND project_id IS ? AND key = ?`,
       )
-      .get(projectId, key) as FileRow | undefined;
+      .get(activeProfile(this.db), projectId, key) as FileRow | undefined;
   }
 
   /** Creates, replaces or restores the file, and records a version. */
@@ -126,10 +131,21 @@ export class FileStore {
       } else {
         this.db
           .prepare(
-            `INSERT INTO files (id, project_id, key, media_type, value, blob_hash, size, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO files (id, profile_id, project_id, key, media_type, value, blob_hash, size, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(id, projectId, file.key, type, file.value, hash, size, now, now);
+          .run(
+            id,
+            activeProfile(this.db),
+            projectId,
+            file.key,
+            type,
+            file.value,
+            hash,
+            size,
+            now,
+            now,
+          );
       }
       this.addVersion(id, type, file.value, file.blob, false, author, now);
       // A binary file is found by its derived text, when it has one.
@@ -233,17 +249,19 @@ export class FileStore {
   listFolders(projectId: string | null): string[] {
     return (
       this.db
-        .prepare("SELECT path FROM folders WHERE project_id IS ? ORDER BY path")
-        .all(projectId) as { path: string }[]
+        .prepare(
+          "SELECT path FROM folders WHERE profile_id = ? AND project_id IS ? ORDER BY path",
+        )
+        .all(activeProfile(this.db), projectId) as { path: string }[]
     ).map((r) => r.path);
   }
 
   createFolder(projectId: string | null, path: string) {
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO folders (project_id, path, created_at) VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO folders (profile_id, project_id, path, created_at) VALUES (?, ?, ?, ?)",
       )
-      .run(projectId, path, this.now());
+      .run(activeProfile(this.db), projectId, path, this.now());
   }
 
   /** Moves the folder's rows, its explicit subfolders and its live files. */
@@ -272,8 +290,10 @@ export class FileStore {
       for (const path of this.listFolders(projectId)) {
         if (!isInFolder(path, from)) continue;
         this.db
-          .prepare("DELETE FROM folders WHERE project_id IS ? AND path = ?")
-          .run(projectId, path);
+          .prepare(
+            "DELETE FROM folders WHERE profile_id = ? AND project_id IS ? AND path = ?",
+          )
+          .run(activeProfile(this.db), projectId, path);
         this.createFolder(projectId, rename(path));
       }
       // A folder that only held files gets a row, so it still exists empty.
@@ -292,8 +312,10 @@ export class FileStore {
       for (const f of this.listFolders(projectId)) {
         if (isInFolder(f, path)) {
           this.db
-            .prepare("DELETE FROM folders WHERE project_id IS ? AND path = ?")
-            .run(projectId, f);
+            .prepare(
+              "DELETE FROM folders WHERE profile_id = ? AND project_id IS ? AND path = ?",
+            )
+            .run(activeProfile(this.db), projectId, f);
         }
       }
     })();

@@ -79,6 +79,23 @@ export type AppEvent =
        */
       type: "runs.changed";
       data: { sessionId: string; runId: string };
+    }
+  | {
+      /**
+       * The active profile changed (profiles design 4.3). Everything a
+       * window holds belongs to the old profile, so it drops its whole cache
+       * and starts again from the home page.
+       */
+      type: "profile.switched";
+      data: { profileId: string };
+    }
+  | {
+      /**
+       * A profile was created, renamed, trashed or restored: windows refetch
+       * the profile list.
+       */
+      type: "profiles.changed";
+      data: { profileId: string };
     };
 
 type Listener = (event: AppEvent) => void;

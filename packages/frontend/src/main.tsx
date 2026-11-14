@@ -14,9 +14,11 @@ import {
 } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { token } from "./api";
+import { api, token } from "./api";
 import { useAppearance } from "./appearance";
+import { setCurrentProfile } from "./profile";
 import { Layout } from "./routes/Layout";
+import { useWorkbench } from "./workbenchStore";
 
 import "@gfazioli/mantine-led/styles.css";
 
@@ -148,8 +150,27 @@ function App() {
   );
 }
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+/**
+ * The saved tabs belong to a profile, so the active one is asked for before
+ * anything is drawn (profiles design 4.3).
+ */
+async function start(container: HTMLElement) {
+  if (token) {
+    try {
+      const listing = await api.listProfiles();
+      setCurrentProfile(listing.active);
+      useWorkbench.getState().reload();
+      useAppearance.getState().reload();
+    } catch {
+      // The backend is not reachable yet. The app opens on the Default
+      // profile's views, and the event stream corrects it once it connects.
+    }
+  }
+  createRoot(container).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+void start(root);

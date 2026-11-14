@@ -184,6 +184,21 @@ export class McpManager {
     await close(live);
   }
 
+  /**
+   * The active profile changed (profiles design 4.3): drops every connection
+   * and starts the servers of the new profile's list. Unlike `shutdown`, the
+   * manager stays usable.
+   */
+  async reload(): Promise<void> {
+    await Promise.all(
+      [...this.entries.keys()].map((id) => this.disconnect(id)),
+    );
+    this.entries.clear();
+    this.invalidate();
+    for (const server of this.options.store.list()) this.track(server);
+    this.start();
+  }
+
   /** Closes every connection; the manager does not connect again. */
   async shutdown(): Promise<void> {
     this.stopped = true;

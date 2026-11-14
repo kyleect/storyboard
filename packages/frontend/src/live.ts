@@ -13,11 +13,15 @@ import {
   type Usage,
 } from "@harness/core";
 import {
+  api,
   appEventsUrl,
   eventsUrl,
   type SessionDetail,
   type StoredMessage,
 } from "./api";
+import { useAppearance } from "./appearance";
+import { tabId } from "./explorer";
+import { currentProfile, setCurrentProfile } from "./profile";
 import {
   agentKeys,
   dataKeys,
@@ -25,6 +29,7 @@ import {
   errorKeys,
   mcpKeys,
   modelKeys,
+  profileKeys,
   projectKeys,
   runKeys,
   sessionKeys,
@@ -33,6 +38,8 @@ import {
   toolKeys,
   trashKeys,
 } from "./queries";
+import { pathForTab } from "./workbench";
+import { navigateWorkbench, useWorkbench } from "./workbenchStore";
 
 /*
  * The in-flight run of each session, built from streamed events. A run can
@@ -581,6 +588,16 @@ type AppEvent =
       /** A run started, ended, or began or stopped waiting for the user. */
       type: "runs.changed";
       data: { sessionId: string; runId: string };
+    }
+  | {
+      /** The active profile changed (profiles design 4.3). */
+      type: "profile.switched";
+      data: { profileId: string };
+    }
+  | {
+      /** A profile was created, renamed, trashed or restored. */
+      type: "profiles.changed";
+      data: { profileId: string };
     };
 
 /**
@@ -625,6 +642,39 @@ export function useAppEvents() {
         queryKey: toolKeys.approvals(),
       });
     };
+    const refreshProfiles = () =>
+      void queryClient.invalidateQueries({ queryKey: profileKeys.all });
+    /**
+     * Everything this window holds belongs to the profile that was left
+     * (profiles design 4.3): the cache, the live runs and the open tabs. It
+     * starts again with the new profile's saved tabs, on the one it had
+     * active, or on the home page when it had none.
+     */
+    const applySwitch = (profileId: string) => {
+      setCurrentProfile(profileId);
+      useWorkbench.getState().reload();
+      useAppearance.getState().reload();
+      useLive.setState(useLive.getInitialState(), true);
+      void queryClient.resetQueries();
+      const { tabs, active, settingsPath } = useWorkbench.getState();
+      const tab = tabs.find((t) => tabId(t) === active);
+      navigateWorkbench(tab ? pathForTab(tab, settingsPath) : "/");
+    };
+    /**
+     * A switch made while this window had no stream (or from another window
+     * just before it opened) was not sent: ask which profile is active.
+     */
+    const syncProfile = () => {
+      api
+        .listProfiles()
+        .then((listing) => {
+          if (listing.active !== currentProfile()) applySwitch(listing.active);
+          else refreshProfiles();
+        })
+        .catch(() => {
+          // The backend is unreachable; the stream tries again on its own.
+        });
+    };
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 500;
@@ -632,6 +682,7 @@ export function useAppEvents() {
       source = new EventSource(appEventsUrl());
       source.onopen = () => {
         delay = 500;
+        syncProfile();
         // Anything that changed before the stream opened was not sent.
         refreshAgents();
         refreshSkills();
@@ -673,6 +724,14 @@ export function useAppEvents() {
         }
         if (event.type === "mcp.changed") {
           refreshMcp();
+          return;
+        }
+        if (event.type === "profile.switched") {
+          applySwitch(event.data.profileId);
+          return;
+        }
+        if (event.type === "profiles.changed") {
+          refreshProfiles();
           return;
         }
         if (event.type !== "agents.changed") return;

@@ -54,6 +54,11 @@ interface WorkbenchState {
   setWidth: (width: number) => void;
   setSidebarOpen: (open: boolean) => void;
   setSettingsPath: (path: string) => void;
+  /**
+   * Loads the saved tabs and folders of the current profile. After a switch
+   * the open tabs name ids of the profile that was left (profiles design 4.3).
+   */
+  reload: () => void;
 }
 
 function loadSettingsPath(): string {
@@ -157,6 +162,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
     set({ settingsPath: path });
   },
+
+  reload: () => set(initial()),
 }));
 
 // What is remembered between visits.
@@ -184,6 +191,9 @@ export const setWorkbenchNavigator = (
 ): void => {
   navigator = fn;
 };
+
+/** Changes the address, as a place that is not a component must. */
+export const navigateWorkbench = (path: string): void => navigator?.(path);
 
 /**
  * Closes tabs (a session or a project going to the trash) and shows the tab

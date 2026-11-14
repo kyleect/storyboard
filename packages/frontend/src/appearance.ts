@@ -1,10 +1,14 @@
 import { DEFAULT_THEME } from "@mantine/core";
 import { create } from "zustand";
+import { profileSuffix } from "./profile";
 
 /*
  * How the app looks, kept for this browser (Settings, General, Look & Feel):
  * the theme's primary colour. Like the Sessions page's preferences it lives in
- * localStorage, since it is about this screen, not about the data. The colour
+ * localStorage, since it is about this screen, not about the data. It is kept
+ * per profile, so each profile can look its own way: the Default profile keeps
+ * the key that existed before profiles, and the others add `.p.<id>` (see
+ * `profile.ts`). `reload` reads it again after the profile changes. The colour
  * is one of Mantine's own palettes, because the theme's `primaryColor` has to
  * name a palette of ten shades.
  */
@@ -30,11 +34,11 @@ export function paletteOf(swatch: string): string | null {
   return PRIMARY_COLORS.find((name) => swatchOf(name) === wanted) ?? null;
 }
 
-const KEY = "harness.appearance";
+const key = (): string => `harness.appearance${profileSuffix()}`;
 
 function load(): string {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(key());
     if (raw === null) return DEFAULT_PRIMARY;
     const saved = JSON.parse(raw) as { primaryColor?: unknown } | null;
     const name = saved?.primaryColor;
@@ -48,7 +52,7 @@ function load(): string {
 
 function save(primaryColor: string) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ primaryColor }));
+    localStorage.setItem(key(), JSON.stringify({ primaryColor }));
   } catch {
     // storage unavailable; the choice lasts until the page reloads
   }
@@ -57,6 +61,8 @@ function save(primaryColor: string) {
 interface AppearanceState {
   primaryColor: string;
   setPrimaryColor: (name: string) => void;
+  /** Read the colour again, for the profile that is now current. */
+  reload: () => void;
 }
 
 export const useAppearance = create<AppearanceState>((set) => ({
@@ -66,4 +72,5 @@ export const useAppearance = create<AppearanceState>((set) => ({
     save(name);
     set({ primaryColor: name });
   },
+  reload: () => set({ primaryColor: load() }),
 }));

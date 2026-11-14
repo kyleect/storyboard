@@ -471,3 +471,50 @@ describe("tool.result of a files tool", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: fileKeys.all });
   });
 });
+
+describe("profile.switched", () => {
+  it("resets the window to the new profile's data", async () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const queryClient = new QueryClient();
+    const reset = vi.spyOn(queryClient, "resetQueries");
+    function Events() {
+      useAppEvents();
+      return null;
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Events />
+      </QueryClientProvider>,
+    );
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        type: "profile.switched",
+        data: { profileId: "work" },
+      }),
+    );
+    const { currentProfile, setCurrentProfile } = await import("./profile");
+    expect(currentProfile()).toBe("work");
+    expect(reset).toHaveBeenCalled();
+    setCurrentProfile("default");
+  });
+
+  it("refreshes the profile list when one changes", () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    function Events() {
+      useAppEvents();
+      return null;
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Events />
+      </QueryClientProvider>,
+    );
+    invalidate.mockClear();
+    act(() =>
+      FakeEventSource.last?.push(1, { type: "profiles.changed", data: {} }),
+    );
+    expect(invalidate).toHaveBeenCalled();
+  });
+});

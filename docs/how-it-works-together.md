@@ -291,17 +291,18 @@ overridden and the stored value stays dormant until the variable is removed.
 
 ## Where to look for what
 
-| Question                                  | Look at                                                            |
-| ----------------------------------------- | ------------------------------------------------------------------ |
-| What events can a run emit?               | `core/src/events.ts`                                               |
-| What happens when the model calls a tool? | `core/src/loop.ts`, `runCall`                                      |
-| How is a tool defined?                    | `core/src/tools.ts`, `tools/src/*.ts`                              |
-| How are runs started and recorded?        | `backend/src/runs.ts`, `launch`                                    |
-| How is the system message built?          | `backend/src/runs.ts` (composition), `backend/src/placeholders.ts` |
-| What is in the database?                  | `backend/migrations/*.sql`, `backend/src/store.ts`                 |
-| How does streaming reach the browser?     | `backend/src/server.ts` (event routes), `frontend/src/live.ts`     |
-| How does the UI show a prompt?            | `frontend/src/routes/ApprovalDialog.tsx`, `AskUserForm.tsx`        |
-| How does search work?                     | `backend/src/search*.ts`, `embedder.ts`, `core/src/chunking.ts`    |
-| How does model communication work?        | `core/src/llama-server/adapter.ts`                                 |
-| How do workspaces and MCP tools work?     | `backend/src/workspace-*.ts`, `mcp-manager.ts`                     |
-| How do I make a change?                   | [contributing.md](contributing.md)                                 |
+| Question                                  | Look at                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| What events can a run emit?               | `core/src/events.ts`                                                      |
+| What happens when the model calls a tool? | `core/src/loop.ts`, `runCall`                                             |
+| How is a tool defined?                    | `core/src/tools.ts`, `tools/src/*.ts`                                     |
+| How are runs started and recorded?        | `backend/src/runs.ts`, `launch`                                           |
+| How is the system message built?          | `backend/src/runs.ts` (composition), `backend/src/placeholders.ts`        |
+| What is in the database?                  | `backend/migrations/*.sql`, `backend/src/store.ts`                        |
+| How does streaming reach the browser?     | `backend/src/server.ts` (event routes), `frontend/src/live.ts`            |
+| How does the UI show a prompt?            | `frontend/src/routes/ApprovalDialog.tsx`, `AskUserForm.tsx`               |
+| How does search work?                     | `backend/src/search*.ts`, `embedder.ts`, `core/src/chunking.ts`           |
+| How does model communication work?        | `core/src/llama-server/adapter.ts`                                        |
+| How do workspaces and MCP tools work?     | `backend/src/workspace-*.ts`, `mcp-manager.ts`                            |
+| How do profiles work?                     | `backend/src/profiles.ts`, `profile-routes.ts`, `frontend/src/profile.ts` |
+| How do I make a change?                   | [contributing.md](contributing.md)                                        |

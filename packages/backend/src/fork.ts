@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import type { Store } from "./store.js";
+import { activeProfile } from "./profiles.js";
 
 /*
  * Forking a session (message editing plan, part D): a new session that holds
@@ -143,11 +144,14 @@ export function forkSession(store: Store, input: ForkInput): ForkResult {
 
   db.prepare(
     `INSERT INTO sessions
-       (id, title, created_at, project_id, model, reasoning_effort, agent_id,
+       (id, profile_id, title, created_at, project_id, model, reasoning_effort, agent_id,
         forked_from_id, forked_from_title)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     newSessionId,
+    // The source was found through the store, so it is in the active profile
+    // and the fork stays there (profiles design, decision 11).
+    activeProfile(db),
     input.title,
     now,
     source.project_id,

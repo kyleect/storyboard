@@ -32,6 +32,23 @@ describe("appearance", () => {
     expect(second.useAppearance.getState().primaryColor).toBe("grape");
   });
 
+  it("keeps the colour per profile, Default under the old key", async () => {
+    const { useAppearance } = await load();
+    const { setCurrentProfile } = await import("./profile");
+    useAppearance.getState().setPrimaryColor("grape");
+
+    setCurrentProfile("work");
+    useAppearance.getState().reload();
+    expect(useAppearance.getState().primaryColor).toBe("blue");
+    useAppearance.getState().setPrimaryColor("teal");
+    expect(localStorage.getItem("harness.appearance.p.work")).toContain("teal");
+
+    setCurrentProfile("default");
+    useAppearance.getState().reload();
+    expect(useAppearance.getState().primaryColor).toBe("grape");
+    expect(localStorage.getItem("harness.appearance")).toContain("grape");
+  });
+
   it("ignores a name that is not a palette, saved or chosen", async () => {
     localStorage.setItem(
       "harness.appearance",

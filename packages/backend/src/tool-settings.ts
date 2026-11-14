@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
 import type { Tool, ToolGroup } from "@harness/core";
+import { getStoredSetting, putStoredSetting } from "./settings.js";
 
 /*
  * Per-tool approval settings (tools design 6.5). Each tool has a default
@@ -52,11 +53,9 @@ export class FixedApprovalError extends Error {
 }
 
 function readStored(db: Database): z.infer<typeof Stored> {
-  const row = db
-    .prepare("SELECT value FROM settings WHERE key = ?")
-    .get(KEY) as { value: string } | undefined;
-  if (!row) return {};
-  const parsed = Stored.safeParse(JSON.parse(row.value));
+  const value = getStoredSetting(db, KEY);
+  if (value === undefined) return {};
+  const parsed = Stored.safeParse(JSON.parse(value));
   return parsed.success ? parsed.data : {};
 }
 
@@ -88,18 +87,14 @@ function readJson<T>(
   schema: z.ZodType<T>,
   empty: T,
 ): T {
-  const row = db
-    .prepare("SELECT value FROM settings WHERE key = ?")
-    .get(key) as { value: string } | undefined;
-  if (!row) return empty;
-  const parsed = schema.safeParse(JSON.parse(row.value));
+  const value = getStoredSetting(db, key);
+  if (value === undefined) return empty;
+  const parsed = schema.safeParse(JSON.parse(value));
   return parsed.success ? parsed.data : empty;
 }
 
 function writeJson(db: Database, key: string, value: unknown) {
-  db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-  ).run(key, JSON.stringify(value));
+  putStoredSetting(db, key, JSON.stringify(value));
 }
 
 /** The names of the tools that are always on now. */
@@ -168,7 +163,5 @@ export function setToolAsks(db: Database, tool: Tool, ask: boolean) {
     Object.entries(readStored(db)).filter(([name]) => name !== tool.name),
   );
   if (ask !== (tool.approval === "ask")) stored[tool.name] = { ask };
-  db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-  ).run(KEY, JSON.stringify(stored));
+  putStoredSetting(db, KEY, JSON.stringify(stored));
 }

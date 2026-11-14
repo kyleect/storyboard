@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
+import { activeProfile } from "./profiles.js";
 
 /*
  * The MCP servers the backend connects to as a client (MCP design). A
@@ -120,14 +121,16 @@ export class McpServerStore {
 
   list(): McpServer[] {
     return (
-      this.db.prepare("SELECT * FROM mcp_servers ORDER BY name").all() as Row[]
+      this.db
+        .prepare("SELECT * FROM mcp_servers WHERE profile_id = ? ORDER BY name")
+        .all(activeProfile(this.db)) as Row[]
     ).map(fromRow);
   }
 
   get(id: string): McpServer | undefined {
     const row = this.db
-      .prepare("SELECT * FROM mcp_servers WHERE id = ?")
-      .get(id) as Row | undefined;
+      .prepare("SELECT * FROM mcp_servers WHERE profile_id = ? AND id = ?")
+      .get(activeProfile(this.db), id) as Row | undefined;
     return row ? fromRow(row) : undefined;
   }
 
@@ -140,10 +143,19 @@ export class McpServerStore {
     this.db
       .prepare(
         `INSERT INTO mcp_servers
-           (id, name, transport, config, enabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (id, profile_id, name, transport, config, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, parsed.name, transport, json, parsed.enabled ? 1 : 0, at, at);
+      .run(
+        id,
+        activeProfile(this.db),
+        parsed.name,
+        transport,
+        json,
+        parsed.enabled ? 1 : 0,
+        at,
+        at,
+      );
     return this.require(id);
   }
 
@@ -184,8 +196,8 @@ export class McpServerStore {
 
   private requireFreeName(name: string, exceptId?: string) {
     const row = this.db
-      .prepare("SELECT id FROM mcp_servers WHERE name = ?")
-      .get(name) as { id: string } | undefined;
+      .prepare("SELECT id FROM mcp_servers WHERE profile_id = ? AND name = ?")
+      .get(activeProfile(this.db), name) as { id: string } | undefined;
     if (row && row.id !== exceptId) {
       throw new McpServerError(
         `There is already an MCP server named "${name}".`,

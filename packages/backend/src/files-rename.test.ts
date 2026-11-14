@@ -69,7 +69,11 @@ describe("migration 0034", () => {
        VALUES ('r', 's', ?, 'session.entries_changed', '{"messageId":"m"}'),
               ('r', 's', ?, 'session.renamed', '{}')`,
     ).run(NOW, NOW);
-    migrate(db, all);
+    // Up to 0034, the migration this file tests, so later ones do not move it.
+    migrate(
+      db,
+      all.filter((m) => m.version <= 34),
+    );
     return db;
   }
   const rows = (sql: string) => db.prepare(sql).all();

@@ -8,6 +8,7 @@ import {
 } from "@harness/core";
 import { parseDocument } from "yaml";
 import { getBlob, putBlob, sweepBlobs } from "./blobs.js";
+import { BUILTIN_PROFILE, activeProfile } from "./profiles.js";
 import { ACCEPTED_MEDIA_TYPES, detectMedia } from "./media-detect.js";
 import {
   buildSkillFile,
@@ -241,11 +242,16 @@ export class SkillStore {
       this.db
         .prepare(
           `SELECT ${COLUMNS} FROM skills
-           WHERE project_id IS ? AND agent_id IS ? AND builtin = 0
-             AND (? OR deleted_at IS NULL)
+           WHERE profile_id = ? AND project_id IS ? AND agent_id IS ?
+             AND builtin = 0 AND (? OR deleted_at IS NULL)
            ORDER BY name`,
         )
-        .all(projectId, agentId, includeDeleted ? 1 : 0) as SkillRow[]
+        .all(
+          activeProfile(this.db),
+          projectId,
+          agentId,
+          includeDeleted ? 1 : 0,
+        ) as SkillRow[]
     ).map(toSkill);
   }
 
@@ -260,11 +266,16 @@ export class SkillStore {
     ).map(toSkill);
   }
 
-  /** Includes a deleted skill. */
+  /**
+   * Includes a deleted skill. A skill of another profile is not found; the
+   * built-in ones are shared (profiles design, decision 6).
+   */
   get(id: string): Skill | undefined {
     const row = this.db
-      .prepare(`SELECT ${COLUMNS} FROM skills WHERE id = ?`)
-      .get(id) as SkillRow | undefined;
+      .prepare(
+        `SELECT ${COLUMNS} FROM skills WHERE id = ? AND profile_id IN (?, ?)`,
+      )
+      .get(id, activeProfile(this.db), BUILTIN_PROFILE) as SkillRow | undefined;
     return row ? toSkill(row) : undefined;
   }
 
@@ -274,9 +285,11 @@ export class SkillStore {
     const row = this.db
       .prepare(
         `SELECT ${COLUMNS} FROM skills
-         WHERE project_id IS ? AND agent_id IS ? AND builtin = 0 AND name = ?`,
+         WHERE profile_id = ? AND project_id IS ? AND agent_id IS ?
+           AND builtin = 0 AND name = ?`,
       )
-      .get(projectId, agentId, name) as SkillRow | undefined;
+      .get(activeProfile(this.db), projectId, agentId, name) as
+      SkillRow | undefined;
     return row ? toSkill(row) : undefined;
   }
 
@@ -420,11 +433,12 @@ export class SkillStore {
       const now = this.now();
       this.db
         .prepare(
-          `INSERT INTO skills (id, project_id, agent_id, display_name, name, description, body, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, '', 1, ?, ?)`,
+          `INSERT INTO skills (id, profile_id, project_id, agent_id, display_name, name, description, body, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, '', 1, ?, ?)`,
         )
         .run(
           id,
+          activeProfile(this.db),
           projectId,
           agentId,
           parsed.name,

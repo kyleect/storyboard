@@ -1042,6 +1042,25 @@ export interface McpServerInput {
   config: McpConfig;
 }
 
+/** A profile: one isolated workspace (profiles design). */
+export interface ProfileView {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string;
+  /** Null: not in the trash. */
+  trashedAt: string | null;
+  /** The profile the backend is using now. */
+  active: boolean;
+}
+
+export interface ProfileListing {
+  /** The id of the active profile. */
+  active: string;
+  profiles: ProfileView[];
+  trashed: ProfileView[];
+}
+
 export interface McpServerView extends McpServerInput {
   id: string;
   createdAt: string;
@@ -1426,6 +1445,29 @@ export const api = {
     const blob = await res.blob();
     return { url: URL.createObjectURL(blob), mediaType: blob.type };
   },
+  listProfiles: () => request<ProfileListing>("GET", "/api/profiles"),
+  createProfile: (name: string) =>
+    request<ProfileView>("POST", "/api/profiles", { name }),
+  renameProfile: (id: string, name: string) =>
+    request<ProfileView>("PUT", `/api/profiles/${encodeURIComponent(id)}`, {
+      name,
+    }),
+  trashProfile: (id: string) =>
+    request<ProfileView>(
+      "POST",
+      `/api/profiles/${encodeURIComponent(id)}/trash`,
+    ),
+  restoreProfile: (id: string) =>
+    request<ProfileView>(
+      "POST",
+      `/api/profiles/${encodeURIComponent(id)}/restore`,
+    ),
+  /** Refused (409) while a run is active. */
+  switchProfile: (id: string) =>
+    request<ProfileListing>(
+      "POST",
+      `/api/profiles/${encodeURIComponent(id)}/switch`,
+    ),
   listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp/servers"),
   createMcpServer: (input: McpServerInput) =>
     request<McpServerView>("POST", "/api/mcp/servers", input),

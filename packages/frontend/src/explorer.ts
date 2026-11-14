@@ -1,4 +1,5 @@
 import type { DataOwner, FileScope } from "./api";
+import { profileSuffix } from "./profile";
 
 /*
  * What the editor-style explorers share: the Files view
@@ -239,10 +240,12 @@ export const clampWidth = (w: number): number =>
 /** What a page is remembered under: a file scope, or any other page's own key. */
 export type PageKey = FileScope | string;
 
+/** Saved views are kept per profile (profiles design 4.3). */
 const storageKey = (namespace: string, page: PageKey): string =>
-  typeof page === "string"
+  (typeof page === "string"
     ? `harness.${namespace}.${page}`
-    : `harness.${namespace}.${page.scope}.${"id" in page ? page.id : "-"}`;
+    : `harness.${namespace}.${page.scope}.${"id" in page ? page.id : "-"}`) +
+  profileSuffix();
 
 function parseTab<K extends string>(
   v: unknown,

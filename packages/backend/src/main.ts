@@ -168,6 +168,14 @@ async function main() {
     mcp: { store: mcpStore, manager: mcp },
     logger: true,
     onSettingsSaved: () => embedder.settingsChanged(),
+    // The new profile has its own MCP servers, workspaces and embedding
+    // model (profiles design 4.3).
+    onProfileSwitched: async () => {
+      embedder.settingsChanged();
+      await mcp.reload();
+      await workspaceIndexer.stop();
+      await workspaceIndexer.start();
+    },
   });
   index.onChunksAdded = () => embedder.kick();
   embedder.kick();

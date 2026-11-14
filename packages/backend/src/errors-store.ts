@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
+import { activeProfile } from "./profiles.js";
 
 /*
  * Errors for the errors consoles (error reporting plan, P4): tool errors
@@ -96,11 +97,14 @@ interface Stored {
   arguments?: unknown;
 }
 
-/** Errors of sessions not in the trash, with their session and project. */
+/**
+ * Errors of the active profile's sessions not in the trash, with their
+ * session and project. The profile is the first `?` of any query that uses it.
+ */
 const FROM = `FROM errors e
   JOIN sessions s ON s.id = e.session_id
   LEFT JOIN projects p ON p.id = s.project_id
-  WHERE s.trashed_at IS NULL`;
+  WHERE e.profile_id = ? AND s.trashed_at IS NULL`;
 
 export class ErrorStore {
   constructor(
@@ -118,11 +122,12 @@ export class ErrorStore {
     };
     this.db
       .prepare(
-        `INSERT INTO errors (id, session_id, run_id, message_id, call_id, source, kind, tool_name, message, details, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO errors (id, profile_id, session_id, run_id, message_id, call_id, source, kind, tool_name, message, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
+        activeProfile(this.db),
         error.sessionId,
         error.runId,
         error.messageId ?? null,
@@ -140,7 +145,7 @@ export class ErrorStore {
   /** Errors of sessions not in the trash, newest first. */
   list(filter: ErrorFilter = {}): ErrorEntry[] {
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: unknown[] = [activeProfile(this.db)];
     if (filter.sessionId !== undefined) {
       where.push("e.session_id = ?");
       params.push(filter.sessionId);
@@ -174,24 +179,29 @@ export class ErrorStore {
 
   /** The sessions, projects and tools that have errors now. */
   filterOptions(): ErrorFilterOptions {
+    const profile = activeProfile(this.db);
     const sessions = this.db
       .prepare(
         `SELECT DISTINCT s.id, s.title, s.project_id ${FROM} ORDER BY s.title, s.id`,
       )
-      .all() as { id: string; title: string; project_id: string | null }[];
+      .all(profile) as {
+      id: string;
+      title: string;
+      project_id: string | null;
+    }[];
     const projects = this.db
       .prepare(
         `SELECT DISTINCT p.id, p.name ${FROM} AND p.id IS NOT NULL ORDER BY p.name, p.id`,
       )
-      .all() as { id: string; name: string }[];
+      .all(profile) as { id: string; name: string }[];
     const tools = this.db
       .prepare(
         `SELECT DISTINCT e.tool_name ${FROM} AND e.tool_name IS NOT NULL ORDER BY e.tool_name`,
       )
-      .all() as { tool_name: string }[];
+      .all(profile) as { tool_name: string }[];
     const runs = this.db
       .prepare(`SELECT 1 ${FROM} AND e.source = 'run' LIMIT 1`)
-      .get();
+      .get(profile);
     return {
       sessions: sessions.map((s) => ({
         id: s.id,
@@ -215,9 +225,9 @@ export class ErrorStore {
       sessionId === undefined
         ? this.db
             .prepare(
-              "DELETE FROM errors WHERE session_id IN (SELECT id FROM sessions WHERE trashed_at IS NULL)",
+              "DELETE FROM errors WHERE profile_id = ? AND session_id IN (SELECT id FROM sessions WHERE trashed_at IS NULL)",
             )
-            .run()
+            .run(activeProfile(this.db))
         : this.db
             .prepare("DELETE FROM errors WHERE session_id = ?")
             .run(sessionId);

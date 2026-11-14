@@ -463,6 +463,13 @@ export function Workbench() {
         openTab({ kind, root: "global", key: "" }, false);
         drawerHandlers.close();
       }}
+      onManageProfiles={() => {
+        setFocused(null);
+        // Settings may already be open on another section, so say which.
+        useWorkbench.getState().setSettingsPath("/settings/general/profiles");
+        openTab({ kind: "settings", root: "global", key: "" }, false);
+        drawerHandlers.close();
+      }}
     />
   );
 

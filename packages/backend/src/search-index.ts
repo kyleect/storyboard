@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { chunkText, replaySessionFiles, type Scope } from "@harness/core";
+import { activeProfile } from "./profiles.js";
 import { activeMessageJson } from "./transcript.js";
 
 /*
@@ -48,7 +49,15 @@ export function ftsQuery(text: string): string | null {
   return words.map((w) => `"${w}"`).join(" OR ");
 }
 
-function scopeSql(filter: ScopeFilter): { sql: string; params: string[] } {
+/**
+ * Only the global scope needs the profile: its chunks have no owner id, while
+ * a session's, project's or workspace's chunks are found by an id that
+ * belongs to one profile (profiles design 4.5).
+ */
+function scopeSql(
+  filter: ScopeFilter,
+  profile: string,
+): { sql: string; params: string[] } {
   const parts: string[] = [];
   const params: string[] = [];
   if (filter.sessionId !== null) {
@@ -59,7 +68,10 @@ function scopeSql(filter: ScopeFilter): { sql: string; params: string[] } {
     parts.push("(c.scope = 'project' AND c.owner_id = ?)");
     params.push(filter.projectId);
   }
-  if (filter.global) parts.push("c.scope = 'global'");
+  if (filter.global) {
+    parts.push("(c.scope = 'global' AND c.profile_id = ?)");
+    params.push(profile);
+  }
   if (filter.workspaceIds && filter.workspaceIds.length > 0) {
     parts.push(
       `(c.scope = 'workspace' AND c.owner_id IN (${filter.workspaceIds.map(() => "?").join(", ")}))`,
@@ -84,18 +96,22 @@ export class SearchIndex {
     ownerId: string | null,
     key: string,
     value: string | null,
+    /** Whose file it is. Default: the active profile. */
+    profileId: string = activeProfile(this.db),
   ) {
     const chunks = value === null ? [] : chunkText(value);
     this.db.transaction(() => {
       this.db
         .prepare(
-          "DELETE FROM chunks WHERE scope = ? AND owner_id IS ? AND key = ?",
+          "DELETE FROM chunks WHERE profile_id = ? AND scope = ? AND owner_id IS ? AND key = ?",
         )
-        .run(scope, ownerId, key);
+        .run(profileId, scope, ownerId, key);
       const insert = this.db.prepare(
-        "INSERT INTO chunks (scope, owner_id, key, seq, text) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO chunks (profile_id, scope, owner_id, key, seq, text) VALUES (?, ?, ?, ?, ?, ?)",
       );
-      chunks.forEach((text, seq) => insert.run(scope, ownerId, key, seq, text));
+      chunks.forEach((text, seq) =>
+        insert.run(profileId, scope, ownerId, key, seq, text),
+      );
     })();
     if (chunks.length > 0) this.onChunksAdded();
   }
@@ -155,9 +171,10 @@ export class SearchIndex {
         this.db.prepare("DELETE FROM chunks").run();
         const shared = this.db
           .prepare(
-            "SELECT project_id, key, value FROM files WHERE deleted_at IS NULL",
+            "SELECT profile_id, project_id, key, value FROM files WHERE deleted_at IS NULL",
           )
           .all() as {
+          profile_id: string;
           project_id: string | null;
           key: string;
           value: string;
@@ -168,13 +185,14 @@ export class SearchIndex {
             e.project_id,
             e.key,
             e.value,
+            e.profile_id,
           );
           count++;
         }
-        const sessions = this.db.prepare("SELECT id FROM sessions").all() as {
-          id: string;
-        }[];
-        for (const { id } of sessions) {
+        const sessions = this.db
+          .prepare("SELECT id, profile_id FROM sessions")
+          .all() as { id: string; profile_id: string }[];
+        for (const { id, profile_id } of sessions) {
           // The line the session shows, not every branch (message editing
           // plan, part A): files that exist only on another branch are not
           // searched until it is switched to.
@@ -182,7 +200,7 @@ export class SearchIndex {
             activeMessageJson(this.db, id).map((m) => JSON.parse(m) as never),
           );
           for (const [key, current] of state.files) {
-            this.indexFile("session", id, key, current.value);
+            this.indexFile("session", id, key, current.value, profile_id);
             count++;
           }
         }
@@ -197,15 +215,19 @@ export class SearchIndex {
     return count;
   }
 
-  /** Chunks with no vector from `model`, oldest first. */
+  /**
+   * The active profile's chunks with no vector from `model`, oldest first.
+   * Each profile has its own embedding model, so another profile's chunks
+   * wait until it is switched to (profiles design 4.5).
+   */
   pending(model: string, limit: number): ChunkRow[] {
     return this.db
       .prepare(
         `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text FROM chunks c
          LEFT JOIN chunk_vectors v ON v.chunk_id = c.id AND v.model = ?
-         WHERE v.chunk_id IS NULL ORDER BY c.id LIMIT ?`,
+         WHERE c.profile_id = ? AND v.chunk_id IS NULL ORDER BY c.id LIMIT ?`,
       )
-      .all(model, limit) as ChunkRow[];
+      .all(model, activeProfile(this.db), limit) as ChunkRow[];
   }
 
   /** Stores vectors; chunks deleted meanwhile are skipped. */
@@ -221,18 +243,24 @@ export class SearchIndex {
     })();
   }
 
-  /** Removes vectors from any other model (S6). Returns how many. */
+  /**
+   * Removes the active profile's vectors from any other model (S6). Other
+   * profiles' vectors are theirs to keep. Returns how many.
+   */
   dropOtherModels(model: string): number {
     return this.db
-      .prepare("DELETE FROM chunk_vectors WHERE model != ?")
-      .run(model).changes;
+      .prepare(
+        `DELETE FROM chunk_vectors WHERE model != ?
+         AND chunk_id IN (SELECT id FROM chunks WHERE profile_id = ?)`,
+      )
+      .run(model, activeProfile(this.db)).changes;
   }
 
   /** Best keyword matches, best first. */
   keyword(filter: ScopeFilter, query: string, limit: number): ChunkRow[] {
     const match = ftsQuery(query);
     if (match === null) return [];
-    const scope = scopeSql(filter);
+    const scope = scopeSql(filter, activeProfile(this.db));
     return this.db
       .prepare(
         `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text
@@ -250,7 +278,7 @@ export class SearchIndex {
     vector: readonly number[],
     limit: number,
   ): ChunkRow[] {
-    const scope = scopeSql(filter);
+    const scope = scopeSql(filter, activeProfile(this.db));
     return this.db
       .prepare(
         `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text

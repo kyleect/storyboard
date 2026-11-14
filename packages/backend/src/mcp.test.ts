@@ -19,6 +19,7 @@ import {
   type McpServer,
   type ServerInput,
 } from "./mcp-store.js";
+import { ProfileStore, setActiveProfile } from "./profiles.js";
 import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
@@ -829,5 +830,38 @@ describe("MCP tools in a run", () => {
       res.body as unknown as { name: string; group: string; ask: boolean }[]
     ).find((t) => t.name === "mcp_files_echo");
     expect(echo).toMatchObject({ group: "mcp", ask: true });
+  });
+});
+
+describe("profiles", () => {
+  it("reload swaps the connections for the active profile's servers", async () => {
+    const fake = new Fake(standardTools);
+    const c = await setup({
+      files: () => fake.transport(),
+      notes: () => fake.transport(),
+    });
+    const work = new ProfileStore(c.t.db).create("Work");
+    const names = () => c.manager.tools.map((t) => t.name);
+
+    const first = c.store.create(stdio({ name: "files" }));
+    c.manager.add(first);
+    await c.manager.connect(first.id);
+    expect(names()).toContain("mcp_files_echo");
+
+    // Another profile has its own servers; the first one's are dropped.
+    setActiveProfile(c.t.db, work.id);
+    const second = c.store.create(stdio({ name: "notes" }));
+    await c.manager.reload();
+    await c.manager.connect(second.id);
+    expect(names()).toContain("mcp_notes_echo");
+    expect(names().some((n) => n.startsWith("mcp_files_"))).toBe(false);
+    expect(c.manager.status(first.id).tools).toEqual([]);
+
+    // And back again: the first profile's server connects anew.
+    setActiveProfile(c.t.db, "default");
+    await c.manager.reload();
+    await c.manager.connect(first.id);
+    expect(names()).toContain("mcp_files_echo");
+    expect(names().some((n) => n.startsWith("mcp_notes_"))).toBe(false);
   });
 });

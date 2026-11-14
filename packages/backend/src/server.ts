@@ -38,6 +38,8 @@ import { registerFileRoutes } from "./file-routes.js";
 import { schemaChecker } from "./json-schema.js";
 import { RunError, type RunManager } from "./runs.js";
 import { registerMcpRoutes } from "./mcp-routes.js";
+import { registerProfileRoutes } from "./profile-routes.js";
+import { ProfileError, ProfileStore } from "./profiles.js";
 import type { McpManager } from "./mcp-manager.js";
 import type { McpServerStore } from "./mcp-store.js";
 import { registerSkillRoutes } from "./skill-routes.js";
@@ -88,6 +90,13 @@ export interface ServerOptions {
    * backend's `main` passes them).
    */
   mcp?: { store: McpServerStore; manager: McpManager };
+  /** Profiles. Default: over `store.db`. */
+  profiles?: ProfileStore;
+  /**
+   * Called after the active profile changed, to reload MCP connections and
+   * workspace indexing (profiles design 4.3).
+   */
+  onProfileSwitched?: () => Promise<void>;
   /** The app-wide event stream's source. Default: the run manager's. */
   events?: AppEvents;
   /** Idle time before a keepalive comment is sent on an event stream. */
@@ -197,6 +206,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     if (err instanceof FixedApprovalError) {
       return reply.code(409).send({ error: err.message });
     }
+    if (err instanceof ProfileError) {
+      return reply.code(err.statusCode).send({ error: err.message });
+    }
     if (err instanceof z.ZodError) {
       return reply
         .code(400)
@@ -244,6 +256,25 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   if (options.mcp) registerMcpRoutes(app, { ...options.mcp, events });
+
+  registerProfileRoutes(app, {
+    store: options.profiles ?? new ProfileStore(store.db, now, newId),
+    events,
+    activeSessions: () => {
+      // A subagent's run belongs to a top-level run, so the top-level ones
+      // name every session that is busy.
+      const seen = new Set<string>();
+      return runs
+        .activeRuns()
+        .filter((r) => r.parentRunId === null && !seen.has(r.sessionId))
+        .map((r) => {
+          seen.add(r.sessionId);
+          return { id: r.sessionId, title: r.sessionTitle };
+        });
+    },
+    onSwitched: options.onProfileSwitched,
+    onProblem: (message, err) => app.log.error({ err }, message),
+  });
 
   app.get("/api/settings", async () => readSettings(store.db, env));
 

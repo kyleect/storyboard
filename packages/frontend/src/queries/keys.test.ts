@@ -7,6 +7,7 @@ import {
   errorKeys,
   mcpKeys,
   modelKeys,
+  profileKeys,
   projectKeys,
   runKeys,
   schemaKeys,
@@ -333,5 +334,13 @@ describe("run keys", () => {
     };
     expect(await reach(runKeys.all, keys)).toEqual(["active"]);
     expect(await reach(runKeys.active(), keys)).toEqual(["active"]);
+  });
+});
+
+describe("profile keys", () => {
+  const keys: Keys = { list: profileKeys.list(), projects: projectKeys.list() };
+
+  it("reach the profile list and nothing else", async () => {
+    expect(await reach(profileKeys.all, keys)).toEqual(["list"]);
   });
 });

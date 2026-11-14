@@ -1,4 +1,6 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
+import { BUILTIN_PROFILE, activeProfile } from "./profiles.js";
+import { deleteStoredSettingIf } from "./settings.js";
 import { ToolGrant, ToolMode, normalizeGrant } from "./tool-grants.js";
 
 /*
@@ -184,18 +186,28 @@ export class AgentStore {
       this.db
         .prepare(
           `SELECT ${COLUMNS} FROM agents
-           WHERE project_id IS ? AND builtin = 0 AND (? OR deleted_at IS NULL)
+           WHERE profile_id = ? AND project_id IS ? AND builtin = 0
+             AND (? OR deleted_at IS NULL)
            ORDER BY name`,
         )
-        .all(projectId, includeDeleted ? 1 : 0) as AgentRow[]
+        .all(
+          activeProfile(this.db),
+          projectId,
+          includeDeleted ? 1 : 0,
+        ) as AgentRow[]
     ).map(toAgent);
   }
 
-  /** Includes a deleted agent. */
+  /**
+   * Includes a deleted agent. An agent of another profile is not found; the
+   * built-in ones are shared (profiles design, decision 6).
+   */
   get(id: string): Agent | undefined {
     const row = this.db
-      .prepare(`SELECT ${COLUMNS} FROM agents WHERE id = ?`)
-      .get(id) as AgentRow | undefined;
+      .prepare(
+        `SELECT ${COLUMNS} FROM agents WHERE id = ? AND profile_id IN (?, ?)`,
+      )
+      .get(id, activeProfile(this.db), BUILTIN_PROFILE) as AgentRow | undefined;
     return row ? toAgent(row) : undefined;
   }
 
@@ -203,9 +215,10 @@ export class AgentStore {
   getByName(projectId: string | null, name: string): Agent | undefined {
     const row = this.db
       .prepare(
-        `SELECT ${COLUMNS} FROM agents WHERE project_id IS ? AND builtin = 0 AND name = ?`,
+        `SELECT ${COLUMNS} FROM agents
+         WHERE profile_id = ? AND project_id IS ? AND builtin = 0 AND name = ?`,
       )
-      .get(projectId, name) as AgentRow | undefined;
+      .get(activeProfile(this.db), projectId, name) as AgentRow | undefined;
     return row ? toAgent(row) : undefined;
   }
 
@@ -248,11 +261,12 @@ export class AgentStore {
       const now = this.now();
       this.db
         .prepare(
-          `INSERT INTO agents (id, project_id, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          `INSERT INTO agents (id, profile_id, project_id, name, description, prompt, tool_grant, tool_approval, child_reminders, child_prompt, subagent, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           id,
+          activeProfile(this.db),
           projectId,
           c.name,
           c.description,
@@ -328,9 +342,7 @@ export class AgentStore {
         .run(id);
       // Nor the global default (global default agent design, Q7). Restoring
       // it does not set it again.
-      this.db
-        .prepare("DELETE FROM settings WHERE key = ? AND value = ?")
-        .run("defaultAgentId", JSON.stringify(id));
+      deleteStoredSettingIf(this.db, "defaultAgentId", JSON.stringify(id));
       return { agent: this.write(agent, agent, true), sessions };
     })();
   }

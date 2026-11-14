@@ -555,6 +555,7 @@ describe("loadMigrations", () => {
     expect(tables()).toEqual([
       "agent_versions",
       "agents",
+      "app_state",
       "attachments",
       "blobs",
       "chunk_vectors",
@@ -575,6 +576,7 @@ describe("loadMigrations", () => {
       "mcp_servers",
       "media_choices",
       "messages",
+      "profiles",
       "projects",
       "run_messages",
       "runs",

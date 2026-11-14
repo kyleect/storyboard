@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
 import { COPY_LIMIT_MAX, DEFAULT_COPY_LIMIT } from "@harness/core";
 import { SKILL_LOAD } from "@harness/tools";
+import { DEFAULT_PROFILE, activeProfile } from "./profiles.js";
 
 /*
  * Stored settings (design doc, "Configuration details"). Precedence, highest
@@ -325,6 +326,52 @@ function parseBoolean(raw: string): unknown {
   return raw;
 }
 
+/**
+ * Settings that belong to the app, not to a profile (profiles design 4.4):
+ * the server needs the port before a profile is chosen. They are always
+ * stored with the Default profile.
+ */
+const APP_WIDE = new Set<string>(["port"]);
+
+/** The profile a setting is stored under. */
+function settingsOwner(db: Database, key: string): string {
+  return APP_WIDE.has(key) ? DEFAULT_PROFILE : activeProfile(db);
+}
+
+/** One stored setting of the active profile, as its JSON text. */
+export function getStoredSetting(
+  db: Database,
+  key: string,
+): string | undefined {
+  const row = db
+    .prepare("SELECT value FROM settings WHERE profile_id = ? AND key = ?")
+    .get(settingsOwner(db, key), key) as { value: string } | undefined;
+  return row?.value;
+}
+
+/** Stores one setting of the active profile; `json` is already JSON. */
+export function putStoredSetting(db: Database, key: string, json: string) {
+  db.prepare(
+    `INSERT INTO settings (profile_id, key, value) VALUES (?, ?, ?)
+     ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+  ).run(settingsOwner(db, key), key, json);
+}
+
+/** Removes a setting of the active profile when it holds exactly `json`. */
+export function deleteStoredSettingIf(
+  db: Database,
+  key: string,
+  json: string,
+): boolean {
+  return (
+    db
+      .prepare(
+        "DELETE FROM settings WHERE profile_id = ? AND key = ? AND value = ?",
+      )
+      .run(settingsOwner(db, key), key, json).changes > 0
+  );
+}
+
 export interface SettingsView {
   /** What is in effect. */
   effective: Settings;
@@ -339,7 +386,14 @@ export function readSettings(
   env: NodeJS.ProcessEnv = process.env,
 ): SettingsView {
   const stored: Partial<Settings> = {};
-  const rows = db.prepare("SELECT key, value FROM settings").all() as {
+  // The active profile's settings, and the app-wide ones from Default.
+  const rows = db
+    .prepare(
+      `SELECT key, value FROM settings WHERE profile_id = ?
+       UNION ALL
+       SELECT key, value FROM settings WHERE profile_id = ? AND key IN (${[...APP_WIDE].map(() => "?").join(", ")})`,
+    )
+    .all(activeProfile(db), DEFAULT_PROFILE, ...APP_WIDE) as {
     key: string;
     value: string;
   }[];
@@ -375,12 +429,9 @@ export function readSettings(
 /** Validates and stores a partial settings object. */
 export function writeSettings(db: Database, patch: unknown) {
   const valid = Settings.partial().parse(patch);
-  const upsert = db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-  );
   db.transaction(() => {
     for (const [key, value] of Object.entries(valid)) {
-      if (value !== undefined) upsert.run(key, JSON.stringify(value));
+      if (value !== undefined) putStoredSetting(db, key, JSON.stringify(value));
     }
   })();
 }

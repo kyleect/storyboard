@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { activeProfile } from "./profiles.js";
 
 /*
  * Workspaces and their attachments (files unification design, D22 to D26,
@@ -89,17 +90,19 @@ export class WorkspaceStore {
       this.db
         .prepare(
           `SELECT ${COLUMNS} FROM workspaces
-           WHERE (deleted_at IS NOT NULL) = ? ORDER BY name`,
+           WHERE profile_id = ? AND (deleted_at IS NOT NULL) = ? ORDER BY name`,
         )
-        .all(deleted ? 1 : 0) as Row[]
+        .all(activeProfile(this.db), deleted ? 1 : 0) as Row[]
     ).map(toRow);
   }
 
   /** Includes a workspace in the trash. */
   get(id: string): WorkspaceRow | undefined {
     const row = this.db
-      .prepare(`SELECT ${COLUMNS} FROM workspaces WHERE id = ?`)
-      .get(id) as Row | undefined;
+      .prepare(
+        `SELECT ${COLUMNS} FROM workspaces WHERE profile_id = ? AND id = ?`,
+      )
+      .get(activeProfile(this.db), id) as Row | undefined;
     return row ? toRow(row) : undefined;
   }
 
@@ -129,8 +132,11 @@ export class WorkspaceStore {
     const clean = name.trim();
     if (clean === "") throw new WorkspaceStoreError("A name is needed.", 400);
     const other = this.db
-      .prepare("SELECT id, deleted_at FROM workspaces WHERE name = ?")
-      .get(clean) as { id: string; deleted_at: string | null } | undefined;
+      .prepare(
+        "SELECT id, deleted_at FROM workspaces WHERE profile_id = ? AND name = ?",
+      )
+      .get(activeProfile(this.db), clean) as
+      { id: string; deleted_at: string | null } | undefined;
     if (other && other.id !== self) {
       throw new WorkspaceStoreError(
         other.deleted_at !== null
@@ -149,10 +155,18 @@ export class WorkspaceStore {
     const now = this.now();
     this.db
       .prepare(
-        `INSERT INTO workspaces (id, name, path, writable, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO workspaces (id, profile_id, name, path, writable, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, name, path, content.writable ? 1 : 0, now, now);
+      .run(
+        id,
+        activeProfile(this.db),
+        name,
+        path,
+        content.writable ? 1 : 0,
+        now,
+        now,
+      );
     return this.require(id);
   }
 
@@ -283,12 +297,12 @@ export class WorkspaceStore {
           .join(", ")}
          FROM workspaces w
          JOIN workspace_attachments a ON a.workspace_id = w.id
-         WHERE w.deleted_at IS NULL AND (
+         WHERE w.profile_id = ? AND w.deleted_at IS NULL AND (
            (a.owner_kind = 'session' AND a.owner_id = ?) OR
            (a.owner_kind = 'project' AND a.owner_id = ?))
          ORDER BY w.name`,
       )
-      .all(sessionId, projectId ?? "") as Row[];
+      .all(activeProfile(this.db), sessionId, projectId ?? "") as Row[];
     // Read-only if any attachment that applies says so.
     const readOnly = new Set(
       (
@@ -314,10 +328,10 @@ export class WorkspaceStore {
   grantSubject(tool: string, kind: string, subjectId: string) {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO tool_subject_grants (tool, subject_kind, subject_id, created_at)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO tool_subject_grants (profile_id, tool, subject_kind, subject_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(tool, kind, subjectId, this.now());
+      .run(activeProfile(this.db), tool, kind, subjectId, this.now());
   }
 
   isSubjectGranted(tool: string, kind: string, subjectId: string): boolean {
@@ -325,9 +339,9 @@ export class WorkspaceStore {
       this.db
         .prepare(
           `SELECT 1 FROM tool_subject_grants
-           WHERE tool = ? AND subject_kind = ? AND subject_id = ?`,
+           WHERE profile_id = ? AND tool = ? AND subject_kind = ? AND subject_id = ?`,
         )
-        .get(tool, kind, subjectId) !== undefined
+        .get(activeProfile(this.db), tool, kind, subjectId) !== undefined
     );
   }
 
@@ -337,9 +351,12 @@ export class WorkspaceStore {
       this.db
         .prepare(
           `SELECT tool, subject_id FROM tool_subject_grants
-           WHERE subject_kind = ? ORDER BY tool, subject_id`,
+           WHERE profile_id = ? AND subject_kind = ? ORDER BY tool, subject_id`,
         )
-        .all(kind) as { tool: string; subject_id: string }[]
+        .all(activeProfile(this.db), kind) as {
+        tool: string;
+        subject_id: string;
+      }[]
     ).map((r) => ({ tool: r.tool, subjectId: r.subject_id }));
   }
 
@@ -348,9 +365,9 @@ export class WorkspaceStore {
       this.db
         .prepare(
           `DELETE FROM tool_subject_grants
-           WHERE tool = ? AND subject_kind = ? AND subject_id = ?`,
+           WHERE profile_id = ? AND tool = ? AND subject_kind = ? AND subject_id = ?`,
         )
-        .run(tool, kind, subjectId).changes > 0
+        .run(activeProfile(this.db), tool, kind, subjectId).changes > 0
     );
   }
 

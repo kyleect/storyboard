@@ -37,6 +37,7 @@ import { ReasoningPicker } from "./ReasoningPicker";
 import { showError, useSessionActions } from "./SessionActions";
 import { LookAndFeel } from "./LookAndFeel";
 import { McpServers } from "./McpServers";
+import { Profiles } from "./Profiles";
 import { ToolSettings } from "./ToolSettings";
 
 /*
@@ -198,6 +199,7 @@ const AREAS: readonly Area[] = [
         label: "Server",
         render: (view) => <ServerSettings view={view} />,
       },
+      { value: "profiles", label: "Profiles", render: () => <Profiles /> },
       { value: "look", label: "Look & Feel", render: () => <LookAndFeel /> },
     ],
   },

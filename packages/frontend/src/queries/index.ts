@@ -11,6 +11,7 @@ export { dataKeys, schemaKeys } from "./data";
 export { fileKeys } from "./files";
 export { errorKeys } from "./errors";
 export { modelKeys } from "./models";
+export { profileKeys } from "./profiles";
 export { projectKeys } from "./projects";
 export { runKeys } from "./runs";
 export { sessionKeys, trashKeys } from "./sessions";

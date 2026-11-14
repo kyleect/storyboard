@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { sweepBlobs } from "./blobs.js";
 import { messagePreview } from "./branches.js";
+import { activeProfile } from "./profiles.js";
 import {
   Message,
   Usage,
@@ -254,9 +255,9 @@ export class Store {
   ): SessionRow {
     this.db
       .prepare(
-        "INSERT INTO sessions (id, title, created_at, project_id) VALUES (?, ?, ?, ?)",
+        "INSERT INTO sessions (id, profile_id, title, created_at, project_id) VALUES (?, ?, ?, ?, ?)",
       )
-      .run(id, title, now, projectId);
+      .run(id, activeProfile(this.db), title, now, projectId);
     return {
       id,
       title,
@@ -283,10 +284,10 @@ export class Store {
       .prepare(
         `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}, ${UNREAD}
          FROM sessions
-         WHERE trashed_at IS NULL AND project_id IS ?
+         WHERE profile_id = ? AND trashed_at IS NULL AND project_id IS ?
          ORDER BY created_at DESC`,
       )
-      .all(projectId) as (SessionRow & {
+      .all(activeProfile(this.db), projectId) as (SessionRow & {
       usage: string | null;
       unread: number;
     })[];
@@ -316,20 +317,25 @@ export class Store {
       .prepare(
         `SELECT ${SESSION_COLUMNS}, ${LATEST_USAGE}, ${UNREAD}
          FROM sessions
-         WHERE trashed_at IS NULL AND project_id IS ?
+         WHERE profile_id = ? AND trashed_at IS NULL AND project_id IS ?
          ORDER BY created_at ${order}, id ${order}
          LIMIT ? OFFSET ?`,
       )
-      .all(options.projectId, options.limit, options.offset) as (SessionRow & {
+      .all(
+        activeProfile(this.db),
+        options.projectId,
+        options.limit,
+        options.offset,
+      ) as (SessionRow & {
       usage: string | null;
       unread: number;
     })[];
     const { total } = this.db
       .prepare(
         `SELECT count(*) AS total FROM sessions
-         WHERE trashed_at IS NULL AND project_id IS ?`,
+         WHERE profile_id = ? AND trashed_at IS NULL AND project_id IS ?`,
       )
-      .get(options.projectId) as { total: number };
+      .get(activeProfile(this.db), options.projectId) as { total: number };
     const agents = this.sessionAgents(rows.map((r) => r.id));
     return {
       items: rows.map((r) => ({
@@ -375,10 +381,10 @@ export class Store {
       this.db
         .prepare(
           `SELECT id FROM sessions
-           WHERE trashed_at IS NULL AND project_id IS ?
+           WHERE profile_id = ? AND trashed_at IS NULL AND project_id IS ?
            ORDER BY created_at DESC, id DESC`,
         )
-        .all(projectId) as { id: string }[]
+        .all(activeProfile(this.db), projectId) as { id: string }[]
     ).map((r) => r.id);
   }
 
@@ -394,11 +400,11 @@ export class Store {
         .prepare(
           `SELECT id FROM (
              SELECT id, created_at, ${UNREAD} FROM sessions
-             WHERE trashed_at IS NULL)
+             WHERE profile_id = ? AND trashed_at IS NULL)
            WHERE unread = 1
            ORDER BY created_at DESC, id DESC`,
         )
-        .all() as { id: string }[]
+        .all(activeProfile(this.db)) as { id: string }[]
     ).map((r) => r.id);
   }
 
@@ -410,10 +416,10 @@ export class Store {
     return this.db
       .prepare(
         `SELECT ${SESSION_COLUMNS} FROM sessions
-         WHERE trashed_at IS NOT NULL AND trashed_with_project = 0
+         WHERE profile_id = ? AND trashed_at IS NOT NULL AND trashed_with_project = 0
          ORDER BY trashed_at DESC`,
       )
-      .all() as SessionRow[];
+      .all(activeProfile(this.db)) as SessionRow[];
   }
 
   /** The sessions that went to the trash together with the project. */
@@ -427,11 +433,16 @@ export class Store {
       .all(projectId) as SessionRow[];
   }
 
-  /** Includes sessions in the trash. */
+  /**
+   * Includes sessions in the trash. A session of another profile is not
+   * found, so nothing outside the active profile can be reached by its id.
+   */
   getSession(id: string): SessionRow | undefined {
     return this.db
-      .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`)
-      .get(id) as SessionRow | undefined;
+      .prepare(
+        `SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ? AND profile_id = ?`,
+      )
+      .get(id, activeProfile(this.db)) as SessionRow | undefined;
   }
 
   renameSession(id: string, title: string) {
@@ -451,9 +462,9 @@ export class Store {
     const { count } = this.db
       .prepare(
         `SELECT count(*) AS count FROM sessions
-         WHERE trashed_at IS NULL AND ${UNREAD_CONDITION}`,
+         WHERE profile_id = ? AND trashed_at IS NULL AND ${UNREAD_CONDITION}`,
       )
-      .get() as { count: number };
+      .get(activeProfile(this.db)) as { count: number };
     return count;
   }
 
@@ -463,11 +474,14 @@ export class Store {
         .prepare(
           `SELECT id, project_id FROM (
        SELECT id, project_id, created_at, ${UNREAD} FROM sessions
-       WHERE trashed_at IS NULL)
+       WHERE profile_id = ? AND trashed_at IS NULL)
      WHERE unread = 1
      ORDER BY created_at DESC, id DESC`,
         )
-        .all() as { id: string; project_id: string | null }[]
+        .all(activeProfile(this.db)) as {
+        id: string;
+        project_id: string | null;
+      }[]
     ).map((r) => ({ id: r.id, projectId: r.project_id }));
   }
 
@@ -611,11 +625,12 @@ export class Store {
     const color = project.color ?? null;
     this.db
       .prepare(
-        `INSERT INTO projects (id, name, description, color, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO projects (id, profile_id, name, description, color, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         project.id,
+        activeProfile(this.db),
         project.name,
         project.description,
         color,
@@ -638,8 +653,10 @@ export class Store {
   /** Includes projects in the trash. */
   getProject(id: string): ProjectRow | undefined {
     return this.db
-      .prepare(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = ?`)
-      .get(id) as ProjectRow | undefined;
+      .prepare(
+        `SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = ? AND profile_id = ?`,
+      )
+      .get(id, activeProfile(this.db)) as ProjectRow | undefined;
   }
 
   /** Projects that are not in the trash, most recently used first (Q15). */
@@ -647,9 +664,9 @@ export class Store {
     return this.db
       .prepare(
         `SELECT ${PROJECT_COLUMNS} FROM projects
-         WHERE trashed_at IS NULL ORDER BY last_used_at DESC`,
+         WHERE profile_id = ? AND trashed_at IS NULL ORDER BY last_used_at DESC`,
       )
-      .all() as ProjectRow[];
+      .all(activeProfile(this.db)) as ProjectRow[];
   }
 
   /** Projects in the trash, most recently trashed first. */
@@ -657,9 +674,9 @@ export class Store {
     return this.db
       .prepare(
         `SELECT ${PROJECT_COLUMNS} FROM projects
-         WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC`,
+         WHERE profile_id = ? AND trashed_at IS NOT NULL ORDER BY trashed_at DESC`,
       )
-      .all() as ProjectRow[];
+      .all(activeProfile(this.db)) as ProjectRow[];
   }
 
   /** A field left out is not changed. */
@@ -1428,10 +1445,10 @@ export class Store {
       .prepare(
         `SELECT m.id, m.session_id, m.parent_id, m.trashed_at, m.message, s.title
          FROM messages m JOIN sessions s ON s.id = m.session_id
-         WHERE m.trashed_at IS NOT NULL AND s.trashed_at IS NULL
+         WHERE s.profile_id = ? AND m.trashed_at IS NOT NULL AND s.trashed_at IS NULL
          ORDER BY m.trashed_at DESC`,
       )
-      .all() as {
+      .all(activeProfile(this.db)) as {
       id: string;
       session_id: string;
       parent_id: string | null;

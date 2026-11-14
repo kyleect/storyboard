@@ -28,7 +28,13 @@ describe("migration 0036 (project color)", () => {
       "INSERT INTO projects (id, name, created_at, last_used_at) VALUES ('p1', 'Old', ?, ?)",
     ).run(NOW, NOW);
 
-    expect(migrate(db, all)).toEqual([36]);
+    // Only up to 36, so the test does not move when later migrations land.
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 36),
+      ),
+    ).toEqual([36]);
 
     expect(db.prepare("SELECT id, name, color FROM projects").all()).toEqual([
       { id: "p1", name: "Old", color: null },

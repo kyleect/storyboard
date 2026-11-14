@@ -16,6 +16,7 @@ packages/backend
     data-steps.ts        one-time data changes SQL cannot make (run after migrations)
     token.ts             API token file
     settings.ts          settings: defaults, environment, stored values
+    profiles.ts          profiles and the active profile
     server.ts            Fastify app: auth, core routes, event streams
     agent-routes.ts      agent HTTP routes         ┐
     skill-routes.ts      skill HTTP routes         │
@@ -23,6 +24,7 @@ packages/backend
                          and media-describer routes│
     data-routes.ts       schema and data routes    │
     mcp-routes.ts        MCP server routes         │
+    profile-routes.ts    profile routes            │
     workspace-routes.ts  workspace routes          ┘
     runs.ts              RunManager (the heart of the backend)
     store.ts             sessions, projects, messages, runs, events (SQL)
@@ -146,6 +148,7 @@ before `files-rename` read a message's file changes from `entries`, with a
 
 | Area             | Tables                                                                                                         | Notes                                                                                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Profiles         | `profiles`, `app_state`                                                                                        | Which profile exists and which is active; see [Profiles](#profiles).                                                                                               |
 | MCP              | `mcp_servers`                                                                                                  | Servers the backend connects to; see [MCP servers](#mcp-servers).                                                                                                  |
 | Settings         | `settings`                                                                                                     | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.                                                                            |
 | Conversation     | `sessions`, `messages`, `projects`                                                                             | `messages.message` holds the provider-neutral message as JSON; `seq` is insertion order. The transcript is a tree, see [Branches](#branches).                      |
@@ -184,7 +187,46 @@ had, oldest first. A delete adds a version flagged `deleted`; nothing is removed
 
 **Built-ins.** Migrations insert the built-in records (the Dispatcher agent, three
 schemas, four skills) flagged `builtin = 1`. They live in a scope of their own so
-a user's record can share a name.
+a user's record can share a name. They belong to the profile `builtin`, which
+every profile sees.
+
+## Profiles
+
+A profile is a whole workspace of its own: every scope (global, project, agent,
+session) lives inside one. There is one database; the rows of these tables carry
+`profile_id TEXT NOT NULL DEFAULT 'default'`: `projects`, `sessions`, `files`,
+`folders`, `agents`, `skills`, `schemas`, `data`, `chunks` and `errors`. The
+tables that were keyed by name now include it in the key: `settings` (primary
+key `profile_id, key`), `mcp_servers` and `workspaces` (`UNIQUE(profile_id,
+name)`), `tool_subject_grants`, and the unique indexes of files, folders,
+agents, skills and schemas. Everything below a session or a record (messages,
+runs, events, versions, attachments, approvals) inherits its profile through its
+parent id and has no column of its own. Blobs are shared by content hash.
+
+`profiles.ts` holds the `profiles` table (`id`, `name`, `created_at`,
+`last_used_at`, `trashed_at`) and the active profile, which is stored in
+`app_state` under `activeProfile`. Migration `0037` creates the profile
+`default` and puts every existing row in it. `activeProfile(db)` reads the
+active id and every store calls it per query, so a switch needs no store to be
+rebuilt. The `port` setting is read from every profile, since it belongs to
+the process.
+
+- **Names** are trimmed, at most 64 characters and unique among live profiles
+  (409 otherwise). `default` and the active profile cannot be trashed.
+- **Trash.** A trashed profile keeps all its data and cannot be switched to
+  until restored. Profiles are never purged.
+- **Switching** (`POST /api/profiles/:id/switch`) is refused with 409 while any
+  top-level run is active, naming the sessions' titles; otherwise it stores the
+  new id, calls the `onProfileSwitched` hook and publishes `profile.switched`.
+  The hook (in `main.ts`) tells the embedder the settings changed, reloads the
+  MCP servers (`McpManager.reload()`: disconnect all, then connect the new
+  profile's enabled servers) and restarts the workspace indexer. A failing hook
+  is logged and does not undo the switch.
+- **Search.** Chunks carry their profile. A search only sees the active
+  profile's chunks (global scope included), and the embedder only works on the
+  active profile's chunks, so other profiles' chunks wait until it is switched
+  to.
+- **New built-ins** must be inserted with profile `builtin`.
 
 ## Settings
 
@@ -1012,6 +1054,15 @@ request also lists the `issues`.
 | `GET /api/models`, `POST /api/models/load`                         | List and load llama-server models.                         |
 | `GET /api/models/reasoning-levels`, `GET /api/models/context-size` | Model properties from llama-server.                        |
 
+### Profiles
+
+| Method and path                               | Purpose                                                |
+| --------------------------------------------- | ------------------------------------------------------ |
+| `GET /api/profiles`                           | `{ active, profiles, trashed }`.                       |
+| `POST /api/profiles`, `PUT /api/profiles/:id` | Create, rename (`{ name }`).                           |
+| `POST /api/profiles/:id/trash`, `.../restore` | Move to and from the trash.                            |
+| `POST /api/profiles/:id/switch`               | Make it the active profile; 409 while a run is active. |
+
 ### Sessions and projects
 
 | Method and path                                                         | Purpose                                                                                                                                                                                    |
@@ -1110,6 +1161,8 @@ Sends `AppEvent`s, not stored and not replayed:
 
 | Event                | Meaning                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `profile.switched`   | The active profile changed (`{ profileId }`). Every client resets what it shows.                             |
+| `profiles.changed`   | A profile was created, renamed, trashed or restored.                                                         |
 | `mcp.changed`        | An MCP server was created, saved or deleted, or its connection or tools changed.                             |
 | `workspaces.changed` | A workspace, an attachment or a grant changed.                                                               |
 | `agents.changed`     | An agent was created, saved, deleted, restored or imported (includes sessions whose agent pick was cleared). |

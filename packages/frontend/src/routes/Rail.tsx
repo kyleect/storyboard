@@ -18,6 +18,7 @@ import {
 import type { ReactNode } from "react";
 import type { RunSummary } from "../runs";
 import type { WorkbenchKind } from "../workbench";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 import { GlobalRunIndicator, GlobalUnreadIndicator } from "./RunIndicator";
 
 /*
@@ -57,6 +58,7 @@ export function Rail({
   chatsOpen,
   onChats,
   onOpen,
+  onManageProfiles,
   activity,
   unread,
 }: {
@@ -66,6 +68,8 @@ export function Rail({
   chatsOpen: boolean;
   onChats: () => void;
   onOpen: (kind: WorkbenchKind) => void;
+  /** "Manage profiles…" in the profile menu. */
+  onManageProfiles: () => void;
   activity: RunSummary | undefined;
   unread: number | undefined;
 }) {
@@ -125,7 +129,8 @@ export function Rail({
           button(p, activeKind === p.kind, () => onOpen(p.kind)),
         )}
       </Stack>
-      <Stack>
+      <Stack gap={4} align="center">
+        <ProfileSwitcher onManage={onManageProfiles} />
         {button(
           {
             kind: "settings",

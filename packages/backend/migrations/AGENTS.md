@@ -33,7 +33,8 @@ Read `packages/backend/AGENTS.md` for the rest of the backend.
   a current table and a `*_versions` table; keep both consistent.
 - **Built-in records** (the Dispatcher agent, built-in schemas and skills) are
   inserted by migrations with `builtin = 1` and live in a scope of their own so
-  a user's record can share a name. Changing a built-in's text means a new
+  a user's record can share a name. They belong to the profile `builtin`, so
+  insert new ones with `profile_id = 'builtin'`. Changing a built-in's text means a new
   migration that updates it, never an edit to the old one.
 - Changes SQL cannot make, such as rewriting the JSON inside `messages.message`,
   belong in a data step (`src/data-steps.ts`), which runs once after the

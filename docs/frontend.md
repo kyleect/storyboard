@@ -249,7 +249,7 @@ update that child's state without touching the parent's.
 
 Mounted once in `Layout`. It subscribes to `/api/events` and invalidates the
 matching query families on `agents.changed`, `skills.changed`, `data.changed`,
-`projects.changed`, `workspaces.changed`, `runs.changed` and `errors.changed`. Since these events are not replayed, it
+`projects.changed`, `workspaces.changed`, `runs.changed`, `profiles.changed` and `errors.changed`. Since these events are not replayed, it
 also refetches agents, skills, errors, projects, data and the active runs **every time the stream
 opens**. This is how a change made in one window, or by a tool, appears in every
 other window.
@@ -615,7 +615,7 @@ can be linked to. An unknown area or section is replaced by the first one.
 
 | Area    | Sections                                                   |
 | ------- | ---------------------------------------------------------- |
-| General | Models, Server                                             |
+| General | Models, Server, Profiles                                   |
 | Chat    | System prompt, Session titles, Editing, Media              |
 | Agents  | Subagents, Limits                                          |
 | Tools   | Permissions (`ToolSettings`), MCP servers (`McpServers`)   |
@@ -627,6 +627,24 @@ connection state and tools, and a form to add or edit one (stdio or http, see
 `KEY=value` per line for environment, one `Name: value` per line for headers)
 into the stored shape and back. Settings values that an environment variable
 overrides are shown as such.
+
+### Profiles
+
+A profile is a whole workspace of its own (see [Profiles](backend.md#profiles)),
+so a switch replaces what every page shows. The switcher (`ProfileSwitcher`) is
+a menu at the bottom of the rail; "Manage profiles…" opens Settings, General,
+Profiles (`Profiles.tsx`): create, rename, switch, trash and restore. The
+backend refuses a switch while a run is active, and the reason is shown.
+
+The switch is not applied by the window that asked for it. The backend
+announces `profile.switched` on the app stream and every window, that one
+included, runs the same reset in `useAppEvents`: set the current profile
+(`profile.ts`), reload the workbench's saved tabs, reset `useLive` and the query
+cache, and go to the tab the new profile had active (else `/`). `main.tsx` asks
+for the active profile before the first render so the saved tabs are the right
+ones from the start. What is kept in localStorage for a profile (open tabs,
+expanded folders, the theme colour) is saved per profile: Default keeps the old keys, other profiles add
+`.p.<id>`, so switching back finds them as they were left.
 
 ## Workspaces
 

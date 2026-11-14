@@ -183,7 +183,12 @@ describe("Settings tabs", () => {
         .getByRole("tab", { name: "General" })
         .getAttribute("aria-selected"),
     ).toBe("true");
-    expect(siblingsOf("Models")).toEqual(["Models", "Server", "Look & Feel"]);
+    expect(siblingsOf("Models")).toEqual([
+      "Models",
+      "Server",
+      "Profiles",
+      "Look & Feel",
+    ]);
     expect(await screen.findByText("Default model")).toBeTruthy();
   });
 

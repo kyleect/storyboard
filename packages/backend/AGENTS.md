@@ -46,8 +46,9 @@ src/
   db.ts, migrate.ts    encrypted database and key file; migration runner
   token.ts             API token file
   settings.ts          every setting: Zod schema, default, env variable
+  profiles.ts          profiles table and the active profile; stores read it per query
   server.ts            Fastify app: auth, core routes, event streams
-  *-routes.ts          agent, skill, file (files), data, mcp, workspace routes
+  *-routes.ts          agent, skill, file (files), data, mcp, workspace, profile routes
   runs.ts              RunManager: starts, supervises, answers and records runs
   store.ts             sessions, projects, messages, runs, events (plain SQL)
   transcript.ts        reads the active line of a transcript straight from the database

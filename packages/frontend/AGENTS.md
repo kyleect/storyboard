@@ -49,7 +49,7 @@ src/
   api.ts               token handling, typed API client, stream URLs
   queries/             query-key factories, one file per feature
   live.ts              live run state (Zustand) and the two event-stream hooks
-  picked.ts            the project picked in the navbar (saved in localStorage)
+  profile.ts           the active profile; saved views are kept per profile
   linear.ts, debug.ts  debug export to linear view; clipboard helpers
   schema-builder.ts    JSON Schema <-> editable field tree
   tool-grant.ts        tool grants: which tools a grant allows, and the edits a click makes

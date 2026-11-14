@@ -262,32 +262,40 @@ export function reindexBlob(
   const text = indexedText(getDerived(db, hash));
   const shared = db
     .prepare(
-      `SELECT project_id, key FROM files
+      `SELECT profile_id, project_id, key FROM files
        WHERE blob_hash = ? AND deleted_at IS NULL`,
     )
     .all(hash) as {
+    profile_id: string;
     project_id: string | null;
     key: string;
   }[];
+  // A blob is shared by every profile that holds it (profiles design,
+  // decision 7), so each file is indexed under its own profile.
   for (const e of shared) {
     index.indexFile(
       e.project_id === null ? "global" : "project",
       e.project_id,
       e.key,
       text,
+      e.profile_id,
     );
   }
   const sessions = db
     .prepare(
-      "SELECT DISTINCT session_id FROM messages WHERE instr(message, ?) > 0",
+      `SELECT DISTINCT m.session_id, s.profile_id FROM messages m
+       JOIN sessions s ON s.id = m.session_id
+       WHERE instr(m.message, ?) > 0`,
     )
-    .all(hash) as { session_id: string }[];
-  for (const { session_id: id } of sessions) {
+    .all(hash) as { session_id: string; profile_id: string }[];
+  for (const { session_id: id, profile_id } of sessions) {
     const state = replaySessionFiles(
       activeMessageJson(db, id).map((m) => JSON.parse(m) as Message),
     );
     for (const [key, file] of state.files) {
-      if (file.blob?.hash === hash) index.indexFile("session", id, key, text);
+      if (file.blob?.hash === hash) {
+        index.indexFile("session", id, key, text, profile_id);
+      }
     }
   }
 }

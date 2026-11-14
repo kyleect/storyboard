@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
+import { activeProfile } from "./profiles.js";
 import type {
   DataAuthor,
   DataRecord,
@@ -111,17 +112,27 @@ export class DataStore {
     const now = this.now;
     const checker = this.checker;
 
-    /** Columns for a scope that this run reaches. */
+    /**
+     * Columns for a scope that this run reaches, in the active profile
+     * (profiles design 4.1: every row carries its profile).
+     */
     const where = (scope: SharedDataScope): [string, unknown[]] => {
+      const profile = activeProfile(db);
       switch (scope) {
         case "global":
-          return ["project_id IS NULL AND agent_id IS NULL", []];
+          return [
+            "project_id IS NULL AND agent_id IS NULL AND profile_id = ?",
+            [profile],
+          ];
         case "project":
           if (owner.projectId === null) return ["0", []];
-          return ["project_id = ? AND agent_id IS NULL", [owner.projectId]];
+          return [
+            "project_id = ? AND agent_id IS NULL AND profile_id = ?",
+            [owner.projectId, profile],
+          ];
         case "agent":
           if (owner.agentId === null) return ["0", []];
-          return ["agent_id = ?", [owner.agentId]];
+          return ["agent_id = ? AND profile_id = ?", [owner.agentId, profile]];
       }
     };
     /**
@@ -150,9 +161,10 @@ export class DataStore {
 
     const schemaRow = (id: string): SchemaRow | undefined => {
       const [sql, args] = reachable();
+      // The built-in schemas belong to no profile and every run reaches them.
       return db
         .prepare(
-          `SELECT ${SCHEMA_COLUMNS} FROM schemas WHERE id = ? AND (${sql})`,
+          `SELECT ${SCHEMA_COLUMNS} FROM schemas WHERE id = ? AND ((${sql}) OR builtin = 1)`,
         )
         .get(id, ...args) as SchemaRow | undefined;
     };
@@ -245,10 +257,11 @@ export class DataStore {
         const { project, agent } = owners(scope);
         db.transaction(() => {
           db.prepare(
-            `INSERT INTO schemas (id, project_id, agent_id, name, description, version, copied_from, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+            `INSERT INTO schemas (id, profile_id, project_id, agent_id, name, description, version, copied_from, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
           ).run(
             schema.id,
+            activeProfile(db),
             project,
             agent,
             schema.name,
@@ -326,7 +339,8 @@ export class DataStore {
         const [sql, args] = where(scope);
         const qualified = sql
           .replaceAll("project_id", "d.project_id")
-          .replaceAll("agent_id", "d.agent_id");
+          .replaceAll("agent_id", "d.agent_id")
+          .replaceAll("profile_id", "d.profile_id");
         return (
           db
             .prepare(
@@ -366,10 +380,11 @@ export class DataStore {
             );
           } else {
             db.prepare(
-              `INSERT INTO data (id, project_id, agent_id, schema_id, schema_version, name, description, value, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO data (id, profile_id, project_id, agent_id, schema_id, schema_version, name, description, value, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             ).run(
               d.id,
+              activeProfile(db),
               project,
               agent,
               d.schemaId,

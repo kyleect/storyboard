@@ -388,6 +388,12 @@ The secret the UI sends with every request. Distinct from a _model token_.
 **Data directory**
 The folder holding the database, key file, API token and runtime file.
 
+**Profile**
+A workspace of its own: its global, project, agent and session scopes, settings,
+MCP servers and workspaces. One is active at a time; switching is live. Built-in
+agents, skills and schemas are in every profile. See
+[backend.md](backend.md#profiles).
+
 **MCP server**
 An external program or remote service the backend connects to as an MCP client;
 its tools become harness tools in the `mcp` group, named `mcp_<server>_<tool>`.
