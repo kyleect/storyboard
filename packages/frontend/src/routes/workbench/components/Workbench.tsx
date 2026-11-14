@@ -31,6 +31,7 @@ import {
   projectOfTab,
   tabForPath,
   type NewWorkbenchTab,
+  type WorkbenchKind,
   type WorkbenchTab,
 } from "../../../lib/workbench";
 import { setWorkbenchNavigator, useWorkbench } from "../../../stores/workbench";
@@ -43,6 +44,15 @@ import {
 import { Rail } from "./Rail";
 import { useProjectActions } from "../../../hooks/useProjectActions";
 import { ICONS, PAGE_LABEL, TabPage } from "./TabPage";
+
+const FILLS_PANEL: ReadonlySet<WorkbenchKind> = new Set([
+  "agents",
+  "skills",
+  "files",
+  "data",
+  "project-files",
+  "project-data",
+]);
 
 export function Workbench() {
   const navigate = useNavigate();
@@ -319,10 +329,15 @@ export function Workbench() {
               role="tabpanel"
               aria-label={labelOf(t)}
               hidden={id !== activeId}
-              p="md"
               h="100%"
               display={id === activeId ? "block" : "none"}
-              style={{ overflow: t.kind === "chat" ? "hidden" : "auto" }}
+              {...(FILLS_PANEL.has(t.kind) ? {} : { p: "md" })}
+              style={{
+                overflow:
+                  t.kind === "chat" || FILLS_PANEL.has(t.kind)
+                    ? "hidden"
+                    : "auto",
+              }}
             >
               <TabIdContext.Provider value={id}>
                 <TabPage tab={t} />

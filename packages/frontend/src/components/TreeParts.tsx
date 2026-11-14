@@ -1,6 +1,6 @@
 import { Box, Center, type RenderTreeNodePayload } from "@mantine/core";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode, Ref } from "react";
 import classes from "./tree.module.css";
 
 export const INHERITED = "var(--mantine-color-blue-6)";
@@ -63,11 +63,14 @@ export function TreeIcon({
 
 export function TreeMenuAnchor({
   menu,
+  ref,
 }: {
   menu: { x: number; y: number } | null;
+  ref?: Ref<HTMLSpanElement>;
 }) {
   return (
     <Box
+      ref={ref}
       component="span"
       pos="fixed"
       w={0}

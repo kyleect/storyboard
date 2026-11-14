@@ -263,18 +263,20 @@ export function AgentForm({
         </Alert>
       )}
       <Flex align="stretch" flex={1} mih={0}>
-        <Stack p="sm" gap="xs" flex={1} miw={0}>
-          <Textarea
-            label="System prompt"
-            description={PROMPT_HELP}
-            disabled={locked}
-            value={current.prompt}
-            onChange={(e) => change({ prompt: e.currentTarget.value })}
-            autosize
-            minRows={14}
-            maxRows={40}
-          />
-        </Stack>
+        <ScrollArea flex={1} miw={0}>
+          <Stack p="sm" gap="xs">
+            <Textarea
+              label="System prompt"
+              description={PROMPT_HELP}
+              disabled={locked}
+              value={current.prompt}
+              onChange={(e) => change({ prompt: e.currentTarget.value })}
+              autosize
+              minRows={14}
+              maxRows={40}
+            />
+          </Stack>
+        </ScrollArea>
         <ScrollArea w={360} flex="none" className={utils.borderLeft}>
           <Stack p="sm" gap="lg">
             <TextInput

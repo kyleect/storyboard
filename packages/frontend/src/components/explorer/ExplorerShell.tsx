@@ -55,6 +55,7 @@ export function ExplorerShell({
   onReorder,
   hideSidebar = false,
   hideStatus = false,
+  flush = false,
 }: {
   width: number;
   onWidthChange: (width: number) => void;
@@ -74,6 +75,7 @@ export function ExplorerShell({
   onReorder?: (id: string, toIndex: number) => void;
   hideSidebar?: boolean;
   hideStatus?: boolean;
+  flush?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -91,8 +93,12 @@ export function ExplorerShell({
       gap={0}
       h="100%"
       mih={0}
-      bd="1px solid var(--mantine-color-default-border)"
-      bdrs="var(--mantine-radius-sm)"
+      {...(flush
+        ? {}
+        : {
+            bd: "1px solid var(--mantine-color-default-border)",
+            bdrs: "var(--mantine-radius-sm)",
+          })}
       bg="var(--mantine-color-body)"
       className={classes.root}
     >

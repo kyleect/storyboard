@@ -1214,6 +1214,7 @@ export function AgentsExplorer({
   return (
     <>
       <ExplorerShell
+        flush
         width={width}
         onWidthChange={setWidth}
         sidebar={sidebar}

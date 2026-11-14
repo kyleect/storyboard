@@ -92,8 +92,10 @@ render nothing themselves.
 
 ### Shared building blocks
 
-- `ExplorerPanel` is the sized box every explorer page sits in; it reports
-  unsaved edits to the workbench.
+- `ExplorerPanel` is the box every explorer page sits in; it fills the
+  workbench's tab panel (which has no padding for explorer tabs) and reports
+  unsaved edits to the workbench. Explorers render `ExplorerShell` with `flush`
+  so they have no border of their own inside it.
 - `ProjectGate` loads a project for a project-scoped page and shows the loading
   and error states; `trashedNote` and `ProjectScopeNote` give the read-only
   reason and the intro line.

@@ -13,10 +13,11 @@ const tab = (id: string, over: Partial<ShellTab> = {}): ShellTab => ({
   ...over,
 });
 
-function renderShell(tabs: ShellTab[]) {
-  render(
+function renderShell(tabs: ShellTab[], flush = false) {
+  return render(
     <MantineProvider>
       <ExplorerShell
+        flush={flush}
         width={240}
         onWidthChange={() => {}}
         sidebar={null}
@@ -81,5 +82,21 @@ describe("ExplorerShell tabs of a project", () => {
     renderShell([tab("a"), tab("b", { iconColor: "teal" })]);
     expect(tabNamed("Chat a").hasAttribute("data-active")).toBe(true);
     expect(tabNamed("Chat b").hasAttribute("data-active")).toBe(false);
+  });
+});
+
+describe("ExplorerShell frame", () => {
+  const frame = (c: HTMLElement) => c.querySelector("div");
+
+  it("draws its own border by default", () => {
+    const { container } = renderShell([tab("a")]);
+
+    expect(frame(container)?.getAttribute("style")).toMatch(/border/);
+  });
+
+  it("draws no border when it is flush with the page around it", () => {
+    const { container } = renderShell([tab("a")], true);
+
+    expect(frame(container)?.getAttribute("style") ?? "").not.toMatch(/border/);
   });
 });

@@ -510,6 +510,7 @@ export function SourceExplorer({
 
   return (
     <ExplorerShell
+      flush
       width={width}
       onWidthChange={setWidth}
       sidebar={sidebar}

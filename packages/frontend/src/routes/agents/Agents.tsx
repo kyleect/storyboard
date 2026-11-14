@@ -4,7 +4,7 @@ import { AgentsExplorer } from "./components/AgentsExplorer";
 
 export function GlobalAgentsPage() {
   return (
-    <ExplorerPanel height="calc(100vh - 7rem)">
+    <ExplorerPanel>
       {(onDirtyChange) => <AgentsExplorer onDirtyChange={onDirtyChange} />}
     </ExplorerPanel>
   );
@@ -14,7 +14,7 @@ export function ProjectAgentsPage({ projectId }: { projectId: string }) {
   return (
     <ProjectGate projectId={projectId}>
       {(project) => (
-        <ExplorerPanel key={projectId} height="calc(100vh - 7rem)">
+        <ExplorerPanel key={projectId}>
           {(onDirtyChange) => (
             <AgentsExplorer
               projectId={projectId}

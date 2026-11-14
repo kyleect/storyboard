@@ -40,6 +40,7 @@ function StructuredLayout({ s }: { s: ReturnType<typeof useStructured> }) {
   return (
     <>
       <ExplorerShell
+        flush
         width={s.width}
         onWidthChange={s.setWidth}
         sidebar={sidebar}

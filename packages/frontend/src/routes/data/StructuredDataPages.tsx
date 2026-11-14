@@ -4,7 +4,7 @@ import { StructuredExplorer } from "../../components/structured/StructuredExplor
 
 export function GlobalStructuredDataPage() {
   return (
-    <ExplorerPanel height="calc(100vh - 7rem)">
+    <ExplorerPanel>
       {(onDirtyChange) => (
         <StructuredExplorer
           page={{ scope: "global" }}
@@ -23,7 +23,7 @@ export function ProjectStructuredDataPage({
   return (
     <ProjectGate projectId={projectId}>
       {(project) => (
-        <ExplorerPanel key={projectId} height="calc(100vh - 14rem)">
+        <ExplorerPanel key={projectId}>
           {(onDirtyChange) => (
             <StructuredExplorer
               page={{ scope: "project", id: projectId }}

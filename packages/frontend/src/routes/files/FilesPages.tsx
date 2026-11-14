@@ -4,7 +4,7 @@ import { FilesExplorer } from "../../components/explorer/FilesExplorer";
 
 export function GlobalFilesPage() {
   return (
-    <ExplorerPanel height="calc(100vh - 7rem)">
+    <ExplorerPanel>
       {(onDirtyChange) => (
         <FilesExplorer
           page={{ scope: "global" }}
@@ -19,7 +19,7 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
   return (
     <ProjectGate projectId={projectId}>
       {(project) => (
-        <ExplorerPanel key={projectId} height="calc(100vh - 7rem)">
+        <ExplorerPanel key={projectId}>
           {(onDirtyChange) => (
             <FilesExplorer
               page={{ scope: "project", id: projectId }}

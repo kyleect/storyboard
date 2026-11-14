@@ -4,7 +4,7 @@ import { SkillsExplorer } from "./components/SkillsExplorer";
 
 export function GlobalSkillsPage() {
   return (
-    <ExplorerPanel height="calc(100vh - 7rem)">
+    <ExplorerPanel>
       {(onDirtyChange) => <SkillsExplorer onDirtyChange={onDirtyChange} />}
     </ExplorerPanel>
   );
@@ -14,7 +14,7 @@ export function ProjectSkillsPage({ projectId }: { projectId: string }) {
   return (
     <ProjectGate projectId={projectId}>
       {(project) => (
-        <ExplorerPanel key={projectId} height="calc(100vh - 7rem)">
+        <ExplorerPanel key={projectId}>
           {(onDirtyChange) => (
             <SkillsExplorer
               projectId={projectId}
