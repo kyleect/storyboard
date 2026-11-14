@@ -469,8 +469,12 @@ project page shows Project and Global; the global page shows Global. Each root
 holds its folders (folders first) and files. Every root is fetched with the
 ordinary `files` routes of its scope; there is nothing special on the backend.
 
-**Tree.** Mantine's `Tree`, with a header (New file, New folder, Upload, Show
-deleted) and a right-click menu on roots, folders and files. A new file or
+**Tree.** Mantine's `Tree`, with a header (New file, New folder, Upload, Collapse
+all, Expand all, Show deleted) and a right-click menu on roots, folders and files.
+Collapse all and Expand all use the controller's `collapseAllNodes` and
+`expandAllNodes`, roots included; a root's or folder's menu has Expand all and
+Collapse all for just what is inside it (`branchValues` in `lib/explorer.ts`). The
+Structured Data tree has the same header buttons and menu items. A new file or
 folder, and a folder rename, are typed into a name box in the tree. A new file's
 type follows its extension (`.md` Markdown, `.json` JSON, anything else plain);
 a new JSON file starts as `{}`, because JSON must parse. The tree is made once

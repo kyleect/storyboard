@@ -12,6 +12,8 @@ import {
 import { TreeChevron, TreeMenuAnchor, TreeRow, TreeIcon } from "../TreeParts";
 import { PaneHeader } from "../PaneHeader";
 import {
+  IconChevronsDown,
+  IconChevronsUp,
   IconEye,
   IconEyeOff,
   IconFile,
@@ -39,6 +41,7 @@ import {
   type TreeNode,
 } from "../../lib/files-explorer";
 import { ACCEPT } from "../../lib/attachments";
+import { branchValues } from "../../lib/explorer";
 import { nameError } from "./FileViews";
 
 export function FileIcon({
@@ -225,6 +228,13 @@ export function FileTree(props: FileTreeProps) {
     });
     props.onStartPending({ kind, root: ref.root, parent });
   };
+  const setBranches = (value: string, open: boolean) =>
+    tree.setExpandedState({
+      ...tree.expandedState,
+      ...Object.fromEntries(
+        branchValues(data, value).map((v) => [v, open] as const),
+      ),
+    });
   const chooseFiles = (ref: NodeRef) => {
     pickFor.current = { root: ref.root, folder: folderOf(ref) };
     picker.current?.click();
@@ -281,6 +291,18 @@ export function FileTree(props: FileTreeProps) {
           onClick={() => chooseFiles(target)}
         />
         {props.extraTools}
+        <HeaderAction
+          label="Collapse all"
+          icon={<IconChevronsUp size={16} />}
+          locked={undefined}
+          onClick={() => tree.collapseAllNodes()}
+        />
+        <HeaderAction
+          label="Expand all"
+          icon={<IconChevronsDown size={16} />}
+          locked={undefined}
+          onClick={() => tree.expandAllNodes()}
+        />
         <Tooltip
           label={showDeleted ? "Hide deleted files" : "Show deleted files"}
           openDelay={400}
@@ -436,6 +458,9 @@ export function FileTree(props: FileTreeProps) {
               onDeleteFile={() => props.onDeleteFile(menu.ref)}
               deleted={info.get(nodeValue(menu.ref))?.deleted ?? false}
               extra={props.nodeActions?.(menu.ref) ?? []}
+              hasBranches={branchValues(data, nodeValue(menu.ref)).length > 0}
+              onExpandAll={() => setBranches(nodeValue(menu.ref), true)}
+              onCollapseAll={() => setBranches(nodeValue(menu.ref), false)}
             />
           )}
         </Menu.Dropdown>
@@ -456,8 +481,14 @@ function TreeMenu({
   onDeleteFolder,
   onDeleteFile,
   extra,
+  hasBranches,
+  onExpandAll,
+  onCollapseAll,
 }: {
   extra: NodeAction[];
+  hasBranches: boolean;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
   menuRef: NodeRef;
   locked: boolean;
   deleted: boolean;
@@ -489,11 +520,19 @@ function TreeMenu({
     );
   }
 
+  const branches = hasBranches && (
+    <>
+      <Menu.Item onClick={onExpandAll}>Expand all</Menu.Item>
+      <Menu.Item onClick={onCollapseAll}>Collapse all</Menu.Item>
+    </>
+  );
+
   if (locked) {
     return (
       <>
         <Menu.Label>This folder cannot be changed right now.</Menu.Label>
         {extras}
+        {branches}
       </>
     );
   }
@@ -504,6 +543,7 @@ function TreeMenu({
       <Menu.Item onClick={onNewFile}>New file here</Menu.Item>
       <Menu.Item onClick={onNewFolder}>New folder here</Menu.Item>
       <Menu.Item onClick={onUpload}>Upload here</Menu.Item>
+      {branches}
       {menuRef.kind === "folder" && (
         <>
           <Menu.Divider />

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadViewIn, rootLabel, saveViewIn, tabsToClose } from "./explorer";
+import {
+  branchValues,
+  loadViewIn,
+  rootLabel,
+  saveViewIn,
+  tabsToClose,
+  type TreeNode,
+} from "./explorer";
 
 describe("roots that are not files'", () => {
   beforeEach(() => {
@@ -96,5 +103,41 @@ describe("tabsToClose", () => {
   it("takes nothing when the anchor is not a tab", () => {
     expect(tabsToClose(ids, "x", "right")).toEqual([]);
     expect(tabsToClose(ids, "x", "others")).toEqual([]);
+  });
+});
+
+describe("branchValues", () => {
+  const data: TreeNode[] = [
+    {
+      label: "Global",
+      value: "root",
+      children: [
+        {
+          label: "ideas",
+          value: "ideas",
+          children: [
+            { label: "old", value: "old", children: [] },
+            { label: "a.md", value: "a" },
+          ],
+        },
+        {
+          label: "notes",
+          value: "notes",
+          children: [{ label: "b", value: "b" }],
+        },
+        { label: "c.md", value: "c" },
+      ],
+    },
+  ];
+
+  it("lists a folder and the folders with something in them below it", () => {
+    expect(branchValues(data, "root")).toEqual(["root", "ideas", "notes"]);
+    expect(branchValues(data, "ideas")).toEqual(["ideas"]);
+  });
+
+  it("lists nothing for a file, an empty folder or a value that is not there", () => {
+    expect(branchValues(data, "c")).toEqual([]);
+    expect(branchValues(data, "old")).toEqual([]);
+    expect(branchValues(data, "missing")).toEqual([]);
   });
 });

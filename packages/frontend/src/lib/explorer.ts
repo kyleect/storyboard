@@ -88,6 +88,26 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+export function branchValues(
+  data: readonly TreeNode[],
+  value: string,
+): string[] {
+  const branches = (node: TreeNode): string[] =>
+    (node.children?.length ?? 0) === 0
+      ? []
+      : [node.value, ...(node.children ?? []).flatMap(branches)];
+
+  for (const node of data) {
+    if (node.value === value) return branches(node);
+
+    const found = branchValues(node.children ?? [], value);
+
+    if (found.length > 0) return found;
+  }
+
+  return [];
+}
+
 export interface ExplorerTab<K extends string = string> {
   kind: K;
   root: RootId;

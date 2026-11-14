@@ -302,6 +302,75 @@ describe("the tree", () => {
   });
 });
 
+describe("collapsing and expanding the tree", () => {
+  beforeEach(mockApi);
+
+  it("opens every schema to its data from the header", async () => {
+    show(<StructuredExplorer page={session} projectId="p1" />);
+    await screen.findByText("Character");
+    expect(screen.queryByText("Aria")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(await screen.findByText("Aria")).toBeTruthy();
+    expect(screen.getByText("Lost")).toBeTruthy();
+  });
+
+  it("closes everything from the header, the roots too", async () => {
+    show(<StructuredExplorer page={session} projectId="p1" />);
+    await screen.findByText("Character");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await waitFor(() => expect(screen.queryByText("Character")).toBeNull());
+    expect(screen.queryByText("Schemas")).toBeNull();
+    expect(screen.getByText("Session")).toBeTruthy();
+  });
+
+  it("remembers a tree that was collapsed", async () => {
+    const first = show(<StructuredExplorer page={session} projectId="p1" />);
+
+    await screen.findByText("Character");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await waitFor(() => expect(screen.queryByText("Character")).toBeNull());
+    first.unmount();
+    show(<StructuredExplorer page={session} projectId="p1" />);
+    await screen.findByText("Session");
+    expect(screen.queryByText("Character")).toBeNull();
+  });
+
+  it("opens and closes the data of a schema from its menu, and nothing else", async () => {
+    show(<StructuredExplorer page={session} projectId="p1" />);
+    fireEvent.contextMenu(await screen.findByText("Character"));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("Aria")).toBeTruthy();
+    expect(screen.queryByText("Cove")).toBeNull();
+    fireEvent.contextMenu(screen.getByText("Character"));
+    fireEvent.click(await screen.findByText("Collapse all"));
+    await waitFor(() => expect(screen.queryByText("Aria")).toBeNull());
+    expect(screen.getByText("Character")).toBeTruthy();
+  });
+
+  it("opens everything under a Schemas folder from its menu", async () => {
+    show(<StructuredExplorer page={session} projectId="p1" />);
+    await screen.findByText("Character");
+    fireEvent.contextMenu(must(screen.getAllByText("Schemas")[0]));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("Aria")).toBeTruthy();
+    expect(screen.getByText("Cove")).toBeTruthy();
+  });
+
+  it("offers neither on data or on a schema with no data", async () => {
+    show(<StructuredExplorer page={session} projectId="p1" />);
+    await screen.findByText("Character");
+    fireEvent.contextMenu(must(screen.getAllByText("Place")[0]));
+    await screen.findByText("Open");
+    expect(screen.queryByText("Expand all")).toBeNull();
+    expect(screen.queryByText("Collapse all")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    fireEvent.contextMenu(await screen.findByText("Aria"));
+    await screen.findByText("Delete");
+    expect(screen.queryByText("Expand all")).toBeNull();
+  });
+});
+
 describe("opening", () => {
   beforeEach(mockApi);
 

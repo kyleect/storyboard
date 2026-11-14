@@ -25,6 +25,8 @@ Use **Everywhere** for things like your preferences.
 
 You can also create, rename and delete files here.
 
+To close or open every folder at once, use **Collapse all** or **Expand all** above the list. To do it for one folder, right-click the folder and choose **Collapse all** or **Expand all**.
+
 ## Let a helper write a file
 
 Ask for it. For example, "Save the plan as a file."

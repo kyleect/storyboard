@@ -226,6 +226,71 @@ describe("the roots of the tree", () => {
   });
 });
 
+describe("collapsing and expanding the tree", () => {
+  beforeEach(mockApi);
+
+  it("opens every folder from the header", async () => {
+    show(<FilesExplorer page={session} projectId="p1" />);
+    await screen.findByText("plan.txt");
+    expect(screen.queryByText("notes.md")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(await screen.findByText("notes.md")).toBeTruthy();
+  });
+
+  it("closes every folder from the header, the roots too", async () => {
+    show(<FilesExplorer page={session} projectId="p1" />);
+    await screen.findByText("plan.txt");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await waitFor(() => expect(screen.queryByText("plan.txt")).toBeNull());
+    expect(screen.queryByText("drafts")).toBeNull();
+    expect(screen.getByText("Session")).toBeTruthy();
+    expect(screen.getByText("Global")).toBeTruthy();
+  });
+
+  it("remembers a tree that was collapsed", async () => {
+    const first = show(<FilesExplorer page={session} projectId="p1" />);
+
+    await screen.findByText("plan.txt");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await waitFor(() => expect(screen.queryByText("plan.txt")).toBeNull());
+    first.unmount();
+    show(<FilesExplorer page={session} projectId="p1" />);
+    await screen.findByText("Session");
+    expect(screen.queryByText("plan.txt")).toBeNull();
+  });
+
+  it("opens and closes what is inside a folder from its menu, and nothing else", async () => {
+    show(<FilesExplorer page={session} projectId="p1" />);
+    fireEvent.contextMenu(await screen.findByText("drafts"));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("notes.md")).toBeTruthy();
+    fireEvent.contextMenu(screen.getByText("drafts"));
+    fireEvent.click(await screen.findByText("Collapse all"));
+    await waitFor(() => expect(screen.queryByText("notes.md")).toBeNull());
+    expect(screen.getByText("plan.txt")).toBeTruthy();
+    expect(screen.getByText("drafts")).toBeTruthy();
+  });
+
+  it("opens the folders below a root from the root's menu", async () => {
+    show(<FilesExplorer page={session} projectId="p1" />);
+    fireEvent.contextMenu(await screen.findByText("Session"));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("notes.md")).toBeTruthy();
+  });
+
+  it("offers neither on an empty folder or a file", async () => {
+    show(<FilesExplorer page={session} projectId="p1" />);
+    fireEvent.contextMenu(await screen.findByText("ideas"));
+    await screen.findByText("New file here");
+    expect(screen.queryByText("Expand all")).toBeNull();
+    expect(screen.queryByText("Collapse all")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    fireEvent.contextMenu(screen.getByText("plan.txt"));
+    await screen.findByText("Open");
+    expect(screen.queryByText("Expand all")).toBeNull();
+  });
+});
+
 describe("what the tree remembers and shows", () => {
   beforeEach(mockApi);
 

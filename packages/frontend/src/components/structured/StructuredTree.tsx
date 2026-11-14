@@ -19,6 +19,8 @@ import {
 } from "../TreeParts";
 import { PaneHeader } from "../PaneHeader";
 import {
+  IconChevronsDown,
+  IconChevronsUp,
   IconEye,
   IconEyeOff,
   IconFileDatabase,
@@ -33,6 +35,7 @@ import { useEffect, useRef, useState } from "react";
 import { MAX_DATA_NAME } from "@harness/core";
 import type { DataOwner } from "../../api";
 import {
+  branchValues,
   nodeValue,
   type Root,
   type RootId,
@@ -216,6 +219,14 @@ export function StructuredTree(props: StructuredTreeProps) {
     });
   };
 
+  const setBranches = (value: string, open: boolean) =>
+    tree.setExpandedState({
+      ...tree.expandedState,
+      ...Object.fromEntries(
+        branchValues(data, value).map((v) => [v, open] as const),
+      ),
+    });
+
   const lockReason = reasons[target.root];
   const newDataLocked =
     target.kind !== "schema"
@@ -240,6 +251,18 @@ export function StructuredTree(props: StructuredTreeProps) {
           icon={<IconFilePlus size={16} />}
           locked={newDataLocked}
           onClick={() => startData(target)}
+        />
+        <HeaderAction
+          label="Collapse all"
+          icon={<IconChevronsUp size={16} />}
+          locked={undefined}
+          onClick={() => tree.collapseAllNodes()}
+        />
+        <HeaderAction
+          label="Expand all"
+          icon={<IconChevronsDown size={16} />}
+          locked={undefined}
+          onClick={() => tree.expandAllNodes()}
         />
         <Tooltip
           label={showDeleted ? "Hide deleted items" : "Show deleted items"}
@@ -411,6 +434,9 @@ export function StructuredTree(props: StructuredTreeProps) {
               onNewData={() => startData(menu.ref)}
               onCopy={() => props.onCopy(menu.ref)}
               onDelete={() => props.onDelete(menu.ref)}
+              hasBranches={branchValues(data, nodeValue(menu.ref)).length > 0}
+              onExpandAll={() => setBranches(nodeValue(menu.ref), true)}
+              onCollapseAll={() => setBranches(nodeValue(menu.ref), false)}
             />
           )}
         </Menu.Dropdown>
@@ -441,7 +467,13 @@ function TreeMenu({
   onNewData,
   onCopy,
   onDelete,
+  hasBranches,
+  onExpandAll,
+  onCollapseAll,
 }: {
+  hasBranches: boolean;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
   menuRef: NodeRef;
   row: NodeInfo | undefined;
   schema: NodeInfo | undefined;
@@ -452,6 +484,13 @@ function TreeMenu({
   onCopy: () => void;
   onDelete: () => void;
 }) {
+  const branches = hasBranches && (
+    <>
+      <Menu.Item onClick={onExpandAll}>Expand all</Menu.Item>
+      <Menu.Item onClick={onCollapseAll}>Collapse all</Menu.Item>
+    </>
+  );
+
   if (menuRef.kind === "data") {
     return (
       <>
@@ -475,6 +514,7 @@ function TreeMenu({
           <Menu.Item onClick={onNewData}>New data here</Menu.Item>
         )}
         {!row?.deleted && <Menu.Item onClick={onCopy}>Copy to…</Menu.Item>}
+        {branches}
         {!locked && own && !row?.deleted && (
           <>
             <Menu.Divider />
@@ -492,8 +532,18 @@ function TreeMenu({
   }
 
   if (locked) {
-    return <Menu.Label>This cannot be changed right now.</Menu.Label>;
+    return (
+      <>
+        <Menu.Label>This cannot be changed right now.</Menu.Label>
+        {branches}
+      </>
+    );
   }
 
-  return <Menu.Item onClick={onNewSchema}>New schema here</Menu.Item>;
+  return (
+    <>
+      <Menu.Item onClick={onNewSchema}>New schema here</Menu.Item>
+      {branches}
+    </>
+  );
 }
