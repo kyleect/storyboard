@@ -15,10 +15,10 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { api, token } from "./api";
-import { useAppearance } from "./appearance";
-import { setCurrentProfile } from "./profile";
-import { Layout } from "./routes/Layout";
-import { useWorkbench } from "./workbenchStore";
+import { useAppearance } from "./stores/appearance";
+import { setCurrentProfile } from "./stores/profile";
+import { Layout } from "./routes/workbench/Layout";
+import { useWorkbench } from "./stores/workbench";
 
 import "@gfazioli/mantine-led/styles.css";
 

@@ -19,7 +19,7 @@ import type {
   ToolGroup,
   Usage,
 } from "@harness/core";
-import type { ToolGrant, ToolMode } from "./tool-grant";
+import type { ToolGrant, ToolMode } from "./lib/tool-grant";
 
 /*
  * Talks to the backend. The token arrives once in the URL fragment
