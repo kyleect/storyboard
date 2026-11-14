@@ -89,6 +89,7 @@ export function TextEditor({
         doc: value,
         extensions: [
           basicSetup,
+          EditorView.lineWrapping,
           layout,
           ...languageFor(mediaType),
           EditorState.readOnly.of(readOnly),
