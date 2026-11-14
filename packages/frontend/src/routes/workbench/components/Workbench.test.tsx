@@ -324,6 +324,81 @@ describe("the workbench: tabs and addresses", () => {
     expect(tabs()).toHaveLength(1);
   });
 
+  const chooseFromTabMenu = async (tabName: string, item: string) => {
+    fireEvent.contextMenu(tabNamed(tabName));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: item, hidden: true }),
+    );
+  };
+
+  it("closes every other tab from a tab's menu and stays on that tab", async () => {
+    mockApi();
+    const { go, router } = await show("/sessions/s1");
+
+    await screen.findByText("chat page s1");
+    await go("/sessions/s2");
+    await go("/errors");
+    await screen.findByText("errors page");
+    await waitFor(() => expect(tabs()).toHaveLength(3));
+    const navigate = vi.spyOn(router, "navigate");
+
+    await chooseFromTabMenu("Alpha chat", "Close others");
+    await screen.findByText("chat page s1");
+    expect(navigate).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(tabs()).toHaveLength(1));
+    expect(tabNamed("Alpha chat")).toBeTruthy();
+    expect(screen.queryByText("errors page")).toBeNull();
+  });
+
+  it("closes the tabs to the right of a tab from its menu", async () => {
+    mockApi();
+    const { go } = await show("/sessions/s1");
+
+    await screen.findByText("chat page s1");
+    await go("/sessions/s2");
+    await go("/errors");
+    await screen.findByText("errors page");
+    await waitFor(() => expect(tabs()).toHaveLength(3));
+    await chooseFromTabMenu("Alpha chat", "Close to the right");
+    await screen.findByText("chat page s1");
+    await waitFor(() => expect(tabs()).toHaveLength(1));
+  });
+
+  it("closes a single tab from its menu", async () => {
+    mockApi();
+    const { go } = await show("/sessions/s1");
+
+    await screen.findByText("chat page s1");
+    await go("/errors");
+    await screen.findByText("errors page");
+    await waitFor(() => expect(tabs()).toHaveLength(2));
+    await chooseFromTabMenu("Errors", "Close");
+    await screen.findByText("chat page s1");
+    expect(tabs()).toHaveLength(1);
+  });
+
+  it("asks about an unsaved tab when the others are closed, and keeps it on no", async () => {
+    mockApi();
+    const { go } = await show("/files");
+
+    await screen.findByText("files page");
+    fireEvent.click(screen.getByText("make unsaved"));
+    await go("/errors");
+    await screen.findByText("errors page");
+    await waitFor(() => expect(tabs()).toHaveLength(2));
+    await chooseFromTabMenu("Errors", "Close others");
+    expect(
+      await screen.findByText("Your unsaved changes to it will be lost."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep open" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Your unsaved changes to it will be lost."),
+      ).toBeNull(),
+    );
+    expect(tabs()).toHaveLength(2);
+  });
+
   it("goes back to the tab that was active last time", async () => {
     mockApi();
     localStorage.setItem(

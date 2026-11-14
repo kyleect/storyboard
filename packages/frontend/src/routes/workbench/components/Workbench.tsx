@@ -406,7 +406,13 @@ export function Workbench() {
 
             setFocused(null);
 
-            if (t) go(pathForTab(t, settingsPath));
+            if (t) {
+              // The route effect sets this one render later. Without it, closing
+              // the previously open tab in the same tick (Close others) would
+              // also navigate to a neighbour that is about to close too.
+              useWorkbench.getState().setActive(id);
+              go(pathForTab(t, settingsPath));
+            }
           }}
           onKeep={(id) => useWorkbench.getState().keep(id)}
           onRequestClose={requestClose}

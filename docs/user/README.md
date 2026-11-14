@@ -10,7 +10,7 @@ This guide shows you how to use it, one step at a time.
 
 - **Left rail.** Icons for Chats, Agents, Skills, Files, Structured data, Workspaces, Errors, Profile and Settings.
 - **Chat list.** Your chats and projects, shown as a tree.
-- **Tabs.** Each thing you open gets a tab.
+- **Tabs.** Each thing you open gets a tab. Right-click a tab to close it, close the tabs to its right, or close all the others.
 - **Status bar.** Small facts about what you have open.
 
 ## Where to start

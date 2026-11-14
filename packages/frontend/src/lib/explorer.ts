@@ -191,6 +191,22 @@ export function closeTab<T extends ExplorerTab<string>>(
   return { tabs, active: next ? tabId(next) : null };
 }
 
+export type CloseMode = "right" | "others";
+
+export function tabsToClose(
+  ids: readonly string[],
+  anchor: string,
+  mode: CloseMode,
+): string[] {
+  const at = ids.indexOf(anchor);
+
+  if (at < 0) return [];
+
+  return mode === "right"
+    ? ids.slice(at + 1)
+    : ids.filter((id) => id !== anchor);
+}
+
 export interface SavedViewOf<T extends ExplorerTab<string>> {
   tabs: T[];
   active: string | null;

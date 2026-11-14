@@ -1,6 +1,7 @@
 import {
   ActionIcon,
   Box,
+  Menu,
   Text,
   ThemeIcon,
   Stack,
@@ -11,7 +12,8 @@ import { IconX } from "@tabler/icons-react";
 import type { ProjectColor } from "@harness/core";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import classes from "./ExplorerShell.module.css";
-import { clampWidth } from "../../lib/explorer";
+import { clampWidth, tabsToClose, type CloseMode } from "../../lib/explorer";
+import { TreeMenuAnchor } from "../TreeParts";
 import { UnreadDot } from "../UnreadDot";
 
 const tabColor = (color: ProjectColor | undefined) =>
@@ -81,6 +83,29 @@ export function ExplorerShell({
   const dragging = useRef(false);
   const [dragged, setDragged] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  const [tabMenu, setTabMenu] = useState<{
+    x: number;
+    y: number;
+    id: string;
+  } | null>(null);
+  const closeGroup = (anchor: string, mode: CloseMode) => {
+    const ids = tabsToClose(
+      tabs.map((t) => t.id),
+      anchor,
+      mode,
+    );
+    const isDirty = (id: string) => tabs.find((t) => t.id === id)?.dirty;
+
+    if (active !== null && ids.includes(active)) onActivate(anchor);
+
+    // Each unsaved tab opens its own confirmation and the last one opened
+    // shows first, so asking in reverse puts the leftmost tab's question on top.
+    const saved = ids.filter((id) => !isDirty(id));
+    const unsaved = ids.filter(isDirty).reverse();
+
+    [...saved, ...unsaved].forEach((id) => onRequestClose(id));
+  };
+  const menuAt = tabMenu ? tabs.findIndex((t) => t.id === tabMenu.id) : -1;
   const resizeTo = (clientX: number) => {
     const left = container.current?.getBoundingClientRect().left ?? 0;
 
@@ -164,6 +189,10 @@ export function ExplorerShell({
                   title={t.title}
                   onClick={() => onActivate(t.id)}
                   onDoubleClick={() => onKeep(t.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTabMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                  }}
                   onAuxClick={(e) => {
                     if (e.button === 1) {
                       e.preventDefault();
@@ -280,6 +309,40 @@ export function ExplorerShell({
               );
             })}
           </Flex>
+
+          <Menu
+            opened={tabMenu !== null}
+            onChange={(open) => {
+              if (!open) setTabMenu(null);
+            }}
+            position="bottom-start"
+            withinPortal
+          >
+            <Menu.Target>
+              <TreeMenuAnchor menu={tabMenu} />
+            </Menu.Target>
+            <Menu.Dropdown>
+              {tabMenu && (
+                <>
+                  <Menu.Item onClick={() => onRequestClose(tabMenu.id)}>
+                    Close
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={menuAt === tabs.length - 1}
+                    onClick={() => closeGroup(tabMenu.id, "right")}
+                  >
+                    Close to the right
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={tabs.length < 2}
+                    onClick={() => closeGroup(tabMenu.id, "others")}
+                  >
+                    Close others
+                  </Menu.Item>
+                </>
+              )}
+            </Menu.Dropdown>
+          </Menu>
 
           <Box flex={1} mih={0}>
             {content ?? (

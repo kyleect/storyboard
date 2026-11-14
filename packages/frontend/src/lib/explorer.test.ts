@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadViewIn, rootLabel, saveViewIn } from "./explorer";
+import { loadViewIn, rootLabel, saveViewIn, tabsToClose } from "./explorer";
 
 describe("roots that are not files'", () => {
   beforeEach(() => {
@@ -77,5 +77,24 @@ describe("roots that are not files'", () => {
       },
     );
     expect(loadViewIn("files", { scope: "global" }, ["file"]).tabs).toEqual([]);
+  });
+});
+
+describe("tabsToClose", () => {
+  const ids = ["a", "b", "c", "d"];
+
+  it("takes every tab after the anchor for close to the right", () => {
+    expect(tabsToClose(ids, "b", "right")).toEqual(["c", "d"]);
+    expect(tabsToClose(ids, "d", "right")).toEqual([]);
+  });
+
+  it("takes every tab but the anchor for close others", () => {
+    expect(tabsToClose(ids, "b", "others")).toEqual(["a", "c", "d"]);
+    expect(tabsToClose(["a"], "a", "others")).toEqual([]);
+  });
+
+  it("takes nothing when the anchor is not a tab", () => {
+    expect(tabsToClose(ids, "x", "right")).toEqual([]);
+    expect(tabsToClose(ids, "x", "others")).toEqual([]);
   });
 });

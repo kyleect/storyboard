@@ -197,6 +197,11 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
   projects)").
 - **Reordering.** Tabs are dragged to a new place, or moved with Alt and the left or
   right arrow (`moveTab` in `lib/explorer.ts`); the order is saved with the tabs.
+- **The tab menu.** Right-clicking a tab, in any `ExplorerShell`, offers Close, Close
+  to the right and Close others (`tabsToClose` in `lib/explorer.ts`). Each tab goes
+  through the page's own `onRequestClose`, so a tab with unsaved edits asks first,
+  one question per tab; the saved tabs close at once. When the open tab is among
+  those closing, the tab that was right-clicked is opened first.
 - **Which tabs are mounted.** The active tab, and any tab with unsaved edits, which
   stays mounted but hidden. The rest are unmounted, so only the active chat holds an
   event stream (the browser allows about six HTTP/1.1 connections to a host). A chat
