@@ -14,8 +14,8 @@ import {
 } from "../../../lib/skills-source";
 import { archiveFrom, SkillImportDialog } from "./SkillImport";
 import type { NodeAction } from "../../../components/explorer/FileTree";
-import { showError } from "../../../hooks/useSessionActions";
 import { SourceExplorer } from "../../../components/explorer/SourceExplorer";
+import { showError } from "../../../lib/notify";
 
 /*
  * The Skills view: `SourceExplorer` over the skills a page can see (skills

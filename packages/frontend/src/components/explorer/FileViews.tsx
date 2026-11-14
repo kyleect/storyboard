@@ -33,7 +33,7 @@ import {
 import type { ExplorerSource } from "../../lib/explorer-source";
 import { blobKeys } from "../../queries";
 import { Markdown } from "../Markdown";
-import { showError } from "../../hooks/useSessionActions";
+import { showError } from "../../lib/notify";
 
 /*
  * Viewing and editing files (files and memory design, decisions 31 to 35;

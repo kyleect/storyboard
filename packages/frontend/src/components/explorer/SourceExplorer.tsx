@@ -35,8 +35,8 @@ import { ExplorerShell, type ShellTab } from "./ExplorerShell";
 import { useProjectColor } from "../../hooks/useProjectColor";
 import { FileIcon, FileTree, type NodeAction } from "./FileTree";
 import { FileTab, PreviewTab, type Draft } from "./FileTab";
-import { showError } from "../../hooks/useSessionActions";
 import type { Cursor } from "./TextEditor";
+import { showError } from "../../lib/notify";
 
 /*
  * An editor-style explorer over any set of roots. A tree on the left has a

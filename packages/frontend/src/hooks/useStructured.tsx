@@ -32,7 +32,6 @@ import {
 } from "../lib/structured-explorer";
 import type { ShellTab } from "../components/explorer/ExplorerShell";
 import { CopyModal } from "../components/structured/Schemas";
-import { showError } from "./useSessionActions";
 import type { StructuredTreeProps } from "../components/structured/StructuredTree";
 import {
   DataTab,
@@ -44,6 +43,7 @@ import {
   type SchemaDraft,
   type View,
 } from "../components/structured/StructuredTabs";
+import { showError } from "../lib/notify";
 
 /*
  * Everything the Structured Data view does apart from how it is laid out:

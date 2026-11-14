@@ -15,8 +15,11 @@ import {
   UnstyledButton,
   useMantineTheme,
 } from "@mantine/core";
+import { useSettings } from "../../hooks/useSettings";
+import { useSession } from "../../hooks/useSessions";
+import { useModels } from "../../hooks/useModels";
 import { notifications } from "@mantine/notifications";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -42,17 +45,11 @@ import {
   type SessionDetail,
   type StoredMessage,
 } from "../../api";
-import {
-  modelKeys,
-  projectKeys,
-  sessionKeys,
-  settingsKeys,
-  toolKeys,
-} from "../../queries";
+import { projectKeys, sessionKeys, toolKeys } from "../../queries";
+import { useSessionEvents } from "../../hooks/useSessionEvents";
 import {
   liveRuns,
   useLive,
-  useSessionEvents,
   type LiveChild,
   type LiveRunState,
 } from "../../stores/live";
@@ -87,8 +84,9 @@ import { ModelPicker } from "../../components/ModelPicker";
 import { AttachedWorkspaces } from "../workspaces/Workspaces";
 import { effortLabel, ReasoningPicker } from "../../components/ReasoningPicker";
 import { DebugPanel } from "./components/DebugPanel";
-import { showError, useSessionActions } from "../../hooks/useSessionActions";
+import { useSessionActions } from "../../hooks/useSessionActions";
 import { TranscriptScroll } from "./components/TranscriptScroll";
+import { showError } from "../../lib/notify";
 
 /**
  * What tool calls need to draw their forms: `ask_user`'s (input forms
@@ -179,14 +177,8 @@ function PublishStatus({
 }
 
 export function Chat({ sessionId }: { sessionId: string }) {
-  const detail = useQuery({
-    queryKey: sessionKeys.detail(sessionId),
-    queryFn: () => api.getSession(sessionId),
-  });
-  const settings = useQuery({
-    queryKey: settingsKeys.all,
-    queryFn: api.getSettings,
-  });
+  const detail = useSession(sessionId);
+  const settings = useSettings();
   // Start the stream from a fresh load, not from cached data: a cached
   // snapshot's last event id can be older than events already handled, such
   // as session.trashed when a trashed session is opened from the trash.
@@ -212,10 +204,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     composer.current = { draft, items: files.items };
   });
   // What each model can read, to tell when an attachment cannot be used.
-  const models = useQuery({
-    queryKey: modelKeys.list(),
-    queryFn: api.listModels,
-  });
+  const models = useModels();
   // Chat, or the session's files, data or debugging tools (plan U3).
   const [tab, setTab] = useState<string>("chat");
   // The Files view is made on the first visit and kept, hidden, after that,

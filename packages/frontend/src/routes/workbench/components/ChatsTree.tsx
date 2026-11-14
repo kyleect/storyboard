@@ -8,6 +8,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
+import { useProjects } from "../../../hooks/useProjects";
 import { useQuery } from "@tanstack/react-query";
 import {
   IconChevronDown,
@@ -25,21 +26,19 @@ import { useState } from "react";
 import type { ProjectColor } from "@harness/core";
 import { api, type Project, type SessionListItem } from "../../../api";
 import { projectColorVar } from "../../../lib/project-color";
-import { projectKeys, sessionKeys } from "../../../queries";
+import { sessionKeys } from "../../../queries";
 import type { RunSummary } from "../../../hooks/useActiveRuns";
 import { useWorkbench } from "../../../stores/workbench";
 import { tabId as idOf } from "../../../lib/explorer";
 import type { NewWorkbenchTab } from "../../../lib/workbench";
 import { SessionRunBadge } from "./RunIndicator";
 import {
-  SessionMenu,
-  useProjectActions,
-} from "../../../hooks/useSessionActions";
-import {
   useUnreadSessions,
   type UnreadSessions,
 } from "../../../hooks/useUnreadSessions";
 import { UnreadDot } from "../../../components/UnreadDot";
+import { SessionMenu } from "../../../components/SessionMenu";
+import { useProjectActions } from "../../../hooks/useProjectActions";
 
 /*
  * The chats tree in the workbench's sidebar (chat workbench design, 4.1):
@@ -487,10 +486,7 @@ export function ChatsTree({
   activity: RunSummary | undefined;
 }) {
   const [filter, setFilter] = useState("");
-  const projects = useQuery({
-    queryKey: projectKeys.list(),
-    queryFn: api.listProjects,
-  });
+  const projects = useProjects();
   const unread = useUnreadSessions();
   const h: Handlers = {
     activeId,

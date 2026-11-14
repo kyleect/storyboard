@@ -1,5 +1,5 @@
-import { useFaviconIndicator } from "../../lib/favicon";
-import { useAppEvents } from "../../stores/live";
+import { useFaviconIndicator } from "../../hooks/useFaviconIndicator";
+import { useAppEvents } from "../../hooks/useAppEvents";
 import { Workbench } from "./components/Workbench";
 
 /*

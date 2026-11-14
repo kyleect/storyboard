@@ -21,7 +21,7 @@ import {
 import { emptyGrant } from "../../../lib/tool-grant";
 import { useAgentFocus } from "../../../stores/agentFocus";
 import { projectKeys } from "../../../queries";
-import { useAppEvents } from "../../../stores/live";
+import { useAppEvents } from "../../../hooks/useAppEvents";
 import { AgentsExplorer } from "./AgentsExplorer";
 
 afterEach(() => {

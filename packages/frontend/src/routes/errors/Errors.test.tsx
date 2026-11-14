@@ -12,7 +12,7 @@ import {
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type ErrorEntry, type ErrorFilterOptions } from "../../api";
-import { useAppEvents } from "../../stores/live";
+import { useAppEvents } from "../../hooks/useAppEvents";
 import { ErrorsPage, SessionErrorsPanel } from "./Errors";
 
 /* The errors consoles (error reporting plan, P7, P8). */

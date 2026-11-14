@@ -6,8 +6,9 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
+import { useModels } from "../hooks/useModels";
 import { notifications } from "@mantine/notifications";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
 import { modelKeys } from "../queries";
@@ -47,12 +48,7 @@ export function ModelPicker(props: {
   defaultModel?: string | undefined;
 }) {
   const queryClient = useQueryClient();
-  const models = useQuery({
-    queryKey: modelKeys.list(),
-    queryFn: api.listModels,
-    refetchInterval: (q) =>
-      q.state.data?.some((m) => m.status === "loading") ? 1000 : false,
-  });
+  const models = useModels();
   const load = useMutation({
     mutationFn: api.loadModel,
     onSuccess: (result) => {

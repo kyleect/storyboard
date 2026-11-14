@@ -54,7 +54,7 @@ import {
 import { DataValue } from "./DataValue";
 import { JsonEditor } from "./JsonEditor";
 import { Builder, VersionsModal as SchemaVersions } from "./Schemas";
-import { showError } from "../../hooks/useSessionActions";
+import { showError } from "../../lib/notify";
 
 /*
  * What a tab of the Structured Data view shows: a schema or a piece of

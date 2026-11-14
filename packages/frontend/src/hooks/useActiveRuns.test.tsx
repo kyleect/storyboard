@@ -1,7 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveRun } from "../api";
-import { summarizeRuns, useDebouncedFlag } from "./useActiveRuns";
+import { summarizeRuns } from "./useActiveRuns";
+import { useDebouncedFlag } from "./useDebouncedFlag";
 
 const run = (over: Partial<ActiveRun> = {}): ActiveRun => ({
   runId: "r1",

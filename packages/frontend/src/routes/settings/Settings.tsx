@@ -18,6 +18,8 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { useSettings } from "../../hooks/useSettings";
+import { useProjects } from "../../hooks/useProjects";
 import { useForm, type UseFormInput } from "@mantine/form";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
@@ -31,14 +33,15 @@ import {
   type Settings as SettingsShape,
   type SettingsView,
 } from "../../api";
-import { blobKeys, projectKeys, settingsKeys, trashKeys } from "../../queries";
+import { blobKeys, settingsKeys, trashKeys } from "../../queries";
 import { ModelPicker } from "../../components/ModelPicker";
 import { ReasoningPicker } from "../../components/ReasoningPicker";
-import { showError, useSessionActions } from "../../hooks/useSessionActions";
+import { useSessionActions } from "../../hooks/useSessionActions";
 import { LookAndFeel } from "./components/LookAndFeel";
 import { McpServers } from "./components/McpServers";
 import { Profiles } from "./components/Profiles";
 import { ToolSettings } from "./components/ToolSettings";
+import { showError } from "../../lib/notify";
 
 /*
  * The settings page is a set of forms, each with its own Save that stores
@@ -337,10 +340,7 @@ function SubTabs({
  * tab does not remount the page and lose an edit not yet saved.
  */
 export function Settings() {
-  const query = useQuery({
-    queryKey: settingsKeys.all,
-    queryFn: api.getSettings,
-  });
+  const query = useSettings();
   const { _splat: path } = useParams({ strict: false });
   const navigate = useNavigate();
   const { area, section, canonical } = resolveSettingsPath(path);
@@ -1112,10 +1112,7 @@ function TrashRetention({ view }: { view: SettingsView }) {
 function TrashSection() {
   const actions = useSessionActions();
   const trash = useQuery({ queryKey: trashKeys.all, queryFn: api.getTrash });
-  const projects = useQuery({
-    queryKey: projectKeys.list(),
-    queryFn: api.listProjects,
-  });
+  const projects = useProjects();
   const [busy, setBusy] = useState<string | null>(null);
 
   const run = (id: string, work: () => Promise<unknown>, failed: string) => {

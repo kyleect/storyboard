@@ -18,6 +18,7 @@ import {
   TextInput,
   UnstyledButton,
 } from "@mantine/core";
+import { useProjects } from "../../hooks/useProjects";
 import {
   useMutation,
   useQueries,
@@ -32,7 +33,7 @@ import {
   type DataOwner,
   type SchemaDetail,
 } from "../../api";
-import { agentKeys, dataKeys, projectKeys } from "../../queries";
+import { agentKeys, dataKeys } from "../../queries";
 import {
   addField,
   changeType,
@@ -47,7 +48,7 @@ import {
   type FieldType,
   type TextFormat,
 } from "../../lib/schema-builder";
-import { showError } from "../../hooks/useSessionActions";
+import { showError } from "../../lib/notify";
 
 /*
  * Schemas (schemas and data design, decisions 8 to 15, 44): the pieces the
@@ -116,10 +117,7 @@ export function CopyModal({
   onClose: () => void;
 }) {
   const refresh = useRefresh();
-  const projects = useQuery({
-    queryKey: projectKeys.list(),
-    queryFn: () => api.listProjects(),
-  });
+  const projects = useProjects();
   const globalAgents = useQuery({
     queryKey: agentKeys.copyTargets({ scope: "global" }),
     queryFn: () => api.listAgents({ scope: "global" }, false),

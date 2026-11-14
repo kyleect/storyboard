@@ -36,8 +36,8 @@ import {
   VersionsModal,
   when,
 } from "./AgentParts";
-import { showError } from "../../../hooks/useSessionActions";
 import { ToolGrantEditor } from "./ToolGrantEditor";
+import { showError } from "../../../lib/notify";
 
 /*
  * An agent's tab (agents explorer design, decisions 2 and 3): the system

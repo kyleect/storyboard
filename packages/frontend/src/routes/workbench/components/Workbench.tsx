@@ -1,4 +1,6 @@
 import { Box, Drawer, Text, UnstyledButton } from "@mantine/core";
+import { useCreateSession } from "../../../hooks/useSessions";
+import { useProjects } from "../../../hooks/useProjects";
 import {
   useDisclosure,
   useDocumentVisibility,
@@ -31,7 +33,7 @@ import { TabIdContext, useDirtyTabs } from "../../../stores/dirty";
 import { dropDraft } from "../../../stores/drafts";
 import { useChatStatus } from "../../../stores/chatStatus";
 import { tabId } from "../../../lib/explorer";
-import { projectKeys, sessionKeys } from "../../../queries";
+import { sessionKeys } from "../../../queries";
 import { useActiveRuns } from "../../../hooks/useActiveRuns";
 import { useUnreadSessions } from "../../../hooks/useUnreadSessions";
 import {
@@ -56,7 +58,6 @@ import {
 } from "../../../components/explorer/ExplorerShell";
 import { ProjectPage } from "../../project/ProjectPage";
 import { Rail } from "./Rail";
-import { showError, useProjectActions } from "../../../hooks/useSessionActions";
 import { SessionsPage } from "../../sessions/Sessions";
 import { Settings } from "../../settings/Settings";
 import { GlobalSkillsPage, ProjectSkillsPage } from "../../skills/Skills";
@@ -65,6 +66,7 @@ import {
   ProjectStructuredDataPage,
 } from "../../data/StructuredDataPages";
 import { WorkspacesPage } from "../../workspaces/Workspaces";
+import { useProjectActions } from "../../../hooks/useProjectActions";
 
 /*
  * The chat workbench (chat workbench design): the icon rail, the chats tree,
@@ -212,10 +214,7 @@ export function Workbench() {
   };
 
   // ---- labels and the project of each tab
-  const projects = useQuery({
-    queryKey: projectKeys.list(),
-    queryFn: api.listProjects,
-  });
+  const projects = useProjects();
   const chatTabs = tabs.filter((t) => t.kind === "chat");
   const details = useQueries({
     queries: chatTabs.map((t) => ({
@@ -335,17 +334,9 @@ export function Workbench() {
   }, [anyDirty]);
 
   // ---- New chat
-  const create = useMutation({
-    mutationFn: (projectId: string | null) => api.createSession(projectId),
-    onSuccess: async (session, projectId) => {
-      await queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
-      // Creating a session in a project counts as using it.
-      if (projectId !== null)
-        await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
-      openTab({ kind: "chat", root: "session", key: session.id }, true);
-      drawerHandlers.close();
-    },
-    onError: showError("Could not create a session"),
+  const create = useCreateSession((session) => {
+    openTab({ kind: "chat", root: "session", key: session.id }, true);
+    drawerHandlers.close();
   });
   // ---- the chat on screen has been seen
   const { mutate: markSeen } = useMutation({

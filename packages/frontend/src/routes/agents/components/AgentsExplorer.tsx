@@ -10,6 +10,8 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
+import { useSetDefaultAgent } from "../../../hooks/useProjects";
+import { useSettings } from "../../../hooks/useSettings";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import {
@@ -54,7 +56,6 @@ import {
   type DataItem,
   type DataOwner,
   type ImportConflict,
-  type Project,
   type SchemaDetail,
   type SkillOwner,
   type SkillWithFiles,
@@ -66,8 +67,6 @@ import {
   dataKeys,
   projectKeys,
   schemaKeys,
-  sessionKeys,
-  settingsKeys,
   skillKeys,
 } from "../../../queries";
 import { skillsSource, splitKey } from "../../../lib/skills-source";
@@ -85,7 +84,6 @@ import {
   type Draft as FileDraft,
 } from "../../../components/explorer/FileTab";
 import { CopyModal } from "../../../components/structured/Schemas";
-import { showError } from "../../../hooks/useSessionActions";
 import {
   DataTab,
   newDataDraft,
@@ -96,6 +94,7 @@ import {
   type SchemaDraft,
   type View,
 } from "../../../components/structured/StructuredTabs";
+import { showError } from "../../../lib/notify";
 
 /*
  * The Agents view (agents explorer design): an editor-style explorer. The
@@ -255,10 +254,7 @@ export function AgentsExplorer({
   } | null>(null);
 
   // ---- the default agent: the project's on a project's page, else the global
-  const settings = useQuery({
-    queryKey: settingsKeys.all,
-    queryFn: api.getSettings,
-  });
+  const settings = useSettings();
   const project = useQuery({
     queryKey: projectKeys.detail(projectId ?? ""),
     queryFn: () => api.getProject(projectId ?? ""),
@@ -273,32 +269,7 @@ export function AgentsExplorer({
     : envLock
       ? `Set by ${envLock}.`
       : undefined;
-  const setDefault = useMutation<
-    Project | Awaited<ReturnType<typeof api.saveSettings>>,
-    Error,
-    string | null
-  >({
-    mutationFn: (agentId) =>
-      projectId
-        ? api.updateProject(projectId, { defaultAgentId: agentId })
-        : api.saveSettings({ defaultAgentId: agentId ?? "" }),
-    onSuccess: async (result) => {
-      if (projectId) {
-        queryClient.setQueryData<Project>(
-          projectKeys.detail(projectId),
-          result as Project,
-        );
-        await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
-      } else {
-        queryClient.setQueryData(settingsKeys.all, result);
-      }
-      await queryClient.invalidateQueries({ queryKey: agentKeys.all });
-      await queryClient.invalidateQueries({
-        queryKey: sessionKeys.pickableAgents(),
-      });
-    },
-    onError: showError("Could not set the default agent"),
-  });
+  const setDefault = useSetDefaultAgent(projectId);
 
   // ---- the agents
   const globalAgents = useQuery({

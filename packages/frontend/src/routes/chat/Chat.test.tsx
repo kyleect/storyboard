@@ -32,12 +32,15 @@ vi.mock("@tanstack/react-router", () => ({
 
 // What the run in progress is, for the test to set.
 let liveRun: unknown = undefined;
-vi.mock("../../stores/live", () => ({
-  liveRuns: () => [],
-  useSessionEvents: () => {},
-  useLive: (select: (s: unknown) => unknown) =>
-    select({ runs: { s1: liveRun }, connected: { s1: true } }),
-}));
+vi.mock("../../stores/live", () => {
+  const state = () => ({ runs: { s1: liveRun }, connected: { s1: true } });
+  const useLive = Object.assign(
+    (select: (s: unknown) => unknown) => select(state()),
+    { getState: state },
+  );
+  return { liveRuns: () => [], useLive };
+});
+vi.mock("../../hooks/useSessionEvents", () => ({ useSessionEvents: () => {} }));
 
 // The recorder's props, for the test to call as the recorder would.
 let voice: {

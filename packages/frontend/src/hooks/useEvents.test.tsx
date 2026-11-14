@@ -9,7 +9,9 @@ import { notifications } from "@mantine/notifications";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "../api";
 import { fileKeys, projectKeys, runKeys, sessionKeys } from "../queries";
-import { useAppEvents, useLive, useSessionEvents } from "../stores/live";
+import { useAppEvents } from "./useAppEvents";
+import { useSessionEvents } from "./useSessionEvents";
+import { useLive } from "../stores/live";
 import { EditableTitle } from "../routes/project/components/EditableTitle";
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));

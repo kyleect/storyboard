@@ -21,12 +21,10 @@ import { api } from "../../api";
 import { sessionKeys } from "../../queries";
 import { PAGE_SIZES, useSessionsPrefs } from "../../stores/sessionsPrefs";
 import { UsageBadge } from "../../components/ContextMeter";
-import {
-  SessionMenu,
-  showError,
-  useSessionActions,
-} from "../../hooks/useSessionActions";
+import { useSessionActions } from "../../hooks/useSessionActions";
 import { UnreadDot } from "../../components/UnreadDot";
+import { SessionMenu } from "../../components/SessionMenu";
+import { showError } from "../../lib/notify";
 
 /*
  * The Sessions page (Sessions page plan): the sessions of the project picked

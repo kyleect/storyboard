@@ -21,7 +21,7 @@ import {
 } from "../../../api";
 import { agentKeys, sessionKeys, toolKeys } from "../../../queries";
 import type { ToolGrant } from "../../../lib/tool-grant";
-import { showError } from "../../../hooks/useSessionActions";
+import { showError } from "../../../lib/notify";
 
 /*
  * What the agents screens share: the lists' badges, the words for an agent's

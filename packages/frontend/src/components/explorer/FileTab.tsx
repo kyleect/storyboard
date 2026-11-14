@@ -23,8 +23,8 @@ import {
   when,
 } from "./FileViews";
 import { Markdown } from "../Markdown";
-import { showError } from "../../hooks/useSessionActions";
 import { TextEditor, type Cursor } from "./TextEditor";
+import { showError } from "../../lib/notify";
 
 /*
  * What a tab shows. A text file is an editor: the text typed and not yet

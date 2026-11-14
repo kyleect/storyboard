@@ -20,7 +20,7 @@ import {
   type DataVersion,
 } from "../../api";
 import { dataKeys } from "../../queries";
-import { showError } from "../../hooks/useSessionActions";
+import { showError } from "../../lib/notify";
 
 /*
  * Data (schemas and data design, decisions 19 to 25, 44): the pieces the

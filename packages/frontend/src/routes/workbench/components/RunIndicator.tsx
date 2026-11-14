@@ -12,11 +12,8 @@ import {
 import { useReducedMotion } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  useDebouncedFlag,
-  type RunSummary,
-  type SessionRunState,
-} from "../../../hooks/useActiveRuns";
+import type { RunSummary, SessionRunState } from "../../../hooks/useActiveRuns";
+import { useDebouncedFlag } from "../../../hooks/useDebouncedFlag";
 import { Led } from "@gfazioli/mantine-led";
 
 /*

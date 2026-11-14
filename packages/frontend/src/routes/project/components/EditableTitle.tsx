@@ -1,6 +1,6 @@
 import { TextInput, Title, UnstyledButton } from "@mantine/core";
 import { useState } from "react";
-import { showError } from "../../../hooks/useSessionActions";
+import { showError } from "../../../lib/notify";
 
 /**
  * A session title or project name; click to edit it in place (sessions and

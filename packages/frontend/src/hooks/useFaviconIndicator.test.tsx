@@ -4,7 +4,8 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ActiveRun } from "../api";
-import { COLORS, ICON_URL, useFaviconIndicator } from "../lib/favicon";
+import { COLORS, ICON_URL } from "../lib/favicon";
+import { useFaviconIndicator } from "./useFaviconIndicator";
 
 /** What the plain icon's address starts with: the robot as an SVG data URL. */
 const PLAIN = /^data:image\/svg\+xml,/;

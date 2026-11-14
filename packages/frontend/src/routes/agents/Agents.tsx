@@ -8,7 +8,9 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSetDefaultAgent } from "../../hooks/useProjects";
+import { useSettings } from "../../hooks/useSettings";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -17,13 +19,7 @@ import {
   type PickableAgent,
   type Project,
 } from "../../api";
-import {
-  agentKeys,
-  projectKeys,
-  sessionKeys,
-  settingsKeys,
-} from "../../queries";
-import { showError } from "../../hooks/useSessionActions";
+import { agentKeys, projectKeys, sessionKeys } from "../../queries";
 import { AgentsExplorer } from "./components/AgentsExplorer";
 import { useAgentFocus } from "../../stores/agentFocus";
 import { useReportDirty } from "../../stores/dirty";
@@ -88,7 +84,6 @@ export function DefaultAgentSelect({
   project: Project;
   disabled?: boolean;
 }) {
-  const queryClient = useQueryClient();
   const own = useQuery({
     queryKey: agentKeys.list({ scope: "project", id: project.id }, false),
     queryFn: () => api.listAgents({ scope: "project", id: project.id }, false),
@@ -97,30 +92,12 @@ export function DefaultAgentSelect({
     queryKey: agentKeys.list({ scope: "global" }, false),
     queryFn: () => api.listAgents({ scope: "global" }, false),
   });
-  const settings = useQuery({
-    queryKey: settingsKeys.all,
-    queryFn: api.getSettings,
-  });
+  const settings = useSettings();
   // With none, new sessions start with the global default, if there is one.
   const globalDefault = (global.data ?? []).find(
     (a) => a.id === settings.data?.effective.defaultAgentId,
   );
-  const save = useMutation({
-    mutationFn: (defaultAgentId: string | null) =>
-      api.updateProject(project.id, { defaultAgentId }),
-    onSuccess: async (updated) => {
-      queryClient.setQueryData<Project>(
-        projectKeys.detail(project.id),
-        updated,
-      );
-      await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
-      await queryClient.invalidateQueries({ queryKey: agentKeys.all });
-      await queryClient.invalidateQueries({
-        queryKey: sessionKeys.pickableAgents(),
-      });
-    },
-    onError: showError("Could not set the default agent"),
-  });
+  const save = useSetDefaultAgent(project.id);
   const group = (
     label: string,
     scope: string,

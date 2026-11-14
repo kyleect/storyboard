@@ -1,16 +1,15 @@
 import { Alert, Button, Group, Loader, Stack, Textarea } from "@mantine/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCreateSession } from "../../hooks/useSessions";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import type { ProjectColor } from "@harness/core";
-import { api, type Project } from "../../api";
-import { projectKeys, sessionKeys } from "../../queries";
 import { DefaultAgentSelect } from "../agents/Agents";
 import { EditableTitle } from "./components/EditableTitle";
 import { ProjectColorPicker } from "../../components/ProjectColorPicker";
 import { SessionsPage } from "../sessions/Sessions";
 import { AttachedWorkspaces } from "../workspaces/Workspaces";
-import { showError, useProjectActions } from "../../hooks/useSessionActions";
+import { showError } from "../../lib/notify";
+import { useProjectActions } from "../../hooks/useProjectActions";
+import { useProject, useSaveProject } from "../../hooks/useProjects";
 
 /**
  * A project's page (sessions and projects design, Q13b): its name and
@@ -18,38 +17,14 @@ import { showError, useProjectActions } from "../../hooks/useSessionActions";
  * structured data; its chats in a table; New chat; Move to trash.
  */
 export function ProjectPage({ projectId }: { projectId: string }) {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const actions = useProjectActions();
-  const project = useQuery({
-    queryKey: projectKeys.detail(projectId),
-    queryFn: () => api.getProject(projectId),
-  });
+  const project = useProject(projectId);
+  const save = useSaveProject(projectId);
 
-  const save = async (fields: {
-    name?: string;
-    description?: string;
-    systemPrompt?: string;
-    color?: ProjectColor | null;
-  }) => {
-    const updated = await api.updateProject(projectId, fields);
-    queryClient.setQueryData<Project>(projectKeys.detail(projectId), updated);
-    // Editing counts as using the project; the picker shows the name.
-    await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
-  };
-
-  const create = useMutation({
-    mutationFn: () => api.createSession(projectId),
-    onSuccess: async (session) => {
-      await queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
-      await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
-      await navigate({
-        to: "/sessions/$sessionId",
-        params: { sessionId: session.id },
-      });
-    },
-    onError: showError("Could not create a session"),
-  });
+  const create = useCreateSession((session) =>
+    navigate({ to: "/sessions/$sessionId", params: { sessionId: session.id } }),
+  );
 
   if (project.isPending) return <Loader />;
   if (project.isError)
@@ -163,7 +138,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             <Group gap="xs">
               <Button
                 size="xs"
-                onClick={() => create.mutate()}
+                onClick={() => create.mutate(projectId)}
                 loading={create.isPending}
               >
                 New chat

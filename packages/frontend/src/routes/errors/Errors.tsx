@@ -21,7 +21,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, type ErrorEntry, type ErrorFilter } from "../../api";
 import { errorKeys } from "../../queries";
-import { showError } from "../../hooks/useSessionActions";
+import { showError } from "../../lib/notify";
 
 /*
  * The errors consoles (error reporting plan, P7): a page with every
