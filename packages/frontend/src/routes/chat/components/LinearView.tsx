@@ -168,7 +168,8 @@ export function LinearView({ debug }: { debug: SessionDebug }) {
           placeholder="text, tool, JSON…"
           value={filter.text}
           onChange={(e) => setFilter({ ...filter, text: e.target.value })}
-          style={{ flex: 1, minWidth: 180 }}
+          flex={1}
+          miw={180}
         />
         <Select
           label="Run"
@@ -180,7 +181,7 @@ export function LinearView({ debug }: { debug: SessionDebug }) {
           value={filter.runId}
           onChange={(runId) => setFilter({ ...filter, runId })}
           clearable
-          style={{ minWidth: 220 }}
+          miw={220}
         />
       </Group>
       <Chip.Group

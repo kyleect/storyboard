@@ -88,7 +88,7 @@ export function Profiles() {
                   setEditing({ id: p.id, name: e.currentTarget.value })
                 }
                 data-autofocus
-                style={{ flex: 1 }}
+                flex={1}
               />
               <Button type="submit" size="xs" loading={rename.isPending}>
                 Save
@@ -165,7 +165,7 @@ export function Profiles() {
             placeholder="Name"
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
-            style={{ flex: 1 }}
+            flex={1}
           />
           <Button
             type="submit"

@@ -1,4 +1,4 @@
-import { Box, Text, ThemeIcon } from "@mantine/core";
+import { Box, Text, ThemeIcon, Stack, Flex, Group } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import type { ProjectColor } from "@harness/core";
 import { useRef, useState, type ReactNode } from "react";
@@ -70,34 +70,22 @@ export function ExplorerShell({
   };
 
   return (
-    <Box
+    <Stack
       ref={container}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-        overflow: "hidden",
-        border: `1px solid ${BORDER}`,
-        borderRadius: "var(--mantine-radius-sm)",
-        background: "var(--mantine-color-body)",
-      }}
+      gap={0}
+      h="100%"
+      mih={0}
+      bd={`1px solid ${BORDER}`}
+      bdrs="var(--mantine-radius-sm)"
+      bg="var(--mantine-color-body)"
+      style={{ overflow: "hidden" }}
     >
-      <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <Flex flex={1} mih={0}>
         {!hideSidebar && (
           <>
-            <Box
-              style={{
-                width,
-                flexShrink: 0,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                background: CHROME,
-              }}
-            >
+            <Stack gap={0} mih={0} bg={CHROME} style={{ width, flexShrink: 0 }}>
               {sidebar}
-            </Box>
+            </Stack>
 
             <div
               role="separator"
@@ -132,24 +120,16 @@ export function ExplorerShell({
           </>
         )}
 
-        <Box
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <Box
+        <Stack gap={0} flex={1} miw={0}>
+          <Flex
             role="tablist"
             aria-label={tabListLabel}
+            mih={34}
+            bg={CHROME}
             style={{
-              display: "flex",
               overflowX: "auto",
               flexShrink: 0,
-              minHeight: 34,
               borderBottom: `1px solid ${BORDER}`,
-              background: CHROME,
             }}
           >
             {leading}
@@ -302,50 +282,39 @@ export function ExplorerShell({
                 </div>
               );
             })}
-          </Box>
+          </Flex>
 
-          <Box style={{ flex: 1, minHeight: 0 }}>
+          <Box flex={1} mih={0}>
             {content ?? (
-              <Box
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
+              <Group gap={0} justify="center" wrap="nowrap" h="100%">
                 <Text size="sm" c="dimmed">
                   {empty}
                 </Text>
-              </Box>
+              </Group>
             )}
           </Box>
-        </Box>
-      </Box>
+        </Stack>
+      </Flex>
 
       {!hideStatus && (
-        <Box
+        <Group
           role="status"
           px="sm"
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexShrink: 0,
-            minHeight: 24,
-            alignItems: "center",
-            borderTop: `1px solid ${BORDER}`,
-            background: CHROME,
-          }}
+          gap="sm"
+          justify="space-between"
+          wrap="nowrap"
+          mih={24}
+          bg={CHROME}
+          style={{ flexShrink: 0, borderTop: `1px solid ${BORDER}` }}
         >
           <Text size="xs" c="dimmed" truncate>
             {statusLeft}
           </Text>
-          <Box style={{ display: "flex", gap: 12, flexShrink: 0 }}>
+          <Flex gap="sm" style={{ flexShrink: 0 }}>
             {statusRight}
-          </Box>
-        </Box>
+          </Flex>
+        </Group>
       )}
-    </Box>
+    </Stack>
   );
 }

@@ -525,11 +525,8 @@ export function Chat({ sessionId }: { sessionId: string }) {
             { value: "workspaces", label: "Workspaces" },
             { value: "debug", label: "Debug" },
           ]}
-          style={{
-            alignSelf: "flex-start",
-            maxWidth: "100%",
-            overflowX: "auto",
-          }}
+          maw="100%"
+          style={{ alignSelf: "flex-start", overflowX: "auto" }}
         />
 
         {filesOpened && (
@@ -579,7 +576,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
         )}
 
         {tab !== "chat" && tab !== "files" && tab !== "data" && (
-          <ScrollArea style={{ flex: 1 }}>
+          <ScrollArea flex={1}>
             {tab === "debug" ? (
               <DebugPanel sessionId={sessionId} />
             ) : (
@@ -822,7 +819,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
             )}
             <Group align="flex-end" gap="xs">
               <Textarea
-                style={{ flex: 1 }}
+                flex={1}
                 autosize
                 minRows={2}
                 maxRows={8}

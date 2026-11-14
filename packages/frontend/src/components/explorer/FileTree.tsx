@@ -1,6 +1,5 @@
 import {
   ActionIcon,
-  Box,
   Menu,
   ScrollArea,
   Text,
@@ -8,6 +7,9 @@ import {
   Tooltip,
   Tree,
   useTree,
+  Stack,
+  Group,
+  Flex,
 } from "@mantine/core";
 import {
   IconChevronDown,
@@ -74,7 +76,8 @@ function InlineName({
       size="xs"
       autoFocus
       aria-label={label}
-      style={{ flex: 1, minWidth: 0 }}
+      flex={1}
+      miw={0}
       value={name}
       error={problem}
       onChange={(e) => setName(e.currentTarget.value)}
@@ -230,14 +233,7 @@ export function FileTree(props: FileTreeProps) {
   const lockReason = reasons[target.root];
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    <Stack gap={0} flex={1} mih={0}>
       <input
         ref={picker}
         type="file"
@@ -252,13 +248,13 @@ export function FileTree(props: FileTreeProps) {
             props.onUpload(pickFor.current.root, pickFor.current.folder, files);
         }}
       />
-      <Box
+      <Group
         px="xs"
         py={4}
+        gap={0}
+        justify="space-between"
+        wrap="nowrap"
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
@@ -271,7 +267,7 @@ export function FileTree(props: FileTreeProps) {
         >
           Explorer
         </Text>
-        <Box style={{ display: "flex", gap: 2 }}>
+        <Flex gap={2}>
           <HeaderAction
             label="New file"
             icon={<IconFilePlus size={16} />}
@@ -306,11 +302,12 @@ export function FileTree(props: FileTreeProps) {
               {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
             </ActionIcon>
           </Tooltip>
-        </Box>
-      </Box>
+        </Flex>
+      </Group>
 
       <ScrollArea
-        style={{ flex: 1, minHeight: 0 }}
+        flex={1}
+        mih={0}
         onDragOver={(e: React.DragEvent) => {
           if (acceptsDrop(e, pageRoot)) e.preventDefault();
         }}
@@ -426,7 +423,8 @@ export function FileTree(props: FileTreeProps) {
                     truncate
                     fw={ref.kind === "root" ? 600 : undefined}
                     td={deleted ? "line-through" : undefined}
-                    style={{ flex: 1, minWidth: 0 }}
+                    flex={1}
+                    miw={0}
                   >
                     {node.label}
                   </Text>
@@ -474,7 +472,7 @@ export function FileTree(props: FileTreeProps) {
           )}
         </Menu.Dropdown>
       </Menu>
-    </Box>
+    </Stack>
   );
 }
 

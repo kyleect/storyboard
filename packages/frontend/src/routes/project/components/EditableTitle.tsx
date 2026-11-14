@@ -22,7 +22,7 @@ export function EditableTitle({
         onClick={() => setDraft(title)}
         disabled={disabled}
         title={disabled ? undefined : "Rename"}
-        style={{ minWidth: 0 }}
+        miw={0}
       >
         <Title order={5} lineClamp={1}>
           {title}
@@ -47,7 +47,7 @@ export function EditableTitle({
 
   return (
     <TextInput
-      style={{ flex: 1 }}
+      flex={1}
       size="sm"
       autoFocus
       aria-label={label}

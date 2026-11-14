@@ -77,7 +77,7 @@ export function VersionsModal<V extends Version>({
           ))}
         </ScrollArea.Autosize>
         {picked && (
-          <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
+          <Stack gap="xs" flex={1} miw={0}>
             <Group justify="space-between">
               {note(picked)}
               {restore && (

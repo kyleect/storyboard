@@ -1,7 +1,6 @@
 import {
   Alert,
   Badge,
-  Box,
   Button,
   Code,
   Loader,
@@ -12,6 +11,7 @@ import {
   Textarea,
   TextInput,
   Tooltip,
+  Group,
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
@@ -123,37 +123,23 @@ function Toolbar({
   actions: React.ReactNode;
 }) {
   return (
-    <Box
+    <Group
       px="sm"
       py={4}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 8,
-        borderBottom: BORDER,
-        flexWrap: "wrap",
-      }}
+      gap={8}
+      justify="space-between"
+      style={{ borderBottom: BORDER }}
     >
-      <Box
-        style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
-      >
+      <Group gap={8} wrap="nowrap" miw={0}>
         <Text size="xs" c="dimmed" truncate>
           {path}
         </Text>
         {badges}
-      </Box>
-      <Box
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexShrink: 0,
-        }}
-      >
+      </Group>
+      <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
         {actions}
-      </Box>
-    </Box>
+      </Group>
+    </Group>
   );
 }
 
@@ -386,14 +372,7 @@ export function SchemaTab({
     Object.keys(problems).length > 0;
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-      }}
-    >
+    <Stack gap={0} h="100%" mih={0}>
       <Toolbar
         path={`${rootLabel(root)} › Schemas › ${current.name || "New schema"}`}
         badges={
@@ -508,7 +487,7 @@ export function SchemaTab({
           </>
         }
       />
-      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
+      <ScrollArea flex={1} mih={0}>
         <Stack gap="xs" p="sm">
           {s && !isNew && (
             <Text size="xs" c="dimmed">
@@ -577,7 +556,7 @@ export function SchemaTab({
       {s && versions && (
         <SchemaVersions schema={s} onClose={() => setVersions(false)} />
       )}
-    </Box>
+    </Stack>
   );
 }
 
@@ -799,14 +778,7 @@ export function DataTab({
 
   const schemaName = d?.schema?.name ?? "Unknown schema";
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-      }}
-    >
+    <Stack gap={0} h="100%" mih={0}>
       <Toolbar
         path={`${rootLabel(root)} › ${isNew ? "New data" : schemaName} › ${current.name || "New data"}`}
         badges={
@@ -887,7 +859,7 @@ export function DataTab({
           </>
         }
       />
-      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
+      <ScrollArea flex={1} mih={0}>
         <Stack gap="xs" p="sm">
           {d && !d.schema && (
             <Text size="xs" c="dimmed">
@@ -991,6 +963,6 @@ export function DataTab({
           onClose={() => setVersions(false)}
         />
       )}
-    </Box>
+    </Stack>
   );
 }

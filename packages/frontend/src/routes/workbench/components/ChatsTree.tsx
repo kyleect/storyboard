@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   Tooltip,
+  Stack,
 } from "@mantine/core";
 import { useProjects } from "../../../hooks/useProjects";
 import { useQuery } from "@tanstack/react-query";
@@ -89,7 +90,7 @@ function Row({
   selectedTint?: ProjectColor | null | undefined;
 }) {
   return (
-    <Box
+    <Group
       role="treeitem"
       aria-selected={active}
       aria-expanded={expanded}
@@ -103,26 +104,27 @@ function Row({
           onClick();
         }
       }}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: `3px 6px 3px ${6 + depth * 14}px`,
-        cursor: "pointer",
-        fontSize: 13,
-        fontWeight: bold ? 600 : undefined,
-        background: tint
+      gap={6}
+      wrap="nowrap"
+      fz={13}
+      fw={bold ? 600 : undefined}
+      bg={
+        tint
           ? `var(--mantine-color-${tint}-${active ? "light-hover" : "light"})`
           : active
             ? selectedTint
               ? selectedChatBackground(selectedTint)
               : "var(--mantine-primary-color-light)"
-            : undefined,
+            : "transparent"
+      }
+      bdrs={4}
+      style={{
+        padding: `3px 6px 3px ${6 + depth * 14}px`,
+        cursor: "pointer",
         boxShadow:
           tint && active
             ? `inset 3px 0 0 var(--mantine-color-${tint}-filled)`
             : undefined,
-        borderRadius: 4,
       }}
     >
       {expanded === undefined ? null : (
@@ -147,9 +149,9 @@ function Row({
         span
         size="sm"
         fw="inherit"
+        flex={1}
+        miw={0}
         style={{
-          flex: 1,
-          minWidth: 0,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -158,7 +160,7 @@ function Row({
         {label}
       </Text>
       {right}
-    </Box>
+    </Group>
   );
 }
 
@@ -463,7 +465,7 @@ export function ChatsTree({
   );
 
   return (
-    <Box style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <Stack gap={0} h="100%">
       <Group justify="space-between" px="xs" py={6} wrap="nowrap">
         <Text size="xs" fw={700} c="dimmed" tt="uppercase">
           Chats
@@ -502,7 +504,7 @@ export function ChatsTree({
           onChange={(e) => setFilter(e.currentTarget.value)}
         />
       </Box>
-      <ScrollArea style={{ flex: 1 }} px={4}>
+      <ScrollArea flex={1} px={4}>
         <div role="tree" aria-label="Chats">
           {projects.isError && (
             <Text c="red" size="xs" px="xs">
@@ -521,6 +523,6 @@ export function ChatsTree({
           </Text>
         )}
       </ScrollArea>
-    </Box>
+    </Stack>
   );
 }

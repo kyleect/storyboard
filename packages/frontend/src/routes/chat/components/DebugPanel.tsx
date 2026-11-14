@@ -239,7 +239,8 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
               placeholder="type, run, text, JSON…"
               value={filter.text}
               onChange={(e) => setFilter({ ...filter, text: e.target.value })}
-              style={{ flex: 1, minWidth: 180 }}
+              flex={1}
+              miw={180}
             />
             <MultiSelect
               label="Type"
@@ -249,7 +250,7 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
               onChange={(types) => setFilter({ ...filter, types })}
               searchable
               clearable
-              style={{ minWidth: 220 }}
+              miw={220}
             />
             <Select
               label="Run"
@@ -261,7 +262,7 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
               value={filter.runId}
               onChange={(runId) => setFilter({ ...filter, runId })}
               clearable
-              style={{ minWidth: 220 }}
+              miw={220}
             />
             <Switch
               label="Hide streaming deltas"

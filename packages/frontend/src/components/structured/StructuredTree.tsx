@@ -1,6 +1,5 @@
 import {
   ActionIcon,
-  Box,
   Menu,
   ScrollArea,
   Text,
@@ -8,6 +7,9 @@ import {
   Tooltip,
   Tree,
   useTree,
+  Stack,
+  Group,
+  Flex,
 } from "@mantine/core";
 import {
   IconChevronDown,
@@ -56,7 +58,8 @@ function InlineName({
       size="xs"
       autoFocus
       aria-label={label}
-      style={{ flex: 1, minWidth: 0 }}
+      flex={1}
+      miw={0}
       maxLength={MAX_DATA_NAME}
       value={name}
       onChange={(e) => setName(e.currentTarget.value)}
@@ -209,21 +212,14 @@ export function StructuredTree(props: StructuredTreeProps) {
           : undefined;
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
-      <Box
+    <Stack gap={0} flex={1} mih={0}>
+      <Group
         px="xs"
         py={4}
+        gap={0}
+        justify="space-between"
+        wrap="nowrap"
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
@@ -236,7 +232,7 @@ export function StructuredTree(props: StructuredTreeProps) {
         >
           Structured data
         </Text>
-        <Box style={{ display: "flex", gap: 2 }}>
+        <Flex gap={2}>
           <HeaderAction
             label="New schema"
             icon={<IconSquarePlus size={16} />}
@@ -264,10 +260,10 @@ export function StructuredTree(props: StructuredTreeProps) {
               {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
             </ActionIcon>
           </Tooltip>
-        </Box>
-      </Box>
+        </Flex>
+      </Group>
 
-      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
+      <ScrollArea flex={1} mih={0}>
         <Tree
           data={data}
           tree={tree}
@@ -316,7 +312,8 @@ export function StructuredTree(props: StructuredTreeProps) {
                 fw={ref.kind === "root" ? 600 : undefined}
                 td={deleted ? "line-through" : undefined}
                 {...(nameColor ? { c: nameColor } : {})}
-                style={{ flex: 1, minWidth: 0 }}
+                flex={1}
+                miw={0}
               >
                 {node.label}
               </Text>
@@ -455,7 +452,7 @@ export function StructuredTree(props: StructuredTreeProps) {
           )}
         </Menu.Dropdown>
       </Menu>
-    </Box>
+    </Stack>
   );
 }
 

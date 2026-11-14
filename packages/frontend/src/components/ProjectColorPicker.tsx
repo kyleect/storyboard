@@ -31,9 +31,9 @@ export function ProjectColorPicker({
       onClick={() => {
         if (!selected) onChange(color);
       }}
+      opacity={disabled ? 0.5 : 1}
       style={{
         cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? 0.5 : 1,
         outline: selected ? "2px solid var(--mantine-color-dimmed)" : undefined,
         outlineOffset: 2,
       }}

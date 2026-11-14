@@ -75,7 +75,7 @@ export function AttachedWorkspaces({
           justify="space-between"
           wrap="nowrap"
         >
-          <Stack gap={0} style={{ minWidth: 0 }}>
+          <Stack gap={0} miw={0}>
             <Text size="sm">
               {a.workspace.name}{" "}
               <Badge

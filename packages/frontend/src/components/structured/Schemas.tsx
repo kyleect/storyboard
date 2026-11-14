@@ -88,7 +88,7 @@ export function VersionsModal({
           ))}
         </ScrollArea.Autosize>
         {picked && (
-          <ScrollArea.Autosize mah="60vh" style={{ flex: 1, minWidth: 0 }}>
+          <ScrollArea.Autosize mah="60vh" flex={1} miw={0}>
             <Code block>{JSON.stringify(picked.body, null, 2)}</Code>
           </ScrollArea.Autosize>
         )}
@@ -227,7 +227,7 @@ export function Builder({
   return (
     <Paper withBorder p="sm">
       <Group align="flex-start" wrap="nowrap" gap="md">
-        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+        <Stack gap={4} flex={1} miw={0}>
           <Select
             size="xs"
             label="The data is"
@@ -258,16 +258,15 @@ export function Builder({
                 <UnstyledButton
                   key={node.id}
                   onClick={() => setSelected(node.id)}
-                  style={{
-                    paddingLeft: 6 + depth * 16,
-                    paddingBlock: 3,
-                    paddingRight: 6,
-                    borderRadius: 4,
-                    background:
-                      selected === node.id
-                        ? "var(--mantine-color-default-hover)"
-                        : undefined,
-                  }}
+                  pl={6 + depth * 16}
+                  py={3}
+                  pr={6}
+                  bdrs={4}
+                  bg={
+                    selected === node.id
+                      ? "var(--mantine-color-default-hover)"
+                      : "transparent"
+                  }
                 >
                   <Group gap={6} wrap="nowrap">
                     <Text size="xs" ff="monospace" truncate>
@@ -312,7 +311,8 @@ export function Builder({
         </Stack>
         <Stack
           gap="xs"
-          style={{ flex: 1.3, minWidth: 0 }}
+          flex={1.3}
+          miw={0}
           {...(readOnly ? { component: "fieldset", disabled: true } : {})}
         >
           {shown ? (

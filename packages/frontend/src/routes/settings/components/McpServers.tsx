@@ -183,7 +183,7 @@ export function McpServers() {
         editing !== "new" && editing?.id === s.id ? null : (
           <Paper key={s.id} withBorder p="sm">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Stack gap={2} style={{ minWidth: 0 }}>
+              <Stack gap={2} miw={0}>
                 <Group gap="xs">
                   <Text fw={500}>{s.name}</Text>
                   <Badge

@@ -145,7 +145,7 @@ function WorkspaceForm({
               label="Folder"
               description="The full path of a folder on this computer."
               required
-              style={{ flex: 1 }}
+              flex={1}
               value={v.path}
               onChange={(e) => setV({ ...v, path: e.currentTarget.value })}
             />
@@ -424,7 +424,7 @@ export function WorkspacesPage() {
         editing !== "new" && editing?.id === w.id ? null : (
           <Paper key={w.id} withBorder p="sm">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Stack gap={2} style={{ minWidth: 0 }}>
+              <Stack gap={2} miw={0}>
                 <Group gap="xs">
                   <Text fw={500}>{w.name}</Text>
                   <Badge

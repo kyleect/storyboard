@@ -26,7 +26,7 @@ export function TranscriptScroll({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ScrollArea style={{ flex: 1 }} viewportRef={viewport}>
+    <ScrollArea flex={1} viewportRef={viewport}>
       <div ref={content}>{children}</div>
     </ScrollArea>
   );

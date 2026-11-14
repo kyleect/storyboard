@@ -1,10 +1,4 @@
-import {
-  ActionIcon,
-  Box,
-  Stack,
-  Tooltip,
-  useMantineTheme,
-} from "@mantine/core";
+import { ActionIcon, Stack, Tooltip, useMantineTheme } from "@mantine/core";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -92,21 +86,19 @@ export function Rail({
   };
 
   return (
-    <Box
+    <Stack
       component="nav"
       aria-label="Pages"
+      gap={4}
+      align="center"
+      w={RAIL_WIDTH}
       style={{
-        width: RAIL_WIDTH,
         flexShrink: 0,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 4,
         padding: "8px 0",
         borderRight: "1px solid var(--mantine-color-default-border)",
       }}
     >
-      <Stack gap={4} align="center" style={{ flex: 1 }}>
+      <Stack gap={4} align="center" flex={1}>
         {button(
           { kind: "chat", label: "Chats", icon: <IconMessages size={22} /> },
           chatsOpen,
@@ -131,6 +123,6 @@ export function Rail({
           () => onOpen("settings"),
         )}
       </Stack>
-    </Box>
+    </Stack>
   );
 }

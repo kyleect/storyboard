@@ -352,7 +352,7 @@ export function SubagentMessageBox({
   return (
     <Group align="flex-end" gap="xs" wrap="nowrap">
       <Textarea
-        style={{ flex: 1 }}
+        flex={1}
         size="xs"
         autosize
         minRows={1}

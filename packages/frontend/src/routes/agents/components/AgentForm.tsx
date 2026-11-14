@@ -1,7 +1,6 @@
 import {
   Alert,
   Badge,
-  Box,
   Button,
   Group,
   Loader,
@@ -12,6 +11,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  Flex,
 } from "@mantine/core";
 import { when } from "../../../lib/format";
 import { confirmAction } from "../../../lib/confirm";
@@ -149,7 +149,7 @@ export function AgentForm({
       : readOnly;
 
   return (
-    <Box style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <Stack gap={0} h="100%">
       <Group
         justify="space-between"
         wrap="nowrap"
@@ -159,7 +159,7 @@ export function AgentForm({
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
-        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+        <Group gap="xs" wrap="nowrap" miw={0}>
           <Text fw={600} size="sm" truncate>
             {current.name || "New agent"}
           </Text>
@@ -266,15 +266,8 @@ export function AgentForm({
           {[...newTools].join(", ")}. Save the agent to count them as seen.
         </Alert>
       )}
-      <Box
-        style={{
-          display: "flex",
-          flex: 1,
-          minHeight: 0,
-          alignItems: "stretch",
-        }}
-      >
-        <Stack p="sm" gap="xs" style={{ flex: 1, minWidth: 0 }}>
+      <Flex align="stretch" flex={1} mih={0}>
+        <Stack p="sm" gap="xs" flex={1} miw={0}>
           <Textarea
             label="System prompt"
             description={PROMPT_HELP}
@@ -426,7 +419,7 @@ export function AgentForm({
             )}
           </Stack>
         </ScrollArea>
-      </Box>
+      </Flex>
       {versions && agent && (
         <VersionsModal
           scope={scope}
@@ -436,6 +429,6 @@ export function AgentForm({
           onClose={() => setVersions(false)}
         />
       )}
-    </Box>
+    </Stack>
   );
 }

@@ -1,4 +1,4 @@
-import { Box, Drawer, Text, UnstyledButton } from "@mantine/core";
+import { Box, Drawer, Text, UnstyledButton, Flex } from "@mantine/core";
 import { confirmAction } from "../../../lib/confirm";
 import { useCreateSession } from "../../../hooks/useSessions";
 import { useProjects } from "../../../hooks/useProjects";
@@ -282,8 +282,8 @@ export function Workbench() {
               aria-label={labelOf(t)}
               hidden={id !== activeId}
               p="md"
+              h="100%"
               style={{
-                height: "100%",
                 overflow: t.kind === "chat" ? "hidden" : "auto",
                 display: id === activeId ? undefined : "none",
               }}
@@ -340,15 +340,9 @@ export function Workbench() {
   );
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        height: "100vh",
-        minHeight: 0,
-      }}
-    >
+    <Flex h="100vh" mih={0}>
       {!small && rail}
-      <Box style={{ flex: 1, minWidth: 0, padding: small ? 0 : 8 }}>
+      <Box flex={1} miw={0} p={small ? 0 : 8}>
         <ExplorerShell
           width={width}
           onWidthChange={useWorkbench.getState().setWidth}
@@ -398,12 +392,14 @@ export function Workbench() {
           withCloseButton={false}
           aria-label="Menu"
         >
-          <Box style={{ display: "flex", height: "100vh" }}>
+          <Flex h="100vh">
             {rail}
-            <Box style={{ flex: 1, minWidth: 0 }}>{tree}</Box>
-          </Box>
+            <Box flex={1} miw={0}>
+              {tree}
+            </Box>
+          </Flex>
         </Drawer>
       )}
-    </Box>
+    </Flex>
   );
 }

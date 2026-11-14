@@ -120,7 +120,7 @@ export function ErrorsPage() {
           {options.error.message}
         </Text>
       )}
-      <ScrollArea style={{ flex: 1 }}>
+      <ScrollArea flex={1}>
         {errors.isPending ? (
           <Loader />
         ) : errors.isError ? (

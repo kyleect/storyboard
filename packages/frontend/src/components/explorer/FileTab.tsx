@@ -7,6 +7,8 @@ import {
   ScrollArea,
   Text,
   Tooltip,
+  Stack,
+  Group,
 } from "@mantine/core";
 import { when } from "../../lib/format";
 import { confirmAction } from "../../lib/confirm";
@@ -109,28 +111,18 @@ export function FileTab({
   };
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-      }}
-    >
-      <Box
+    <Stack gap={0} h="100%" mih={0}>
+      <Group
         px="sm"
         py={4}
+        gap={8}
+        justify="space-between"
+        wrap="nowrap"
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
-        <Box
-          style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
-        >
+        <Group gap={8} wrap="nowrap" miw={0}>
           <Text size="xs" c="dimmed" truncate>
             <Text span inherit {...(rootColor ? { c: rootColor } : {})}>
               {rootLabel}
@@ -148,15 +140,8 @@ export function FileTab({
               {readOnly}
             </Text>
           )}
-        </Box>
-        <Box
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 2,
-            flexShrink: 0,
-          }}
-        >
+        </Group>
+        <Group gap={2} wrap="nowrap" style={{ flexShrink: 0 }}>
           {editable && (
             <Button
               size="compact-xs"
@@ -210,19 +195,12 @@ export function FileTab({
               </ActionIcon>
             </Tooltip>
           )}
-        </Box>
-      </Box>
+        </Group>
+      </Group>
 
       {changedElsewhere && (
         <Alert color="yellow" py={4} radius={0}>
-          <Box
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-            }}
-          >
+          <Group gap={8} justify="space-between" wrap="nowrap">
             <Text size="xs">
               This file changed since you started editing. Saving replaces that
               change with your text.
@@ -234,11 +212,11 @@ export function FileTab({
             >
               Discard mine
             </Button>
-          </Box>
+          </Group>
         </Alert>
       )}
 
-      <Box style={{ flex: 1, minHeight: 0 }}>
+      <Box flex={1} mih={0}>
         {binary || f.deleted || f.mediaType === undefined ? (
           <ScrollArea h="100%">
             <Box p="md">
@@ -282,7 +260,7 @@ export function FileTab({
           onClose={() => setVersions(false)}
         />
       )}
-    </Box>
+    </Stack>
   );
 }
 

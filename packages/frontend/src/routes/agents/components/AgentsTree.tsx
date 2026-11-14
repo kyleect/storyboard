@@ -1,7 +1,6 @@
 import {
   ActionIcon,
   Badge,
-  Box,
   Group,
   Menu,
   ScrollArea,
@@ -9,6 +8,7 @@ import {
   Tooltip,
   Tree,
   useTree,
+  Stack,
 } from "@mantine/core";
 import {
   IconBolt,
@@ -105,21 +105,14 @@ export function AgentsTree(props: AgentsTreeProps) {
   const actions = menu ? props.actionsFor(menu.ref) : [];
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
-      <Box
+    <Stack gap={0} flex={1} mih={0}>
+      <Group
         px="xs"
         py={4}
+        gap={0}
+        justify="space-between"
+        wrap="nowrap"
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
@@ -132,7 +125,7 @@ export function AgentsTree(props: AgentsTreeProps) {
         >
           Agents
         </Text>
-        <Box style={{ display: "flex", gap: 2, alignItems: "center" }}>
+        <Group gap={2} wrap="nowrap">
           {props.header}
           <Tooltip
             label={showDeleted ? "Hide deleted items" : "Show deleted items"}
@@ -149,10 +142,10 @@ export function AgentsTree(props: AgentsTreeProps) {
               {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
             </ActionIcon>
           </Tooltip>
-        </Box>
-      </Box>
+        </Group>
+      </Group>
 
-      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
+      <ScrollArea flex={1} mih={0}>
         <Tree
           data={data}
           tree={tree}
@@ -301,9 +294,7 @@ export function AgentsTree(props: AgentsTreeProps) {
                       aria-checked={isDefault}
                       aria-label={`Default agent: ${agentRow.name}`}
                       disabled={props.defaultLocked !== undefined}
-                      style={{
-                        opacity: isDefault || near === node.value ? 1 : 0,
-                      }}
+                      opacity={isDefault || near === node.value ? 1 : 0}
                       onFocus={() => setNear(node.value)}
                       onBlur={() => setNear(null)}
                       onClick={(e) => {
@@ -369,7 +360,7 @@ export function AgentsTree(props: AgentsTreeProps) {
           ))}
         </Menu.Dropdown>
       </Menu>
-    </Box>
+    </Stack>
   );
 }
 

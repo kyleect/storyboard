@@ -129,7 +129,7 @@ export function TrashSection() {
       {trashedProjects.map((p) => (
         <Paper key={p.id} p="xs" withBorder>
           <Group justify="space-between" wrap="nowrap" align="flex-start">
-            <Stack gap={0} style={{ minWidth: 0 }}>
+            <Stack gap={0} miw={0}>
               <Text size="sm" fw={500} truncate>
                 Project: {p.name}
               </Text>
@@ -196,7 +196,7 @@ export function TrashSection() {
         return (
           <Paper key={s.id} p="xs" withBorder>
             <Group justify="space-between" wrap="nowrap">
-              <Stack gap={0} style={{ minWidth: 0 }}>
+              <Stack gap={0} miw={0}>
                 <Text size="sm" truncate>
                   {s.title}
                 </Text>
@@ -259,7 +259,7 @@ export function TrashSection() {
       {branches.map((b) => (
         <Paper key={b.messageId} p="xs" withBorder>
           <Group justify="space-between" wrap="nowrap">
-            <Stack gap={0} style={{ minWidth: 0 }}>
+            <Stack gap={0} miw={0}>
               <Text size="sm" truncate>
                 Branch: {b.preview === "" ? "(no text)" : b.preview}
               </Text>
