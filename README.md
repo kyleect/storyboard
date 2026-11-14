@@ -16,7 +16,7 @@ Design decisions live in the project's design document (`claude/base-design.md`)
 
 ## Documentation
 
-- [`docs/user/`](./docs/user/README.md): how to use the app, in plain English
-- [`docs/dev/`](./docs/dev/README.md): how the app is built; new contributors
+- [`docs/user/`](./docs/user/README.md): how to use the app
+- [`docs/dev/`](./docs/dev/README.md): how to build the app; new contributors
   start with [`docs/dev/contributing.md`](./docs/dev/contributing.md)
 - https://kyleect.github.io/storyboard/
