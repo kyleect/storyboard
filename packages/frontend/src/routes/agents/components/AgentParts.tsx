@@ -1,30 +1,15 @@
-import {
-  Badge,
-  Button,
-  Group,
-  Modal,
-  NavLink,
-  Paper,
-  ScrollArea,
-  Stack,
-  Text,
-} from "@mantine/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Badge, Group, Paper, Stack, Text } from "@mantine/core";
+import { VersionsModal as GenericVersionsModal } from "../../../components/VersionsModal";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TOOL_GROUPS } from "@harness/core";
 import {
   api,
   type AgentContent,
   type AgentDetail,
   type AgentScope,
-  type AgentVersion,
 } from "../../../api";
 import { agentKeys, sessionKeys, toolKeys } from "../../../queries";
 import type { ToolGrant } from "../../../lib/tool-grant";
-import { showError } from "../../../lib/notify";
-
-export const when = (iso: string) =>
-  iso ? new Date(iso).toLocaleString() : "";
 
 export function useRefresh(scope: AgentScope) {
   const queryClient = useQueryClient();
@@ -257,70 +242,37 @@ export function VersionsModal({
   const refresh = useRefresh(scope);
   const tools = useSelectableTools();
   const known = tools.data ? new Set(tools.data.map((t) => t.name)) : undefined;
-  const newestFirst = [...agent.versions].reverse();
-  const [picked, setPicked] = useState<AgentVersion | undefined>(
-    newestFirst.find((v) => v.seq === initial) ?? newestFirst[0],
-  );
-  const restore = useMutation({
-    mutationFn: (seq: number) => api.restoreAgent(agent.id, seq),
-    onSuccess: async () => {
-      await refresh();
-      onClose();
-    },
-    onError: showError("Could not restore the version"),
-  });
-  const isCurrent = picked?.seq === agent.version && !agent.deleted;
-
   return (
-    <Modal
-      opened
-      onClose={onClose}
-      size="xl"
+    <GenericVersionsModal
       title={`Versions of ${agent.name}`}
-    >
-      <Group align="flex-start" wrap="nowrap" gap="md">
-        <ScrollArea.Autosize mah="60vh" w={220} style={{ flexShrink: 0 }}>
-          {newestFirst.map((v) => (
-            <NavLink
-              key={v.seq}
-              active={picked?.seq === v.seq}
-              onClick={() => setPicked(v)}
-              label={
-                <Group gap={4}>
-                  <Text size="sm">v{v.seq}</Text>
-                  {v.deleted && <DeletedBadge />}
-                </Group>
-              }
-              description={when(v.createdAt)}
-            />
-          ))}
-        </ScrollArea.Autosize>
-        {picked && (
-          <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">
-                {picked.deleted
-                  ? "Deleted here; the content it had is shown."
-                  : ""}
-              </Text>
-              {!readOnly && (
-                <Button
-                  size="xs"
-                  disabled={picked.deleted || isCurrent}
-                  loading={restore.isPending}
-                  onClick={() => restore.mutate(picked.seq)}
-                >
-                  {isCurrent ? "Current" : "Make current"}
-                </Button>
-              )}
-            </Group>
-            <ScrollArea.Autosize mah="55vh">
-              <VersionContent v={picked} known={known} />
-            </ScrollArea.Autosize>
-          </Stack>
-        )}
-      </Group>
-    </Modal>
+      versions={agent.versions}
+      initialSeq={initial}
+      listWidth={220}
+      bodyHeight="55vh"
+      label={(v) => (
+        <Group gap={4}>
+          <Text size="sm">v{v.seq}</Text>
+          {v.deleted && <DeletedBadge />}
+        </Group>
+      )}
+      note={(v) => (
+        <Text size="sm" c="dimmed">
+          {v.deleted ? "Deleted here; the content it had is shown." : ""}
+        </Text>
+      )}
+      body={(v) => <VersionContent v={v} known={known} />}
+      restore={
+        readOnly
+          ? undefined
+          : {
+              run: (seq) => api.restoreAgent(agent.id, seq),
+              afterRestore: refresh,
+              isCurrent: (v) => v.seq === agent.version && !agent.deleted,
+              canRestore: (v) => !v.deleted,
+            }
+      }
+      onClose={onClose}
+    />
   );
 }
 

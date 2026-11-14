@@ -1,29 +1,9 @@
-import {
-  Badge,
-  Button,
-  Code,
-  Group,
-  Modal,
-  NavLink,
-  ScrollArea,
-  Stack,
-  Text,
-} from "@mantine/core";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Badge, Code, Group, Stack, Text } from "@mantine/core";
+import { VersionsModal as GenericVersionsModal } from "../VersionsModal";
+import { useQueryClient } from "@tanstack/react-query";
 import { readSchemaForm, type Form, type SchemaNode } from "@harness/core";
-import {
-  api,
-  type DataDetail,
-  type DataItem,
-  type DataOwner,
-  type DataVersion,
-} from "../../api";
+import { api, type DataDetail, type DataItem, type DataOwner } from "../../api";
 import { dataKeys } from "../../queries";
-import { showError } from "../../lib/notify";
-
-export const when = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString() : "";
 
 function useRefresh() {
   const queryClient = useQueryClient();
@@ -90,81 +70,55 @@ export function VersionsModal({
   onClose: () => void;
 }) {
   const refresh = useRefresh();
-  const newestFirst = [...item.versions].reverse();
-  const [picked, setPicked] = useState<DataVersion | undefined>(newestFirst[0]);
-  const restore = useMutation({
-    mutationFn: (seq: number) => api.restoreData(owner, item.id, seq),
-    onSuccess: async () => {
-      await refresh();
-      onClose();
-    },
-    onError: showError("Could not restore the version"),
-  });
-  const latest = newestFirst[0];
-  const isCurrent = picked?.seq === latest?.seq && !item.deleted;
-
+  const latest = item.versions.at(-1);
   return (
-    <Modal
-      opened
-      onClose={onClose}
-      size="xl"
+    <GenericVersionsModal
       title={`Versions of ${item.name}`}
-    >
-      <Group align="flex-start" wrap="nowrap" gap="md">
-        <ScrollArea.Autosize mah="60vh" w={220} style={{ flexShrink: 0 }}>
-          {newestFirst.map((v) => (
-            <NavLink
-              key={v.seq}
-              active={picked?.seq === v.seq}
-              onClick={() => setPicked(v)}
-              label={
-                <Group gap={4}>
-                  <Text size="sm">#{v.seq}</Text>
-                  <Badge size="xs" variant="light" color="gray">
-                    {v.author}
-                  </Badge>
-                  {v.deleted && (
-                    <Badge size="xs" variant="light" color="red">
-                      deleted
-                    </Badge>
-                  )}
-                </Group>
-              }
-              description={when(v.createdAt)}
-            />
-          ))}
-        </ScrollArea.Autosize>
-        {picked && (
-          <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">
-                {picked.deleted
-                  ? "Deleted here; the content it had is shown."
-                  : `On schema version ${picked.schemaVersion}.`}
-              </Text>
-              {!readOnly && item.schema && (
-                <Button
-                  size="xs"
-                  disabled={picked.deleted || isCurrent}
-                  loading={restore.isPending}
-                  onClick={() => restore.mutate(picked.seq)}
-                >
-                  {isCurrent ? "Current" : "Make current"}
-                </Button>
-              )}
-            </Group>
-            <Text size="sm" fw={500}>
-              {picked.name}
-            </Text>
-            <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-              {picked.description}
-            </Text>
-            <ScrollArea.Autosize mah="50vh">
-              <Code block>{JSON.stringify(picked.value, null, 2)}</Code>
-            </ScrollArea.Autosize>
-          </Stack>
-        )}
-      </Group>
-    </Modal>
+      versions={item.versions}
+      listWidth={220}
+      bodyHeight="50vh"
+      label={(v) => (
+        <Group gap={4}>
+          <Text size="sm">#{v.seq}</Text>
+          <Badge size="xs" variant="light" color="gray">
+            {v.author}
+          </Badge>
+          {v.deleted && (
+            <Badge size="xs" variant="light" color="red">
+              deleted
+            </Badge>
+          )}
+        </Group>
+      )}
+      note={(v) => (
+        <Text size="sm" c="dimmed">
+          {v.deleted
+            ? "Deleted here; the content it had is shown."
+            : `On schema version ${v.schemaVersion}.`}
+        </Text>
+      )}
+      body={(v) => (
+        <Stack gap="xs">
+          <Text size="sm" fw={500}>
+            {v.name}
+          </Text>
+          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+            {v.description}
+          </Text>
+          <Code block>{JSON.stringify(v.value, null, 2)}</Code>
+        </Stack>
+      )}
+      restore={
+        readOnly || !item.schema
+          ? undefined
+          : {
+              run: (seq) => api.restoreData(owner, item.id, seq),
+              afterRestore: refresh,
+              isCurrent: (v) => v.seq === latest?.seq && !item.deleted,
+              canRestore: (v) => !v.deleted,
+            }
+      }
+      onClose={onClose}
+    />
   );
 }

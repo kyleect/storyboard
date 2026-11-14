@@ -8,6 +8,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
+import { when } from "../../lib/format";
 import { confirmAction } from "../../lib/confirm";
 import type { ProjectColor } from "@harness/core";
 import { IconHistory, IconMarkdown, IconTrash } from "@tabler/icons-react";
@@ -20,7 +21,6 @@ import {
   useRefresh,
   ValueView,
   VersionsModal,
-  when,
 } from "./FileViews";
 import { Markdown } from "../Markdown";
 import { TextEditor, type Cursor } from "./TextEditor";

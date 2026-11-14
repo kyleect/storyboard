@@ -13,6 +13,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
+import { when } from "../../../lib/format";
 import { confirmAction } from "../../../lib/confirm";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
@@ -34,7 +35,6 @@ import {
   useSelectableTools,
   useToolApprovals,
   VersionsModal,
-  when,
 } from "./AgentParts";
 import { ToolGrantEditor } from "./ToolGrantEditor";
 import { showError } from "../../../lib/notify";

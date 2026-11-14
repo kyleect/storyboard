@@ -6,15 +6,13 @@ import {
   Group,
   Image,
   Loader,
-  Modal,
-  NavLink,
   Paper,
-  ScrollArea,
   SegmentedControl,
   Stack,
   Text,
   Textarea,
 } from "@mantine/core";
+import { VersionsModal as GenericVersionsModal } from "../VersionsModal";
 import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -24,12 +22,7 @@ import {
   type BlobRef,
   type MediaType,
 } from "@harness/core";
-import {
-  api,
-  type DerivedText,
-  type FileDetail,
-  type FileVersion,
-} from "../../api";
+import { api, type DerivedText, type FileDetail } from "../../api";
 import type { ExplorerSource } from "../../lib/explorer-source";
 import { blobKeys } from "../../queries";
 import { Markdown } from "../Markdown";
@@ -257,9 +250,6 @@ export function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
   );
 }
 
-export const when = (iso: string) =>
-  iso ? new Date(iso).toLocaleString() : "";
-
 export function useRefresh(source: ExplorerSource) {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: source.keys.all });
@@ -277,84 +267,59 @@ export function VersionsModal({
   onClose: () => void;
 }) {
   const refresh = useRefresh(source);
-  const newestFirst = [...file.versions].reverse();
-  const [picked, setPicked] = useState<FileVersion | undefined>(newestFirst[0]);
   const latest = file.versions.at(-1);
-  const restore = useMutation({
-    mutationFn: (seq: number) => source.restore(file.key, seq),
-    onSuccess: async () => {
-      await refresh();
-      onClose();
-    },
-    onError: showError("Could not restore the version"),
-  });
-  const isCurrent = picked?.seq === latest?.seq && !file.deleted;
-
   return (
-    <Modal opened onClose={onClose} size="xl" title={`Versions of ${file.key}`}>
-      <Group align="flex-start" wrap="nowrap" gap="md">
-        <ScrollArea.Autosize mah="60vh" w={240} style={{ flexShrink: 0 }}>
-          {newestFirst.map((v) => (
-            <NavLink
-              key={v.seq}
-              active={picked?.seq === v.seq}
-              onClick={() => setPicked(v)}
-              label={
-                <Group gap={4}>
-                  <Text size="sm">#{v.seq}</Text>
-                  <Badge
-                    size="xs"
-                    variant="light"
-                    color={v.by === "user" ? "blue" : "grape"}
-                  >
-                    {v.by === "user" ? "You" : "Model"}
-                  </Badge>
-                  {v.deleted && (
-                    <Badge size="xs" variant="light" color="red">
-                      deleted
-                    </Badge>
-                  )}
-                </Group>
-              }
-              description={when(v.createdAt)}
-            />
-          ))}
-        </ScrollArea.Autosize>
-        {picked && (
-          <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
-            <Group justify="space-between">
-              <Group gap="xs">
-                <TypeBadge
-                  {...(picked.mediaType ? { mediaType: picked.mediaType } : {})}
-                />
-                {picked.deleted && (
-                  <Text size="sm" c="dimmed">
-                    Deleted here; the value it had is shown.
-                  </Text>
-                )}
-              </Group>
-              {!readOnly && (
-                <Button
-                  size="xs"
-                  disabled={picked.deleted || isCurrent}
-                  loading={restore.isPending}
-                  onClick={() => restore.mutate(picked.seq)}
-                >
-                  {isCurrent ? "Current" : "Make current"}
-                </Button>
-              )}
-            </Group>
-            <ScrollArea.Autosize mah="55vh">
-              <ValueView
-                {...(picked.mediaType ? { mediaType: picked.mediaType } : {})}
-                value={picked.value}
-                blob={picked.blob}
-              />
-            </ScrollArea.Autosize>
-          </Stack>
-        )}
-      </Group>
-    </Modal>
+    <GenericVersionsModal
+      title={`Versions of ${file.key}`}
+      versions={file.versions}
+      listWidth={240}
+      bodyHeight="55vh"
+      label={(v) => (
+        <Group gap={4}>
+          <Text size="sm">#{v.seq}</Text>
+          <Badge
+            size="xs"
+            variant="light"
+            color={v.by === "user" ? "blue" : "grape"}
+          >
+            {v.by === "user" ? "You" : "Model"}
+          </Badge>
+          {v.deleted && (
+            <Badge size="xs" variant="light" color="red">
+              deleted
+            </Badge>
+          )}
+        </Group>
+      )}
+      note={(v) => (
+        <Group gap="xs">
+          <TypeBadge {...(v.mediaType ? { mediaType: v.mediaType } : {})} />
+          {v.deleted && (
+            <Text size="sm" c="dimmed">
+              Deleted here; the value it had is shown.
+            </Text>
+          )}
+        </Group>
+      )}
+      body={(v) => (
+        <ValueView
+          {...(v.mediaType ? { mediaType: v.mediaType } : {})}
+          value={v.value}
+          blob={v.blob}
+        />
+      )}
+      restore={
+        readOnly
+          ? undefined
+          : {
+              run: (seq) => source.restore(file.key, seq),
+              afterRestore: refresh,
+              isCurrent: (v) => v.seq === latest?.seq && !file.deleted,
+              canRestore: (v) => !v.deleted,
+            }
+      }
+      onClose={onClose}
+    />
   );
 }
 
