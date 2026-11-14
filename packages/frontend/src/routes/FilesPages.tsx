@@ -59,19 +59,8 @@ export function ProjectFilesPage({ projectId }: { projectId: string }) {
   const trashed = project.data.trashed_at !== null;
   return (
     <Stack gap="md">
-      <Title order={3}>Files</Title>
-      <Text size="sm" c="dimmed">
-        Project{" "}
-        <Anchor
-          renderRoot={(props) => (
-            <Link {...props} to="/projects/$projectId" params={{ projectId }} />
-          )}
-        >
-          {project.data.name}
-        </Anchor>
-        : every session in this project sees these. Global files are shown too.
-      </Text>
       <FilesPanel
+        height="calc(100vh - 7rem)"
         key={projectId}
         scope={{ scope: "project", id: projectId }}
         readOnly={

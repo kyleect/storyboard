@@ -184,7 +184,7 @@ export function ProjectAgentsPage({ projectId }: { projectId: string }) {
   return (
     <AgentsView
       key={projectId}
-      height="calc(100vh - 19rem)"
+      height="calc(100vh - 7rem)"
       projectId={projectId}
       readOnly={
         trashed
