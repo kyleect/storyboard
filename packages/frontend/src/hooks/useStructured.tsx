@@ -1,5 +1,4 @@
-import { Text } from "@mantine/core";
-import { modals } from "@mantine/modals";
+import { confirmAction } from "../lib/confirm";
 import { IconFileDatabase, IconSchema } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -198,11 +197,12 @@ export function useStructured({
       close(id);
       return;
     }
-    modals.openConfirmModal({
+    confirmAction({
       title: `Close “${nameOf(tab)}” without saving?`,
-      children: <Text size="sm">Your unsaved changes to it will be lost.</Text>,
-      labels: { confirm: "Discard changes", cancel: "Keep editing" },
-      confirmProps: { color: "red" },
+      message: <>Your unsaved changes to it will be lost.</>,
+      confirm: "Discard changes",
+      cancel: "Keep editing",
+      danger: true,
       onConfirm: () => close(id),
     });
   };
@@ -259,16 +259,17 @@ export function useStructured({
 
   const deleteSchema = (schema: SchemaInfo, from: RootId) => {
     const { owner } = schemaOwner(schema, from);
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete “${schema.name}”?`,
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           Any data made from it is deleted with it. Restoring the schema brings
           the data back.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () =>
         api
           .deleteSchema(owner, schema.id)
@@ -280,16 +281,17 @@ export function useStructured({
   const deleteData = (id: string, name: string, root: RootId) => {
     const owner = rootOwner(root);
     if (!owner) return;
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete “${name}”?`,
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           The agent can no longer use it. Its versions are kept, and it can be
           restored from them.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () =>
         api
           .deleteData(owner, id)

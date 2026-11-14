@@ -10,6 +10,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
+import { confirmAction } from "../../../lib/confirm";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -386,16 +387,17 @@ export function BranchSwitcher({
         disabled={disabled}
         onClick={() =>
           current &&
-          modals.openConfirmModal({
+          confirmAction({
             title: "Delete this branch?",
-            children: (
-              <Text size="sm">
+            message: (
+              <>
                 This message and everything after it go to the Trash. You can
                 restore them from Settings, Trash.
-              </Text>
+              </>
             ),
-            labels: { confirm: "Delete branch", cancel: "Cancel" },
-            confirmProps: { color: "red" },
+            confirm: "Delete branch",
+            cancel: "Cancel",
+            danger: true,
             onConfirm: () => onDelete(current),
           })
         }

@@ -13,7 +13,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { modals } from "@mantine/modals";
+import { confirmAction } from "../../../lib/confirm";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -212,16 +212,17 @@ export function AgentForm({
               color="red"
               loading={remove.isPending}
               onClick={() =>
-                modals.openConfirmModal({
+                confirmAction({
                   title: `Delete “${agent.name}”?`,
-                  children: (
-                    <Text size="sm">
+                  message: (
+                    <>
                       Sessions using it go back to no agent. Its versions are
                       kept, and it can be restored from them.
-                    </Text>
+                    </>
                   ),
-                  labels: { confirm: "Delete", cancel: "Cancel" },
-                  confirmProps: { color: "red" },
+                  confirm: "Delete",
+                  cancel: "Cancel",
+                  danger: true,
                   onConfirm: () => remove.mutate(),
                 })
               }

@@ -1,4 +1,5 @@
 import { Box, Drawer, Text, UnstyledButton } from "@mantine/core";
+import { confirmAction } from "../../../lib/confirm";
 import { useCreateSession } from "../../../hooks/useSessions";
 import { useProjects } from "../../../hooks/useProjects";
 import {
@@ -6,7 +7,6 @@ import {
   useDocumentVisibility,
   useMediaQuery,
 } from "@mantine/hooks";
-import { modals } from "@mantine/modals";
 import {
   useMutation,
   useQueries,
@@ -192,11 +192,12 @@ export function Workbench() {
       return;
     }
     const t = tabs.find((x) => tabId(x) === id);
-    modals.openConfirmModal({
+    confirmAction({
       title: `Close ${t ? labelOf(t) : "this tab"}?`,
-      children: <Text size="sm">Your unsaved changes to it will be lost.</Text>,
-      labels: { confirm: "Close", cancel: "Keep open" },
-      confirmProps: { color: "red" },
+      message: <>Your unsaved changes to it will be lost.</>,
+      confirm: "Close",
+      cancel: "Keep open",
+      danger: true,
       onConfirm: () => close([id]),
     });
   };

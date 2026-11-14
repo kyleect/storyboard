@@ -8,7 +8,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { modals } from "@mantine/modals";
+import { confirmAction } from "../../lib/confirm";
 import type { ProjectColor } from "@harness/core";
 import { IconHistory, IconMarkdown, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -99,10 +99,11 @@ export function FileTab({
       save.mutate(draft.text);
       return;
     }
-    modals.openConfirmModal({
+    confirmAction({
       title: `Save to the ${rootLabel} file “${fileKey}”?`,
-      children: <Text size="sm">{broadNote}</Text>,
-      labels: { confirm: "Save", cancel: "Cancel" },
+      message: <>{broadNote}</>,
+      confirm: "Save",
+      cancel: "Cancel",
       onConfirm: () => save.mutate(draft.text),
     });
   };

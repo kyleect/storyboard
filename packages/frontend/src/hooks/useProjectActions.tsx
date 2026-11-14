@@ -1,4 +1,4 @@
-import { Text } from "@mantine/core";
+import { confirmAction } from "../lib/confirm";
 import { modals } from "@mantine/modals";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -35,16 +35,17 @@ export function useProjectActions() {
   };
 
   const confirmTrash = (project: Project) => {
-    modals.openConfirmModal({
+    confirmAction({
       title: "Move project to trash?",
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           “{project.name}” and all its sessions move to the trash. You can
           restore them from the Trash tab in Settings.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Move to trash", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Move to trash",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () => {
         api
           .trashProject(project.id)

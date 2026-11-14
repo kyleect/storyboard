@@ -10,6 +10,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { confirmAction } from "../../../lib/confirm";
 import { useProjects } from "../../../hooks/useProjects";
 import { modals } from "@mantine/modals";
 import { useQuery } from "@tanstack/react-query";
@@ -79,15 +80,14 @@ export function TrashSection() {
     });
 
   const confirmEmpty = () =>
-    modals.openConfirmModal({
+    confirmAction({
       title: "Empty the trash?",
-      children: (
-        <Text size="sm">
-          Everything in the trash will be deleted. This cannot be undone.
-        </Text>
+      message: (
+        <>Everything in the trash will be deleted. This cannot be undone.</>
       ),
-      labels: { confirm: "Empty trash", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Empty trash",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () => {
         api
           .emptyTrash()

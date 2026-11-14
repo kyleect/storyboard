@@ -1,4 +1,5 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
+import { confirmAction } from "../lib/confirm";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,16 +47,17 @@ export function useSessionActions() {
   };
 
   const confirmTrash = (session: Session) => {
-    modals.openConfirmModal({
+    confirmAction({
       title: "Move to trash?",
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           “{session.title}” moves to the trash. You can restore it from the
           Trash tab in Settings.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Move to trash", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Move to trash",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () => {
         api
           .trashSession(session.id)
@@ -76,17 +78,18 @@ export function useSessionActions() {
   const confirmTrashMany = (ids: readonly string[], onDone: () => void) => {
     const count = ids.length;
     const noun = count === 1 ? "session" : "sessions";
-    modals.openConfirmModal({
+    confirmAction({
       title: `Move ${count} ${noun} to trash?`,
-      children: (
-        <Text size="sm">
-          {count === 1 ? "It moves" : `All ${count} move`} to the trash. You can
-          restore {count === 1 ? "it" : "them"} from the Trash section in
+      message: (
+        <>
+          {count === 1 ? "It moves" : `All ${count} move`}to the trash. You can
+          restore {count === 1 ? "it" : "them"}from the Trash section in
           Settings.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Move to trash", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Move to trash",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () => {
         api
           .trashSessions(ids)

@@ -10,6 +10,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
+import { confirmAction } from "../../../lib/confirm";
 import { useSetDefaultAgent } from "../../../hooks/useProjects";
 import { useSettings } from "../../../hooks/useSettings";
 import { modals } from "@mantine/modals";
@@ -481,11 +482,12 @@ export function AgentsExplorer({
       close(id);
       return;
     }
-    modals.openConfirmModal({
+    confirmAction({
       title: `Close “${nameOf(tab)}” without saving?`,
-      children: <Text size="sm">Your unsaved changes to it will be lost.</Text>,
-      labels: { confirm: "Discard changes", cancel: "Keep editing" },
-      confirmProps: { color: "red" },
+      message: <>Your unsaved changes to it will be lost.</>,
+      confirm: "Discard changes",
+      cancel: "Keep editing",
+      danger: true,
       onConfirm: () => close(id),
     });
   };
@@ -582,13 +584,12 @@ export function AgentsExplorer({
     path: string,
     what: string,
   ) =>
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete “${what}”?`,
-      children: (
-        <Text size="sm">Its versions are kept, and it can be restored.</Text>
-      ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      message: <>Its versions are kept, and it can be restored.</>,
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () => {
         void (async () => {
           try {
@@ -635,16 +636,17 @@ export function AgentsExplorer({
     });
 
   const deleteSchema = (agentId: string, schema: SchemaInfo) =>
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete “${schema.name}”?`,
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           Any data made from it is deleted with it. Restoring the schema brings
           the data back.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () =>
         api
           .deleteSchema({ scope: "agent", id: agentId }, schema.id)
@@ -653,16 +655,17 @@ export function AgentsExplorer({
     });
 
   const deleteData = (agentId: string, id: string, name: string) =>
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete “${name}”?`,
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           The agent can no longer use it. Its versions are kept, and it can be
           restored from them.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () =>
         api
           .deleteData({ scope: "agent", id: agentId }, id)
@@ -693,16 +696,17 @@ export function AgentsExplorer({
         showError("Could not import the agent")(err);
         return;
       }
-      modals.openConfirmModal({
+      confirmAction({
         title: "An agent with this name exists",
-        children: (
-          <Text size="sm">
-            {err.message} Replace it? The file becomes its next version
+        message: (
+          <>
+            {err.message}Replace it? The file becomes its next version
             {conflict.deleted ? ", and the deleted agent is restored" : ""};
             earlier versions are kept.
-          </Text>
+          </>
         ),
-        labels: { confirm: "Replace", cancel: "Cancel" },
+        confirm: "Replace",
+        cancel: "Cancel",
         onConfirm: () =>
           importFile.mutate({ markdown: a.markdown, replace: true }),
       });

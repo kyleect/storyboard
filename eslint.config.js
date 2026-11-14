@@ -12,5 +12,43 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks },
     rules: reactHooks.configs.recommended.rules,
   },
+  {
+    files: [
+      "packages/frontend/src/{components,hooks,stores,lib,queries}/**/*.{ts,tsx}",
+    ],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "(^|/)routes/",
+              message: "Shared code must not import from routes/.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/frontend/src/routes/*/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex:
+                "^(\\.\\./)+(?!components/|hooks/|stores/|lib/|queries/|api)[a-z]+/(components|lib)/",
+              message:
+                "A route does not import another route's components/ or lib/.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   prettier,
 );

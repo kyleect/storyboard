@@ -1,5 +1,5 @@
 import { Alert, Loader, Text } from "@mantine/core";
-import { modals } from "@mantine/modals";
+import { confirmAction } from "../../lib/confirm";
 import { notifications } from "@mantine/notifications";
 import { IconBook } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
@@ -173,11 +173,12 @@ export function SourceExplorer({
       close(id);
       return;
     }
-    modals.openConfirmModal({
+    confirmAction({
       title: `Close “${baseName(tab.key)}” without saving?`,
-      children: <Text size="sm">Your unsaved changes to it will be lost.</Text>,
-      labels: { confirm: "Discard changes", cancel: "Keep editing" },
-      confirmProps: { color: "red" },
+      message: <>Your unsaved changes to it will be lost.</>,
+      confirm: "Discard changes",
+      cancel: "Keep editing",
+      danger: true,
       onConfirm: () => close(id),
     });
   };
@@ -255,16 +256,17 @@ export function SourceExplorer({
   const deleteFolder = (ref: NodeRef) => {
     const source = rootOf(ref.root)?.source;
     if (!source) return;
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete the folder “${ref.path}”?`,
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           Every file inside it is deleted too. Each file keeps its earlier
           versions and can be restored.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () =>
         source
           .deleteFolder(ref.path)
@@ -276,15 +278,14 @@ export function SourceExplorer({
   const deleteFile = (ref: NodeRef) => {
     const source = rootOf(ref.root)?.source;
     if (!source) return;
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete “${ref.path}”?`,
-      children: (
-        <Text size="sm">
-          Its earlier versions are kept, and it can be restored from them.
-        </Text>
+      message: (
+        <>Its earlier versions are kept, and it can be restored from them.</>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () =>
         source
           .remove(ref.path)

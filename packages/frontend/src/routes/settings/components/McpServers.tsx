@@ -14,7 +14,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { modals } from "@mantine/modals";
+import { confirmAction } from "../../../lib/confirm";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -142,16 +142,17 @@ export function McpServers() {
   });
 
   const confirmDelete = (s: McpServerView) =>
-    modals.openConfirmModal({
+    confirmAction({
       title: `Delete ${s.name}?`,
-      children: (
-        <Text size="sm">
+      message: (
+        <>
           Its tools are removed. Agents that list them keep the names, but will
           not get the tools until a server provides them again.
-        </Text>
+        </>
       ),
-      labels: { confirm: "Delete", cancel: "Cancel" },
-      confirmProps: { color: "red" },
+      confirm: "Delete",
+      cancel: "Cancel",
+      danger: true,
       onConfirm: () => remove.mutate(s),
     });
 
