@@ -17,6 +17,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -103,20 +104,20 @@ export function CopyDebugButton({ sessionId }: { sessionId: string }) {
 
 function RunRequest({ run, index }: { run: DebugRun; index: number }) {
   return (
-    <Paper withBorder p="sm">
+    <Paper p="sm">
       <Stack gap="xs">
         <Group gap="xs">
           <Text fw={600} size="sm">
             {runLabel(run, index)}
           </Text>
-          {run.model && <Badge variant="light">{run.model}</Badge>}
+          {run.model && <Badge size="md">{run.model}</Badge>}
           {run.reasoningEffort && (
-            <Badge variant="light" color="grape">
+            <Badge size="md" color="grape">
               {run.reasoningEffort}
             </Badge>
           )}
           {run.parentRunId && (
-            <Badge variant="light" color="gray">
+            <Badge size="md" color="gray">
               parent {shortId(run.parentRunId)}
             </Badge>
           )}
@@ -131,7 +132,7 @@ function RunRequest({ run, index }: { run: DebugRun; index: number }) {
               System prompt
             </Text>
             {run.systemPrompt ? (
-              <Code block style={{ whiteSpace: "pre-wrap" }}>
+              <Code block className={utils.preWrap}>
                 {run.systemPrompt}
               </Code>
             ) : (
@@ -143,7 +144,7 @@ function RunRequest({ run, index }: { run: DebugRun; index: number }) {
               Tools ({run.tools?.length ?? 0})
             </Text>
             {run.tools && run.tools.length > 0 ? (
-              <Code block style={{ whiteSpace: "pre-wrap" }}>
+              <Code block className={utils.preWrap}>
                 {JSON.stringify(run.tools, null, 2)}
               </Code>
             ) : (
@@ -301,7 +302,7 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
                     <Table.Tr
                       key={e.id}
                       onClick={() => toggle(e.id)}
-                      style={{ cursor: "pointer" }}
+                      className={utils.pointer}
                       aria-expanded={expanded}
                     >
                       <Table.Td>{e.id}</Table.Td>
@@ -314,18 +315,16 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
                             : `${index + 1}. ${shortId(e.runId)}`}
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="light" size="sm">
-                          {e.type}
-                        </Badge>
+                        <Badge size="sm">{e.type}</Badge>
                       </Table.Td>
-                      <Table.Td style={{ wordBreak: "break-word" }}>
+                      <Table.Td className={utils.breakWord}>
                         {eventSummary(e)}
                       </Table.Td>
                     </Table.Tr>,
                     expanded && (
                       <Table.Tr key={`${e.id}-data`}>
                         <Table.Td colSpan={5}>
-                          <Code block style={{ whiteSpace: "pre-wrap" }}>
+                          <Code block className={utils.preWrap}>
                             {JSON.stringify(e.data, null, 2)}
                           </Code>
                         </Table.Td>

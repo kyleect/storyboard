@@ -14,6 +14,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { confirmAction } from "../../../lib/confirm";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -181,16 +182,12 @@ export function McpServers() {
       )}
       {servers.data?.map((s) =>
         editing !== "new" && editing?.id === s.id ? null : (
-          <Paper key={s.id} withBorder p="sm">
+          <Paper key={s.id} p="sm">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
               <Stack gap={2} miw={0}>
                 <Group gap="xs">
                   <Text fw={500}>{s.name}</Text>
-                  <Badge
-                    size="sm"
-                    color={STATE_COLOR[s.status.state]}
-                    variant="light"
-                  >
+                  <Badge size="sm" color={STATE_COLOR[s.status.state]}>
                     {s.status.state}
                   </Badge>
                   {s.status.state === "connected" && (
@@ -204,7 +201,7 @@ export function McpServers() {
                   {s.config.transport}: <Code>{summary(s.config)}</Code>
                 </Text>
                 {s.status.error && (
-                  <Text size="xs" c="red" style={{ whiteSpace: "pre-wrap" }}>
+                  <Text size="xs" c="red" className={utils.preWrap}>
                     {s.status.error}
                   </Text>
                 )}
@@ -292,7 +289,7 @@ function ServerForm({
   };
 
   return (
-    <Paper withBorder p="sm">
+    <Paper p="sm">
       <form
         onSubmit={(e) => {
           e.preventDefault();

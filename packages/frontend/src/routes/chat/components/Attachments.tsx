@@ -1,4 +1,5 @@
 import {
+  Box,
   Badge,
   Button,
   CloseButton,
@@ -163,7 +164,7 @@ export function DraftAttachments({
       {items.map(({ ref, name, kind, previewUrl }) => {
         const label = name;
         return (
-          <Paper key={ref} withBorder p={4}>
+          <Paper key={ref} p={4}>
             <Group gap="xs" wrap="nowrap">
               {previewUrl && kind === "image" ? (
                 <Image
@@ -175,7 +176,7 @@ export function DraftAttachments({
                   radius="sm"
                 />
               ) : (
-                <Badge variant="light" tt="none">
+                <Badge size="md" tt="none">
                   {kind}
                 </Badge>
               )}
@@ -183,11 +184,13 @@ export function DraftAttachments({
                 {label}
               </Text>
               {previewUrl && kind === "audio" && (
-                <audio
+                <Box
+                  component="audio"
                   controls
                   src={previewUrl}
                   aria-label={`Play ${label}`}
-                  style={{ height: 32, maxWidth: 220 }}
+                  h={32}
+                  maw={220}
                 />
               )}
               <CloseButton

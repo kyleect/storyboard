@@ -320,7 +320,9 @@ describe("opening", () => {
     const tab = screen.getByRole("tab", { name: /Place/ });
     expect(tab.getAttribute("title")).toContain("Project");
     expect(iconBg(tab)).toContain("--mantine-color-teal-filled");
-    expect(tab.style.borderTop).toContain("--mantine-color-teal-filled");
+    expect(tab.style.getPropertyValue("--tab-color")).toContain(
+      "--mantine-color-teal-filled",
+    );
 
     const globalTab = () =>
       screen

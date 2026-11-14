@@ -1,4 +1,5 @@
 import { Paper, Stack, Text } from "@mantine/core";
+import utils from "../../styles/utilities.module.css";
 import {
   optionLabel,
   readSchemaForm,
@@ -54,7 +55,7 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
     return (
       <Stack gap={4}>
         {label}
-        <Paper withBorder p="xs">
+        <Paper p="xs">
           <Stack gap="xs">
             {field.fields.map((f) => (
               <FieldValue key={f.name} field={f} value={v[f.name]} />
@@ -73,7 +74,7 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
           <Empty />
         ) : (
           items.map((item, i) => (
-            <Paper key={i} withBorder p="xs">
+            <Paper key={i} p="xs">
               <FieldValue
                 field={{ ...field.item, label: `${i + 1}` }}
                 value={item}
@@ -91,10 +92,7 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
       {text === "" ? (
         <Empty />
       ) : (
-        <Text
-          size="sm"
-          style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-        >
+        <Text size="sm" className={`${utils.preWrap} ${utils.breakWord}`}>
           {text}
         </Text>
       )}
@@ -116,7 +114,7 @@ export function DataValue({
       ? value
       : {};
   return (
-    <Paper withBorder p="sm">
+    <Paper p="sm">
       <Stack gap="sm">
         {form.fields.map((f) => (
           <FieldValue key={f.name} field={f} value={values[f.name]} />

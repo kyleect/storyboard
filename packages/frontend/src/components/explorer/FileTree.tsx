@@ -8,12 +8,10 @@ import {
   Tree,
   useTree,
   Stack,
-  Group,
-  Flex,
 } from "@mantine/core";
+import { TreeChevron, TreeMenuAnchor, TreeRow, TreeIcon } from "../TreeParts";
+import { PaneHeader } from "../PaneHeader";
 import {
-  IconChevronDown,
-  IconChevronRight,
   IconEye,
   IconEyeOff,
   IconFile,
@@ -106,9 +104,7 @@ function HeaderAction({
   return (
     <Tooltip label={locked ? locked : label} openDelay={400}>
       <ActionIcon
-        variant="subtle"
         color="gray"
-        size="sm"
         aria-label={label}
         disabled={locked !== undefined}
         onClick={onClick}
@@ -248,62 +244,41 @@ export function FileTree(props: FileTreeProps) {
             props.onUpload(pickFor.current.root, pickFor.current.folder, files);
         }}
       />
-      <Group
-        px="xs"
-        py={4}
-        gap={0}
-        justify="space-between"
-        wrap="nowrap"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-        }}
-      >
-        <Text
-          size="xs"
-          fw={600}
-          c="dimmed"
-          tt="uppercase"
-          style={{ letterSpacing: 0.5 }}
+      <PaneHeader title="Explorer">
+        <HeaderAction
+          label="New file"
+          icon={<IconFilePlus size={16} />}
+          locked={targetLocked ? (lockReason ?? "") : undefined}
+          onClick={() => startPending("new-file", target)}
+        />
+        <HeaderAction
+          label="New folder"
+          icon={<IconFolderPlus size={16} />}
+          locked={targetLocked ? (lockReason ?? "") : undefined}
+          onClick={() => startPending("new-folder", target)}
+        />
+        <HeaderAction
+          label={uploading ? "Uploading…" : "Upload"}
+          icon={<IconUpload size={16} />}
+          locked={targetLocked ? (lockReason ?? "") : undefined}
+          onClick={() => chooseFiles(target)}
+        />
+        {props.extraTools}
+        <Tooltip
+          label={showDeleted ? "Hide deleted files" : "Show deleted files"}
+          openDelay={400}
         >
-          Explorer
-        </Text>
-        <Flex gap={2}>
-          <HeaderAction
-            label="New file"
-            icon={<IconFilePlus size={16} />}
-            locked={targetLocked ? (lockReason ?? "") : undefined}
-            onClick={() => startPending("new-file", target)}
-          />
-          <HeaderAction
-            label="New folder"
-            icon={<IconFolderPlus size={16} />}
-            locked={targetLocked ? (lockReason ?? "") : undefined}
-            onClick={() => startPending("new-folder", target)}
-          />
-          <HeaderAction
-            label={uploading ? "Uploading…" : "Upload"}
-            icon={<IconUpload size={16} />}
-            locked={targetLocked ? (lockReason ?? "") : undefined}
-            onClick={() => chooseFiles(target)}
-          />
-          {props.extraTools}
-          <Tooltip
-            label={showDeleted ? "Hide deleted files" : "Show deleted files"}
-            openDelay={400}
+          <ActionIcon
+            variant={showDeleted ? "light" : "subtle"}
+            color="gray"
+            aria-label="Show deleted files"
+            aria-pressed={showDeleted}
+            onClick={props.onToggleDeleted}
           >
-            <ActionIcon
-              variant={showDeleted ? "light" : "subtle"}
-              color="gray"
-              size="sm"
-              aria-label="Show deleted files"
-              aria-pressed={showDeleted}
-              onClick={props.onToggleDeleted}
-            >
-              {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
-            </ActionIcon>
-          </Tooltip>
-        </Flex>
-      </Group>
+            {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
+          </ActionIcon>
+        </Tooltip>
+      </PaneHeader>
 
       <ScrollArea
         flex={1}
@@ -332,6 +307,7 @@ export function FileTree(props: FileTreeProps) {
               return (
                 <div
                   className={elementProps.className}
+                  // eslint-disable-next-line no-restricted-syntax -- replaces the indentation in elementProps.style
                   style={{ ...elementProps.style, padding: "2px 8px" }}
                 >
                   <InlineName
@@ -351,20 +327,10 @@ export function FileTree(props: FileTreeProps) {
             const isRenaming = renaming?.value === node.value;
             const deleted = row?.deleted ?? false;
             return (
-              <div
-                {...elementProps}
+              <TreeRow
+                elementProps={elementProps}
                 title={ref.path === "" ? undefined : ref.path}
-                style={{
-                  ...elementProps.style,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  paddingBlock: 3,
-                  paddingInlineEnd: 8,
-                  cursor: "pointer",
-                  userSelect: "none",
-                  opacity: deleted ? 0.6 : 1,
-                }}
+                deleted={deleted}
                 onClick={(e) => {
                   elementProps.onClick(e);
                   if (ref.kind === "file") props.onOpenFile(ref, false);
@@ -383,23 +349,11 @@ export function FileTree(props: FileTreeProps) {
                 }}
                 onDrop={(e) => drop(e, ref.root, folderOf(ref))}
               >
-                <span
-                  style={{
-                    width: 14,
-                    display: "inline-flex",
-                    flexShrink: 0,
-                    color: "var(--mantine-color-dimmed)",
-                  }}
-                >
-                  {isFolder && hasChildren ? (
-                    expanded ? (
-                      <IconChevronDown size={14} />
-                    ) : (
-                      <IconChevronRight size={14} />
-                    )
-                  ) : null}
-                </span>
-                <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                <TreeChevron
+                  show={isFolder && hasChildren}
+                  expanded={expanded}
+                />
+                <TreeIcon>
                   {isFolder ? (
                     expanded && hasChildren ? (
                       <IconFolderOpen size={16} />
@@ -409,7 +363,7 @@ export function FileTree(props: FileTreeProps) {
                   ) : (
                     <FileIcon mediaType={row?.mediaType} />
                   )}
-                </span>
+                </TreeIcon>
                 {isRenaming ? (
                   <InlineName
                     initial={row?.name ?? ""}
@@ -429,7 +383,7 @@ export function FileTree(props: FileTreeProps) {
                     {node.label}
                   </Text>
                 )}
-              </div>
+              </TreeRow>
             );
           }}
         />
@@ -444,15 +398,7 @@ export function FileTree(props: FileTreeProps) {
         withinPortal
       >
         <Menu.Target>
-          <span
-            style={{
-              position: "fixed",
-              left: menu?.x ?? 0,
-              top: menu?.y ?? 0,
-              width: 0,
-              height: 0,
-            }}
-          />
+          <TreeMenuAnchor menu={menu} />
         </Menu.Target>
         <Menu.Dropdown>
           {menu && (

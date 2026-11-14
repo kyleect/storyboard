@@ -1,0 +1,17 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 3px;
+  padding-inline-end: 8px;
+  cursor: pointer;
+  user-select: none;
+
+  &[data-deleted] {
+    opacity: 0.6;
+  }
+
+  &[data-waiting] {
+    cursor: default;
+  }
+}

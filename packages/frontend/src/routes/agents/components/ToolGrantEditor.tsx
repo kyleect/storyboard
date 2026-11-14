@@ -103,7 +103,7 @@ export function ToolGrantEditor({
     const isOpen = open.has(id);
     const partial = id !== group;
     return (
-      <Paper key={id} withBorder p="xs">
+      <Paper key={id} p="xs">
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
             <Checkbox
@@ -119,8 +119,6 @@ export function ToolGrantEditor({
               }
             />
             <ActionIcon
-              variant="subtle"
-              size="sm"
               aria-label={`${isOpen ? "Hide" : "Show"} ${label} tools`}
               aria-expanded={isOpen}
               onClick={() => toggleOpen(id)}
@@ -133,11 +131,7 @@ export function ToolGrantEditor({
             <Text size="xs" c="dimmed">
               {on} of {total}
             </Text>
-            {fresh > 0 && (
-              <Badge size="xs" color="blue" variant="light">
-                {fresh} new
-              </Badge>
-            )}
+            {fresh > 0 && <Badge color="blue">{fresh} new</Badge>}
           </Group>
           <Select
             size="xs"
@@ -186,25 +180,15 @@ export function ToolGrantEditor({
                     <Group gap={6}>
                       <span>{t.name}</span>
                       {t.alwaysOn && (
-                        <Badge size="xs" variant="outline" color="gray">
+                        <Badge variant="outline" color="gray">
                           always on
                         </Badge>
                       )}
-                      {newTools.has(t.name) && (
-                        <Badge size="xs" variant="light" color="blue">
-                          new
-                        </Badge>
-                      )}
+                      {newTools.has(t.name) && <Badge color="blue">new</Badge>}
                       {t.needsReview && (
-                        <Badge size="xs" variant="light" color="orange">
-                          needs review
-                        </Badge>
+                        <Badge color="orange">needs review</Badge>
                       )}
-                      {t.off && (
-                        <Badge size="xs" variant="light" color="red">
-                          off in Settings
-                        </Badge>
-                      )}
+                      {t.off && <Badge color="red">off in Settings</Badge>}
                     </Group>
                   }
                   description={t.description}

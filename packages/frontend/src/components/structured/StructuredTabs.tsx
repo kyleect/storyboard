@@ -13,6 +13,7 @@ import {
   Tooltip,
   Group,
 } from "@mantine/core";
+import utils from "../../styles/utilities.module.css";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -111,8 +112,6 @@ export function newDataDraft(name: string, schemaId: string): DataDraft {
   };
 }
 
-const BORDER = "1px solid var(--mantine-color-default-border)";
-
 function Toolbar({
   path,
   badges,
@@ -128,7 +127,7 @@ function Toolbar({
       py={4}
       gap={8}
       justify="space-between"
-      style={{ borderBottom: BORDER }}
+      className={utils.borderBottom}
     >
       <Group gap={8} wrap="nowrap" miw={0}>
         <Text size="xs" c="dimmed" truncate>
@@ -136,7 +135,7 @@ function Toolbar({
         </Text>
         {badges}
       </Group>
-      <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+      <Group gap={6} wrap="nowrap" flex="none">
         {actions}
       </Group>
     </Group>
@@ -377,21 +376,9 @@ export function SchemaTab({
         path={`${rootLabel(root)} › Schemas › ${current.name || "New schema"}`}
         badges={
           <>
-            {s && (
-              <Badge size="xs" variant="light" color="gray">
-                v{s.version}
-              </Badge>
-            )}
-            {s && (
-              <Badge size="xs" variant="light" color="gray">
-                {scopeName(s.scope)}
-              </Badge>
-            )}
-            {deleted && (
-              <Badge size="xs" variant="light" color="red">
-                deleted
-              </Badge>
-            )}
+            {s && <Badge color="gray">v{s.version}</Badge>}
+            {s && <Badge color="gray">{scopeName(s.scope)}</Badge>}
+            {deleted && <Badge color="red">deleted</Badge>}
             {!deleted && fixed && readOnly && (
               <Text size="xs" c="dimmed" truncate>
                 {readOnly}
@@ -520,12 +507,12 @@ export function SchemaTab({
             onChange={(e) => edit({ description: e.currentTarget.value })}
           />
           {!canBuild && baseRoot && !baseRoot.ok && !draft && (
-            <Alert color="yellow" style={{ whiteSpace: "pre-wrap" }}>
+            <Alert color="yellow" className={utils.preWrap}>
               {`The builder can't show this schema:\n${baseRoot.reason}`}
             </Alert>
           )}
           {notice && (
-            <Alert color="yellow" style={{ whiteSpace: "pre-wrap" }}>
+            <Alert color="yellow" className={utils.preWrap}>
               {notice}
             </Alert>
           )}
@@ -547,7 +534,7 @@ export function SchemaTab({
             />
           )}
           {error && (
-            <Alert color="red" style={{ whiteSpace: "pre-wrap" }}>
+            <Alert color="red" className={utils.preWrap}>
               {error}
             </Alert>
           )}
@@ -784,7 +771,7 @@ export function DataTab({
         badges={
           <>
             {d && (
-              <Badge size="xs" variant="light" color="gray">
+              <Badge color="gray">
                 {d.schema ? `v${d.schemaVersion}` : "no schema"}
               </Badge>
             )}
@@ -907,7 +894,7 @@ export function DataTab({
             onChange={(e) => edit({ description: e.currentTarget.value })}
           />
           {notice && (
-            <Alert color="yellow" style={{ whiteSpace: "pre-wrap" }}>
+            <Alert color="yellow" className={utils.preWrap}>
               {notice}
             </Alert>
           )}
@@ -949,7 +936,7 @@ export function DataTab({
             </>
           )}
           {error && (
-            <Alert color="red" style={{ whiteSpace: "pre-wrap" }}>
+            <Alert color="red" className={utils.preWrap}>
               {error}
             </Alert>
           )}

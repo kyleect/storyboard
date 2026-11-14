@@ -1,4 +1,4 @@
-import { ActionIcon, Menu, Tooltip } from "@mantine/core";
+import { ActionIcon, Menu, Tooltip, Box } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconUserCircle } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -30,12 +30,7 @@ export function ProfileSwitcher({ onManage }: { onManage: () => void }) {
           position="right"
           withArrow
         >
-          <ActionIcon
-            size={40}
-            variant="subtle"
-            color="gray"
-            aria-label="Profile"
-          >
+          <ActionIcon size={40} color="gray" aria-label="Profile">
             <IconUserCircle size={22} />
           </ActionIcon>
         </Tooltip>
@@ -49,7 +44,7 @@ export function ProfileSwitcher({ onManage }: { onManage: () => void }) {
               p.active ? (
                 <IconCheck size={16} />
               ) : (
-                <span style={{ display: "inline-block", width: 16 }} />
+                <Box component="span" display="inline-block" w={16} />
               )
             }
             {...(p.active ? { "aria-current": "true" as const } : {})}

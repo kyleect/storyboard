@@ -1,0 +1,35 @@
+.preWrap {
+  white-space: pre-wrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.breakWord {
+  word-break: break-word;
+}
+
+.breakAll {
+  word-break: break-all;
+}
+
+.pointer {
+  cursor: pointer;
+}
+
+.borderTop {
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.borderBottom {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.borderLeft {
+  border-left: 1px solid var(--mantine-color-default-border);
+}
+
+.borderRight {
+  border-right: 1px solid var(--mantine-color-default-border);
+}

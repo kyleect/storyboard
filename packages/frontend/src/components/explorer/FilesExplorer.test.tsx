@@ -277,7 +277,7 @@ describe("tabs", () => {
     fireEvent.click(await screen.findByText("plan.txt"));
     const tabs = () => screen.getAllByRole("tab").map((t) => t.textContent);
     await waitFor(() => expect(tabs()).toEqual(["plan.txt · Session"]));
-    expect(screen.getByRole("tab").style.fontStyle).toBe("italic");
+    expect(screen.getByRole("tab").hasAttribute("data-transient")).toBe(true);
     fireEvent.click(screen.getByText("rules.txt"));
     await waitFor(() => expect(tabs()).toEqual(["rules.txt · Project"]));
   });
@@ -287,7 +287,9 @@ describe("tabs", () => {
     fireEvent.doubleClick(await screen.findByText("plan.txt"));
     fireEvent.click(screen.getByText("rules.txt"));
     await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
-    expect(screen.getAllByRole("tab")[0]?.style.fontStyle).not.toBe("italic");
+    expect(screen.getAllByRole("tab")[0]?.hasAttribute("data-transient")).toBe(
+      false,
+    );
   });
 
   it("closes a tab with its close button", async () => {
@@ -349,7 +351,7 @@ describe("editing", () => {
     expect(
       await screen.findByRole("img", { name: "Unsaved changes" }),
     ).toBeTruthy();
-    expect(screen.getByRole("tab").style.fontStyle).not.toBe("italic");
+    expect(screen.getByRole("tab").hasAttribute("data-transient")).toBe(false);
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -872,7 +874,7 @@ describe("a project's color in the Files explorer", () => {
     fireEvent.doubleClick(screen.getByText("rules.txt"));
     await waitFor(() => expect(tab("rules.txt")).toBeTruthy());
     expect(iconBg(tab("rules.txt"))).toContain("--mantine-color-teal-filled");
-    expect(tab("rules.txt").style.borderTop).toContain(
+    expect(tab("rules.txt").style.getPropertyValue("--tab-color")).toContain(
       "--mantine-color-teal-filled",
     );
     fireEvent.doubleClick(screen.getByText("bible.txt"));
@@ -900,8 +902,6 @@ describe("a project's color in the Files explorer", () => {
     fireEvent.doubleClick(await screen.findByText("rules.txt"));
     await waitFor(() => expect(tab("rules.txt")).toBeTruthy());
     expect(iconBg(tab("rules.txt"))).not.toContain("--mantine-color-null");
-    expect(tab("rules.txt").style.borderTop).toContain(
-      "--mantine-primary-color-filled",
-    );
+    expect(tab("rules.txt").style.getPropertyValue("--tab-color")).toBe("");
   });
 });

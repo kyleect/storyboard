@@ -1,3 +1,4 @@
+import classes from "./ProjectColorPicker.module.css";
 import { ColorSwatch, Group, Input } from "@mantine/core";
 import { IconBan, IconCheck } from "@tabler/icons-react";
 import { PROJECT_COLORS, type ProjectColor } from "@harness/core";
@@ -32,11 +33,8 @@ export function ProjectColorPicker({
         if (!selected) onChange(color);
       }}
       opacity={disabled ? 0.5 : 1}
-      style={{
-        cursor: disabled ? "default" : "pointer",
-        outline: selected ? "2px solid var(--mantine-color-dimmed)" : undefined,
-        outlineOffset: 2,
-      }}
+      className={classes.swatch}
+      mod={{ selected, disabled }}
     >
       {color === null ? (
         <IconBan size={14} color="var(--mantine-color-dimmed)" />

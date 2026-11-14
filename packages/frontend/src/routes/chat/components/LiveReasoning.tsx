@@ -5,6 +5,7 @@ import {
   UnstyledButton,
   useMantineTheme,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { useState } from "react";
 import { type Usage } from "@harness/core";
 
@@ -37,12 +38,7 @@ export function LiveReasoning({
         </UnstyledButton>
       </Group>
       {open ? (
-        <Text
-          size="sm"
-          c="dimmed"
-          fs="italic"
-          style={{ whiteSpace: "pre-wrap" }}
-        >
+        <Text size="sm" c="dimmed" fs="italic" className={utils.preWrap}>
           {text}
         </Text>
       ) : (

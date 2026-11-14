@@ -158,9 +158,7 @@ export function SkillsExplorer({
         <Menu.Target>
           <Tooltip label="Import a skill" openDelay={400}>
             <ActionIcon
-              variant="subtle"
               color="gray"
-              size="sm"
               aria-label="Import a skill"
               disabled={pageOwner === project && readOnly !== undefined}
             >

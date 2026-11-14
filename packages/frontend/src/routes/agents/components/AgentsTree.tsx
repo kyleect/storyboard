@@ -11,9 +11,15 @@ import {
   Stack,
 } from "@mantine/core";
 import {
+  INHERITED,
+  TreeChevron,
+  TreeIcon,
+  TreeMenuAnchor,
+  TreeRow,
+} from "../../../components/TreeParts";
+import { PaneHeader } from "../../../components/PaneHeader";
+import {
   IconBolt,
-  IconChevronDown,
-  IconChevronRight,
   IconCircle,
   IconCircleCheck,
   IconEye,
@@ -34,8 +40,6 @@ import {
   type NodeInfo,
   type NodeRef,
 } from "../lib/agents-explorer";
-
-const INHERITED = "var(--mantine-color-blue-6)";
 
 export interface TreeAction {
   label: string;
@@ -106,44 +110,23 @@ export function AgentsTree(props: AgentsTreeProps) {
 
   return (
     <Stack gap={0} flex={1} mih={0}>
-      <Group
-        px="xs"
-        py={4}
-        gap={0}
-        justify="space-between"
-        wrap="nowrap"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-        }}
-      >
-        <Text
-          size="xs"
-          fw={600}
-          c="dimmed"
-          tt="uppercase"
-          style={{ letterSpacing: 0.5 }}
+      <PaneHeader title="Agents">
+        {props.header}
+        <Tooltip
+          label={showDeleted ? "Hide deleted items" : "Show deleted items"}
+          openDelay={400}
         >
-          Agents
-        </Text>
-        <Group gap={2} wrap="nowrap">
-          {props.header}
-          <Tooltip
-            label={showDeleted ? "Hide deleted items" : "Show deleted items"}
-            openDelay={400}
+          <ActionIcon
+            variant={showDeleted ? "light" : "subtle"}
+            color="gray"
+            aria-label="Show deleted"
+            aria-pressed={showDeleted}
+            onClick={props.onToggleDeleted}
           >
-            <ActionIcon
-              variant={showDeleted ? "light" : "subtle"}
-              color="gray"
-              size="sm"
-              aria-label="Show deleted"
-              aria-pressed={showDeleted}
-              onClick={props.onToggleDeleted}
-            >
-              {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-      </Group>
+            {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
+          </ActionIcon>
+        </Tooltip>
+      </PaneHeader>
 
       <ScrollArea flex={1} mih={0}>
         <Tree
@@ -166,21 +149,12 @@ export function AgentsTree(props: AgentsTreeProps) {
             const isDefault =
               agentRow !== undefined && agentRow.id === props.defaultId;
             return (
-              <div
-                {...elementProps}
+              <TreeRow
+                elementProps={elementProps}
                 onMouseEnter={() => setNear(node.value)}
                 onMouseLeave={() => setNear(null)}
-                style={{
-                  ...elementProps.style,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  paddingBlock: 3,
-                  paddingInlineEnd: 8,
-                  cursor: waiting ? "default" : "pointer",
-                  userSelect: "none",
-                  opacity: deleted ? 0.6 : 1,
-                }}
+                deleted={deleted}
+                waiting={waiting}
                 onClick={(e) => {
                   elementProps.onClick(e);
                   if (openable) props.onOpen(ref, false);
@@ -196,29 +170,11 @@ export function AgentsTree(props: AgentsTreeProps) {
                   setMenu({ x: e.clientX, y: e.clientY, ref });
                 }}
               >
-                <span
-                  style={{
-                    width: 14,
-                    display: "inline-flex",
-                    flexShrink: 0,
-                    color: "var(--mantine-color-dimmed)",
-                  }}
-                >
-                  {hasChildren && !waiting ? (
-                    expanded ? (
-                      <IconChevronDown size={14} />
-                    ) : (
-                      <IconChevronRight size={14} />
-                    )
-                  ) : null}
-                </span>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    flexShrink: 0,
-                    ...(inherited ? { color: INHERITED } : {}),
-                  }}
-                >
+                <TreeChevron
+                  show={hasChildren && !waiting}
+                  expanded={expanded}
+                />
+                <TreeIcon inherited={inherited}>
                   {waiting ? null : ref.kind === "agent" ? (
                     builtin ? (
                       <IconLock size={16} aria-label="Built-in agent" />
@@ -245,24 +201,25 @@ export function AgentsTree(props: AgentsTreeProps) {
                       <IconFolder size={16} />
                     )
                   ) : null}
-                </span>
+                </TreeIcon>
                 <Text
                   size="sm"
                   truncate
                   fw={ref.kind === "root" ? 600 : undefined}
                   td={deleted ? "line-through" : undefined}
-                  {...(waiting ? { c: "dimmed" } : {})}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    ...(inherited ? { color: INHERITED } : {}),
-                  }}
+                  flex={1}
+                  miw={0}
+                  {...(inherited
+                    ? { c: INHERITED }
+                    : waiting
+                      ? { c: "dimmed" }
+                      : {})}
                 >
                   {node.label}
                 </Text>
                 {row?.clash && (
                   <Tooltip label={row.clash} openDelay={300}>
-                    <Badge size="xs" variant="light" color="orange" tt="none">
+                    <Badge color="orange" tt="none">
                       {row.clash}
                     </Badge>
                   </Tooltip>
@@ -270,9 +227,7 @@ export function AgentsTree(props: AgentsTreeProps) {
                 {ref.kind === "agent" && (
                   <Group gap={4} wrap="nowrap">
                     {(row?.agent?.newTools ?? 0) > 0 && (
-                      <Badge size="xs" variant="light" color="blue">
-                        {row?.agent?.newTools} new
-                      </Badge>
+                      <Badge color="blue">{row?.agent?.newTools} new</Badge>
                     )}
                   </Group>
                 )}
@@ -288,7 +243,6 @@ export function AgentsTree(props: AgentsTreeProps) {
                   >
                     <ActionIcon
                       variant="transparent"
-                      size="sm"
                       color={isDefault ? "teal" : "gray"}
                       role="radio"
                       aria-checked={isDefault}
@@ -318,7 +272,7 @@ export function AgentsTree(props: AgentsTreeProps) {
                     </Text>
                   </Tooltip>
                 )}
-              </div>
+              </TreeRow>
             );
           }}
         />
@@ -333,15 +287,7 @@ export function AgentsTree(props: AgentsTreeProps) {
         withinPortal
       >
         <Menu.Target>
-          <span
-            style={{
-              position: "fixed",
-              left: menu?.x ?? 0,
-              top: menu?.y ?? 0,
-              width: 0,
-              height: 0,
-            }}
-          />
+          <TreeMenuAnchor menu={menu} />
         </Menu.Target>
         <Menu.Dropdown>
           {menu && OPENABLE.has(menu.ref.kind) && (

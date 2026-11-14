@@ -209,7 +209,7 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
                   {s.agents.length > 0 ? (
                     <Group gap={4}>
                       {s.agents.map((a) => (
-                        <Badge key={a.id} variant="light" size="sm" tt="none">
+                        <Badge key={a.id} size="sm" tt="none">
                           {a.name}
                         </Badge>
                       ))}

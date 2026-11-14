@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   Title,
+  Box,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -70,11 +71,12 @@ export function Profiles() {
   const { profiles, trashed } = listing.data;
 
   const row = (p: ProfileView) => (
-    <Paper key={p.id} withBorder p="sm">
+    <Paper key={p.id} p="sm">
       <Group justify="space-between" wrap="nowrap">
         {editing?.id === p.id ? (
-          <form
-            style={{ flex: 1 }}
+          <Box
+            component="form"
+            flex={1}
             onSubmit={(e) => {
               e.preventDefault();
               rename.mutate({ id: p.id, name: editing.name });
@@ -101,12 +103,12 @@ export function Profiles() {
                 Cancel
               </Button>
             </Group>
-          </form>
+          </Box>
         ) : (
           <>
             <Group gap="xs">
               <Text fw={500}>{p.name}</Text>
-              {p.active && <Badge variant="light">Active</Badge>}
+              {p.active && <Badge size="md">Active</Badge>}
             </Group>
             <Group gap="xs" wrap="nowrap">
               <Button
@@ -183,7 +185,7 @@ export function Profiles() {
         <Stack gap="xs">
           <Title order={5}>In the trash</Title>
           {trashed.map((p) => (
-            <Paper key={p.id} withBorder p="sm">
+            <Paper key={p.id} p="sm">
               <Group justify="space-between">
                 <Text c="dimmed">{p.name}</Text>
                 <Button

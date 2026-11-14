@@ -8,6 +8,7 @@ import {
   SegmentedControl,
   Text,
   Textarea,
+  Box,
 } from "@mantine/core";
 import { useSettings } from "../../hooks/useSettings";
 import { useSession } from "../../hooks/useSessions";
@@ -530,13 +531,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
         />
 
         {filesOpened && (
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: tab === "files" ? "block" : "none",
-            }}
-          >
+          <Box flex={1} mih={0} display={tab === "files" ? "block" : "none"}>
             <FilesExplorer
               key={sessionId}
               page={{ scope: "session", id: sessionId }}
@@ -549,17 +544,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
               }
               onDirtyChange={setFilesDirty}
             />
-          </div>
+          </Box>
         )}
 
         {dataOpened && (
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: tab === "data" ? "block" : "none",
-            }}
-          >
+          <Box flex={1} mih={0} display={tab === "data" ? "block" : "none"}>
             <StructuredExplorer
               key={sessionId}
               page={{ scope: "session", id: sessionId }}
@@ -572,7 +561,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
               }
               onDirtyChange={setDataDirty}
             />
-          </div>
+          </Box>
         )}
 
         {tab !== "chat" && tab !== "files" && tab !== "data" && (

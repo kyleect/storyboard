@@ -77,7 +77,7 @@ export function VersionsModal({
       title={`Versions of ${schema.name}`}
     >
       <Group align="flex-start" wrap="nowrap" gap="md">
-        <ScrollArea.Autosize mah="60vh" w={160} style={{ flexShrink: 0 }}>
+        <ScrollArea.Autosize mah="60vh" w={160} flex="none">
           {newestFirst.map((v) => (
             <NavLink
               key={v.version}
@@ -225,7 +225,7 @@ export function Builder({
   };
 
   return (
-    <Paper withBorder p="sm">
+    <Paper p="sm">
       <Group align="flex-start" wrap="nowrap" gap="md">
         <Stack gap={4} flex={1} miw={0}>
           <Select
@@ -272,9 +272,7 @@ export function Builder({
                     <Text size="xs" ff="monospace" truncate>
                       {role === "item" ? "each item" : node.key || "(unnamed)"}
                     </Text>
-                    <Badge size="xs" variant="light" color="gray">
-                      {typeLabel(node.type)}
-                    </Badge>
+                    <Badge color="gray">{typeLabel(node.type)}</Badge>
                     {node.required && role === "field" && (
                       <Text size="xs" c="red">
                         required
@@ -376,28 +374,16 @@ function FieldSettings({
         <Group gap={2}>
           {onMove && (
             <>
-              <ActionIcon
-                size="sm"
-                variant="subtle"
-                aria-label="Move up"
-                onClick={() => onMove(-1)}
-              >
+              <ActionIcon aria-label="Move up" onClick={() => onMove(-1)}>
                 ↑
               </ActionIcon>
-              <ActionIcon
-                size="sm"
-                variant="subtle"
-                aria-label="Move down"
-                onClick={() => onMove(1)}
-              >
+              <ActionIcon aria-label="Move down" onClick={() => onMove(1)}>
                 ↓
               </ActionIcon>
             </>
           )}
           {onRemove && (
             <ActionIcon
-              size="sm"
-              variant="subtle"
               color="red"
               aria-label="Remove field"
               onClick={onRemove}

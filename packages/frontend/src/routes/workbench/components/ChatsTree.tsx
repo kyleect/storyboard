@@ -9,6 +9,7 @@ import {
   Tooltip,
   Stack,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { useProjects } from "../../../hooks/useProjects";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -118,9 +119,11 @@ function Row({
             : "transparent"
       }
       bdrs={4}
+      className={utils.pointer}
+      py={3}
+      pr={6}
+      pl={6 + depth * 14}
       style={{
-        padding: `3px 6px 3px ${6 + depth * 14}px`,
-        cursor: "pointer",
         boxShadow:
           tint && active
             ? `inset 3px 0 0 var(--mantine-color-${tint}-filled)`
@@ -128,10 +131,11 @@ function Row({
       }}
     >
       {expanded === undefined ? null : (
-        <span
+        <Box
+          component="span"
+          display="inline-flex"
           role="button"
           aria-label={expanded ? `Close ${label}` : `Open ${label}`}
-          style={{ display: "inline-flex" }}
           onClick={(e) => {
             e.stopPropagation();
             onToggle?.();
@@ -142,21 +146,10 @@ function Row({
           ) : (
             <IconChevronRight size={14} />
           )}
-        </span>
+        </Box>
       )}
       {icon}
-      <Text
-        span
-        size="sm"
-        fw="inherit"
-        flex={1}
-        miw={0}
-        style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
+      <Text span size="sm" fw="inherit" flex={1} miw={0} truncate>
         {label}
       </Text>
       {right}
@@ -271,8 +264,8 @@ function ProjectMenu({
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
         <ActionIcon
-          variant="subtle"
           color="gray"
+          variant="subtle"
           size="sm"
           aria-label={`Actions for ${project.name}`}
           onClick={(e) => e.stopPropagation()}
@@ -473,9 +466,8 @@ export function ChatsTree({
         <Group gap={2} wrap="nowrap">
           <Tooltip label="New chat">
             <ActionIcon
-              variant="subtle"
-              size="sm"
               aria-label="New chat"
+              variant="subtle"
               loading={creating}
               onClick={() => onNewChat()}
             >
@@ -484,9 +476,8 @@ export function ChatsTree({
           </Tooltip>
           <Tooltip label="New project">
             <ActionIcon
-              variant="subtle"
-              size="sm"
               aria-label="New project"
+              variant="subtle"
               onClick={onNewProject}
             >
               <IconFolderPlus size={16} />

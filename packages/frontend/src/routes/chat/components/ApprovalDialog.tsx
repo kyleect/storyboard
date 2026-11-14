@@ -11,6 +11,7 @@ import {
   Textarea,
   Tooltip,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { useEffect, useState } from "react";
 import {
   COMMENT_CHOICES,
@@ -94,9 +95,7 @@ export function ApprovalDialog({
 function FromSubagent({ name }: { name: string }) {
   return (
     <Group gap="xs">
-      <Badge size="xs" variant="light" color="teal">
-        subagent
-      </Badge>
+      <Badge color="teal">subagent</Badge>
       <Text size="sm" fw={500}>
         {name} is asking
       </Text>
@@ -206,11 +205,9 @@ const KIND_COLOR = { added: "green", removed: "red", changed: "blue" } as const;
 function ChangeLine({ change }: { change: ChangeRecord }) {
   return (
     <Group gap="xs" wrap="nowrap" align="baseline">
-      <Badge size="xs" variant="light" color={KIND_COLOR[change.kind]}>
-        {change.kind}
-      </Badge>
+      <Badge color={KIND_COLOR[change.kind]}>{change.kind}</Badge>
       <Code>{pathText(change.path)}</Code>
-      <Text size="xs" c="dimmed" style={{ wordBreak: "break-word" }}>
+      <Text size="xs" c="dimmed" className={utils.breakWord}>
         {change.kind === "added"
           ? short(change.after)
           : change.kind === "removed"
@@ -391,7 +388,7 @@ function ChangesDialog({
           <Alert color="red" title="These changes can't be applied together">
             <Stack gap={2}>
               {problems.map((p) => (
-                <Text key={p} size="xs" style={{ whiteSpace: "pre-wrap" }}>
+                <Text key={p} size="xs" className={utils.preWrap}>
                   {p}
                 </Text>
               ))}

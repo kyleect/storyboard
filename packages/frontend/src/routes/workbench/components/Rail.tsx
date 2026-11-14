@@ -1,4 +1,5 @@
 import { ActionIcon, Stack, Tooltip, useMantineTheme } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -92,11 +93,9 @@ export function Rail({
       gap={4}
       align="center"
       w={RAIL_WIDTH}
-      style={{
-        flexShrink: 0,
-        padding: "8px 0",
-        borderRight: "1px solid var(--mantine-color-default-border)",
-      }}
+      flex="none"
+      className={utils.borderRight}
+      py={8}
     >
       <Stack gap={4} align="center" flex={1}>
         {button(

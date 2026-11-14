@@ -139,11 +139,11 @@ export function ModelPicker(props: {
       />
       <Tooltip label="Refresh the model list and reasoning levels">
         <ActionIcon
-          variant="subtle"
           size={props.size === "sm" ? "lg" : "sm"}
           mt={props.label ? 0 : 4}
           aria-label="Refresh the model list"
           disabled={models.isFetching}
+          variant="subtle"
           onClick={() => {
             void models.refetch();
             void queryClient.invalidateQueries({

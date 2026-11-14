@@ -134,7 +134,7 @@ export function ToolSettings() {
         const off = stateOf(inGroup, "off");
         const ask = stateOf(inGroup, "ask");
         return (
-          <Paper key={id} withBorder p="xs">
+          <Paper key={id} p="xs">
             <Stack gap="sm">
               <Group justify="space-between" wrap="nowrap">
                 <Text size="sm" fw={500}>
@@ -190,12 +190,10 @@ export function ToolSettings() {
                     <Group gap={6}>
                       <Text size="sm">{t.name}</Text>
                       {t.needsReview && (
-                        <Badge size="xs" variant="light" color="orange">
-                          needs review
-                        </Badge>
+                        <Badge color="orange">needs review</Badge>
                       )}
                       {t.off && t.usedByAgents.length > 0 && (
-                        <Badge size="xs" variant="light" color="red">
+                        <Badge color="red">
                           off, listed by {t.usedByAgents.length}
                         </Badge>
                       )}

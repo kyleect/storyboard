@@ -11,6 +11,7 @@ import {
   Title,
   type MantineFontSize,
 } from "@mantine/core";
+import utils from "../styles/utilities.module.css";
 import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,7 +41,7 @@ const components: Components = {
   h5: heading(5, "sm"),
   h6: heading(6, "sm"),
   p: ({ children }) => (
-    <Text inherit style={{ whiteSpace: "pre-wrap" }}>
+    <Text inherit className={utils.preWrap}>
       {children}
     </Text>
   ),
@@ -96,7 +97,8 @@ const components: Components = {
       checked={checked ?? false}
       readOnly
       aria-label={checked ? "Done" : "Not done"}
-      style={{ display: "inline-flex", verticalAlign: "middle" }}
+      display="inline-flex"
+      style={{ verticalAlign: "middle" }}
       mr={6}
     />
   ),

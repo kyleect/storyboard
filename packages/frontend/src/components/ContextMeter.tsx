@@ -1,4 +1,5 @@
 import { Badge, Group, RingProgress, Text, Tooltip } from "@mantine/core";
+import utils from "../styles/utilities.module.css";
 import { useQuery } from "@tanstack/react-query";
 import type { Usage } from "@harness/core";
 import { api } from "../api";
@@ -106,11 +107,7 @@ export function ContextMeter({
                 ),
               })}
         />
-        <Text
-          size={compact ? "xs" : "sm"}
-          c="dimmed"
-          style={{ whiteSpace: "nowrap" }}
-        >
+        <Text size={compact ? "xs" : "sm"} c="dimmed" className={utils.nowrap}>
           {compact && `${Math.round(percent)}% · `}
           {tokens(total)} / {tokens(contextSize)} · {tokens(left)} left
         </Text>
@@ -123,13 +120,7 @@ export function UsageBadge({ usage }: { usage: Usage | null }) {
   if (!usage) return null;
   const total = used(usage);
   return (
-    <Badge
-      size="xs"
-      variant="light"
-      color="gray"
-      tt="none"
-      title={`${tokens(total)} tokens in context`}
-    >
+    <Badge color="gray" tt="none" title={`${tokens(total)} tokens in context`}>
       {compact.format(total)}
     </Badge>
   );

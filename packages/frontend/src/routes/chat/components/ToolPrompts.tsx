@@ -43,7 +43,7 @@ export function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
 }
 export function PromptAnswer({ prompt }: { prompt: PromptRecord }) {
   return (
-    <Paper p="xs" withBorder bg="var(--mantine-color-default-hover)">
+    <Paper p="xs" bg="var(--mantine-color-default-hover)">
       <Text size="xs" c="dimmed">
         {prompt.title ?? "Your answer"}
       </Text>
@@ -89,12 +89,12 @@ export function askState(callId: string, asks: Asks): AskUserState {
 }
 export function AskUserResult({ message }: { message: ToolResultMessage }) {
   return (
-    <Paper p="sm" withBorder>
+    <Paper p="sm">
       <Group gap="xs">
         <Text size="xs" c="dimmed">
           Tool result
         </Text>
-        <Badge size="xs" variant="light" color="gray" tt="none">
+        <Badge color="gray" tt="none">
           {message.name}
         </Badge>
         <Text size="sm">{message.isError ? "Skipped" : "Answered"}</Text>

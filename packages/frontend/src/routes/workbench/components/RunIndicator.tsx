@@ -8,7 +8,9 @@ import {
   UnstyledButton,
   useMantineTheme,
   VisuallyHidden,
+  Center,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { useReducedMotion } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -27,12 +29,7 @@ function Spinner({ label }: { label: string }) {
   const reduced = useReducedMotion();
   const theme = useMantineTheme();
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      style={{ display: "inline-flex", alignItems: "center" }}
-    >
+    <Center inline role="img" aria-label={label} title={label}>
       {reduced ? (
         <Text span size="xs">
           ●
@@ -40,22 +37,20 @@ function Spinner({ label }: { label: string }) {
       ) : (
         <Loader color={theme.primaryColor} type="dots" size="sm" />
       )}
-    </span>
+    </Center>
   );
 }
 
 function WaitingBadge() {
   return (
     <Badge
-      size="xs"
+      variant="filled"
       circle
       color="yellow"
       role="img"
       aria-label="Waiting for you"
       title="Waiting for you"
-      style={{
-        cursor: "pointer",
-      }}
+      className={utils.pointer}
     >
       !
     </Badge>
@@ -64,18 +59,15 @@ function WaitingBadge() {
 
 function UnreadDot({ label = "New reply" }: { label?: string }) {
   return (
-    <span
+    <Center
+      inline
       role="img"
       aria-label={label}
       title={label}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        cursor: "pointer",
-      }}
+      className={utils.pointer}
     >
       <Led color="green" size="xs" />
-    </span>
+    </Center>
   );
 }
 

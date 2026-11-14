@@ -710,6 +710,28 @@ the chat. Settings has the workspace read size.
 
 The export can be copied to the clipboard as the linear text or as JSON.
 
+## Styling
+
+- **Style props first.** Spacing, size, color, typography and position go on the
+  component as Mantine props (`p`, `mt`, `w`, `h`, `flex`, `bg`, `c`, `fz`, `fw`,
+  `bd`, `pos`, `display`). Numbers are rem-scaled; use a token (`"md"`) when the
+  value sits on the spacing scale.
+- **Layout components.** `Group` for a row, `Stack` for a column, `Flex` when you
+  need neither default (wrap, centering, gap). `Box` is for a plain element that
+  needs style props or a `component`.
+- **Theme defaults.** Repeated props live in `theme.ts` (`ActionIcon`, `Badge`,
+  `Paper`); don't repeat them at call sites.
+- **CSS modules for what props can't say.** Pseudo-states, `data-*` states
+  (pass them with `mod`), per-side borders, cursor, overflow and white-space.
+  Shared one-liners are in `styles/utilities.module.css`; tree rows share
+  `components/TreeParts.tsx`, pane headers `components/PaneHeader.tsx`.
+- **`style` is for runtime values only**: pixel widths from a drag, positions from
+  a pointer, CSS custom properties. ESLint (`no-restricted-syntax`) flags
+  prop-able keys inside `style={{}}`; disable it with a reason when a raw px
+  value is required.
+- **Tests** can't see CSS modules in jsdom. Assert `data-*` attributes and custom
+  properties.
+
 ## Testing
 
 Tests run with Vitest and `jsdom` with Testing Library (`test-setup.ts`). They

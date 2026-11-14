@@ -13,6 +13,7 @@ import {
   TextInput,
   Flex,
 } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { when } from "../../../lib/format";
 import { confirmAction } from "../../../lib/confirm";
 import { useMutation } from "@tanstack/react-query";
@@ -155,19 +156,13 @@ export function AgentForm({
         wrap="nowrap"
         px="sm"
         py={6}
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-        }}
+        className={utils.borderBottom}
       >
         <Group gap="xs" wrap="nowrap" miw={0}>
           <Text fw={600} size="sm" truncate>
             {current.name || "New agent"}
           </Text>
-          {agent && (
-            <Badge size="xs" variant="light" color="gray">
-              v{agent.version}
-            </Badge>
-          )}
+          {agent && <Badge color="gray">v{agent.version}</Badge>}
           {agent?.deleted && <DeletedBadge />}
           {agent?.builtin && <BuiltinBadge />}
           {agent && !locked && (
@@ -279,13 +274,7 @@ export function AgentForm({
             maxRows={40}
           />
         </Stack>
-        <ScrollArea
-          w={360}
-          style={{
-            flexShrink: 0,
-            borderLeft: "1px solid var(--mantine-color-default-border)",
-          }}
-        >
+        <ScrollArea w={360} flex="none" className={utils.borderLeft}>
           <Stack p="sm" gap="lg">
             <TextInput
               label="Name"

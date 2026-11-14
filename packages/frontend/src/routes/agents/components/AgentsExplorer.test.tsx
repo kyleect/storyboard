@@ -470,7 +470,9 @@ describe("a request from a chat message's badge", () => {
     ]);
     const tab = await screen.findByRole("tab");
     await waitFor(() =>
-      expect(tab.style.borderTop).toContain("--mantine-color-teal-filled"),
+      expect(tab.style.getPropertyValue("--tab-color")).toContain(
+        "--mantine-color-teal-filled",
+      ),
     );
     const icon = tab.querySelector(".mantine-ThemeIcon-root") as HTMLElement;
     expect(icon.style.getPropertyValue("--ti-bg")).toContain(

@@ -50,5 +50,20 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["packages/frontend/src/**/*.tsx"],
+    ignores: ["**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "JSXAttribute[name.name='style'] > JSXExpressionContainer > ObjectExpression > Property[key.name=/^(flex|minWidth|maxWidth|minHeight|maxHeight|width|height|padding(Top|Bottom|Left|Right|Inline|Block)?|margin(Top|Bottom|Left|Right)?|opacity|fontSize|fontWeight|fontStyle|textAlign|display|position|background|color|border|borderRadius|gap|alignItems|justifyContent|flexDirection|flexWrap)$/]",
+          message:
+            "Use a Mantine style prop (flex, miw, p, bg, ...) or Flex, Group or Stack; keep `style` for values with no prop.",
+        },
+      ],
+    },
+  },
   prettier,
 );

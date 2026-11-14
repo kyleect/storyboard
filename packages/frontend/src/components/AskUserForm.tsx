@@ -14,6 +14,7 @@ import {
   Text,
   TextInput,
   Textarea,
+  Box,
 } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -290,12 +291,12 @@ export function AskUserForm({
             <Group gap="xs" justify="space-between">
               <Text fw={600}>{form.title ?? "Questions"}</Text>
               {state.mode === "answered" && (
-                <Badge size="sm" variant="light" color="green">
+                <Badge size="sm" color="green">
                   Answered
                 </Badge>
               )}
               {state.mode === "skipped" && (
-                <Badge size="sm" variant="light" color="gray">
+                <Badge size="sm" color="gray">
                   Skipped
                 </Badge>
               )}
@@ -449,7 +450,7 @@ function FieldInput({
           )}
           {items.map((item, i) => (
             <Group key={i} align="flex-start" wrap="nowrap" gap="xs">
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <Box flex={1} miw={0}>
                 <FieldInput
                   field={{ ...field.item, label: `${field.label} ${i + 1}` }}
                   path={`${path}.${i}`}
@@ -464,10 +465,10 @@ function FieldInput({
                     )
                   }
                 />
-              </div>
+              </Box>
               {!disabled && (
                 <ActionIcon
-                  variant="subtle"
+                  size="md"
                   color="red"
                   mt={4}
                   aria-label={`Remove ${field.label} ${i + 1}`}

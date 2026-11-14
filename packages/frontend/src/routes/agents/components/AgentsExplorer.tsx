@@ -841,9 +841,7 @@ export function AgentsExplorer({
     <>
       <Tooltip label={newAgentLocked ?? "New agent"} openDelay={400}>
         <ActionIcon
-          variant="subtle"
           color="gray"
-          size="sm"
           aria-label="New agent"
           disabled={newAgentLocked !== undefined}
           onClick={() => newAgent(targetRoot)}

@@ -183,7 +183,7 @@ async function show(path: string) {
 const tabs = () => screen.queryAllByRole("tab");
 const tabNamed = (name: string) =>
   screen.getByRole("tab", { name: new RegExp(name) });
-const isItalic = (el: HTMLElement) => el.style.fontStyle === "italic";
+const isItalic = (el: HTMLElement) => el.hasAttribute("data-transient");
 
 beforeEach(() => {
   localStorage.clear();

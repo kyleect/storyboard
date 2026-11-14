@@ -14,6 +14,7 @@ import {
   Title,
   UnstyledButton,
 } from "@mantine/core";
+import utils from "../../styles/utilities.module.css";
 import { showError } from "../../lib/notify";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -46,7 +47,7 @@ function FolderPicker({
   return (
     <Modal opened={opened} onClose={onClose} title="Choose a folder" size="md">
       <Stack gap="xs">
-        <Text size="sm" ff="monospace" style={{ wordBreak: "break-all" }}>
+        <Text size="sm" ff="monospace" className={utils.breakAll}>
           {here}
         </Text>
         {dirs.isPending && <Loader size="sm" />}
@@ -122,7 +123,7 @@ function WorkspaceForm({
     onError: (err: Error) => setProblem(err.message),
   });
   return (
-    <Paper withBorder p="sm">
+    <Paper p="sm">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -422,20 +423,16 @@ export function WorkspacesPage() {
       )}
       {list.data?.map((w) =>
         editing !== "new" && editing?.id === w.id ? null : (
-          <Paper key={w.id} withBorder p="sm">
+          <Paper key={w.id} p="sm">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
               <Stack gap={2} miw={0}>
                 <Group gap="xs">
                   <Text fw={500}>{w.name}</Text>
-                  <Badge
-                    size="sm"
-                    variant="light"
-                    color={w.writable ? "orange" : "gray"}
-                  >
+                  <Badge size="sm" color={w.writable ? "orange" : "gray"}>
                     {w.writable ? "writable" : "read-only"}
                   </Badge>
                 </Group>
-                <Text size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>
+                <Text size="xs" c="dimmed" className={utils.breakAll}>
                   {w.path}
                 </Text>
               </Stack>

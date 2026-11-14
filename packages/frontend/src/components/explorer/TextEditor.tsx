@@ -2,7 +2,7 @@ import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { useComputedColorScheme } from "@mantine/core";
+import { useComputedColorScheme, Box } from "@mantine/core";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import type { MediaType } from "@harness/core";
@@ -130,5 +130,5 @@ export function TextEditor({
     }
   }, [value]);
 
-  return <div ref={host} style={{ height: "100%", minHeight: 0 }} />;
+  return <Box ref={host} h="100%" mih={0} />;
 }

@@ -1,4 +1,5 @@
 import { Badge, Loader, Select } from "@mantine/core";
+import utils from "../styles/utilities.module.css";
 import { useSetDefaultAgent } from "../hooks/useProjects";
 import { useSettings } from "../hooks/useSettings";
 import { useQuery } from "@tanstack/react-query";
@@ -114,6 +115,7 @@ export function AgentPicker({
     <Select
       w={220}
       aria-label="Agent"
+      size="xs"
       allowDeselect={false}
       searchable
       disabled={!!disabled}
@@ -134,11 +136,12 @@ export function AgentBadge({ agent }: { agent: MessageAgent }) {
   const ask = useAgentFocus((s) => s.ask);
   return (
     <Badge
-      size="xs"
-      variant="light"
       color="teal"
       tt="none"
-      style={{ cursor: "pointer" }}
+      size="sm"
+      radius="sm"
+      variant="gradient"
+      className={utils.pointer}
       onClick={() => {
         ask({
           agentId: agent.id,

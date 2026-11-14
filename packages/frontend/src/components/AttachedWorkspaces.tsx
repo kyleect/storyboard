@@ -78,11 +78,7 @@ export function AttachedWorkspaces({
           <Stack gap={0} miw={0}>
             <Text size="sm">
               {a.workspace.name}{" "}
-              <Badge
-                size="xs"
-                variant="light"
-                color={a.effectiveWritable ? "orange" : "gray"}
-              >
+              <Badge color={a.effectiveWritable ? "orange" : "gray"}>
                 {a.effectiveWritable ? "writable" : "read-only"}
               </Badge>
               {a.from !== (owner === "projects" ? "project" : "session") && (

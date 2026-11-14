@@ -127,7 +127,7 @@ export function TrashSection() {
         </Text>
       )}
       {trashedProjects.map((p) => (
-        <Paper key={p.id} p="xs" withBorder>
+        <Paper key={p.id} p="xs">
           <Group justify="space-between" wrap="nowrap" align="flex-start">
             <Stack gap={0} miw={0}>
               <Text size="sm" fw={500} truncate>
@@ -194,7 +194,7 @@ export function TrashSection() {
       {sessions.map((s) => {
         const project = projectOf(s);
         return (
-          <Paper key={s.id} p="xs" withBorder>
+          <Paper key={s.id} p="xs">
             <Group justify="space-between" wrap="nowrap">
               <Stack gap={0} miw={0}>
                 <Text size="sm" truncate>
@@ -257,7 +257,7 @@ export function TrashSection() {
         );
       })}
       {branches.map((b) => (
-        <Paper key={b.messageId} p="xs" withBorder>
+        <Paper key={b.messageId} p="xs">
           <Group justify="space-between" wrap="nowrap">
             <Stack gap={0} miw={0}>
               <Text size="sm" truncate>

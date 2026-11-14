@@ -1,7 +1,7 @@
 import { json } from "@codemirror/lang-json";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { useComputedColorScheme } from "@mantine/core";
+import { useComputedColorScheme, Box } from "@mantine/core";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 
@@ -65,16 +65,14 @@ export function JsonEditor({
   }, [value]);
 
   return (
-    <div
+    <Box
       ref={host}
-      style={{
-        border: "1px solid var(--mantine-color-default-border)",
-        borderRadius: "var(--mantine-radius-sm)",
-        minHeight: 240,
-        maxHeight: "60vh",
-        overflow: "auto",
-        fontSize: 13,
-      }}
+      bd="1px solid var(--mantine-color-default-border)"
+      bdrs="sm"
+      mih={240}
+      mah="60vh"
+      fz={13}
+      style={{ overflow: "auto" }}
     />
   );
 }

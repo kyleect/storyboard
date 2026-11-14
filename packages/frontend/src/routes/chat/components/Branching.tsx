@@ -1,3 +1,4 @@
+import classes from "./Branching.module.css";
 import {
   ActionIcon,
   Anchor,
@@ -273,7 +274,7 @@ export function EditMessageBox({
   const other = defaultMode === "branch" ? "in_place" : "branch";
   const empty = text === "" && !hasFiles;
   return (
-    <Paper p="sm" withBorder>
+    <Paper p="sm">
       <Stack gap="xs">
         <Text size="xs" c="dimmed">
           Editing your message
@@ -293,10 +294,7 @@ export function EditMessageBox({
               size="xs"
               disabled={empty}
               loading={saving}
-              style={{
-                borderTopRightRadius: 0,
-                borderBottomRightRadius: 0,
-              }}
+              className={classes.main}
               onClick={() => onSave(text, defaultMode)}
             >
               Save
@@ -308,11 +306,7 @@ export function EditMessageBox({
                   size={26}
                   variant="filled"
                   disabled={empty || saving}
-                  style={{
-                    borderTopLeftRadius: 0,
-                    borderBottomLeftRadius: 0,
-                    borderLeft: "1px solid var(--mantine-color-body)",
-                  }}
+                  className={classes.menu}
                 >
                   ▾
                 </ActionIcon>
@@ -359,8 +353,6 @@ export function BranchSwitcher({
     <Group gap={4} mb={4}>
       <ActionIcon
         aria-label="Previous branch"
-        size="sm"
-        variant="subtle"
         color="gray"
         disabled={disabled || previous === undefined}
         onClick={() => previous && onSwitch(previous)}
@@ -372,8 +364,6 @@ export function BranchSwitcher({
       </Text>
       <ActionIcon
         aria-label="Next branch"
-        size="sm"
-        variant="subtle"
         color="gray"
         disabled={disabled || next === undefined}
         onClick={() => next && onSwitch(next)}

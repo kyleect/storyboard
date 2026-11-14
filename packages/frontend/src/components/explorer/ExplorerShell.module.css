@@ -1,0 +1,48 @@
+.root {
+  overflow: hidden;
+}
+
+.separator {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--mantine-color-default-border);
+  touch-action: none;
+}
+
+.tabList {
+  overflow-x: auto;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  flex-shrink: 0;
+  max-width: 240px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--mantine-color-dimmed);
+  border-right: 1px solid var(--mantine-color-default-border);
+  border-top: 2px solid transparent;
+
+  &[data-active] {
+    color: inherit;
+    background: var(--mantine-color-body);
+    border-top-color: var(--tab-color, var(--mantine-primary-color-filled));
+  }
+
+  &[data-transient] {
+    font-style: italic;
+  }
+
+  &[data-drop-target] {
+    box-shadow: inset 3px 0 0 var(--mantine-primary-color-filled);
+  }
+}
+
+.status {
+  border-top: 1px solid var(--mantine-color-default-border);
+}

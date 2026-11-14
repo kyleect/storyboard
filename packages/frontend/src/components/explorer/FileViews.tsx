@@ -12,6 +12,7 @@ import {
   Text,
   Textarea,
 } from "@mantine/core";
+import utils from "../../styles/utilities.module.css";
 import { VersionsModal as GenericVersionsModal } from "../VersionsModal";
 import { modals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -69,7 +70,7 @@ export function ValueView({
         {showSource ? (
           <SourceView value={value} />
         ) : (
-          <Paper p="sm" withBorder>
+          <Paper p="sm">
             <Markdown>{value}</Markdown>
           </Paper>
         )}
@@ -227,8 +228,8 @@ export function DerivedTextField({ hash }: { hash: string }) {
 
 function SourceView({ value }: { value: string }) {
   return (
-    <Paper p="sm" withBorder>
-      <Text size="sm" ff="monospace" style={{ whiteSpace: "pre-wrap" }}>
+    <Paper p="sm">
+      <Text size="sm" ff="monospace" className={utils.preWrap}>
         {value === "" ? (
           <Text span c="dimmed">
             (empty)
@@ -244,7 +245,7 @@ function SourceView({ value }: { value: string }) {
 export function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
   if (!mediaType) return null;
   return (
-    <Badge size="xs" variant="light" color="gray">
+    <Badge color="gray">
       {FILE_TYPES.find((t) => t.value === mediaType)?.label ?? mediaType}
     </Badge>
   );
@@ -277,18 +278,10 @@ export function VersionsModal({
       label={(v) => (
         <Group gap={4}>
           <Text size="sm">#{v.seq}</Text>
-          <Badge
-            size="xs"
-            variant="light"
-            color={v.by === "user" ? "blue" : "grape"}
-          >
+          <Badge color={v.by === "user" ? "blue" : "grape"}>
             {v.by === "user" ? "You" : "Model"}
           </Badge>
-          {v.deleted && (
-            <Badge size="xs" variant="light" color="red">
-              deleted
-            </Badge>
-          )}
+          {v.deleted && <Badge color="red">deleted</Badge>}
         </Group>
       )}
       note={(v) => (

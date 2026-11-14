@@ -1,11 +1,26 @@
-import { Box, Text, ThemeIcon, Stack, Flex, Group } from "@mantine/core";
+import {
+  ActionIcon,
+  Box,
+  Text,
+  ThemeIcon,
+  Stack,
+  Flex,
+  Group,
+} from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import type { ProjectColor } from "@harness/core";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import classes from "./ExplorerShell.module.css";
 import { clampWidth } from "../../lib/explorer";
 import { UnreadDot } from "../UnreadDot";
 
-const BORDER = "var(--mantine-color-default-border)";
+const tabColor = (color: ProjectColor | undefined) =>
+  color
+    ? ({
+        "--tab-color": `var(--mantine-color-${color}-filled)`,
+      } as CSSProperties)
+    : undefined;
+
 const CHROME =
   "light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))";
 
@@ -75,31 +90,30 @@ export function ExplorerShell({
       gap={0}
       h="100%"
       mih={0}
-      bd={`1px solid ${BORDER}`}
+      bd="1px solid var(--mantine-color-default-border)"
       bdrs="var(--mantine-radius-sm)"
       bg="var(--mantine-color-body)"
-      style={{ overflow: "hidden" }}
+      className={classes.root}
     >
       <Flex flex={1} mih={0}>
         {!hideSidebar && (
           <>
-            <Stack gap={0} mih={0} bg={CHROME} style={{ width, flexShrink: 0 }}>
+            <Stack
+              gap={0}
+              mih={0}
+              bg={CHROME} // eslint-disable-next-line no-restricted-syntax -- px from the drag handle; a rem prop would drift from the pointer at other root font sizes
+              style={{ width, flexShrink: 0 }}
+            >
               {sidebar}
             </Stack>
 
-            <div
+            <Box
               role="separator"
               aria-orientation="vertical"
               aria-label={resizeLabel}
               aria-valuenow={width}
               tabIndex={0}
-              style={{
-                width: 5,
-                flexShrink: 0,
-                cursor: "col-resize",
-                background: BORDER,
-                touchAction: "none",
-              }}
+              className={classes.separator}
               onPointerDown={(e) => {
                 dragging.current = true;
                 e.currentTarget.setPointerCapture(e.pointerId);
@@ -126,17 +140,14 @@ export function ExplorerShell({
             aria-label={tabListLabel}
             mih={34}
             bg={CHROME}
-            style={{
-              overflowX: "auto",
-              flexShrink: 0,
-              borderBottom: `1px solid ${BORDER}`,
-            }}
+            flex="none"
+            className={classes.tabList}
           >
             {leading}
             {tabs.map((t) => {
               const isActive = t.id === active;
               return (
-                <div
+                <Box
                   key={t.id}
                   role="tab"
                   aria-selected={isActive}
@@ -192,27 +203,13 @@ export function ExplorerShell({
                     }
                     if (e.key === "Enter" || e.key === " ") onActivate(t.id);
                   }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "0 8px 0 10px",
-                    flexShrink: 0,
-                    maxWidth: 240,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontStyle: t.transient ? "italic" : undefined,
-                    borderRight: `1px solid ${BORDER}`,
-                    boxShadow:
-                      over === t.id && dragged !== t.id
-                        ? "inset 3px 0 0 var(--mantine-primary-color-filled)"
-                        : undefined,
-                    borderTop: `2px solid ${isActive ? (t.iconColor ? `var(--mantine-color-${t.iconColor}-filled)` : "var(--mantine-primary-color-filled)") : "transparent"}`,
-                    background: isActive
-                      ? "var(--mantine-color-body)"
-                      : undefined,
-                    color: isActive ? undefined : "var(--mantine-color-dimmed)",
+                  className={classes.tab}
+                  mod={{
+                    active: isActive,
+                    transient: t.transient,
+                    "drop-target": over === t.id && dragged !== t.id,
                   }}
+                  style={tabColor(t.iconColor)}
                 >
                   <ThemeIcon
                     size="xs"
@@ -223,63 +220,47 @@ export function ExplorerShell({
                     {t.icon}
                   </ThemeIcon>
                   {t.prefix && (
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        maxWidth: 110,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        opacity: 0.7,
-                      }}
+                    <Text
+                      span
+                      inherit
+                      truncate
+                      flex="none"
+                      maw={110}
+                      opacity={0.7}
                     >
                       {t.prefix} ›
-                    </span>
+                    </Text>
                   )}
-                  <span
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <Text span inherit truncate>
                     {t.label}
-                  </span>
+                  </Text>
                   {t.unread && <UnreadDot />}
-                  <button
-                    type="button"
+                  <ActionIcon
+                    variant="transparent"
+                    color="inherit"
+                    size={16}
+                    radius={3}
                     aria-label={`Close ${t.label}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       onRequestClose(t.id);
                     }}
-                    style={{
-                      all: "unset",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 16,
-                      height: 16,
-                      borderRadius: 3,
-                    }}
                   >
                     {t.dirty ? (
-                      <span
+                      <Box
+                        component="span"
                         role="img"
                         aria-label="Unsaved changes"
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: "currentColor",
-                        }}
+                        w={8}
+                        h={8}
+                        bdrs="50%"
+                        bg="currentColor"
                       />
                     ) : (
                       <IconX size={14} />
                     )}
-                  </button>
-                </div>
+                  </ActionIcon>
+                </Box>
               );
             })}
           </Flex>
@@ -305,12 +286,13 @@ export function ExplorerShell({
           wrap="nowrap"
           mih={24}
           bg={CHROME}
-          style={{ flexShrink: 0, borderTop: `1px solid ${BORDER}` }}
+          flex="none"
+          className={classes.status}
         >
           <Text size="xs" c="dimmed" truncate>
             {statusLeft}
           </Text>
-          <Flex gap="sm" style={{ flexShrink: 0 }}>
+          <Flex gap="sm" flex="none">
             {statusRight}
           </Flex>
         </Group>

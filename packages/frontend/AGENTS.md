@@ -102,6 +102,11 @@ src/
   `vi.spyOn(api, "...")`; see `routes/skills/Skills.test.tsx` for the pattern.
 - Check keys with `queries/keys.test.ts` when you add a factory.
 
+## Styling
+
+Use Mantine style props and `Group`/`Stack`/`Flex`; reach for a CSS module for
+states and `style` only for runtime px values. See "Styling" in `docs/frontend.md`.
+
 ## Running and building
 
 ```sh

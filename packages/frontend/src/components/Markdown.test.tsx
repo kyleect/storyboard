@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import utils from "../styles/utilities.module.css";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Markdown } from "./Markdown";
@@ -89,6 +90,6 @@ describe("Markdown", () => {
     const { container } = show("line one\nline two");
     const p = container.querySelector("p");
     expect(p?.textContent).toBe("line one\nline two");
-    expect(p?.style.whiteSpace).toBe("pre-wrap");
+    expect(p?.classList.contains(utils.preWrap as string)).toBe(true);
   });
 });

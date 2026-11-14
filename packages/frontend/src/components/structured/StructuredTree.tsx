@@ -1,4 +1,5 @@
 import {
+  Flex,
   ActionIcon,
   Menu,
   ScrollArea,
@@ -8,12 +9,16 @@ import {
   Tree,
   useTree,
   Stack,
-  Group,
-  Flex,
 } from "@mantine/core";
 import {
-  IconChevronDown,
-  IconChevronRight,
+  INHERITED,
+  TreeChevron,
+  TreeIcon,
+  TreeMenuAnchor,
+  TreeRow,
+} from "../TreeParts";
+import { PaneHeader } from "../PaneHeader";
+import {
   IconEye,
   IconEyeOff,
   IconFileDatabase,
@@ -40,8 +45,6 @@ import {
   type NodeRef,
   type Pending,
 } from "../../lib/structured-explorer";
-
-const INHERITED = "var(--mantine-color-blue-6)";
 
 function InlineName({
   label,
@@ -87,9 +90,7 @@ function HeaderAction({
   return (
     <Tooltip label={locked ? locked : label} openDelay={400}>
       <ActionIcon
-        variant="subtle"
         color="gray"
-        size="sm"
         aria-label={label}
         disabled={locked !== undefined}
         onClick={onClick}
@@ -213,55 +214,34 @@ export function StructuredTree(props: StructuredTreeProps) {
 
   return (
     <Stack gap={0} flex={1} mih={0}>
-      <Group
-        px="xs"
-        py={4}
-        gap={0}
-        justify="space-between"
-        wrap="nowrap"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-        }}
-      >
-        <Text
-          size="xs"
-          fw={600}
-          c="dimmed"
-          tt="uppercase"
-          style={{ letterSpacing: 0.5 }}
+      <PaneHeader title="Structured data">
+        <HeaderAction
+          label="New schema"
+          icon={<IconSquarePlus size={16} />}
+          locked={lockReason}
+          onClick={() => startSchema(target)}
+        />
+        <HeaderAction
+          label="New data"
+          icon={<IconFilePlus size={16} />}
+          locked={newDataLocked}
+          onClick={() => startData(target)}
+        />
+        <Tooltip
+          label={showDeleted ? "Hide deleted items" : "Show deleted items"}
+          openDelay={400}
         >
-          Structured data
-        </Text>
-        <Flex gap={2}>
-          <HeaderAction
-            label="New schema"
-            icon={<IconSquarePlus size={16} />}
-            locked={lockReason}
-            onClick={() => startSchema(target)}
-          />
-          <HeaderAction
-            label="New data"
-            icon={<IconFilePlus size={16} />}
-            locked={newDataLocked}
-            onClick={() => startData(target)}
-          />
-          <Tooltip
-            label={showDeleted ? "Hide deleted items" : "Show deleted items"}
-            openDelay={400}
+          <ActionIcon
+            variant={showDeleted ? "light" : "subtle"}
+            color="gray"
+            aria-label="Show deleted"
+            aria-pressed={showDeleted}
+            onClick={props.onToggleDeleted}
           >
-            <ActionIcon
-              variant={showDeleted ? "light" : "subtle"}
-              color="gray"
-              size="sm"
-              aria-label="Show deleted"
-              aria-pressed={showDeleted}
-              onClick={props.onToggleDeleted}
-            >
-              {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
-            </ActionIcon>
-          </Tooltip>
-        </Flex>
-      </Group>
+            {showDeleted ? <IconEye size={16} /> : <IconEyeOff size={16} />}
+          </ActionIcon>
+        </Tooltip>
+      </PaneHeader>
 
       <ScrollArea flex={1} mih={0}>
         <Tree
@@ -282,6 +262,7 @@ export function StructuredTree(props: StructuredTreeProps) {
               return (
                 <div
                   className={elementProps.className}
+                  // eslint-disable-next-line no-restricted-syntax -- replaces the indentation in elementProps.style
                   style={{ ...elementProps.style, padding: "2px 8px" }}
                 >
                   <InlineName
@@ -319,19 +300,9 @@ export function StructuredTree(props: StructuredTreeProps) {
               </Text>
             );
             return (
-              <div
-                {...elementProps}
-                style={{
-                  ...elementProps.style,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  paddingBlock: 3,
-                  paddingInlineEnd: 8,
-                  cursor: "pointer",
-                  userSelect: "none",
-                  opacity: deleted ? 0.6 : 1,
-                }}
+              <TreeRow
+                elementProps={elementProps}
+                deleted={deleted}
                 onClick={(e) => {
                   elementProps.onClick(e);
                   if (openable) props.onOpen(ref, false);
@@ -346,29 +317,8 @@ export function StructuredTree(props: StructuredTreeProps) {
                   setMenu({ x: e.clientX, y: e.clientY, ref });
                 }}
               >
-                <span
-                  style={{
-                    width: 14,
-                    display: "inline-flex",
-                    flexShrink: 0,
-                    color: "var(--mantine-color-dimmed)",
-                  }}
-                >
-                  {hasChildren ? (
-                    expanded ? (
-                      <IconChevronDown size={14} />
-                    ) : (
-                      <IconChevronRight size={14} />
-                    )
-                  ) : null}
-                </span>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    flexShrink: 0,
-                    ...(inherited ? { color: INHERITED } : {}),
-                  }}
-                >
+                <TreeChevron show={hasChildren} expanded={expanded} />
+                <TreeIcon inherited={inherited}>
                   {isFolder ? (
                     expanded && hasChildren ? (
                       <IconFolderOpen size={16} />
@@ -384,7 +334,7 @@ export function StructuredTree(props: StructuredTreeProps) {
                   ) : (
                     <IconFileDatabase size={16} />
                   )}
-                </span>
+                </TreeIcon>
                 {inherited && row && root ? (
                   <Tooltip
                     label={inheritedNote(row, root)}
@@ -394,12 +344,14 @@ export function StructuredTree(props: StructuredTreeProps) {
                     position="right"
                     withinPortal
                   >
-                    <span
-                      style={{ display: "flex", flex: 1, minWidth: 0 }}
+                    <Flex
+                      component="span"
+                      flex={1}
+                      miw={0}
                       data-testid="inherited-schema"
                     >
                       {label}
-                    </span>
+                    </Flex>
                   </Tooltip>
                 ) : (
                   label
@@ -411,7 +363,7 @@ export function StructuredTree(props: StructuredTreeProps) {
                     </Text>
                   </Tooltip>
                 )}
-              </div>
+              </TreeRow>
             );
           }}
         />
@@ -426,15 +378,7 @@ export function StructuredTree(props: StructuredTreeProps) {
         withinPortal
       >
         <Menu.Target>
-          <span
-            style={{
-              position: "fixed",
-              left: menu?.x ?? 0,
-              top: menu?.y ?? 0,
-              width: 0,
-              height: 0,
-            }}
-          />
+          <TreeMenuAnchor menu={menu} />
         </Menu.Target>
         <Menu.Dropdown>
           {menu && (

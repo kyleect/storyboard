@@ -11,6 +11,7 @@ import {
   Text,
   UnstyledButton,
 } from "@mantine/core";
+import utils from "../styles/utilities.module.css";
 import { modals } from "@mantine/modals";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -69,15 +70,15 @@ export function ErrorItem({
   const extra = detailText(error);
   const { messageId } = error;
   return (
-    <Paper p="xs" withBorder data-testid="error-item">
+    <Paper p="xs" data-testid="error-item">
       <Group gap="xs" wrap="wrap">
         <Text size="xs" c="dimmed">
           {new Date(error.createdAt).toLocaleString()}
         </Text>
-        <Badge size="xs" variant="light" color="gray" tt="none">
+        <Badge color="gray" tt="none">
           {error.toolName ?? "run"}
         </Badge>
-        <Badge size="xs" variant="light" color="red" tt="none">
+        <Badge color="red" tt="none">
           {KIND_LABELS[error.kind]}
         </Badge>
         {showSession && (
@@ -122,7 +123,7 @@ export function ErrorItem({
             </Anchor>
           ))}
       </Group>
-      <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>
+      <Text size="sm" mt={4} className={utils.preWrap}>
         {error.message}
       </Text>
       {extra && (
@@ -200,7 +201,7 @@ export function SessionErrorsPanel({
   const count = errors.data?.length ?? 0;
 
   return (
-    <Paper withBorder p={4}>
+    <Paper p={4}>
       <Group justify="space-between" wrap="nowrap">
         <UnstyledButton
           onClick={() => setOpen((o) => !o)}
@@ -209,7 +210,7 @@ export function SessionErrorsPanel({
         >
           <Group gap={6}>
             <Text size="sm">{open ? "▾" : "▸"} Errors</Text>
-            <Badge size="sm" variant="light" color={count > 0 ? "red" : "gray"}>
+            <Badge size="sm" color={count > 0 ? "red" : "gray"}>
               {count}
             </Badge>
           </Group>

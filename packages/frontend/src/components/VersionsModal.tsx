@@ -65,7 +65,7 @@ export function VersionsModal<V extends Version>({
   return (
     <Modal opened onClose={onClose} size="xl" title={title}>
       <Group align="flex-start" wrap="nowrap" gap="md">
-        <ScrollArea.Autosize mah="60vh" w={listWidth} style={{ flexShrink: 0 }}>
+        <ScrollArea.Autosize mah="60vh" w={listWidth} flex="none">
           {newestFirst.map((v) => (
             <NavLink
               key={v.seq}

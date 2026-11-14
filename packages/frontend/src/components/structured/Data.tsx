@@ -1,4 +1,5 @@
 import { Badge, Code, Group, Stack, Text } from "@mantine/core";
+import utils from "../../styles/utilities.module.css";
 import { VersionsModal as GenericVersionsModal } from "../VersionsModal";
 import { useQueryClient } from "@tanstack/react-query";
 import { readSchemaForm, type Form, type SchemaNode } from "@harness/core";
@@ -39,21 +40,9 @@ export function errorsFromMessage(
 export function Badges({ d }: { d: DataItem }) {
   return (
     <>
-      {d.deleted && (
-        <Badge size="xs" variant="light" color="red">
-          deleted
-        </Badge>
-      )}
-      {d.outOfDate && (
-        <Badge size="xs" variant="light" color="yellow">
-          out of date
-        </Badge>
-      )}
-      {!d.schemaInScope && (
-        <Badge size="xs" variant="light" color="gray">
-          schema not available
-        </Badge>
-      )}
+      {d.deleted && <Badge color="red">deleted</Badge>}
+      {d.outOfDate && <Badge color="yellow">out of date</Badge>}
+      {!d.schemaInScope && <Badge color="gray">schema not available</Badge>}
     </>
   );
 }
@@ -80,14 +69,8 @@ export function VersionsModal({
       label={(v) => (
         <Group gap={4}>
           <Text size="sm">#{v.seq}</Text>
-          <Badge size="xs" variant="light" color="gray">
-            {v.author}
-          </Badge>
-          {v.deleted && (
-            <Badge size="xs" variant="light" color="red">
-              deleted
-            </Badge>
-          )}
+          <Badge color="gray">{v.author}</Badge>
+          {v.deleted && <Badge color="red">deleted</Badge>}
         </Group>
       )}
       note={(v) => (
@@ -102,7 +85,7 @@ export function VersionsModal({
           <Text size="sm" fw={500}>
             {v.name}
           </Text>
-          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+          <Text size="sm" className={utils.preWrap}>
             {v.description}
           </Text>
           <Code block>{JSON.stringify(v.value, null, 2)}</Code>

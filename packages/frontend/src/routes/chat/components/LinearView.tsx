@@ -98,7 +98,6 @@ function File({ item, runs }: { item: LinearItem; runs: Map<string, string> }) {
     (item.blocks === undefined || item.blocks.length === 0);
   return (
     <Paper
-      withBorder
       p="xs"
       ml={item.depth * 24}
       style={{ borderLeft: `4px solid var(--mantine-color-${color}-6)` }}
@@ -106,7 +105,7 @@ function File({ item, runs }: { item: LinearItem; runs: Map<string, string> }) {
       <Stack gap={4}>
         <Group justify="space-between" wrap="nowrap" gap="xs">
           <Group gap="xs" wrap="nowrap">
-            <Badge size="sm" variant="light" color={color}>
+            <Badge size="sm" color={color}>
               {item.kind === "event" ? "event" : LABELS[item.kind]}
             </Badge>
             <Text size="sm" fw={600}>

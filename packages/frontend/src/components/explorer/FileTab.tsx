@@ -10,6 +10,7 @@ import {
   Stack,
   Group,
 } from "@mantine/core";
+import utils from "../../styles/utilities.module.css";
 import { when } from "../../lib/format";
 import { confirmAction } from "../../lib/confirm";
 import type { ProjectColor } from "@harness/core";
@@ -118,9 +119,7 @@ export function FileTab({
         gap={8}
         justify="space-between"
         wrap="nowrap"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-        }}
+        className={utils.borderBottom}
       >
         <Group gap={8} wrap="nowrap" miw={0}>
           <Text size="xs" c="dimmed" truncate>
@@ -141,7 +140,7 @@ export function FileTab({
             </Text>
           )}
         </Group>
-        <Group gap={2} wrap="nowrap" style={{ flexShrink: 0 }}>
+        <Group gap={2} wrap="nowrap" flex="none">
           {editable && (
             <Button
               size="compact-xs"
@@ -157,22 +156,14 @@ export function FileTab({
               label="Open the rendered Markdown in a new tab"
               openDelay={400}
             >
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                aria-label="Preview"
-                onClick={onPreview}
-              >
+              <ActionIcon color="gray" aria-label="Preview" onClick={onPreview}>
                 <IconMarkdown size={16} />
               </ActionIcon>
             </Tooltip>
           )}
           <Tooltip label="Versions" openDelay={400}>
             <ActionIcon
-              variant="subtle"
               color="gray"
-              size="sm"
               aria-label={`Versions (${f.versions.length})`}
               onClick={() => setVersions(true)}
             >
@@ -182,9 +173,7 @@ export function FileTab({
           {!f.deleted && readOnly === undefined && (
             <Tooltip label="Delete" openDelay={400}>
               <ActionIcon
-                variant="subtle"
                 color="red"
-                size="sm"
                 aria-label="Delete"
                 loading={remove.isPending}
                 onClick={() =>

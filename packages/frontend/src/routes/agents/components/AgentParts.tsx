@@ -1,4 +1,5 @@
 import { Badge, Group, Paper, Stack, Text } from "@mantine/core";
+import utils from "../../../styles/utilities.module.css";
 import { VersionsModal as GenericVersionsModal } from "../../../components/VersionsModal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TOOL_GROUPS } from "@harness/core";
@@ -39,19 +40,11 @@ export function useToolApprovals() {
 }
 
 export function DefaultBadge() {
-  return (
-    <Badge size="xs" variant="light">
-      Default
-    </Badge>
-  );
+  return <Badge>Default</Badge>;
 }
 
 export function BuiltinBadge() {
-  return (
-    <Badge size="xs" variant="light" color="teal">
-      built-in
-    </Badge>
-  );
+  return <Badge color="teal">built-in</Badge>;
 }
 
 export function SubagentSummary({ agent }: { agent: AgentContent }) {
@@ -80,17 +73,13 @@ export function SubagentSummary({ agent }: { agent: AgentContent }) {
 }
 
 export function DeletedBadge() {
-  return (
-    <Badge size="xs" variant="light" color="red">
-      deleted
-    </Badge>
-  );
+  return <Badge color="red">deleted</Badge>;
 }
 
 export function TextBox({ value }: { value: string }) {
   return (
-    <Paper p="sm" withBorder>
-      <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+    <Paper p="sm">
+      <Text size="sm" className={utils.preWrap}>
         {value === "" ? (
           <Text span c="dimmed">
             (empty)
@@ -132,7 +121,6 @@ export function ToolsSummary({
       <Badge
         key={t}
         size="sm"
-        variant="light"
         color={known && !known.has(t) ? "red" : "gray"}
         tt="none"
       >
@@ -149,7 +137,7 @@ export function ToolsSummary({
             Groups:
           </Text>
           {toolGrant.groups.map((g) => (
-            <Badge key={g} size="sm" variant="light" tt="none">
+            <Badge key={g} size="sm" tt="none">
               {labelOf(g)}
             </Badge>
           ))}
@@ -179,7 +167,6 @@ export function ToolsSummary({
               <Badge
                 key={t}
                 size="sm"
-                variant="light"
                 color={ask ? "orange" : "teal"}
                 tt="none"
               >

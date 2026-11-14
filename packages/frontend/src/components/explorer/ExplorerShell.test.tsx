@@ -55,12 +55,14 @@ describe("ExplorerShell tabs", () => {
 });
 
 describe("ExplorerShell tabs of a project", () => {
-  const lineOf = (name: string) =>
-    screen.getByRole("tab", { name: new RegExp(name) }).style.borderTop;
+  const tabNamed = (name: string) =>
+    screen.getByRole("tab", { name: new RegExp(name) });
+  const lineColor = (name: string) =>
+    tabNamed(name).style.getPropertyValue("--tab-color");
 
   it("shows the project's color over the open tab and behind its icon", () => {
     renderShell([tab("a", { iconColor: "teal", icon: <span>i</span> })]);
-    expect(lineOf("Chat a")).toContain("--mantine-color-teal-filled");
+    expect(lineColor("Chat a")).toContain("--mantine-color-teal-filled");
     const icon = screen
       .getByRole("tab", { name: /Chat a/ })
       .querySelector(".mantine-ThemeIcon-root") as HTMLElement;
@@ -71,11 +73,12 @@ describe("ExplorerShell tabs of a project", () => {
 
   it("keeps the theme's color for a tab without one", () => {
     renderShell([tab("a")]);
-    expect(lineOf("Chat a")).toContain("--mantine-primary-color-filled");
+    expect(lineColor("Chat a")).toBe("");
   });
 
   it("shows the line only on the open tab", () => {
     renderShell([tab("a"), tab("b", { iconColor: "teal" })]);
-    expect(lineOf("Chat b")).toContain("transparent");
+    expect(tabNamed("Chat a").hasAttribute("data-active")).toBe(true);
+    expect(tabNamed("Chat b").hasAttribute("data-active")).toBe(false);
   });
 });

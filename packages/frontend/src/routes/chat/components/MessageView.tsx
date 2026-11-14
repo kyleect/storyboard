@@ -1,4 +1,5 @@
 import type { Asks, ShownMessage } from "../lib/transcript-types";
+import utils from "../../../styles/utilities.module.css";
 import {
   Badge,
   Button,
@@ -53,14 +54,16 @@ export function MessageView({
 }) {
   if (message.role === "user") {
     return (
-      <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
-        <Text size="xs" c="dimmed">
-          {userLabel}
-        </Text>
-        {message.files && message.files.length > 0 && (
-          <MessageFiles files={message.files} />
-        )}
-        {message.content !== "" && <Markdown>{message.content}</Markdown>}
+      <Paper p="sm" bg="var(--mantine-color-default-hover)" m="md">
+        <Stack>
+          <Text size="xs" c="dimmed">
+            {userLabel}
+          </Text>
+          {message.files && message.files.length > 0 && (
+            <MessageFiles files={message.files} />
+          )}
+          {message.content !== "" && <Markdown>{message.content}</Markdown>}
+        </Stack>
       </Paper>
     );
   }
@@ -72,30 +75,28 @@ export function MessageView({
       return <AskUserResult message={message} />;
     }
     return (
-      <Paper p="sm" withBorder>
-        <Group gap="xs">
-          <Text size="xs" c="dimmed">
-            Tool result
-          </Text>
-          <Badge size="xs" variant="light" color="gray" tt="none">
-            {message.name}
-          </Badge>
-          {message.isError && (
-            <Badge size="xs" variant="light" color="red">
-              error
+      <Paper p="sm">
+        <Stack gap="sm">
+          <Group gap="sm">
+            <Text size="xs" c="dimmed">
+              Tool result
+            </Text>
+            <Badge color="gray" tt="none" variant="transparent">
+              {message.name}
             </Badge>
+            {message.isError && <Badge color="red">error</Badge>}
+          </Group>
+          <Code block>{showResult(message.content)}</Code>
+          {message.media && message.media.length > 0 && (
+            <MessageFiles files={message.media.map((m) => m.ref)} />
           )}
-        </Group>
-        <Code block>{showResult(message.content)}</Code>
-        {message.media && message.media.length > 0 && (
-          <MessageFiles files={message.media.map((m) => m.ref)} />
-        )}
+        </Stack>
       </Paper>
     );
   }
   if (message.role === "edit") {
     return (
-      <Paper p="sm" withBorder bg="var(--mantine-color-default-hover)">
+      <Paper p="sm" bg="var(--mantine-color-default-hover)">
         <Text size="xs" c="dimmed">
           Your edit to this session's files
         </Text>
@@ -105,34 +106,34 @@ export function MessageView({
   }
   if (message.role !== "assistant") {
     return (
-      <Paper p="sm" withBorder>
+      <Paper p="sm">
         <Text size="xs" c="dimmed">
           {message.role}
         </Text>
-        <Text style={{ whiteSpace: "pre-wrap" }}>{message.content}</Text>
+        <Text className={utils.preWrap}>{message.content}</Text>
       </Paper>
     );
   }
   return (
-    <Paper p="sm" withBorder>
-      <Group gap="xs">
+    <Paper p="sm">
+      <Group gap="xs" mb="sm">
         <Text size="xs" c="dimmed">
           Assistant
         </Text>
         {agent && <AgentBadge agent={agent} />}
         {model && (
-          <Badge size="xs" variant="light" color="gray" tt="none">
+          <Badge color="gray" tt="none" size="sm" variant="transparent">
             {model}
           </Badge>
         )}
         {reasoningEffort && (
-          <Badge size="xs" variant="light" color="grape" tt="none">
+          <Badge color="grape" tt="none">
             reasoning: {effortLabel(reasoningEffort)}
           </Badge>
         )}
         {streaming && <Loader size="xs" type="dots" />}
       </Group>
-      <Stack gap="xs">
+      <Stack gap="xs" m="md">
         {message.content.map((block, i) => (
           <BlockView
             key={i}
@@ -171,13 +172,13 @@ export function BlockView({
           maxHeight={48}
           showLabel="Show reasoning"
           hideLabel="Hide reasoning"
+          styles={{
+            control: {
+              fontSize: "var(--mantine-font-size-sm)",
+            },
+          }}
         >
-          <Text
-            size="sm"
-            c="dimmed"
-            fs="italic"
-            style={{ whiteSpace: "pre-wrap" }}
-          >
+          <Text size="sm" c="dimmed" fs="italic" className={utils.preWrap}>
             {block.text}
           </Text>
         </Spoiler>
@@ -208,7 +209,7 @@ export function BlockView({
             )
           </Code>
           {decisionComment && (
-            <Paper p="xs" withBorder bg="var(--mantine-color-default-hover)">
+            <Paper p="xs" bg="var(--mantine-color-default-hover)">
               <Text size="xs" c="dimmed">
                 Your comment (
                 {decisionComment.choice === "deny" ? "denied" : "allowed"})
@@ -249,19 +250,16 @@ export function SubagentPanel({
   return (
     <Paper
       p="xs"
-      withBorder
       data-subagent={callId}
       bg="var(--mantine-color-default-hover)"
     >
       <Group gap="xs" wrap="nowrap">
-        <Badge size="xs" variant="light" color="teal">
-          subagent
-        </Badge>
+        <Badge color="teal">subagent</Badge>
         <Text size="sm" fw={500}>
           {view.agentName}
         </Text>
         {view.waiting ? (
-          <Badge size="xs" variant="filled" color="yellow">
+          <Badge variant="filled" color="yellow">
             waiting for you
           </Badge>
         ) : view.running ? (
@@ -305,11 +303,11 @@ export function SubagentPanel({
             </div>
           ))}
           {view.queued.map((text, i) => (
-            <Paper key={i} p="sm" withBorder style={{ borderStyle: "dashed" }}>
+            <Paper key={i} p="sm" style={{ borderStyle: "dashed" }}>
               <Text size="xs" c="dimmed">
                 You, to the subagent: waiting for its next step
               </Text>
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+              <Text size="sm" className={utils.preWrap}>
                 {text}
               </Text>
             </Paper>

@@ -1,4 +1,5 @@
 import { Box, Drawer, Text, UnstyledButton, Flex } from "@mantine/core";
+import classes from "./Workbench.module.css";
 import { confirmAction } from "../../../lib/confirm";
 import { useCreateSession } from "../../../hooks/useSessions";
 import { useProjects } from "../../../hooks/useProjects";
@@ -283,10 +284,8 @@ export function Workbench() {
               hidden={id !== activeId}
               p="md"
               h="100%"
-              style={{
-                overflow: t.kind === "chat" ? "hidden" : "auto",
-                display: id === activeId ? undefined : "none",
-              }}
+              display={id === activeId ? "block" : "none"}
+              style={{ overflow: t.kind === "chat" ? "hidden" : "auto" }}
             >
               <TabIdContext.Provider value={id}>
                 <TabPage tab={t} />
@@ -370,12 +369,9 @@ export function Workbench() {
               <UnstyledButton
                 aria-label="Open the menu"
                 onClick={drawerHandlers.open}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0 10px",
-                  flexShrink: 0,
-                }}
+                flex="none"
+                px={10}
+                className={classes.menuButton}
               >
                 <IconMenu2 size={18} />
               </UnstyledButton>
