@@ -105,12 +105,14 @@ These run through the whole codebase (details in `docs/dev/README.md`).
   dependency's version means regenerating the patch.
 - **`docs/` is published** to https://kyleect.github.io/storyboard/ (it
   includes Mermaid rendering in `docs/_includes/head-custom.html`, which must
-  stay in `docs/`). The developer docs are in `docs/dev/`. When you change
-  behavior the docs describe, update the matching page there: `core.md`,
-  `tools.md`, `backend.md`, `frontend.md`, or the glossary. The docs can still
-  fall behind the code; when they disagree, the code is right, and fixing the
-  doc is part of the change. `docs/dev/contributing.md` is the guide for new
-  contributors. There is no `AGENTS.md` inside `docs/` because that folder is
-  the site's source.
+  stay in `docs/`). It has two parts. `docs/dev/` is for developers and agents:
+  when you change behavior it describes, update the matching page there
+  (`core.md`, `tools.md`, `backend.md`, `frontend.md`, or the glossary). The
+  docs can still fall behind the code; when they disagree, the code is right,
+  and fixing the doc is part of the change. `docs/dev/contributing.md` is the
+  guide for new contributors. `docs/user/` is for people using the app, in plain
+  English with no implementation detail; when you change something a user sees
+  (a page, a button, a setting), update the matching page there too. There is no
+  `AGENTS.md` inside `docs/` because that folder is the site's source.
 - Do not commit build output (`dist/`) or `.patch` files other than those
   under `patches/` (see `.gitignore`).
