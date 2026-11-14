@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -17,6 +18,7 @@ import utils from "../../../styles/utilities.module.css";
 import { when } from "../../../lib/format";
 import { confirmAction } from "../../../lib/confirm";
 import { useMutation } from "@tanstack/react-query";
+import { IconArrowsMaximize } from "@tabler/icons-react";
 import { useState } from "react";
 import {
   api,
@@ -38,6 +40,7 @@ import {
   VersionsModal,
 } from "./AgentParts";
 import { ToolGrantEditor } from "./ToolGrantEditor";
+import { ToolGrantModal } from "./ToolGrantModal";
 import { showError } from "../../../lib/notify";
 
 export const emptyAgent = (): AgentContent => ({
@@ -97,6 +100,7 @@ export function AgentForm({
   const tools = useSelectableTools();
   const approvals = useToolApprovals();
   const [versions, setVersions] = useState(openVersion !== undefined);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const known = tools.data ? new Set(tools.data.map((t) => t.name)) : undefined;
 
   const base = agent ? contentOf(agent) : (start ?? emptyAgent());
@@ -377,9 +381,20 @@ export function AgentForm({
                     )}
                 </Stack>
                 <Stack gap="xs">
-                  <Text size="sm" fw={500}>
-                    Tools
-                  </Text>
+                  <Group justify="space-between" wrap="nowrap">
+                    <Text size="sm" fw={500}>
+                      Tools
+                    </Text>
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      aria-label="Open the full tool editor"
+                      disabled={!tools.data || !approvals.data}
+                      onClick={() => setToolsOpen(true)}
+                    >
+                      <IconArrowsMaximize size={16} />
+                    </ActionIcon>
+                  </Group>
                   <Text size="xs" c="dimmed">
                     Tools that are always on are ticked and locked. For each
                     tool or group, you can also choose whether this agent asks
@@ -412,6 +427,21 @@ export function AgentForm({
           </Stack>
         </ScrollArea>
       </Flex>
+      {toolsOpen && tools.data && approvals.data && (
+        <ToolGrantModal
+          agentName={current.name}
+          grant={current.toolGrant}
+          approval={current.toolApproval}
+          tools={tools.data}
+          approvals={approvals.data}
+          newTools={newTools}
+          onApply={(toolGrant, toolApproval) => {
+            change({ toolGrant, toolApproval });
+            setToolsOpen(false);
+          }}
+          onClose={() => setToolsOpen(false)}
+        />
+      )}
       {versions && agent && (
         <VersionsModal
           scope={scope}

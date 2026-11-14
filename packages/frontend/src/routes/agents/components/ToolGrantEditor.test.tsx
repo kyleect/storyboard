@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import type { AgentToolInfo, ToolApprovalInfo } from "../../../api";
@@ -34,14 +34,17 @@ const MCP_TOOLS = [
   tool("mcp_calendar_list", "mcp"),
 ];
 
-const approvalsOf = (list: AgentToolInfo[]): ToolApprovalInfo[] =>
+const approvalsOf = (
+  list: AgentToolInfo[],
+  fixed: string[] = [],
+): ToolApprovalInfo[] =>
   list.map((t) => ({
     name: t.name,
     description: t.description,
     group: t.group,
     alwaysOn: t.alwaysOn,
     ask: false,
-    fixed: false,
+    fixed: fixed.includes(t.name),
   }));
 
 function setup(
@@ -49,6 +52,7 @@ function setup(
   newTools: string[] = [],
   startApproval: Record<string, boolean> = {},
   list: AgentToolInfo[] = TOOLS,
+  fixed: string[] = [],
 ) {
   const seen = { grant: start, approval: startApproval };
 
@@ -66,7 +70,7 @@ function setup(
         approval={approval}
         onApproval={setApproval}
         tools={list}
-        approvals={approvalsOf(list)}
+        approvals={approvalsOf(list, fixed)}
         newTools={new Set(newTools)}
       />
     );
@@ -87,10 +91,13 @@ const boxOf = (name: string) =>
     .closest(".mantine-Checkbox-root")
     ?.querySelector("input") as HTMLInputElement;
 
-const select = (label: string) =>
-  screen
-    .getAllByLabelText(label)
-    .find((el) => el.tagName === "INPUT") as HTMLInputElement;
+const choices = (label: string) =>
+  within(screen.getByRole("radiogroup", { name: label }));
+
+const picked = (label: string) =>
+  choices(label)
+    .queryAllByRole("radio")
+    .filter((r) => (r as HTMLInputElement).checked);
 
 const open = (label: string) =>
   fireEvent.click(screen.getByLabelText(`Show ${label} tools`));
@@ -166,19 +173,43 @@ describe("ToolGrantEditor", () => {
   });
 
   it("sets approval for a whole group", () => {
-    const seen = setup();
+    const seen = setup({ ...emptyGrant(), groups: ["web"] });
 
-    fireEvent.click(select("Approval for Web tools"));
-    fireEvent.click(screen.getByRole("option", { name: "Ask for all" }));
+    fireEvent.click(choices("Approval for Web tools").getByLabelText("Ask"));
     expect(seen.approval).toEqual({ web_search: true, read_webpage: true });
   });
 
-  it("shows mixed approval when tools differ", () => {
-    setup(emptyGrant(), [], { web_search: true });
-    const mixed = select("Approval for Web tools");
+  it("shows approval only for a group with something allowed", () => {
+    setup();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Approval for Web tools" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByLabelText("Web tools"));
+    expect(
+      screen.getByRole("radiogroup", { name: "Approval for Web tools" }),
+    ).toBeTruthy();
+  });
 
-    expect(mixed.value).toBe("");
-    expect(mixed.placeholder).toBe("Mixed");
+  it("shows mixed approval when tools differ", () => {
+    setup({ ...emptyGrant(), groups: ["web"] }, [], { web_search: true });
+    expect(picked("Approval for Web tools")).toHaveLength(0);
+    expect(screen.getByText("Mixed: its tools differ.")).toBeTruthy();
+  });
+
+  it("changes one tool's approval from its menu", async () => {
+    const seen = setup({ ...emptyGrant(), groups: ["web"] });
+
+    open("Web");
+    fireEvent.click(screen.getByLabelText("Approval for web_search"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Ask" }));
+    expect(seen.approval).toEqual({ web_search: true });
+  });
+
+  it("does not offer a menu for a tool that always asks", () => {
+    setup({ ...emptyGrant(), groups: ["web"] }, [], {}, TOOLS, ["web_search"]);
+    open("Web");
+    expect(screen.getByText("Always asks. The tool fixes this.")).toBeTruthy();
+    expect(screen.queryByLabelText("Approval for web_search")).toBeNull();
   });
 
   it("groups MCP tools by server inside the MCP group, collapsed", () => {
@@ -222,11 +253,17 @@ describe("ToolGrantEditor", () => {
   });
 
   it("sets approval for one server only", () => {
-    const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+    const seen = setup(
+      { ...emptyGrant(), extras: ["mcp_notes_search"] },
+      [],
+      {},
+      MCP_TOOLS,
+    );
 
     open("MCP");
-    fireEvent.click(select("Approval for notes tools"));
-    fireEvent.click(screen.getByRole("option", { name: "Don't ask for all" }));
+    fireEvent.click(
+      choices("Approval for notes tools").getByLabelText("Don't ask"),
+    );
     expect(seen.approval).toEqual({
       mcp_notes_search: false,
       mcp_notes_write: false,
@@ -236,7 +273,7 @@ describe("ToolGrantEditor", () => {
   it("keeps the same tools when switching between allow and deny", () => {
     const seen = setup({ ...emptyGrant(), groups: ["web"] });
 
-    fireEvent.click(screen.getByText("Every tool except the unticked ones"));
+    fireEvent.click(screen.getByText("All except unticked"));
     expect(seen.grant.mode).toBe("deny");
     expect(screen.getByText("2 of 2")).toBeTruthy();
     expect(screen.getByText("1 of 3")).toBeTruthy();

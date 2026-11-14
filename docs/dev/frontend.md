@@ -608,15 +608,22 @@ one page per scope. (The Files and Structured Data views are the exception; see 
 | `Errors.tsx`                | (read)   | Every recorded tool error and failed run, with a link to the message in the transcript. Also shown as a panel under each chat.                                                                                                  |
 | `Settings.tsx`              | Settings | All settings, global system prompt, title settings, and the tools section (see below). Shows which settings an environment variable overrides.                                                                                  |
 
-**The agent's tools.** `ToolGrantEditor` shows tools under their group. Each group
-has its own on/off box and approval choice (each tool's setting, ask for all, or
-don't ask for all). Inside the MCP group, MCP tools (`mcp_<server>_<tool>`)
-are grouped by server, each server collapsed by default and with the same
-header; a server's box switches only that server's tools. Tools that are always on are shown locked, tools added since
-the agent was last saved (`newTools`) are marked, and a switch changes the agent
-between `allow` and `deny` mode. `tool-grant.ts` holds the pure logic: it works
-out which tools a grant allows with the same rules as the backend and computes
-the grant that results from a click on a group or a tool.
+**The agent's tools.** `ToolGrantEditor` is the list in the agent form: one card
+per group with a tick box, an "N of M" count and, once anything in the group is
+allowed, a three-way approval control (each tool's setting, ask, don't ask).
+Inside the MCP group, MCP tools (`mcp_<server>_<tool>`) are grouped by server,
+each a nested row with the same controls; a server's box switches only that
+server's tools. Each tool shows its own approval as a small menu; a tool that
+always asks shows a lock instead. Tools that are always on are shown locked,
+tools added since the agent was last saved (`newTools`) are marked, and a switch
+changes the agent between `allow` and `deny` mode. `ToolGrantModal` is the same
+editor in a wide dialog, opened from the icon next to the "Tools" heading: a
+group list on the left and a table of the selected group's tools on the right.
+It edits local copies and hands them to the form only on Done; Cancel, Escape and
+a click outside discard them. `ToolGrantParts.tsx` holds what both share (the
+approval control, badges and the per-tool menu). `tool-grant.ts` holds the pure
+logic: it works out which tools a grant allows with the same rules as the
+backend and computes the grant that results from a click on a group or a tool.
 
 **Settings tools.** `ToolSettings` lists every tool under its group with three
 settings: always on, asks before it runs, and off for the whole harness. A group's

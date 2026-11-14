@@ -300,6 +300,53 @@ describe("opening", () => {
     });
   });
 
+  it("changes the tools in the full editor, and only keeps them on Done", async () => {
+    const info = {
+      name: "web_search",
+      description: "Searches the web.",
+      group: "web",
+      alwaysOn: false,
+      off: false,
+      needsReview: false,
+    } as const;
+
+    vi.spyOn(api, "agentTools").mockResolvedValue([info]);
+    vi.spyOn(api, "agentToolApprovals").mockResolvedValue([
+      { ...info, ask: false, fixed: false },
+    ]);
+    const save = vi.spyOn(api, "saveAgent").mockResolvedValue(detail(EDITOR));
+
+    show(<AgentsExplorer />);
+    fireEvent.click(await screen.findByText("Editor"));
+    const open = await screen.findByRole("button", {
+      name: "Open the full tool editor",
+    });
+
+    await waitFor(() =>
+      expect((open as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(open);
+    const modal = within(await screen.findByRole("dialog"));
+
+    fireEvent.click(modal.getByLabelText("Web tools"));
+    fireEvent.click(modal.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+
+    fireEvent.click(open);
+    const again = within(await screen.findByRole("dialog"));
+
+    fireEvent.click(again.getByLabelText("Web tools"));
+    fireEvent.click(again.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]?.[1]).toMatchObject({
+      toolGrant: { groups: ["web"] },
+    });
+  });
+
   it("can be put back as it was", async () => {
     show(<AgentsExplorer />);
     fireEvent.click(await screen.findByText("Editor"));
