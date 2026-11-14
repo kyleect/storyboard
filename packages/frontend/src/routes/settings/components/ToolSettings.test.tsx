@@ -23,6 +23,7 @@ const tool = (name: string, over: Partial<ToolView> = {}): ToolView => ({
 
 function renderSection(tools: ToolView[]) {
   vi.spyOn(api, "listTools").mockResolvedValue(tools);
+
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
@@ -50,6 +51,7 @@ describe("ToolSettings", () => {
     const set = vi
       .spyOn(api, "setToolAlwaysOn")
       .mockResolvedValue(tool("web_search", { alwaysOn: true }));
+
     renderSection([tool("web_search")]);
     fireEvent.click(await screen.findByLabelText("web_search: always on"));
     await waitFor(() => expect(set).toHaveBeenCalledWith("web_search", true));
@@ -65,6 +67,7 @@ describe("ToolSettings", () => {
     const set = vi
       .spyOn(api, "setToolAsks")
       .mockResolvedValue(tool("web_search", { ask: true }));
+
     renderSection([tool("web_search")]);
     fireEvent.click(
       await screen.findByLabelText("web_search: ask before running"),
@@ -77,6 +80,7 @@ describe("ToolSettings", () => {
     const box = (await screen.findByLabelText(
       "files_kill: ask before running",
     )) as HTMLInputElement;
+
     expect(box.disabled).toBe(true);
   });
 
@@ -84,6 +88,7 @@ describe("ToolSettings", () => {
     const set = vi
       .spyOn(api, "setToolOff")
       .mockResolvedValue(tool("web_search", { off: true }));
+
     renderSection([tool("web_search")]);
     fireEvent.click(await screen.findByLabelText("web_search: off"));
     await waitFor(() => expect(set).toHaveBeenCalledWith("web_search", true));
@@ -93,6 +98,7 @@ describe("ToolSettings", () => {
     const set = vi
       .spyOn(api, "setToolOff")
       .mockResolvedValue(tool("web_search", { off: true }));
+
     renderSection([
       tool("web_search", { usedByAgents: ["Researcher", "Editor"] }),
     ]);
@@ -105,6 +111,7 @@ describe("ToolSettings", () => {
 
   it("does not switch off when the question is cancelled", async () => {
     const set = vi.spyOn(api, "setToolOff");
+
     renderSection([tool("web_search", { usedByAgents: ["Researcher"] })]);
     fireEvent.click(await screen.findByLabelText("web_search: off"));
     fireEvent.click(await screen.findByText("Cancel"));
@@ -118,6 +125,7 @@ describe("ToolSettings", () => {
         tool("web_search", { alwaysOn: true }),
         tool("read_webpage", { alwaysOn: true }),
       ]);
+
     renderSection([tool("web_search"), tool("read_webpage")]);
     fireEvent.click(await screen.findByLabelText("Always on for Web tools"));
     await waitFor(() =>
@@ -130,6 +138,7 @@ describe("ToolSettings", () => {
     const head = (await screen.findByLabelText(
       "Off for Web tools",
     )) as HTMLInputElement;
+
     expect(head.indeterminate).toBe(true);
   });
 });

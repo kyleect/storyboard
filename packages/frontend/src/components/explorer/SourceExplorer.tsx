@@ -89,6 +89,7 @@ export function SourceExplorer({
       : tabs[0]
         ? tabId(tabs[0])
         : null;
+
     return { tabs, active };
   });
   const [expanded, setExpanded] = useState(initial.expanded);
@@ -115,6 +116,7 @@ export function SourceExplorer({
   }, [namespace, pageKey, tabsState, expanded, width, showDeleted]);
 
   const dirty = Object.keys(drafts).length > 0;
+
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
@@ -151,6 +153,7 @@ export function SourceExplorer({
 
   const refreshRoot = (id: RootId) => {
     const root = rootOf(id);
+
     return root
       ? queryClient.invalidateQueries({ queryKey: root.source.keys.all })
       : Promise.resolve();
@@ -169,10 +172,13 @@ export function SourceExplorer({
   };
   const requestClose = (id: string) => {
     const tab = tabsState.tabs.find((t) => tabId(t) === id);
+
     if (!tab || !drafts[id]) {
       close(id);
+
       return;
     }
+
     confirmAction({
       title: `Close “${baseName(tab.key)}” without saving?`,
       message: <>Your unsaved changes to it will be lost.</>,
@@ -190,26 +196,34 @@ export function SourceExplorer({
   const commitPending = async (p: Pending, name: string) => {
     setPending(null);
     const source = rootOf(p.root)?.source;
+
     if (!source) return;
+
     const path = joinPath(p.parent, name);
     const problem = fileNameProblem(path);
+
     if (problem) {
       warn("Could not create it", `Not a valid name: ${problem}.`);
+
       return;
     }
+
     if (
       tree.info.has(nodeValue({ root: p.root, kind: "file", path })) ||
       tree.info.has(nodeValue({ root: p.root, kind: "folder", path }))
     ) {
       warn("Could not create it", `“${path}” already exists.`);
+
       return;
     }
+
     try {
       if (p.kind === "new-folder") {
         await source.createFolder(path);
         await refreshRoot(p.root);
       } else {
         const mediaType = mediaTypeForName(path);
+
         await source.write(path, mediaType, emptyValueFor(mediaType));
         await refreshRoot(p.root);
         open({ kind: "file", root: p.root, key: path }, true);
@@ -227,16 +241,20 @@ export function SourceExplorer({
     setRenaming(null);
     const source = rootOf(ref.root)?.source;
     const to = joinPath(dirName(ref.path), name);
+
     if (!source || to === ref.path) return;
+
     try {
       await source.renameFolder(ref.path, to);
       await refreshRoot(ref.root);
       const before = tabsState;
       const after = renameFolderInTabs(before, ref.root, ref.path, to);
       const moved: Record<string, Draft> = {};
+
       before.tabs.forEach((t, i) => {
         const next = after.tabs[i];
         const draft = drafts[tabId(t)];
+
         if (next && draft) moved[tabId(next)] = draft;
       });
       setDrafts((d) => {
@@ -245,6 +263,7 @@ export function SourceExplorer({
             ([id]) => !before.tabs.some((t) => tabId(t) === id),
           ),
         );
+
         return { ...kept, ...moved };
       });
       setTabsState(after);
@@ -255,7 +274,9 @@ export function SourceExplorer({
 
   const deleteFolder = (ref: NodeRef) => {
     const source = rootOf(ref.root)?.source;
+
     if (!source) return;
+
     confirmAction({
       title: `Delete the folder “${ref.path}”?`,
       message: (
@@ -277,7 +298,9 @@ export function SourceExplorer({
 
   const deleteFile = (ref: NodeRef) => {
     const source = rootOf(ref.root)?.source;
+
     if (!source) return;
+
     confirmAction({
       title: `Delete “${ref.path}”?`,
       message: (
@@ -296,32 +319,40 @@ export function SourceExplorer({
 
   const upload = async (root: RootId, folder: string, files: File[]) => {
     const source = rootOf(root)?.source;
+
     if (!source) return;
+
     const refuse = (message: string) =>
       warn("Could not upload the file", message);
+
     for (const file of files) {
       const label = file.name || "That file";
       const anyType = source.accepts?.anyType === true;
       const mediaType = anyType
         ? file.type || "application/octet-stream"
         : attachmentMediaType(file.name, file.type);
+
       if (!mediaType) {
         refuse(`${label} cannot be uploaded. Use ${ACCEPTED_DESCRIPTION}.`);
         continue;
       }
+
       if (!anyType && file.size > MAX_ATTACHMENT_BYTES) {
         refuse(
           `${label} is larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB.`,
         );
         continue;
       }
+
       setBusy((n) => n + 1);
+
       try {
         const made = await source.upload(
           file,
           mediaType,
           joinPath(folder, file.name),
         );
+
         await refreshRoot(root);
         open({ kind: "file", root, key: made.key }, true);
       } catch (err) {
@@ -402,10 +433,12 @@ export function SourceExplorer({
   const colorOf = useProjectColor();
   const colorProps = (root: RootId): { iconColor?: ProjectColor } => {
     const color = colorOf(rootOf(root)?.projectId);
+
     return color ? { iconColor: color } : {};
   };
   const rootColorProps = (root: RootId): { rootColor?: ProjectColor } => {
     const { iconColor } = colorProps(root);
+
     return iconColor ? { rootColor: iconColor } : {};
   };
   const shellTabs: ShellTab[] = tabsState.tabs.map((t) => {
@@ -413,6 +446,7 @@ export function SourceExplorer({
       nodeValue({ root: t.root, kind: "file", path: t.key }),
     );
     const name = baseName(t.key);
+
     return {
       id: tabId(t),
       label:
@@ -454,7 +488,9 @@ export function SourceExplorer({
           onDraft={(draft) =>
             setDrafts((d) => {
               const id = tabId(activeTab);
+
               if (draft) return { ...d, [id]: draft };
+
               return Object.fromEntries(
                 Object.entries(d).filter(([k]) => k !== id),
               );

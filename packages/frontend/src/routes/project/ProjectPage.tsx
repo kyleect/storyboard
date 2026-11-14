@@ -22,8 +22,10 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   );
 
   if (project.isPending) return <Loader />;
+
   if (project.isError)
     return <Alert color="red">{project.error.message}</Alert>;
+
   const trashed = project.data.trashed_at !== null;
 
   return (

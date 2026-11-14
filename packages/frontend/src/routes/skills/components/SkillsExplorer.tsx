@@ -27,6 +27,7 @@ const BUILTIN_REASON =
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+
   a.href = url;
   a.download = name;
   document.body.append(a);
@@ -67,6 +68,7 @@ export function SkillsExplorer({
         broadNote: project ? "Every session sees this skill." : undefined,
       },
     ];
+
     if (project) {
       list.push({
         id: "project",
@@ -77,6 +79,7 @@ export function SkillsExplorer({
         broadNote: "Every session in this project sees this skill.",
       });
     }
+
     return list;
   }, [global, project, readOnly]);
 
@@ -95,6 +98,7 @@ export function SkillsExplorer({
   });
   const picked = async (files: FileList | null, kind: "zip" | "folder") => {
     if (!files || files.length === 0) return;
+
     try {
       setArchive(await archiveFrom(Array.from(files), kind));
     } catch (err) {
@@ -104,6 +108,7 @@ export function SkillsExplorer({
 
   const nodeActions = (ref: NodeRef): NodeAction[] => {
     if (ref.kind !== "folder" || ref.path.includes("/")) return [];
+
     const actions: NodeAction[] = [
       {
         label: "Export as zip",
@@ -115,6 +120,7 @@ export function SkillsExplorer({
                 partOfRoot(ref.root),
                 ref.path,
               );
+
               download(await api.exportSkill(skill.id), `${skill.name}.zip`);
             } catch (err) {
               showError("Could not export the skill")(err);
@@ -123,9 +129,11 @@ export function SkillsExplorer({
         },
       },
     ];
+
     if (ref.root !== "global" || project) {
       const target = ref.root === "global" && project ? project : global;
       const targetLabel = target === global ? "Global" : "this project";
+
       actions.push({
         label: `Copy to ${targetLabel}`,
         onClick: () => {
@@ -136,6 +144,7 @@ export function SkillsExplorer({
                 partOfRoot(ref.root),
                 ref.path,
               );
+
               await api.copySkill(target, skill.id);
               await queryClient.invalidateQueries({ queryKey: skillKeys.all });
               notifications.show({
@@ -149,6 +158,7 @@ export function SkillsExplorer({
         },
       });
     }
+
     return actions;
   };
 

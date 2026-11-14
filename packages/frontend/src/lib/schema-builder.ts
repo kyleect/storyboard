@@ -83,9 +83,11 @@ export function fromSchema(
   body: unknown,
 ): { ok: true; root: BuilderNode } | { ok: false; reason: string } {
   const problems = checkSchemaFeatures(body);
+
   if (problems.length > 0) {
     return { ok: false, reason: problems.join("\n") };
   }
+
   try {
     return { ok: true, root: toNode(body as SchemaNode, "", false) };
   } catch (err) {
@@ -100,6 +102,7 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
     description: n.description ?? "",
     required,
   };
+
   switch (n.type) {
     case "string":
       if (n.enum) {
@@ -110,6 +113,7 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
           ...(n.default !== undefined ? { default: n.default } : {}),
         };
       }
+
       return {
         ...base,
         type: "text",
@@ -130,6 +134,7 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
           ...(n.default !== undefined ? { default: String(n.default) } : {}),
         };
       }
+
       return {
         ...base,
         type: n.type,
@@ -152,6 +157,7 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
           `${key || "The list"} has a default, which the builder can't show. Edit it as JSON.`,
         );
       }
+
       if (n.items.type === "string" && n.items.enum) {
         return {
           ...base,
@@ -162,6 +168,7 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
           ...(n.default !== undefined ? { default: n.default } : {}),
         };
       }
+
       return {
         ...base,
         type: "list",
@@ -175,7 +182,9 @@ function toNode(n: SchemaNode, key: string, required: boolean): BuilderNode {
           `${key || "The schema"} has a default for a group, which the builder can't show. Edit it as JSON.`,
         );
       }
+
       const required = new Set(n.required ?? []);
+
       return {
         ...base,
         type: "group",
@@ -196,6 +205,7 @@ const defined = (o: Record<string, unknown>): SchemaNode =>
 
 export function toSchema(node: BuilderNode): SchemaNode {
   const head = clean({ title: node.title, description: node.description });
+
   switch (node.type) {
     case "text":
       return defined({
@@ -230,6 +240,7 @@ export function toSchema(node: BuilderNode): SchemaNode {
         typeof node.default === "string" && node.options.includes(node.default)
           ? node.default
           : undefined;
+
       if (node.numeric) {
         return defined({
           type: "number" as const,
@@ -238,6 +249,7 @@ export function toSchema(node: BuilderNode): SchemaNode {
           default: picked !== undefined ? Number(picked) : undefined,
         });
       }
+
       return defined({
         type: "string" as const,
         ...head,
@@ -269,6 +281,7 @@ export function toSchema(node: BuilderNode): SchemaNode {
       const required = node.children
         .filter((c) => c.required)
         .map((c) => c.key);
+
       return defined({
         type: "object" as const,
         ...head,
@@ -286,12 +299,14 @@ export function checkTree(root: BuilderNode): Record<string, string> {
   const visit = (node: BuilderNode, inGroup: boolean) => {
     if (inGroup && node.key.trim() === "")
       out[node.id] = "Give the field a name.";
+
     if (
       (node.type === "choice" || node.type === "multi") &&
       node.options.length === 0
     ) {
       out[node.id] ??= "Add at least one option.";
     }
+
     if (
       node.type === "choice" &&
       node.numeric &&
@@ -299,6 +314,7 @@ export function checkTree(root: BuilderNode): Record<string, string> {
     ) {
       out[node.id] ??= "Every option must be a number.";
     }
+
     if (node.type === "text" && node.pattern !== "") {
       try {
         new RegExp(node.pattern);
@@ -306,19 +322,25 @@ export function checkTree(root: BuilderNode): Record<string, string> {
         out[node.id] ??= "The pattern is not a valid regular expression.";
       }
     }
+
     if (node.type === "group") {
       const seen = new Set<string>();
+
       for (const c of node.children) {
         if (c.key.trim() !== "" && seen.has(c.key)) {
           out[c.id] ??= `Another field here is named "${c.key}".`;
         }
+
         seen.add(c.key);
         visit(c, true);
       }
     }
+
     if (node.type === "list" && node.item) visit(node.item, false);
   };
+
   visit(root, false);
+
   return out;
 }
 
@@ -336,12 +358,15 @@ export function flatten(root: BuilderNode): {
         walk(c, depth + 1);
       }
     }
+
     if (node.type === "list" && node.item) {
       out.push({ node: node.item, depth, parent: node, role: "item" });
       walk(node.item, depth + 1);
     }
   };
+
   walk(root, 0);
+
   return out;
 }
 
@@ -351,6 +376,7 @@ export function updateNode(
   change: (n: BuilderNode) => BuilderNode,
 ): BuilderNode {
   if (root.id === id) return change(root);
+
   return {
     ...root,
     children: root.children.map((c) => updateNode(c, id, change)),
@@ -385,16 +411,22 @@ export function moveField(
   by: -1 | 1,
 ): BuilderNode {
   const at = root.children.findIndex((c) => c.id === id);
+
   if (at >= 0) {
     const to = at + by;
+
     if (to < 0 || to >= root.children.length) return root;
+
     const children = [...root.children];
+
     [children[at], children[to]] = [
       children[to] as BuilderNode,
       children[at] as BuilderNode,
     ];
+
     return { ...root, children };
   }
+
   return {
     ...root,
     children: root.children.map((c) => moveField(c, id, by)),
@@ -407,9 +439,12 @@ export function findNode(
   id: string,
 ): BuilderNode | undefined {
   if (root.id === id) return root;
+
   for (const c of root.children) {
     const found = findNode(c, id);
+
     if (found) return found;
   }
+
   return root.item ? findNode(root.item, id) : undefined;
 }

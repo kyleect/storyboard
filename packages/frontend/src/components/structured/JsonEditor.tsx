@@ -21,6 +21,7 @@ export function JsonEditor({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const latest = useRef(onChange);
+
   useEffect(() => {
     latest.current = onChange;
   }, [onChange]);
@@ -28,6 +29,7 @@ export function JsonEditor({
 
   useEffect(() => {
     if (!host.current) return;
+
     const editor = new EditorView({
       parent: host.current,
       state: EditorState.create({
@@ -44,7 +46,9 @@ export function JsonEditor({
         ],
       }),
     });
+
     view.current = editor;
+
     return () => {
       editor.destroy();
       view.current = null;
@@ -55,8 +59,11 @@ export function JsonEditor({
 
   useEffect(() => {
     const editor = view.current;
+
     if (!editor) return;
+
     const current = editor.state.doc.toString();
+
     if (current !== value) {
       editor.dispatch({
         changes: { from: 0, to: current.length, insert: value },

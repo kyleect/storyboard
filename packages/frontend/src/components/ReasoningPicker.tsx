@@ -34,6 +34,7 @@ export function ReasoningPicker(props: {
   const listed =
     levels.data && "levels" in levels.data ? levels.data.levels : [];
   const values = ["none", ...listed];
+
   if (props.value && !values.includes(props.value)) values.push(props.value);
 
   const note = levels.isError

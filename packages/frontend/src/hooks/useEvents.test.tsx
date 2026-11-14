@@ -39,6 +39,7 @@ class FakeEventSource {
 }
 
 const original = globalThis.EventSource;
+
 afterEach(() => {
   globalThis.EventSource = original;
   FakeEventSource.last = undefined;
@@ -71,8 +72,11 @@ function Header() {
     queryKey: sessionKeys.detail("s1"),
     queryFn: () => Promise.resolve(detail),
   });
+
   useSessionEvents("s1", query.data);
+
   if (!query.data) return null;
+
   return (
     <EditableTitle
       title={query.data.session.title}
@@ -87,6 +91,7 @@ describe("session.renamed", () => {
   it("updates the chat header title", async () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const queryClient = new QueryClient();
+
     render(
       <MantineProvider>
         <QueryClientProvider client={queryClient}>
@@ -120,6 +125,7 @@ describe("session.agent_changed", () => {
   it("refetches the session so the agent picker shows the new pick", async () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     let agentId: string | null = null;
+
     function AgentLabel() {
       const query = useQuery({
         queryKey: sessionKeys.detail("s1"),
@@ -129,13 +135,16 @@ describe("session.agent_changed", () => {
             session: { ...detail.session, agent_id: agentId },
           } as SessionDetail),
       });
+
       useSessionEvents("s1", query.data);
+
       return (
         <div>
           {query.data ? `agent: ${query.data.session.agent_id ?? "none"}` : ""}
         </div>
       );
     }
+
     render(
       <MantineProvider>
         <QueryClientProvider client={new QueryClient()}>
@@ -164,10 +173,13 @@ describe("projects.changed", () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
     function Events() {
       useAppEvents();
+
       return null;
     }
+
     render(
       <QueryClientProvider client={queryClient}>
         <Events />
@@ -191,21 +203,26 @@ describe("runs.changed", () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
     function Events() {
       useAppEvents();
+
       return null;
     }
+
     render(
       <QueryClientProvider client={queryClient}>
         <Events />
       </QueryClientProvider>,
     );
     invalidate.mockClear();
+
     return invalidate;
   }
 
   it("refreshes the active runs", () => {
     const invalidate = mountEvents();
+
     act(() =>
       FakeEventSource.last?.push(1, {
         type: "runs.changed",
@@ -217,12 +234,14 @@ describe("runs.changed", () => {
 
   it("refreshes them when the stream opens, since events are not replayed", () => {
     const invalidate = mountEvents();
+
     act(() => FakeEventSource.last?.onopen?.());
     expect(invalidate).toHaveBeenCalledWith({ queryKey: runKeys.active() });
   });
 
   it("refreshes the session lists, which say which sessions are unread", () => {
     const invalidate = mountEvents();
+
     act(() =>
       FakeEventSource.last?.push(1, {
         type: "runs.changed",
@@ -234,6 +253,7 @@ describe("runs.changed", () => {
 
   it("refreshes the session lists when the stream opens too", () => {
     const invalidate = mountEvents();
+
     act(() => FakeEventSource.last?.onopen?.());
     expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionKeys.lists() });
   });
@@ -253,7 +273,9 @@ describe("a subagent's run", () => {
       queryKey: sessionKeys.detail("s1"),
       queryFn: () => Promise.resolve(detail),
     });
+
     useSessionEvents("s1", query.data);
+
     return <div>{query.data ? "ready" : ""}</div>;
   }
 
@@ -269,6 +291,7 @@ describe("a subagent's run", () => {
     );
     await screen.findByText("ready");
   }
+
   const push = (id: number, event: unknown) =>
     act(() => FakeEventSource.last?.push(id, event));
 
@@ -286,6 +309,7 @@ describe("a subagent's run", () => {
     );
 
     const live = useLive.getState().runs["s1"];
+
     expect(live?.runId).toBe("r1");
     expect(live?.children["r2"]).toMatchObject({
       parentRunId: "r1",
@@ -316,9 +340,11 @@ describe("a subagent's run", () => {
       callId: "k1",
       form: { title: "T", fields: [] },
     };
+
     push(3, ev("input.requested", "r2", request));
 
     let live = useLive.getState().runs["s1"];
+
     expect(live?.inputs).toEqual([]);
     expect(live?.children["r2"]?.inputs).toEqual([request]);
 
@@ -346,14 +372,18 @@ describe("a subagent's run", () => {
         { runId: "r2", parentRunId: "r1", parentCallId: "c1", ...base },
       ],
     } as SessionDetail;
+
     function Snapshot() {
       const query = useQuery({
         queryKey: sessionKeys.detail("s1"),
         queryFn: () => Promise.resolve(withRuns),
       });
+
       useSessionEvents("s1", query.data);
+
       return <div>{query.data ? "ready" : ""}</div>;
     }
+
     render(
       <MantineProvider>
         <QueryClientProvider client={new QueryClient()}>
@@ -418,6 +448,7 @@ describe("a subagent's run", () => {
       })),
     );
     const show = vi.spyOn(notifications, "show").mockReturnValue("n1");
+
     push(3, ev("run.finished", "r2", { reason: "handed_back" }));
     expect(show).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -434,10 +465,13 @@ describe("tool.result of a files tool", () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
     function Listener() {
       useSessionEvents("s1", detail);
+
       return null;
     }
+
     render(
       <MantineProvider>
         <QueryClientProvider client={queryClient}>
@@ -461,11 +495,13 @@ describe("tool.result of a files tool", () => {
         },
       }),
     );
+
     return invalidate;
   }
 
   it("refreshes every scope's files, since the Files view shows project and global files too", () => {
     const invalidate = pushResult("files_write");
+
     expect(invalidate).toHaveBeenCalledWith({ queryKey: fileKeys.all });
   });
 });
@@ -475,10 +511,13 @@ describe("profile.switched", () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const queryClient = new QueryClient();
     const reset = vi.spyOn(queryClient, "resetQueries");
+
     function Events() {
       useAppEvents();
+
       return null;
     }
+
     render(
       <QueryClientProvider client={queryClient}>
         <Events />
@@ -492,6 +531,7 @@ describe("profile.switched", () => {
     );
     const { currentProfile, setCurrentProfile } =
       await import("../stores/profile");
+
     expect(currentProfile()).toBe("work");
     expect(reset).toHaveBeenCalled();
     setCurrentProfile("default");
@@ -501,10 +541,13 @@ describe("profile.switched", () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
     function Events() {
       useAppEvents();
+
       return null;
     }
+
     render(
       <QueryClientProvider client={queryClient}>
         <Events />

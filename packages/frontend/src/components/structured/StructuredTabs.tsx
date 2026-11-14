@@ -88,6 +88,7 @@ const pretty = (v: unknown): string => JSON.stringify(v, null, 2) ?? "";
 
 export function newSchemaDraft(name: string): SchemaDraft {
   const read = fromSchema(EMPTY_SCHEMA);
+
   return {
     type: "schema",
     name,
@@ -185,6 +186,7 @@ function confirmHigher(
 
 function useRefresh() {
   const queryClient = useQueryClient();
+
   return () => queryClient.invalidateQueries({ queryKey: dataKeys.all });
 }
 
@@ -233,8 +235,11 @@ export function SchemaTab({
       : [...schemaKeys.detail(owner, schemaId), "seen"],
     queryFn: async (): Promise<SchemaDetail> => {
       if (own) return api.getSchema(owner, schemaId);
+
       if (!info) throw new Error("This schema is not available here.");
+
       const body = await api.schemaBody(owner, schemaId);
+
       return {
         ...info,
         body,
@@ -261,11 +266,15 @@ export function SchemaTab({
       isNew ? api.createSchema(owner, c) : api.saveSchema(owner, schemaId, c),
     onSuccess: async (saved) => {
       await refresh();
+
       if (isNew) {
         onCreated(saved);
+
         return;
       }
+
       onDraft(undefined);
+
       if (s && saved.version > s.version) {
         notifications.show({
           title: `Saved as version ${saved.version}`,
@@ -280,6 +289,7 @@ export function SchemaTab({
   });
 
   if (!isNew && detail.isPending) return <Loader size="sm" m="md" />;
+
   if (!isNew && detail.isError) {
     return (
       <Alert color="red" m="md">
@@ -287,6 +297,7 @@ export function SchemaTab({
       </Alert>
     );
   }
+
   const builtin = s?.scope === "builtin";
   const deleted = s?.deleted ?? false;
   const fixed =
@@ -303,6 +314,7 @@ export function SchemaTab({
   };
   const edit = (patch: Partial<SchemaDraft>) => {
     if (fixed) return;
+
     onDraft({ ...current, ...patch });
     onKeep();
     setError(null);
@@ -311,41 +323,58 @@ export function SchemaTab({
 
   const switchTo = (next: View) => {
     if (next === shown) return;
+
     setNotice(null);
+
     if (next === "json") {
       const text = pretty(toSchema(current.root));
+
       onView("json");
+
       if (draft) onDraft({ ...current, source: "json", text });
+
       return;
     }
+
     let parsed: unknown;
+
     try {
       parsed = JSON.parse(current.text);
     } catch (err) {
       setNotice(`The JSON can't be read: ${(err as Error).message}`);
+
       return;
     }
+
     const read = fromSchema(parsed);
+
     if (!read.ok) {
       setNotice(`The builder can't show this schema:\n${read.reason}`);
+
       return;
     }
+
     onView("form");
+
     if (draft) onDraft({ ...current, source: "form", root: read.root });
   };
 
   const doSave = () => {
     if (fixed) return;
+
     let body: unknown;
+
     if (shown === "form") body = toSchema(current.root);
     else {
       try {
         body = JSON.parse(current.text);
       } catch (err) {
         setError(`The JSON can't be read: ${(err as Error).message}`);
+
         return;
       }
     }
+
     const c = {
       name: current.name,
       description: current.description,
@@ -355,6 +384,7 @@ export function SchemaTab({
       setError(null);
       save.mutate(c);
     };
+
     if (higher) {
       confirmHigher(
         root,
@@ -404,8 +434,10 @@ export function SchemaTab({
                     setError(
                       "Give a name and a description, and fix the marked fields, to save.",
                     );
+
                     return;
                   }
+
                   doSave();
                 }}
               >
@@ -618,11 +650,13 @@ export function DataTab({
           : api.saveData(owner, dataId, c).then((r) => ({ id: r.id })),
     onSuccess: async (saved) => {
       await refresh();
+
       if (isNew) onCreated(saved.id);
       else onDraft(undefined);
     },
     onError: (err: Error) => {
       const mapped = form ? errorsFromMessage(form, err.message) : undefined;
+
       setProblems(mapped);
       setError(mapped ? null : err.message);
     },
@@ -630,14 +664,17 @@ export function DataTab({
 
   if (isNew ? newBody.isPending : detail.isPending)
     return <Loader size="sm" m="md" />;
+
   if (isNew ? newBody.isError : detail.isError) {
     const err = isNew ? newBody.error : detail.error;
+
     return (
       <Alert color="red" m="md">
         {err?.message}
       </Alert>
     );
   }
+
   const deleted = d?.deleted ?? false;
   const changeable =
     isNew || (readOnly === undefined && !deleted && d?.schema != null);
@@ -665,6 +702,7 @@ export function DataTab({
       : newDataDraft(base.name, newSchemaId));
   const edit = (patch: Partial<DataDraft>) => {
     if (!changeable) return;
+
     onDraft({ ...current, ...patch });
     onKeep();
     setError(null);
@@ -672,21 +710,31 @@ export function DataTab({
 
   const switchTo = (next: View) => {
     if (next === shown || !form) return;
+
     setNotice(null);
+
     if (next === "json") {
       const text = pretty(schemaFormValue(form, current.answers));
+
       onView("json");
+
       if (draft) onDraft({ ...current, source: "json", text });
+
       return;
     }
+
     let parsed: unknown;
+
     try {
       parsed = JSON.parse(current.text);
     } catch (err) {
       setNotice(`The JSON can't be read: ${(err as Error).message}`);
+
       return;
     }
+
     onView("form");
+
     if (draft) {
       onDraft({
         ...current,
@@ -699,28 +747,37 @@ export function DataTab({
 
   const trySave = (checkedAnswers?: Answers) => {
     if (!changeable || !form) return;
+
     if (current.name.trim() === "" || current.description.trim() === "") {
       setError("Give a name and a description to save.");
+
       return;
     }
+
     let value: unknown;
+
     if (shown === "form") {
       const checked = checkedAnswers
         ? { ok: true as const, answers: checkedAnswers }
         : checkAnswers(form, current.answers);
+
       if (!checked.ok) {
         setProblems(checked.errors);
+
         return;
       }
+
       value = schemaFormValue(form, checked.answers);
     } else {
       try {
         value = JSON.parse(current.text);
       } catch (err) {
         setError(`The JSON can't be read: ${(err as Error).message}`);
+
         return;
       }
     }
+
     const go = () => {
       setError(null);
       setProblems(undefined);
@@ -730,6 +787,7 @@ export function DataTab({
         value,
       });
     };
+
     if (higher) {
       confirmHigher(
         root,
@@ -742,11 +800,13 @@ export function DataTab({
 
   const migrate = () => {
     if (!d?.schema || !changeable) return;
+
     const target = d.schema.latest as SchemaNode;
     const filled = applyDefaults(target, d.value);
     const nextForm = formOf(target, "Save");
     const answers = schemaFormAnswers(nextForm, filled);
     const checked = checkAnswers(nextForm, answers);
+
     setProblems(checked.ok ? undefined : checked.errors);
     onView("form");
     onDraft({
@@ -764,6 +824,7 @@ export function DataTab({
   };
 
   const schemaName = d?.schema?.name ?? "Unknown schema";
+
   return (
     <Stack gap={0} h="100%" mih={0}>
       <Toolbar

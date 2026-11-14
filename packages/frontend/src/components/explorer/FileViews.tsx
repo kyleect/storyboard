@@ -37,7 +37,9 @@ const FILE_TYPES: { value: MediaType; label: string }[] = [
 
 export const nameError = (name: string): string | undefined => {
   if (name === "") return undefined;
+
   const problem = fileNameProblem(name);
+
   return problem ? `Not a valid name: ${problem}.` : undefined;
 };
 
@@ -51,9 +53,11 @@ export function ValueView({
   blob?: BlobRef | undefined;
 }) {
   const [showSource, setShowSource] = useState(false);
+
   if (mediaType && mediaKindOf(mediaType) && blob) {
     return <BinaryPreview mediaType={mediaType} blob={blob} />;
   }
+
   if (mediaType === "text/markdown" && value !== "") {
     return (
       <Stack gap="xs">
@@ -77,15 +81,19 @@ export function ValueView({
       </Stack>
     );
   }
+
   if (mediaType === "application/json") {
     let pretty = value;
+
     try {
       pretty = JSON.stringify(JSON.parse(value), null, 2);
     } catch {
       // not JSON: show the text as it is
     }
+
     return <Code block>{pretty}</Code>;
   }
+
   return <SourceView value={value} />;
 }
 
@@ -106,6 +114,7 @@ function BinaryPreview({
     blob.size < 1024 * 1024
       ? `${Math.max(1, Math.round(blob.size / 1024))} KB`
       : `${(blob.size / (1024 * 1024)).toFixed(1)} MB`;
+
   return (
     <Stack gap="xs">
       <Text size="xs" c="dimmed">
@@ -161,11 +170,14 @@ export function DerivedTextField({ hash }: { hash: string }) {
     onSuccess: refresh,
     onError: showError("Could not start the description"),
   });
+
   if (query.isPending)
     return <Loader size="xs" aria-label="Loading the text" />;
+
   if (query.isError) {
     return <Alert color="red">{query.error.message}</Alert>;
   }
+
   const { text, state } = query.data;
   const shown = draft ?? text;
   const on = describer.data?.enabled ?? false;
@@ -176,6 +188,7 @@ export function DerivedTextField({ hash }: { hash: string }) {
     edited: "Edited by you.",
     failed: text === "" ? "Not generated." : "The last attempt failed.",
   };
+
   return (
     <Stack gap={4}>
       <Textarea
@@ -244,6 +257,7 @@ function SourceView({ value }: { value: string }) {
 
 export function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
   if (!mediaType) return null;
+
   return (
     <Badge color="gray">
       {FILE_TYPES.find((t) => t.value === mediaType)?.label ?? mediaType}
@@ -253,6 +267,7 @@ export function TypeBadge({ mediaType }: { mediaType?: MediaType }) {
 
 export function useRefresh(source: ExplorerSource) {
   const queryClient = useQueryClient();
+
   return () => queryClient.invalidateQueries({ queryKey: source.keys.all });
 }
 
@@ -269,6 +284,7 @@ export function VersionsModal({
 }) {
   const refresh = useRefresh(source);
   const latest = file.versions.at(-1);
+
   return (
     <GenericVersionsModal
       title={`Versions of ${file.key}`}

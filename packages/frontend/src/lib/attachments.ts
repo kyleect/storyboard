@@ -46,8 +46,11 @@ export function attachmentMediaType(
   type: string,
 ): string | undefined {
   const declared = BY_TYPE[type.split(";")[0]?.trim().toLowerCase() ?? ""];
+
   if (declared) return declared;
+
   const extension = /\.([A-Za-z0-9]+)$/.exec(name)?.[1]?.toLowerCase();
+
   return extension ? BY_EXTENSION[extension] : undefined;
 }
 

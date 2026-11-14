@@ -11,9 +11,12 @@ export function ProjectGate({
   children: (project: Project) => ReactNode;
 }) {
   const project = useProject(projectId);
+
   if (project.isPending) return <Loader />;
+
   if (project.isError)
     return <Alert color="red">{project.error.message}</Alert>;
+
   return <>{children(project.data)}</>;
 }
 

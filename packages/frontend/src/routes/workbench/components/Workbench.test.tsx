@@ -71,9 +71,12 @@ vi.mock("../../files/FilesPages", () => ({
   },
 }));
 import { useState } from "react";
+
 function FilesStub() {
   const [dirty, setDirty] = useState(false);
+
   useReportDirty(dirty);
+
   return (
     <div>
       files page
@@ -133,11 +136,14 @@ function mockApi() {
     const s =
       SESSIONS.find((x) => x.id === id) ??
       (id === "new" ? session("new", "New chat", null) : undefined);
+
     if (!s) throw new ApiError("not found", 404);
+
     return { session: s, project: null } as unknown as SessionDetail;
   });
   vi.spyOn(api, "listUnreadSessions").mockResolvedValue({ sessions: [] });
   vi.spyOn(api, "listActiveRuns").mockResolvedValue({ runs: [] });
+
   return vi
     .spyOn(api, "createSession")
     .mockResolvedValue(session("new", "New chat", null));
@@ -165,6 +171,7 @@ async function show(path: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   await act(async () => {
     render(
       <MantineProvider>
@@ -177,6 +184,7 @@ async function show(path: string) {
     );
   });
   const go = (to: string) => act(() => router.navigate({ to } as never));
+
   return { router, go };
 }
 
@@ -221,12 +229,14 @@ describe("the workbench: tabs and addresses", () => {
       ],
     });
     const { go } = await show("/sessions/s1");
+
     await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
     await go("/sessions/s2");
     await waitFor(() => expect(tabNamed("Beta chat")).toBeTruthy());
 
     const dot = (name: string) =>
       within(tabNamed(name)).queryByRole("img", { name: "New reply" });
+
     await waitFor(() => expect(dot("Alpha chat")).not.toBeNull());
     expect(dot("Beta chat")).toBeNull();
   });
@@ -265,6 +275,7 @@ describe("the workbench: tabs and addresses", () => {
     expect(isItalic(tabNamed("Novel"))).toBe(true);
 
     const tree = () => within(screen.getByRole("tree"));
+
     fireEvent.click(tree().getByText("Alpha chat"));
     await screen.findByText("chat page s1");
     expect(tabs()).toHaveLength(1);
@@ -290,6 +301,7 @@ describe("the workbench: tabs and addresses", () => {
   it("mounts only the active tab", async () => {
     mockApi();
     const { go } = await show("/sessions/s1");
+
     await screen.findByText("chat page s1");
     await go("/sessions/s2");
     await screen.findByText("chat page s2");
@@ -303,6 +315,7 @@ describe("the workbench: tabs and addresses", () => {
   it("closes a tab and shows its neighbour", async () => {
     mockApi();
     const { go } = await show("/sessions/s1");
+
     await screen.findByText("chat page s1");
     await go("/errors");
     await screen.findByText("errors page");
@@ -348,6 +361,7 @@ describe("the workbench: tabs and addresses", () => {
   it("remembers the Settings section for the next visit", async () => {
     mockApi();
     const { go } = await show("/settings/general/models");
+
     await screen.findByText("settings page");
     await go("/errors");
     await screen.findByText("errors page");
@@ -363,11 +377,13 @@ describe("the workbench: unsaved changes", () => {
   it("keeps a tab with unsaved edits mounted, hidden", async () => {
     mockApi();
     const { go } = await show("/files");
+
     await screen.findByText("files page");
     fireEvent.click(screen.getByText("make unsaved"));
     await go("/errors");
     await screen.findByText("errors page");
     const files = screen.getByText("files page").closest("[role=tabpanel]");
+
     expect(files).not.toBeNull();
     expect((files as HTMLElement).hidden).toBe(true);
     expect(
@@ -378,6 +394,7 @@ describe("the workbench: unsaved changes", () => {
   it("does not keep a tab with no unsaved edits", async () => {
     mockApi();
     const { go } = await show("/files");
+
     await screen.findByText("files page");
     await go("/errors");
     await screen.findByText("errors page");
@@ -411,6 +428,7 @@ describe("the workbench: unsaved changes", () => {
     const add = vi.spyOn(window, "addEventListener");
     const warned = () =>
       add.mock.calls.some(([type]) => type === "beforeunload");
+
     await show("/files");
     await screen.findByText("files page");
     expect(warned()).toBe(false);
@@ -422,6 +440,7 @@ describe("the workbench: unsaved changes", () => {
 describe("the workbench: New chat", () => {
   it("goes to the project of the row last used in the tree", async () => {
     const create = mockApi();
+
     await show("/errors");
     fireEvent.click(await screen.findByText("Poems"));
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
@@ -430,6 +449,7 @@ describe("the workbench: New chat", () => {
 
   it("goes to the project of the active tab when no row was used", async () => {
     const create = mockApi();
+
     await show("/sessions/s1");
     await waitFor(() => tabNamed("Alpha chat"));
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
@@ -438,6 +458,7 @@ describe("the workbench: New chat", () => {
 
   it("makes a standalone chat from a page that belongs to no project", async () => {
     const create = mockApi();
+
     await show("/errors");
     await screen.findByText("errors page");
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
@@ -467,6 +488,7 @@ describe("the workbench: New chat", () => {
 
   it("goes to the project from its menu", async () => {
     const create = mockApi();
+
     await show("/errors");
     await screen.findByText("Novel");
     fireEvent.click(screen.getByRole("button", { name: "Actions for Novel" }));
@@ -527,6 +549,7 @@ describe("the chats tree", () => {
     const many = Array.from({ length: TREE_CHATS + 3 }, (_, i) =>
       session(`m${i}`, `Chat ${i}`, "p1"),
     );
+
     vi.spyOn(api, "listSessions").mockImplementation(async (projectId) =>
       projectId === "p1" ? many : [],
     );
@@ -534,6 +557,7 @@ describe("the chats tree", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
     await screen.findByText("Chat 0");
     const novel = screen.getByRole("group", { name: "Novel" });
+
     expect(within(novel).getByText(`Chat ${TREE_CHATS - 1}`)).toBeTruthy();
     expect(within(novel).queryByText(`Chat ${TREE_CHATS}`)).toBeNull();
     fireEvent.click(within(novel).getByText(`Show all ${many.length} chats`));
@@ -549,11 +573,13 @@ describe("the chats tree", () => {
     const loose = Array.from({ length: TREE_CHATS + 2 }, (_, i) =>
       session(`l${i}`, `Loose ${i}`, null),
     );
+
     vi.spyOn(api, "listSessions").mockImplementation(async (projectId) =>
       projectId === null ? loose : [],
     );
     await show("/");
     const none = await screen.findByRole("group", { name: "No project" });
+
     await within(none).findByText("Loose 0");
     expect(within(none).queryByText(`Loose ${TREE_CHATS}`)).toBeNull();
     fireEvent.click(within(none).getByText(`Show all ${loose.length} chats`));
@@ -564,6 +590,7 @@ describe("the chats tree", () => {
     mockApi();
     await show("/");
     const none = await screen.findByRole("group", { name: "No project" });
+
     fireEvent.click(within(none).getByText("No project"));
     expect(await screen.findByText("sessions page none")).toBeTruthy();
   });
@@ -574,6 +601,7 @@ describe("the chats tree", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
     await screen.findByText("Alpha chat");
     const novel = screen.getByRole("group", { name: "Novel" });
+
     for (const name of [
       "Files",
       "Agents",
@@ -583,6 +611,7 @@ describe("the chats tree", () => {
       "All chats",
     ])
       expect(within(novel).queryByText(name)).toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: "Actions for Novel" }));
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "Structured Data" }),
@@ -609,6 +638,7 @@ describe("the chats tree", () => {
       }),
     );
     const bar = screen.getByRole("status");
+
     expect(within(bar).getByText("qwen")).toBeTruthy();
     expect(within(bar).getByText(/Alpha chat/)).toBeTruthy();
     expect(
@@ -682,6 +712,7 @@ describe("the chats tree", () => {
       within(screen.getByRole("group", { name })).queryByRole("img", {
         name: "Has a chat with a new reply",
       });
+
     await waitFor(() => expect(dot("Novel")).not.toBeNull());
     expect(dot("No project")).not.toBeNull();
     expect(dot("Poems")).toBeNull();
@@ -731,12 +762,15 @@ describe("the tab strip", () => {
     await waitFor(() => expect(tabNamed("Alpha chat")).toBeTruthy());
     const byTitle = (title: string) =>
       screen.getAllByRole("tab").find((t) => t.title === title);
+
     expect(byTitle("Project: Novel")?.textContent).toBe("Novel");
     const page = byTitle("Project page: Novel › Files");
+
     expect(page?.textContent).toContain("Novel ›");
     expect(page?.textContent).toContain("Files");
     expect(byTitle("Chat: Alpha chat")).toBeTruthy();
     const global = byTitle("Files (all projects)");
+
     expect(global?.textContent).toBe("Files");
   });
 
@@ -797,6 +831,7 @@ describe("the Chats button on the rail", () => {
     mockApi();
     await show("/errors");
     const chats = screen.getByRole("button", { name: "Chats" });
+
     expect(chats.getAttribute("aria-expanded")).toBe("true");
     expect(await screen.findByRole("tree", { name: "Chats" })).toBeTruthy();
     expect(screen.getByRole("separator")).toBeTruthy();
@@ -905,11 +940,13 @@ describe("project colors", () => {
     const icon = alpha
       .closest("[role=treeitem]")
       ?.querySelector("svg.tabler-icon-message");
+
     expect(icon?.getAttribute("stroke")).toBe("var(--mantine-color-teal-6)");
 
     const loose = (await screen.findByText("Loose chat"))
       .closest("[role=treeitem]")
       ?.querySelector("svg.tabler-icon-message");
+
     expect(loose?.getAttribute("stroke")).toBe("currentColor");
   });
 
@@ -921,12 +958,14 @@ describe("project colors", () => {
       (await within(screen.getByRole("tree")).findByText(title)).closest(
         "[role=treeitem]",
       );
+
     fireEvent.click(
       await within(screen.getByRole("tree")).findByText("Alpha chat"),
     );
     await screen.findByText("chat page s1");
 
     const open = styleOf(await row("Alpha chat"));
+
     expect(open).toContain("light-dark(");
     expect(open).toContain("--mantine-color-teal-light-hover");
     expect(open).toContain(
@@ -947,6 +986,7 @@ describe("project colors", () => {
   it("puts a project's color behind the icon of its tabs, not on the glyph", async () => {
     withColors();
     const { go } = await show("/projects/p1");
+
     await waitFor(() => expect(tabNamed("Novel")).toBeTruthy());
     expect(iconBg(tabNamed("Novel"))).toBe("var(--mantine-color-teal-filled)");
     expect(folder(tabNamed("Novel"))?.getAttribute("stroke")).toBe(
@@ -968,6 +1008,7 @@ describe("project colors", () => {
     const create = vi
       .spyOn(api, "createProject")
       .mockResolvedValue(project("p3", "Essays", "2026-04-01", "violet"));
+
     await show("/");
 
     fireEvent.click(screen.getByRole("button", { name: "New project" }));

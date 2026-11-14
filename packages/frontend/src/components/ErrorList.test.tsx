@@ -61,6 +61,7 @@ class FakeEventSource {
 }
 
 const originalEventSource = globalThis.EventSource;
+
 afterEach(() => {
   globalThis.EventSource = originalEventSource;
   FakeEventSource.last = undefined;
@@ -91,6 +92,7 @@ function renderWith(node: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   render(
     <MantineProvider>
       <ModalsProvider>
@@ -104,6 +106,7 @@ describe("the session's errors panel", () => {
   it("starts collapsed with a count, and lists the session's errors", async () => {
     const list = vi.spyOn(api, "listErrors").mockResolvedValue([toolError]);
     const shown: string[] = [];
+
     renderWith(
       <SessionErrorsPanel
         sessionId="s1"
@@ -111,6 +114,7 @@ describe("the session's errors panel", () => {
       />,
     );
     const toggle = screen.getByRole("button", { name: /Errors/ });
+
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     await waitFor(() => expect(within(toggle).getByText("1")).toBeTruthy());
     expect(list).toHaveBeenCalledWith({ sessionId: "s1" });
@@ -128,14 +132,17 @@ describe("the session's errors panel", () => {
     const clear = vi
       .spyOn(api, "clearErrors")
       .mockResolvedValue({ cleared: 1 });
+
     renderWith(
       <SessionErrorsPanel sessionId="s1" onShowInTranscript={() => {}} />,
     );
     const toggle = screen.getByRole("button", { name: /Errors/ });
+
     await waitFor(() => expect(within(toggle).getByText("1")).toBeTruthy());
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     const dialog = await screen.findByRole("dialog");
+
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(clear).toHaveBeenCalledWith("s1"));
   });
@@ -143,14 +150,18 @@ describe("the session's errors panel", () => {
   it("updates when one of the session's tool calls fails", async () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const list = vi.spyOn(api, "listErrors").mockResolvedValue([]);
+
     function Panel() {
       useAppEvents();
+
       return (
         <SessionErrorsPanel sessionId="s1" onShowInTranscript={() => {}} />
       );
     }
+
     renderWith(<Panel />);
     const toggle = screen.getByRole("button", { name: /Errors/ });
+
     await waitFor(() => expect(within(toggle).getByText("0")).toBeTruthy());
     list.mockResolvedValue([toolError]);
     act(() =>

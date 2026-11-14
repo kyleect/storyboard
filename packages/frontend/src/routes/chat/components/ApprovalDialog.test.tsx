@@ -11,6 +11,7 @@ function setup(
   subject?: { kind: "workspace"; id: string; label: string },
 ) {
   const answers: ApprovalAnswer[] = [];
+
   render(
     <MantineProvider>
       <ApprovalDialog
@@ -38,6 +39,7 @@ function setup(
       screen.getByPlaceholderText("Comment for the model (optional)"),
       { target: { value: text } },
     );
+
   return { answers, button, type };
 }
 
@@ -48,6 +50,7 @@ describe("ApprovalDialog", () => {
   ] as const) {
     it(`sends the decision comment with ${label}`, () => {
       const { answers, button, type } = setup();
+
       type("  keep it short ");
       fireEvent.click(button(label));
       expect(answers).toEqual([{ choice, decisionComment: "keep it short" }]);
@@ -56,6 +59,7 @@ describe("ApprovalDialog", () => {
 
   it("sends no decision comment when the box is empty or blank", () => {
     const { answers, button, type } = setup();
+
     fireEvent.click(button("Allow once"));
     type("   ");
     fireEvent.click(button("Deny"));
@@ -64,6 +68,7 @@ describe("ApprovalDialog", () => {
 
   it("disables the session and always choices while there is a comment", () => {
     const { answers, button, type } = setup();
+
     expect(button("Allow for this session").disabled).toBe(false);
     expect(button("Always allow this tool").disabled).toBe(false);
 
@@ -81,8 +86,10 @@ describe("ApprovalDialog", () => {
 
   it("explains a disabled choice in a tooltip", async () => {
     const { button, type } = setup();
+
     type("x");
     const wrapper = button("Always allow this tool").parentElement;
+
     expect(wrapper).not.toBeNull();
     fireEvent.mouseEnter(wrapper as HTMLElement);
     expect(
@@ -92,6 +99,7 @@ describe("ApprovalDialog", () => {
 
   it("offers only Allow once and Deny for a tool that always asks", () => {
     const { answers, button } = setup(true);
+
     expect(
       screen.queryByRole("button", { name: "Allow for this session" }),
     ).toBeNull();
@@ -105,6 +113,7 @@ describe("ApprovalDialog", () => {
 
   it("leaves out Always allow when the agent's setting makes the tool ask", () => {
     const { answers, button } = setup(false, true);
+
     expect(
       screen.queryByRole("button", { name: "Always allow this tool" }),
     ).toBeNull();
@@ -164,6 +173,7 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
   ) {
     const answers: ApprovalAnswer[] = [];
     const checked: unknown[] = [];
+
     render(
       <MantineProvider>
         <ApprovalDialog
@@ -180,6 +190,7 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
           onAnswer={(a) => answers.push(a)}
           onCheck={(s) => {
             checked.push(s);
+
             return Promise.resolve(check(s));
           }}
           onRefresh={() =>
@@ -196,11 +207,13 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
     );
     const button = (name: string) =>
       screen.getByRole("button", { name }) as HTMLButtonElement;
+
     return { answers, checked, button };
   }
 
   it("approves only the ticked changes", () => {
     const { answers, button } = changes();
+
     fireEvent.click(screen.getByLabelText('Task "Scene": value › task'));
     fireEvent.click(button("Approve selected"));
     expect(answers).toEqual([
@@ -210,6 +223,7 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
 
   it("sends no selection when everything is ticked, and Approve all and Deny all answer the call", () => {
     const { answers, button } = changes();
+
     fireEvent.click(button("Approve selected"));
     fireEvent.click(button("Approve all"));
     fireEvent.click(button("Deny all"));
@@ -225,6 +239,7 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
       errors: ["(value): missing required property 'task'."],
       stale: false,
     }));
+
     expect(
       await screen.findByText("(value): missing required property 'task'."),
     ).toBeTruthy();
@@ -233,6 +248,7 @@ describe("ApprovalDialog with changes (schemas and data design)", () => {
 
   it("offers Refresh and Reject when the data changed meanwhile", async () => {
     const { answers, button } = changes(() => ({ errors: [], stale: true }));
+
     expect(
       await screen.findByText("The data changed since this was asked"),
     ).toBeTruthy();
@@ -260,6 +276,7 @@ describe("ApprovalDialog from a subagent", () => {
       id: "w1",
       label: "Book",
     });
+
     expect(screen.getByText(/in the workspace Book/)).toBeTruthy();
     fireEvent.click(button("Allow for this session in Book"));
     fireEvent.click(button("Always allow this tool in Book"));
@@ -268,6 +285,7 @@ describe("ApprovalDialog from a subagent", () => {
 
   it("keeps the plain wording for a call without a subject", () => {
     const { button } = setup();
+
     expect(button("Allow for this session")).toBeTruthy();
     expect(button("Always allow this tool")).toBeTruthy();
   });

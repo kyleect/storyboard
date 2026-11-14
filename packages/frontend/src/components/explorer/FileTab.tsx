@@ -83,6 +83,7 @@ export function FileTab({
   });
 
   if (file.isPending) return <Loader size="sm" m="md" />;
+
   if (file.isError) {
     return (
       <Alert color="red" m="md">
@@ -90,6 +91,7 @@ export function FileTab({
       </Alert>
     );
   }
+
   const f = file.data;
   const binary = f.blob !== undefined;
   const editable = !binary && !f.deleted && readOnly === undefined;
@@ -98,10 +100,13 @@ export function FileTab({
 
   const doSave = () => {
     if (!editable || draft === undefined) return;
+
     if (broadNote === undefined) {
       save.mutate(draft.text);
+
       return;
     }
+
     confirmAction({
       title: `Save to the ${rootLabel} file “${fileKey}”?`,
       message: <>{broadNote}</>,
@@ -230,8 +235,10 @@ export function FileTab({
             onChange={(next) => {
               if (next === f.value) {
                 onDraft(undefined);
+
                 return;
               }
+
               onDraft({ text: next, base: draft?.base ?? f.value });
               onKeep();
             }}
@@ -266,7 +273,9 @@ export function PreviewTab({
     queryKey: source.keys.detail(fileKey),
     queryFn: () => source.get(fileKey),
   });
+
   if (file.isPending) return <Loader size="sm" m="md" />;
+
   if (file.isError) {
     return (
       <Alert color="red" m="md">
@@ -274,7 +283,9 @@ export function PreviewTab({
       </Alert>
     );
   }
+
   const value = draft?.text ?? file.data.value;
+
   return (
     <ScrollArea h="100%">
       <Box p="md" maw={820} mx="auto">

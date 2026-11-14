@@ -57,26 +57,32 @@ export function useAttachmentDraft(sessionId: string) {
 
   const add = async (files: readonly File[]): Promise<DraftAttachment[]> => {
     const uploaded: DraftAttachment[] = [];
+
     for (const file of files) {
       const label = file.name || "That file";
       const mediaType = attachmentMediaType(file.name, file.type);
+
       if (!mediaType) {
         warn(`${label} cannot be attached. Use ${ACCEPTED_DESCRIPTION}.`);
         continue;
       }
+
       if (file.size > MAX_ATTACHMENT_BYTES) {
         warn(
           `${label} is larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB.`,
         );
         continue;
       }
+
       uploads(1);
+
       try {
         const made: UploadedFile = await api.uploadFile(
           { scope: "session", id: sessionId },
           file,
           mediaType,
         );
+
         void queryClient.invalidateQueries({
           queryKey: fileKeys.inScope({ scope: "session", id: sessionId }),
         });
@@ -87,6 +93,7 @@ export function useAttachmentDraft(sessionId: string) {
           kind: kindOfMedia(made.mediaType),
           previewUrl: URL.createObjectURL(file),
         };
+
         update((prev) => [...prev, item]);
         uploaded.push(item);
       } catch (err) {
@@ -95,6 +102,7 @@ export function useAttachmentDraft(sessionId: string) {
         uploads(-1);
       }
     }
+
     return uploaded;
   };
 
@@ -105,11 +113,13 @@ export function useAttachmentDraft(sessionId: string) {
     remove: (ref: string) =>
       update((prev) => {
         for (const i of prev) if (i.ref === ref) revokePreview(i);
+
         return prev.filter((i) => i.ref !== ref);
       }),
     clear: () =>
       update((prev) => {
         for (const i of prev) revokePreview(i);
+
         return [];
       }),
   };
@@ -123,6 +133,7 @@ export function AttachButton({
   disabled?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
+
   return (
     <>
       <input
@@ -134,7 +145,9 @@ export function AttachButton({
         aria-label="Choose files to attach"
         onChange={(e) => {
           const files = Array.from(e.currentTarget.files ?? []);
+
           e.currentTarget.value = "";
+
           if (files.length > 0) onFiles(files);
         }}
       />
@@ -159,10 +172,12 @@ export function DraftAttachments({
   onRemove: (ref: string) => void;
 }) {
   if (items.length === 0 && uploading === 0) return null;
+
   return (
     <Group gap="xs" mb="xs">
       {items.map(({ ref, name, kind, previewUrl }) => {
         const label = name;
+
         return (
           <Paper key={ref} p={4}>
             <Group gap="xs" wrap="nowrap">
@@ -232,10 +247,12 @@ export function MessageFiles({ files }: { files: readonly string[] }) {
         message: (err as Error).message,
       }),
   });
+
   return (
     <Stack gap="xs" my="xs">
       {files.map((ref) => {
         const choice = choices.data?.find((c) => c.ref === ref)?.keep;
+
         return (
           <Stack key={ref} gap={4}>
             <StoredFile refText={ref} />
@@ -283,8 +300,10 @@ function WorkspaceFile({
     gcTime: Infinity,
     retry: false,
   });
+
   if (bytes.isPending)
     return <Loader size="xs" aria-label={`Loading ${label}`} />;
+
   if (bytes.isError) {
     return (
       <Text size="xs" c="dimmed">
@@ -292,6 +311,7 @@ function WorkspaceFile({
       </Text>
     );
   }
+
   if (mediaKindOf(bytes.data.mediaType) === "image") {
     return (
       <Image
@@ -304,6 +324,7 @@ function WorkspaceFile({
       />
     );
   }
+
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed">
@@ -318,6 +339,7 @@ function WorkspaceFile({
 function StoredFile({ refText }: { refText: string }) {
   const where = useContext(SessionFilesContext);
   const parsed = parseRef(refText);
+
   if (where && parsed?.location === "workspace") {
     return (
       <WorkspaceFile
@@ -327,6 +349,7 @@ function StoredFile({ refText }: { refText: string }) {
       />
     );
   }
+
   return <ScopeFile refText={refText} />;
 }
 
@@ -362,8 +385,10 @@ function ScopeFile({ refText }: { refText: string }) {
     staleTime: Infinity,
     gcTime: Infinity,
   });
+
   if (list.isPending && scope)
     return <Loader size="xs" aria-label={`Loading ${label}`} />;
+
   if (!file || !hash || !mediaType) {
     return (
       <Text size="xs" c="dimmed">
@@ -371,8 +396,10 @@ function ScopeFile({ refText }: { refText: string }) {
       </Text>
     );
   }
+
   if (bytes.isPending)
     return <Loader size="xs" aria-label={`Loading ${label}`} />;
+
   if (bytes.isError) {
     return (
       <Text size="xs" c="red">
@@ -380,6 +407,7 @@ function ScopeFile({ refText }: { refText: string }) {
       </Text>
     );
   }
+
   if (mediaKindOf(mediaType) === "image") {
     return (
       <Image
@@ -393,6 +421,7 @@ function ScopeFile({ refText }: { refText: string }) {
       />
     );
   }
+
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed">

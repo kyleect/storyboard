@@ -32,8 +32,10 @@ export function rootsFor(
   projectId: string | null | undefined,
 ): Root[] {
   const roots: Root[] = [];
+
   if (page.scope === "session") {
     roots.push({ id: "session", scope: page, label: LABEL.session });
+
     if (projectId) {
       roots.push({
         id: "project",
@@ -44,11 +46,13 @@ export function rootsFor(
   } else if (page.scope === "project") {
     roots.push({ id: "project", scope: page, label: LABEL.project });
   }
+
   roots.push({
     id: "global",
     scope: { scope: "global" },
     label: LABEL.global,
   });
+
   return roots;
 }
 
@@ -70,6 +74,7 @@ export const nodeValue = (r: NodeRefOf<string>): string =>
 export function parseNodeValueOf(value: string): NodeRefOf<string> {
   const first = value.indexOf("|");
   const second = value.indexOf("|", first + 1);
+
   return {
     root: value.slice(0, first) as RootId,
     kind: value.slice(first + 1, second),
@@ -107,6 +112,7 @@ export function openTabIn<T extends ExplorerTab<string>>(
 ): TabsOf<T> {
   const id = tabId(tab);
   const existing = state.tabs.find((t) => tabId(t) === id);
+
   if (existing) {
     return {
       tabs: permanent
@@ -117,6 +123,7 @@ export function openTabIn<T extends ExplorerTab<string>>(
       active: id,
     };
   }
+
   const added = {
     ...tab,
     transient: mayBeTransient(tab.kind) && !permanent,
@@ -126,6 +133,7 @@ export function openTabIn<T extends ExplorerTab<string>>(
     at >= 0
       ? state.tabs.map((t, i) => (i === at ? added : t))
       : [...state.tabs, added];
+
   return { tabs, active: id };
 }
 
@@ -134,6 +142,7 @@ export function keepTab<T extends ExplorerTab<string>>(
   id: string,
 ): TabsOf<T> {
   if (!state.tabs.some((t) => tabId(t) === id && t.transient)) return state;
+
   return {
     ...state,
     tabs: state.tabs.map((t) =>
@@ -148,13 +157,20 @@ export function moveTab<T extends ExplorerTab<string>>(
   toIndex: number,
 ): TabsOf<T> {
   const from = state.tabs.findIndex((t) => tabId(t) === id);
+
   if (from < 0) return state;
+
   const to = Math.min(state.tabs.length - 1, Math.max(0, toIndex));
+
   if (to === from) return state;
+
   const tabs = [...state.tabs];
   const [moved] = tabs.splice(from, 1);
+
   if (moved === undefined) return state;
+
   tabs.splice(to, 0, moved);
+
   return { tabs, active: state.active };
 }
 
@@ -163,10 +179,15 @@ export function closeTab<T extends ExplorerTab<string>>(
   id: string,
 ): TabsOf<T> {
   const at = state.tabs.findIndex((t) => tabId(t) === id);
+
   if (at < 0) return state;
+
   const tabs = state.tabs.filter((_, i) => i !== at);
+
   if (state.active !== id) return { tabs, active: state.active };
+
   const next = tabs[at] ?? tabs[at - 1];
+
   return { tabs, active: next ? tabId(next) : null };
 }
 
@@ -199,8 +220,10 @@ function parseTab<K extends string>(
   isRoot: (v: unknown) => boolean,
 ): ExplorerTab<K> | null {
   if (typeof v !== "object" || v === null) return null;
+
   const t = v as Record<string, unknown>;
   const kind = kinds.find((k) => k === t.kind);
+
   if (
     kind === undefined ||
     typeof t.root !== "string" ||
@@ -209,6 +232,7 @@ function parseTab<K extends string>(
     typeof t.transient !== "boolean"
   )
     return null;
+
   return { kind, root: t.root, key: t.key, transient: t.transient };
 }
 
@@ -225,9 +249,12 @@ export function loadViewIn<K extends string>(
     width: DEFAULT_WIDTH,
     showDeleted: false,
   };
+
   try {
     const raw = localStorage.getItem(storageKey(namespace, page));
+
     if (!raw) return empty;
+
     const v = JSON.parse(raw) as Record<string, unknown>;
     const tabs = Array.isArray(v.tabs)
       ? v.tabs
@@ -235,15 +262,18 @@ export function loadViewIn<K extends string>(
           .filter((t): t is ExplorerTab<K> => t !== null)
       : [];
     const expanded: Record<string, boolean> = {};
+
     if (typeof v.expanded === "object" && v.expanded !== null) {
       for (const [k, on] of Object.entries(v.expanded)) {
         if (typeof on === "boolean") expanded[k] = on;
       }
     }
+
     const active =
       typeof v.active === "string" && tabs.some((t) => tabId(t) === v.active)
         ? v.active
         : null;
+
     return {
       tabs,
       active,

@@ -27,7 +27,9 @@ export function ProjectForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
+
         if (!trimmed) return;
+
         setSaving(true);
         onSubmit({ name: trimmed, description, color }).catch(
           (err: unknown) => {

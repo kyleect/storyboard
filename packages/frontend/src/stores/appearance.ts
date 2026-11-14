@@ -12,11 +12,13 @@ export function swatchOf(name: string): string {
   const palette = DEFAULT_THEME.colors[name];
   const shade = DEFAULT_THEME.primaryShade;
   const at = typeof shade === "number" ? shade : shade.light;
+
   return (palette?.[at] ?? DEFAULT_THEME.colors.blue?.[at] ?? "").toLowerCase();
 }
 
 export function paletteOf(swatch: string): string | null {
   const wanted = swatch.toLowerCase();
+
   return PRIMARY_COLORS.find((name) => swatchOf(name) === wanted) ?? null;
 }
 
@@ -25,9 +27,12 @@ const key = (): string => `harness.appearance${profileSuffix()}`;
 function load(): string {
   try {
     const raw = localStorage.getItem(key());
+
     if (raw === null) return DEFAULT_PRIMARY;
+
     const saved = JSON.parse(raw) as { primaryColor?: unknown } | null;
     const name = saved?.primaryColor;
+
     return typeof name === "string" && PRIMARY_COLORS.includes(name)
       ? name
       : DEFAULT_PRIMARY;
@@ -54,6 +59,7 @@ export const useAppearance = create<AppearanceState>((set) => ({
   primaryColor: load(),
   setPrimaryColor: (name) => {
     if (!PRIMARY_COLORS.includes(name)) return;
+
     save(name);
     set({ primaryColor: name });
   },

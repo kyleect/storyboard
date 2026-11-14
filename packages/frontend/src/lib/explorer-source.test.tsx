@@ -10,6 +10,7 @@ describe("filesSource", () => {
 
   it("names its query keys with the files key factory", () => {
     const s = filesSource(scope);
+
     expect(s.keys.all).toEqual(fileKeys.inScope(scope));
     expect(s.keys.list(true)).toEqual(fileKeys.list(scope, true));
     expect(s.keys.folders()).toEqual(fileKeys.folders(scope));
@@ -26,10 +27,12 @@ describe("filesSource", () => {
       .spyOn(api, "uploadFile")
       .mockResolvedValue({ key: "d/x.png" } as never);
     const s = filesSource(scope);
+
     await s.list(false);
     await s.write("a.md", "text/markdown", "hi");
     await s.renameFolder("d", "e");
     const file = new File(["x"], "x.png");
+
     expect(await s.upload(file, "image/png", "d/x.png")).toEqual({
       key: "d/x.png",
     });

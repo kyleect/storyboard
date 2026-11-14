@@ -26,6 +26,7 @@ export function LookAndFeel() {
         format="hex"
         onChange={(color) => {
           const name = paletteOf(color);
+
           if (name) setPrimaryColor(name);
         }}
       />

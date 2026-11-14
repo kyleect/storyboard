@@ -37,15 +37,18 @@ export function VoiceButtons({
   const timer = useRef<number | undefined>(undefined);
   const mounted = useRef(true);
   const callback = useRef(onRecorded);
+
   useEffect(() => {
     callback.current = onRecorded;
   });
 
   useEffect(() => {
     mounted.current = true;
+
     return () => {
       mounted.current = false;
       window.clearInterval(timer.current);
+
       if (recorder.current && recorder.current.state !== "inactive") {
         recorder.current.stop();
       }
@@ -54,6 +57,7 @@ export function VoiceButtons({
 
   const start = async (startedAs: RecordingMode) => {
     if (phase !== "idle") return;
+
     if (
       !navigator.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
@@ -61,9 +65,12 @@ export function VoiceButtons({
       warn(
         "This browser cannot record here. Recording needs https or localhost.",
       );
+
       return;
     }
+
     let stream: MediaStream;
+
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -78,16 +85,20 @@ export function VoiceButtons({
           ? "Microphone access is blocked. Allow it for this page in the browser's site settings."
           : `Could not open the microphone: ${(err as Error).message}`,
       );
+
       return;
     }
+
     if (!mounted.current) {
       release(stream);
+
       return;
     }
 
     const type = pickRecorderType();
     const rec = new MediaRecorder(stream, type ? { mimeType: type } : {});
     const chunks: Blob[] = [];
+
     rec.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.push(e.data);
     };
@@ -95,7 +106,9 @@ export function VoiceButtons({
       window.clearInterval(timer.current);
       release(stream);
       recorder.current = null;
+
       if (!mounted.current) return;
+
       setPhase("processing");
       recordingFile(new Blob(chunks, { type: rec.mimeType }), new Date())
         .then((file) => callback.current(file, startedAs))
@@ -106,9 +119,12 @@ export function VoiceButtons({
     };
 
     const startedAt = Date.now();
+
     timer.current = window.setInterval(() => {
       const elapsed = (Date.now() - startedAt) / 1000;
+
       setSeconds(Math.floor(elapsed));
+
       if (elapsed >= MAX_RECORDING_SECONDS && rec.state === "recording") {
         rec.stop();
       }
@@ -126,6 +142,7 @@ export function VoiceButtons({
 
   if (phase === "recording") {
     const sending = mode === "send";
+
     return (
       <Button
         color="red"
@@ -137,7 +154,9 @@ export function VoiceButtons({
       </Button>
     );
   }
+
   const processing = phase === "processing";
+
   return (
     <>
       <Button

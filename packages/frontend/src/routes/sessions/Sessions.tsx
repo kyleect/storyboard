@@ -49,12 +49,14 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
   const lastPage = list.data
     ? Math.max(1, Math.ceil(list.data.total / pageSize))
     : null;
+
   if (lastPage !== null && page > lastPage) setPage(lastPage);
 
   const selectAll = useMutation({
     mutationFn: () => api.listSessionIds(projectId),
     onSuccess: ({ sessions }) => {
       const ids = sessions.filter((s) => !s.running).map((s) => s.id);
+
       setEveryone(ids);
       setSelected(new Set(ids));
     },
@@ -74,8 +76,10 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
   const toggle = (id: string) =>
     setSelected((current) => {
       const next = new Set(current);
+
       if (next.has(id)) next.delete(id);
       else next.add(id);
+
       return next;
     });
 
@@ -240,7 +244,9 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
               value={String(pageSize)}
               onChange={(value) => {
                 const size = PAGE_SIZES.find((n) => String(n) === value);
+
                 if (size === undefined) return;
+
                 setPageSize(size);
                 setPage(1);
               }}

@@ -43,7 +43,9 @@ const TASK = {
 
 const tree = (body: unknown): BuilderNode => {
   const r = fromSchema(body);
+
   if (!r.ok) throw new Error(r.reason);
+
   return r.root;
 };
 
@@ -109,6 +111,7 @@ describe("editing the tree", () => {
     let root = newNode("group");
     const a = { ...newNode("text", "a"), required: true };
     const b = newNode("boolean", "b");
+
     root = addField(addField(root, root.id, a), root.id, b);
     root = moveField(root, b.id, -1);
     root = updateNode(root, a.id, (n) => ({ ...n, key: "name" }));
@@ -125,6 +128,7 @@ describe("editing the tree", () => {
 
   it("changes a field's type, keeping its name and label", () => {
     const n = { ...newNode("text", "mood"), title: "Mood", minLength: 3 };
+
     expect(changeType(n, "choice")).toMatchObject({
       id: n.id,
       key: "mood",
@@ -144,9 +148,11 @@ describe("checkTree", () => {
     const two = newNode("number", "x");
     const choice = newNode("choice", "c");
     const pattern = { ...newNode("text", "p"), pattern: "(" };
+
     for (const n of [blank, one, two, choice, pattern]) {
       root = addField(root, root.id, n);
     }
+
     expect(checkTree(root)).toEqual({
       [blank.id]: "Give the field a name.",
       [two.id]: 'Another field here is named "x".',

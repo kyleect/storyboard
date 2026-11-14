@@ -18,12 +18,15 @@ export interface RunSummary {
 export function summarizeRuns(runs: readonly ActiveRun[]): RunSummary {
   const bySession: Record<string, SessionRunState> = {};
   let waiting = 0;
+
   for (const run of runs) {
     if (run.waiting) waiting += 1;
+
     if (run.waiting || bySession[run.sessionId] === undefined) {
       bySession[run.sessionId] = run.waiting ? "waiting" : "running";
     }
   }
+
   return {
     runs: [...runs],
     working: runs.length - waiting,

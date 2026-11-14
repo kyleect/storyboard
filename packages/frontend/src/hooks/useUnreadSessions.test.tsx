@@ -13,6 +13,7 @@ function wrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -24,6 +25,7 @@ describe("useUnreadSessions", () => {
     const { result } = renderHook(() => useUnreadSessions(), {
       wrapper: wrapper(),
     });
+
     expect(result.current.count).toBe(0);
     expect(result.current.ids.size).toBe(0);
   });
@@ -38,6 +40,7 @@ describe("useUnreadSessions", () => {
     const { result } = renderHook(() => useUnreadSessions(), {
       wrapper: wrapper(),
     });
+
     await waitFor(() => expect(result.current.count).toBe(2));
     expect(result.current.ids.has("a")).toBe(true);
     expect(result.current.ids.has("c")).toBe(false);

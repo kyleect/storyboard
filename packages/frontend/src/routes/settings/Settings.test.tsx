@@ -38,6 +38,7 @@ const router = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", async () => {
   const { useSyncExternalStore } = await import("react");
+
   return {
     Link: ({ children, ...rest }: { children?: ReactNode }) => (
       <a href="/" {...rest}>
@@ -48,12 +49,14 @@ vi.mock("@tanstack/react-router", async () => {
       router.calls.push(navigation);
       router.path = navigation.params._splat;
       router.listeners.forEach((listener) => listener());
+
       return Promise.resolve();
     },
     useParams: () => ({
       _splat: useSyncExternalStore(
         (listener) => {
           router.listeners.add(listener);
+
           return () => router.listeners.delete(listener);
         },
         () => router.path,
@@ -145,7 +148,9 @@ async function renderSettings() {
 
 function siblingsOf(name: string) {
   const list = screen.getByRole("tab", { name }).closest("[role=tablist]");
+
   if (!(list instanceof HTMLElement)) throw new Error("No tab list");
+
   return within(list)
     .getAllByRole("tab")
     .map((t) => t.textContent);
@@ -206,7 +211,9 @@ describe("Settings tabs", () => {
     await renderSettings();
     open(area);
     const first = subtabs[0];
+
     if (!first) throw new Error("No subtabs");
+
     expect(siblingsOf(first)).toEqual(subtabs);
   });
 
@@ -286,6 +293,7 @@ describe("Settings address", () => {
       await renderSettings();
       await waitFor(() => expect(router.calls.length).toBe(1));
       const call = router.calls[0];
+
       expect(call?.replace).toBe(true);
       expect(call?.params._splat).toBe(
         path.startsWith("agents") ? "agents/subagents" : "general/models",
@@ -339,7 +347,9 @@ describe("Settings forms", () => {
       },
     );
     const saveButton = screen.getAllByRole("button", { name: "Save" })[0];
+
     if (!saveButton) throw new Error("No Save button");
+
     fireEvent.click(saveButton);
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0]?.[0]).toEqual({
@@ -403,6 +413,7 @@ describe("Settings forms", () => {
     const restore = vi
       .spyOn(api, "restoreBranch")
       .mockResolvedValue({ ok: true });
+
     await renderSettings();
     open("Trash");
     expect(await screen.findByText(/The old opening/)).toBeTruthy();
@@ -478,6 +489,7 @@ describe("Settings forms", () => {
     open("Agents");
     open("Limits");
     const input = await screen.findByLabelText("Loop limit");
+
     expect((input as HTMLInputElement).disabled).toBe(true);
     expect(
       screen.getByText(

@@ -110,6 +110,7 @@ export function AgentForm({
 
   const change = (patch: Partial<AgentContent>) => {
     const next = { ...current, ...patch };
+
     onKeep();
     onDraft(!isNew && same(next, base) ? undefined : next);
   };

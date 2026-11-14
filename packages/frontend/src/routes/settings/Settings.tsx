@@ -125,15 +125,19 @@ const AREAS: readonly Area[] = [
 
 function settingsPath(area: Area, section?: Section) {
   const chosen = section ?? area.sections?.[0];
+
   return chosen ? `${area.value}/${chosen.value}` : area.value;
 }
 
 function resolveSettingsPath(path: string | undefined) {
   const [areaValue, sectionValue] = (path ?? "").split("/");
   const area = AREAS.find((a) => a.value === areaValue) ?? AREAS[0];
+
   if (!area) throw new Error("No settings areas");
+
   const section =
     area.sections?.find((x) => x.value === sectionValue) ?? area.sections?.[0];
+
   return { area, section, canonical: settingsPath(area, section) };
 }
 
@@ -153,6 +157,7 @@ function SubTabs({
       value={value ?? sections[0]?.value ?? null}
       onChange={(v) => {
         const section = sections.find((x) => x.value === v);
+
         if (section) onChange(section);
       }}
     >
@@ -187,7 +192,9 @@ export function Settings() {
   }, [path, canonical]);
 
   if (query.isPending) return <Loader />;
+
   if (query.isError) return <Alert color="red">{query.error.message}</Alert>;
+
   const view = query.data;
 
   return (
@@ -197,6 +204,7 @@ export function Settings() {
         value={area.value}
         onChange={(v) => {
           const chosen = AREAS.find((a) => a.value === v);
+
           if (chosen) go(settingsPath(chosen));
         }}
         orientation="vertical"

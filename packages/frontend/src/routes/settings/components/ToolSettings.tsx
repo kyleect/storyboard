@@ -23,6 +23,7 @@ type Setting = "ask" | "alwaysOn" | "off";
 function stateOf(tools: ToolView[], setting: Setting) {
   const usable = setting === "ask" ? tools.filter((t) => !t.fixed) : tools;
   const on = usable.filter((t) => t[setting]).length;
+
   return {
     all: usable.length > 0 && on === usable.length,
     some: on > 0 && on < usable.length,
@@ -74,7 +75,9 @@ export function ToolSettings() {
 
   const confirmOff = (affected: ToolView[], go: () => void) => {
     const agents = unique(affected.flatMap((t) => t.usedByAgents));
+
     if (agents.length === 0) return go();
+
     modals.openConfirmModal({
       title: "Switch off?",
       children: (
@@ -97,6 +100,7 @@ export function ToolSettings() {
 
   const setOne = (t: ToolView, setting: Setting, value: boolean) => {
     const go = () => change.mutate({ name: t.name, setting, value });
+
     if (setting === "off" && value) confirmOff([t], go);
     else go();
   };
@@ -106,6 +110,7 @@ export function ToolSettings() {
     c: ToolGroupChange,
   ) => {
     const go = () => changeGroup.mutate({ group, change: c });
+
     if (c.off)
       confirmOff(
         inGroup.filter((t) => !t.off),
@@ -133,6 +138,7 @@ export function ToolSettings() {
         const always = stateOf(inGroup, "alwaysOn");
         const off = stateOf(inGroup, "off");
         const ask = stateOf(inGroup, "ask");
+
         return (
           <Paper key={id} p="xs">
             <Stack gap="sm">

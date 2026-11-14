@@ -28,6 +28,7 @@ const CARRIED: Record<(typeof LEGACY_KINDS)[number], WorkbenchKind> = {
   "project-agents": "agents",
   "project-skills": "skills",
 };
+
 type SavedKind = WorkbenchKind | (typeof LEGACY_KINDS)[number];
 export const SAVED_KINDS: readonly SavedKind[] = [
   ...WORKBENCH_KINDS,
@@ -40,15 +41,20 @@ export function carryOver(
   const renamed = new Map<string, string>();
   const seen = new Set<string>();
   const tabs: WorkbenchTab[] = [];
+
   for (const t of view.tabs) {
     const kind =
       t.kind in CARRIED ? CARRIED[t.kind as keyof typeof CARRIED] : t.kind;
     const next = { ...t, kind: kind as WorkbenchKind };
+
     renamed.set(tabId(t), tabId(next));
+
     if (seen.has(tabId(next))) continue;
+
     seen.add(tabId(next));
     tabs.push(next);
   }
+
   return {
     ...view,
     tabs,
@@ -95,25 +101,38 @@ function decode(part: string): string | null {
 export function tabForPath(pathname: string): NewWorkbenchTab | null {
   const parts = pathname.split("/").filter((p) => p !== "");
   const [first, second, third] = parts;
+
   if (first === undefined) return null;
+
   if (first === "settings") {
     return { kind: "settings", root: "global", key: "" };
   }
+
   if (first === "sessions" && parts.length === 2 && second !== undefined) {
     const id = decode(second);
+
     return id ? { kind: "chat", root: "session", key: id } : null;
   }
+
   if (first === "projects" && second !== undefined) {
     const id = decode(second);
+
     if (!id) return null;
+
     if (parts.length === 2)
       return { kind: "project", root: "project", key: id };
+
     const kind = third === undefined ? undefined : PROJECT_PAGES[third];
+
     if (parts.length === 3 && kind) return { kind, root: "project", key: id };
+
     return null;
   }
+
   const kind = GLOBAL_PAGES[first];
+
   if (parts.length === 1 && kind) return { kind, root: "global", key: "" };
+
   return null;
 }
 
@@ -122,6 +141,7 @@ export function pathForTab(
   settingsPath = "/settings",
 ): string {
   const id = encodeURIComponent(tab.key);
+
   switch (tab.kind) {
     case "chat":
       return `/sessions/${id}`;
@@ -149,7 +169,9 @@ export function projectOfTab(
   projectOfSession: (sessionId: string) => string | null,
 ): string | null {
   if (tab.root === "project") return tab.key;
+
   if (tab.kind === "chat") return projectOfSession(tab.key);
+
   return null;
 }
 
@@ -159,7 +181,9 @@ export function newChatTarget(input: {
   projectOfSession: (sessionId: string) => string | null;
 }): string | null {
   if (input.focused) return input.focused.projectId;
+
   if (input.active) return projectOfTab(input.active, input.projectOfSession);
+
   return null;
 }
 
@@ -170,6 +194,7 @@ export function closeTarget<T extends WorkbenchTab>(
 ): string {
   const next = closeTab(state, closedId);
   const tab = next.tabs.find((t) => tabId(t) === next.active);
+
   return tab ? pathForTab(tab, settingsPath) : "/";
 }
 

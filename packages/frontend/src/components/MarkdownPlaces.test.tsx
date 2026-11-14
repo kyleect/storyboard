@@ -35,6 +35,7 @@ function chat(message: Message, streaming = false) {
 describe("Markdown in the chat", () => {
   it("renders a user message", () => {
     const { container } = chat({ role: "user", content: "Make it **short**" });
+
     expect(container.textContent).toContain("Make it short");
     expect(container.textContent).not.toContain("**");
   });
@@ -47,6 +48,7 @@ describe("Markdown in the chat", () => {
         { type: "text", text: "# Chapter 1\n\n- a\n- b" },
       ],
     });
+
     expect(screen.getByRole("heading", { name: "Chapter 1" })).toBeTruthy();
     expect(container.querySelectorAll("li")).toHaveLength(2);
     expect(container.textContent).toContain("I will use **bold** here");
@@ -70,6 +72,7 @@ describe("Markdown in the chat", () => {
       isError: false,
     };
     const { container } = chat(result);
+
     expect(screen.queryByRole("heading")).toBeNull();
     expect(container.textContent).toContain("# not a heading");
   });
@@ -80,6 +83,7 @@ describe("Markdown in files", () => {
     const { container } = wrap(
       <ValueView mediaType="text/markdown" value={"# Outline\n\n- one"} />,
     );
+
     expect(screen.getByRole("heading", { name: "Outline" })).toBeTruthy();
     fireEvent.click(screen.getByText("Source"));
     expect(screen.queryByRole("heading")).toBeNull();
@@ -97,6 +101,7 @@ describe("Markdown in files", () => {
     const { container, unmount } = wrap(
       <ValueView mediaType="text/plain" value={"# not a heading"} />,
     );
+
     expect(screen.queryByRole("heading")).toBeNull();
     expect(screen.queryByText("Rendered")).toBeNull();
     expect(container.textContent).toContain("# not a heading");
@@ -104,6 +109,7 @@ describe("Markdown in files", () => {
     const json = wrap(
       <ValueView mediaType="application/json" value={'{"a":1}'} />,
     );
+
     expect(screen.queryByText("Rendered")).toBeNull();
     expect(json.container.textContent).toContain('"a": 1');
   });

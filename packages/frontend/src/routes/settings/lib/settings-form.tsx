@@ -54,6 +54,7 @@ export const DESCRIBER_KEYS = [
 export const TRASH_KEYS = ["trashRetentionDays"] as const;
 export function useSaveSettings() {
   const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: api.saveSettings,
     onSuccess: (view: SettingsView) => {
@@ -70,6 +71,7 @@ export function useSaveSettings() {
 }
 export function envNoteFor(view: SettingsView) {
   const env = view.overriddenByEnv;
+
   return (key: keyof SettingsShape) =>
     env[key] ? `Overridden by the ${env[key]} environment variable` : undefined;
 }
@@ -89,10 +91,13 @@ export function useSettingsFields<K extends keyof SettingsShape>(
   });
 
   const filled = useRef(view);
+
   useEffect(() => {
     if (filled.current === view) return;
+
     filled.current = view;
     const values = pick();
+
     form.setValues(values);
     form.resetDirty(values);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,5 +115,6 @@ export function useSettingsForm<K extends keyof SettingsShape>(
   validate?: NonNullable<UseFormInput<Pick<SettingsShape, K>>["validate"]>,
 ) {
   const save = useSaveSettings();
+
   return { ...useSettingsFields(view, keys, validate), save };
 }

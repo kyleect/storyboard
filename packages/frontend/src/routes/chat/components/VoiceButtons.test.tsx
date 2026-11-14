@@ -19,21 +19,25 @@ afterEach(() => {
 
 function show(props: Partial<React.ComponentProps<typeof VoiceButtons>> = {}) {
   const onRecorded = vi.fn();
+
   render(
     <MantineProvider>
       <VoiceButtons onRecorded={onRecorded} {...props} />
     </MantineProvider>,
   );
+
   return onRecorded;
 }
 
 function fakeMicrophone() {
   const tracks = [{ stop: vi.fn() }];
+
   vi.stubGlobal("navigator", {
     mediaDevices: {
       getUserMedia: vi.fn(async () => ({ getTracks: () => tracks })),
     },
   });
+
   class FakeRecorder {
     state: "inactive" | "recording" = "inactive";
     mimeType = "audio/webm";
@@ -48,7 +52,9 @@ function fakeMicrophone() {
       this.onstop?.();
     }
   }
+
   vi.stubGlobal("MediaRecorder", FakeRecorder);
+
   return { tracks };
 }
 
@@ -62,12 +68,14 @@ describe("VoiceButtons", () => {
 
     button("Record").click();
     const stop = await screen.findByRole("button", { name: "Stop recording" });
+
     expect(stop.textContent).toBe("Stop 0:00 / 0:30");
     expect(screen.queryByRole("button", { name: "Record & send" })).toBeNull();
 
     act(() => stop.click());
     await waitFor(() => expect(onRecorded).toHaveBeenCalledTimes(1));
     const [file, mode] = onRecorded.mock.calls[0] as [File, string];
+
     expect(file.name).toBe("voice.wav");
     expect(mode).toBe("attach");
     expect(tracks[0]?.stop).toHaveBeenCalled();
@@ -82,6 +90,7 @@ describe("VoiceButtons", () => {
     const stop = await screen.findByRole("button", {
       name: "Stop recording and send",
     });
+
     expect(stop.textContent).toBe("Stop & send 0:00 / 0:30");
 
     act(() => stop.click());
@@ -93,6 +102,7 @@ describe("VoiceButtons", () => {
     vi.stubGlobal("navigator", {});
     const shown = vi.spyOn(notifications, "show").mockReturnValue("id");
     const onRecorded = show();
+
     button("Record & send").click();
     expect(shown).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -112,6 +122,7 @@ describe("VoiceButtons", () => {
     });
     vi.stubGlobal("MediaRecorder", function MediaRecorder() {});
     const shown = vi.spyOn(notifications, "show").mockReturnValue("id");
+
     show();
     button("Record").click();
     await waitFor(() =>
@@ -129,6 +140,7 @@ describe("VoiceButtons", () => {
         <VoiceButtons onRecorded={() => {}} disabled />
       </MantineProvider>,
     );
+
     expect(button("Record").disabled).toBe(true);
     expect(button("Record & send").disabled).toBe(true);
     unmount();

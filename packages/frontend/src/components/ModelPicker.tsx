@@ -46,6 +46,7 @@ export function ModelPicker(props: {
           message: result.message,
         });
       }
+
       void queryClient.invalidateQueries({ queryKey: modelKeys.list() });
     },
     onError: (err: Error) =>
@@ -59,20 +60,25 @@ export function ModelPicker(props: {
   const inUse = props.value ?? props.defaultModel;
   const info = models.data?.find((m) => m.id === inUse);
   const previous = useRef(info?.status);
+
   useEffect(() => {
     if (previous.current === "loading" && info?.status === "loaded") {
       void queryClient.invalidateQueries({
         queryKey: modelKeys.reasoningLevels(),
       });
     }
+
     previous.current = info?.status;
   }, [info?.status, queryClient]);
 
   const choose = (value: string | null) => {
     props.onChange(value);
+
     if (!props.loadOnSelect) return;
+
     const target = value ?? props.defaultModel;
     const listed = models.data?.find((m) => m.id === target);
+
     if (target && listed?.status && !RUNNING.has(listed.status)) {
       load.mutate(target);
     }
@@ -88,6 +94,7 @@ export function ModelPicker(props: {
 
   const status = new Map((models.data ?? []).map((m) => [m.id, m.status]));
   const ids = (models.data ?? []).map((m) => m.id);
+
   if (props.value && !ids.includes(props.value)) ids.unshift(props.value);
 
   return (

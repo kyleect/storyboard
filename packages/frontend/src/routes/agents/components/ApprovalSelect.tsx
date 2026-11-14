@@ -17,6 +17,7 @@ export function ApprovalSelect({
   onChange: (value: boolean | undefined) => void;
 }) {
   const fixed = tool?.fixed ?? false;
+
   return (
     <Select
       size="xs"

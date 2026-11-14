@@ -90,16 +90,19 @@ function PublishStatus({
 }) {
   const publish = useChatStatus((s) => s.publish);
   const clear = useChatStatus((s) => s.clear);
+
   useEffect(() => {
     publish({ sessionId, model, usage, subagentUsage, connected });
   }, [publish, sessionId, model, usage, subagentUsage, connected]);
   useEffect(() => () => clear(sessionId), [clear, sessionId]);
+
   return null;
 }
 
 export function Chat({ sessionId }: { sessionId: string }) {
   const detail = useSession(sessionId);
   const settings = useSettings();
+
   useSessionEvents(
     sessionId,
     detail.isFetchedAfterMount ? detail.data : undefined,
@@ -113,6 +116,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     patchDraft(sessionId, (d) => ({ ...d, text }));
   const files = useAttachmentDraft(sessionId);
   const composer = useRef({ draft, items: files.items });
+
   useEffect(() => {
     composer.current = { draft, items: files.items };
   });
@@ -120,10 +124,14 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const [tab, setTab] = useState<string>("chat");
   const [filesOpened, setFilesOpened] = useState(false);
   const [filesDirty, setFilesDirty] = useState(false);
+
   if (tab === "files" && !filesOpened) setFilesOpened(true);
+
   const [dataOpened, setDataOpened] = useState(false);
   const [dataDirty, setDataDirty] = useState(false);
+
   useReportDirty(filesDirty || dataDirty);
+
   if (tab === "data" && !dataOpened) setDataOpened(true);
 
   const hash = useRouterState({ select: (s) => s.location.hash }).replace(
@@ -135,22 +143,31 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const [revealed, setRevealed] = useState<string | null>(null);
   const handledHash = useRef<string | null>(null);
   const messageCount = detail.data?.messages.length ?? 0;
+
   useEffect(() => {
     if (hashTarget && handledHash.current !== hashTarget) {
       pendingScroll.current = hashTarget;
     }
+
     const target = pendingScroll.current;
+
     if (!target || tab !== "chat") return;
+
     const el = document.getElementById(target);
+
     if (!el) return;
+
     el.scrollIntoView({ block: "center" });
     pendingScroll.current = null;
+
     if (target === hashTarget) handledHash.current = hashTarget;
   }, [hashTarget, tab, messageCount, revealed]);
   const showInTranscript = (messageId: string) => {
     const target = messageAnchor(messageId);
     const el = tab === "chat" ? document.getElementById(target) : null;
+
     setRevealed(target);
+
     if (el) el.scrollIntoView({ block: "center" });
     else {
       pendingScroll.current = target;
@@ -201,6 +218,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.detail(sessionId),
       });
+
       if (session?.project_id)
         void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
@@ -248,6 +266,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     onError: (err: Error, a) => {
       useLive.getState().update(sessionId, a.runId, (run) => {
         const at = run.userMessages.lastIndexOf(a.text);
+
         return {
           ...run,
           userMessages: run.userMessages.filter((_, i) => i !== at),
@@ -266,6 +285,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     }) => api.answerInput(a.runId, a.requestId, a.answer),
     onSuccess: (_r, a) => {
       const { answer } = a;
+
       if (answer.outcome === "answered")
         setSubmitted((m) =>
           new Map(m).set(a.callId, { form: a.form, answers: answer.answers }),
@@ -289,6 +309,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
   });
 
   if (detail.isPending) return <Loader />;
+
   if (detail.isError) return <Alert color="red">{detail.error.message}</Alert>;
 
   const inFlight = (run: LiveRunState): ShownMessage | undefined =>
@@ -305,6 +326,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
       : undefined;
   const shown: ShownMessage[] = [];
   const nested = new Map<string, ShownMessage[]>();
+
   for (const m of detail.data.messages) {
     const item: ShownMessage = {
       id: m.id,
@@ -315,38 +337,49 @@ export function Chat({ sessionId }: { sessionId: string }) {
       streaming: false,
       branches: m.branches,
     };
+
     if (m.parentCallId) {
       nested.set(m.parentCallId, [...(nested.get(m.parentCallId) ?? []), item]);
     } else {
       shown.push(item);
     }
   }
+
   const place = (list: ShownMessage[], item: ShownMessage) => {
     const at = list.findIndex((m) => m.id === item.id);
+
     if (at === -1) list.push(item);
     else list[at] = item;
   };
+
   for (const run of runs) {
     const item = inFlight(run);
+
     if (!item) continue;
+
     const callId =
       "parentCallId" in run ? (run as LiveChild).parentCallId : null;
+
     if (callId === null) {
       place(shown, item);
     } else {
       const list = [...(nested.get(callId) ?? [])];
+
       place(list, item);
       nested.set(callId, list);
     }
   }
+
   const children = Object.values(live?.children ?? {});
   const subagents = new Map<string, SubagentView>();
+
   for (const callId of new Set([
     ...nested.keys(),
     ...children.map((c) => c.parentCallId),
   ])) {
     const messages = nested.get(callId) ?? [];
     const child = children.find((c) => c.parentCallId === callId);
+
     subagents.set(callId, {
       agentName:
         child?.agent?.name ??
@@ -361,14 +394,17 @@ export function Chat({ sessionId }: { sessionId: string }) {
         (child.approvals.length > 0 || child.inputs.length > 0),
     });
   }
+
   const decisionComments = new Map<
     string,
     NonNullable<ToolResultMessage["decisionComment"]>
   >();
+
   for (const m of detail.data.messages) {
     if (m.message.role === "tool" && m.message.decisionComment)
       decisionComments.set(m.message.callId, m.message.decisionComment);
   }
+
   const trashed = detail.data.session.trashed_at !== null;
   const busy =
     trashed ||
@@ -438,6 +474,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     unreadable.length === 0;
   const submit = () => {
     if (!canSend) return;
+
     send.mutate({
       content: draft.trim() === "" ? "" : draft,
       files: files.items.map((i) => i.ref),
@@ -445,7 +482,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
   };
   const recorded = async (file: File, mode: RecordingMode) => {
     const uploaded = await files.add([file]);
+
     if (mode !== "send" || uploaded.length === 0) return;
+
     if (busy || unreadable.length > 0) {
       notifications.show({
         color: "yellow",
@@ -454,9 +493,12 @@ export function Chat({ sessionId }: { sessionId: string }) {
           ? "A run is in progress. Press Send when it ends."
           : "The model cannot read some of the attached files. Remove them, then press Send.",
       });
+
       return;
     }
+
     const latest = composer.current;
+
     send.mutate({
       content: latest.draft.trim() === "" ? "" : latest.draft,
       files: [
@@ -499,6 +541,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 onClick={() => {
                   setRestoring(true);
                   const { project } = detail.data;
+
                   actions
                     .restore(
                       detail.data.session,
@@ -791,6 +834,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
             }}
             onDrop={(e) => {
               if (trashed || e.dataTransfer.files.length === 0) return;
+
               e.preventDefault();
               void files.add(Array.from(e.dataTransfer.files));
             }}
@@ -824,8 +868,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 }}
                 onPaste={(e) => {
                   const pasted = Array.from(e.clipboardData.files);
+
                   if (pasted.length === 0) return;
+
                   if (e.clipboardData.getData("text") !== "") return;
+
                   e.preventDefault();
                   void files.add(pasted);
                 }}

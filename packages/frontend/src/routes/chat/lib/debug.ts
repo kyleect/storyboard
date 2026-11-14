@@ -3,10 +3,12 @@ import type { DebugRun } from "../../../api";
 
 export async function copyText(text: string | Promise<string>): Promise<void> {
   const pending = Promise.resolve(text);
+
   pending.catch(() => {});
 
   const clipboard =
     typeof navigator === "undefined" ? undefined : navigator.clipboard;
+
   if (clipboard?.write && typeof ClipboardItem !== "undefined") {
     try {
       await clipboard.write([
@@ -16,6 +18,7 @@ export async function copyText(text: string | Promise<string>): Promise<void> {
           ),
         }),
       ]);
+
       return;
     } catch {
       // falls through to the next way to copy
@@ -23,9 +26,11 @@ export async function copyText(text: string | Promise<string>): Promise<void> {
   }
 
   const value = await pending;
+
   if (clipboard?.writeText) {
     try {
       await clipboard.writeText(value);
+
       return;
     } catch {
       // falls through to the next way to copy
@@ -33,12 +38,14 @@ export async function copyText(text: string | Promise<string>): Promise<void> {
   }
 
   const area = document.createElement("textarea");
+
   area.value = value;
   area.setAttribute("readonly", "");
   area.style.position = "fixed";
   area.style.opacity = "0";
   document.body.appendChild(area);
   area.select();
+
   try {
     if (!document.execCommand("copy")) {
       throw new Error("The browser refused to copy.");
@@ -56,6 +63,7 @@ export const STREAMING_TYPES: ReadonlySet<string> = new Set([
 
 const clip = (text: string, max = 80) => {
   const flat = text.replace(/\s+/g, " ").trim();
+
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 };
 
@@ -66,9 +74,11 @@ export function eventSummary(event: StoredEvent, max = 80): string {
       max,
     );
   const d = event.data as Record<string, unknown>;
+
   switch (event.type) {
     case "run.started": {
       const agent = d["agent"] as { name?: string } | undefined;
+
       return [
         d["kind"],
         agent?.name ? `agent ${agent.name}` : undefined,
@@ -139,11 +149,16 @@ export function filterEvents(
 ): StoredEvent[] {
   const needle = filter.text.trim().toLowerCase();
   const types = new Set(filter.types);
+
   return events.filter((e) => {
     if (filter.hideStreaming && STREAMING_TYPES.has(e.type)) return false;
+
     if (types.size > 0 && !types.has(e.type)) return false;
+
     if (filter.runId !== null && e.runId !== filter.runId) return false;
+
     if (needle === "") return true;
+
     return (
       e.type.toLowerCase().includes(needle) ||
       (e.runId ?? "").toLowerCase().includes(needle) ||

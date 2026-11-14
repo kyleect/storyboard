@@ -45,12 +45,14 @@ const form: Form = {
 
 function open() {
   const onAnswer = vi.fn<(a: InputAnswer) => void>();
+
   renderUi(
     <AskUserForm
       form={form}
       state={{ mode: "open", requestId: "r1", busy: false, onAnswer }}
     />,
   );
+
   return onAnswer;
 }
 
@@ -67,6 +69,7 @@ const submit = () =>
 describe("AskUserForm", () => {
   it("submits the answers, leaving unanswered questions out", () => {
     const onAnswer = open();
+
     type("Working title", "Ash");
     click("noir");
     click("loss");
@@ -80,10 +83,14 @@ describe("AskUserForm", () => {
 
   it('offers "Other" on every question but text, sent as free text', () => {
     const onAnswer = open();
+
     type("Working title", "Ash");
     const others = screen.getAllByLabelText("Other");
+
     expect(others).toHaveLength(4);
+
     for (const o of others) fireEvent.click(o);
+
     type("Genre: other", "cozy mystery");
     type("Themes: other", "found family");
     type("Words", "about 3000");
@@ -103,6 +110,7 @@ describe("AskUserForm", () => {
 
   it("shows problems next to the questions and does not submit", () => {
     const onAnswer = open();
+
     fireEvent.click(screen.getAllByLabelText("Other")[0] as HTMLElement);
     submit();
     expect(onAnswer).not.toHaveBeenCalled();
@@ -112,6 +120,7 @@ describe("AskUserForm", () => {
 
   it("skips", () => {
     const onAnswer = open();
+
     fireEvent.click(screen.getByRole("button", { name: "Skip" }));
     expect(onAnswer).toHaveBeenCalledWith({ outcome: "skipped" });
   });
@@ -128,6 +137,7 @@ describe("AskUserForm", () => {
         },
       ],
     };
+
     renderUi(
       <AskUserForm
         form={long}
@@ -142,6 +152,7 @@ describe("AskUserForm", () => {
     expect(screen.queryByRole("radio")).toBeNull();
     fireEvent.click(screen.getAllByLabelText(/^Genre/)[0] as HTMLElement);
     const items = await screen.findAllByRole("option", { hidden: true });
+
     expect(items.at(-1)?.textContent).toBe("Other…");
   });
 
@@ -158,6 +169,7 @@ describe("AskUserForm", () => {
     expect(screen.getByText("Answered")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
     const title = label("Working title") as HTMLInputElement;
+
     expect(title.value).toBe("Ash");
     expect(title.disabled).toBe(true);
     expect((label("Genre: other") as HTMLInputElement).value).toBe(
@@ -207,17 +219,20 @@ describe("AskUserForm for forms other tools show (tool prompts)", () => {
 
   function openScope() {
     const onAnswer = vi.fn<(a: InputAnswer) => void>();
+
     renderUi(
       <AskUserForm
         form={scopeForm}
         state={{ mode: "open", requestId: "r1", busy: false, onAnswer }}
       />,
     );
+
     return onAnswer;
   }
 
   it("shows option labels, no Other, and the tool's button names", () => {
     const onAnswer = openScope();
+
     expect(
       screen.getByText("New markdown file, 3 characters: # A"),
     ).toBeTruthy();
@@ -236,6 +251,7 @@ describe("AskUserForm for forms other tools show (tool prompts)", () => {
 
   it("draws a yes/no without Other as a checkbox", () => {
     const onAnswer = openScope();
+
     click("This conversation only");
     click("Use this for the rest of this session");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -247,6 +263,7 @@ describe("AskUserForm for forms other tools show (tool prompts)", () => {
 
   it("skips with the tool's skip button", () => {
     const onAnswer = openScope();
+
     fireEvent.click(screen.getByRole("button", { name: "Don't save" }));
     expect(onAnswer).toHaveBeenCalledWith({ outcome: "skipped" });
   });
@@ -255,6 +272,7 @@ describe("AskUserForm for forms other tools show (tool prompts)", () => {
 describe("AskUserForm name check (tool prompts Q20)", () => {
   it("shows a pattern error next to the field and does not save", () => {
     const onAnswer = vi.fn<(a: InputAnswer) => void>();
+
     renderUi(
       <AskUserForm
         form={{

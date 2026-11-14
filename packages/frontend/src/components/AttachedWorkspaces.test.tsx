@@ -59,6 +59,7 @@ describe("AttachedWorkspaces", () => {
     vi.spyOn(api, "listAttachedWorkspaces").mockResolvedValue([]);
     vi.spyOn(api, "listWorkspaces").mockResolvedValue([workspace()]);
     const attach = vi.spyOn(api, "attachWorkspace").mockResolvedValue({});
+
     renderWith(<AttachedWorkspaces owner="projects" id="p1" />);
     expect(await screen.findByText("None attached.")).toBeTruthy();
     fireEvent.click(screen.getByPlaceholderText("Attach a workspace"));
@@ -74,6 +75,7 @@ describe("AttachedWorkspaces", () => {
     vi.spyOn(api, "listAttachedWorkspaces").mockResolvedValue([attachment()]);
     vi.spyOn(api, "listWorkspaces").mockResolvedValue([workspace()]);
     const detach = vi.spyOn(api, "detachWorkspace").mockResolvedValue({});
+
     renderWith(<AttachedWorkspaces owner="sessions" id="s1" />);
     fireEvent.click(await screen.findByRole("button", { name: "Detach" }));
     await waitFor(() =>
@@ -90,6 +92,7 @@ describe("AttachedWorkspaces", () => {
     const detach = (await screen.findByRole("button", {
       name: "Detach",
     })) as HTMLButtonElement;
+
     expect(detach.disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Attach" })).toBeNull();
   });

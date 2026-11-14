@@ -48,6 +48,7 @@ describe("errorsFromMessage", () => {
 
   it("names the one question of a scalar form value", () => {
     const flag = readSchemaForm({ type: "boolean" });
+
     expect(errorsFromMessage(flag, "x:\n- (value): must be boolean.")).toEqual({
       value: "must be boolean.",
     });
@@ -61,6 +62,7 @@ describe("errorsFromMessage", () => {
 describe("times and dates in forms", () => {
   it("stores a date-time in UTC and shows it in local time", () => {
     const stored = fromInput("date-time", "2026-11-04T10:30");
+
     expect(stored).toMatch(/Z$/);
     expect(toInput("date-time", stored)).toBe("2026-11-04T10:30");
   });
@@ -75,6 +77,7 @@ describe("times and dates in forms", () => {
 describe("AskUserForm with groups and lists", () => {
   function open(initial = {}) {
     const answers: InputAnswer[] = [];
+
     render(
       <MantineProvider>
         <AskUserForm
@@ -90,6 +93,7 @@ describe("AskUserForm with groups and lists", () => {
         />
       </MantineProvider>,
     );
+
     return answers;
   }
 
@@ -99,6 +103,7 @@ describe("AskUserForm with groups and lists", () => {
       stats: { hp: 12 },
       inventory: [{ item: "knife" }],
     });
+
     expect((screen.getByLabelText(/^What/) as HTMLInputElement).value).toBe(
       "knife",
     );
@@ -122,6 +127,7 @@ describe("AskUserForm with groups and lists", () => {
 
   it("removes a list item and marks a missing field inside a new one", async () => {
     const answers = open({ name: "Mara", inventory: [{ item: "knife" }] });
+
     fireEvent.click(screen.getByRole("button", { name: "Remove Item 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Add Item" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

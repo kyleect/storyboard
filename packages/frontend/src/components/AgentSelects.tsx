@@ -53,6 +53,7 @@ export function DefaultAgentSelect({
   const known = [...(own.data ?? []), ...(global.data ?? [])].some(
     (a) => a.id === project.default_agent_id,
   );
+
   return (
     <Select
       w={280}
@@ -109,8 +110,10 @@ export function AgentPicker({
         value: a.id,
         label: `${a.name} (${a.builtin ? "built-in" : scope})${a.isDefault ? " · Default" : ""}`,
       }));
+
     return items.length > 0 ? [{ group: label, items }] : [];
   };
+
   return (
     <Select
       w={220}
@@ -134,6 +137,7 @@ export function AgentPicker({
 export function AgentBadge({ agent }: { agent: MessageAgent }) {
   const navigate = useNavigate();
   const ask = useAgentFocus((s) => s.ask);
+
   return (
     <Badge
       color="teal"

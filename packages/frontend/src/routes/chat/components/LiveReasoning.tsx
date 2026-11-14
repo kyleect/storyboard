@@ -24,6 +24,7 @@ export function LiveReasoning({
       .map((l) => l.trim())
       .filter(Boolean)
       .at(-1) ?? "";
+
   return (
     <Stack gap={2}>
       <Group gap="xs">

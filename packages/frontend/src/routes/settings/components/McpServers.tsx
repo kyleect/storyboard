@@ -69,6 +69,7 @@ const blank = (): FormValues => ({
 
 function valuesOf(server: McpServerView): FormValues {
   const c = server.config;
+
   return {
     ...blank(),
     name: server.name,
@@ -100,6 +101,7 @@ function inputOf(v: FormValues): McpServerInput {
           url: v.url.trim(),
           headers: parseHeaders(v.headers),
         };
+
   return { name: v.name.trim(), enabled: v.enabled, config };
 }
 
@@ -281,6 +283,7 @@ function ServerForm({
 
   const submit = () => {
     setProblem(null);
+
     try {
       save.mutate(inputOf(v));
     } catch (err) {

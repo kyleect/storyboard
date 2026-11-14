@@ -729,6 +729,9 @@ The export can be copied to the clipboard as the linear text or as JSON.
   a pointer, CSS custom properties. ESLint (`no-restricted-syntax`) flags
   prop-able keys inside `style={{}}`; disable it with a reason when a raw px
   value is required.
+- **Blank lines.** ESLint (`padding-line-between-statements`) requires a blank line
+  before and after `if`, `for`, `while`, `switch`, `try`, functions and classes, before
+  `return` and `throw`, and after a run of `const`/`let`. `eslint --fix` adds them.
 - **Tests** can't see CSS modules in jsdom. Assert `data-*` attributes and custom
   properties.
 

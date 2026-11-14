@@ -65,9 +65,11 @@ export function Profiles() {
   });
 
   if (listing.isPending) return <Loader size="sm" />;
+
   if (listing.isError) {
     return <Text c="red">{listing.error.message}</Text>;
   }
+
   const { profiles, trashed } = listing.data;
 
   const row = (p: ProfileView) => (
@@ -158,6 +160,7 @@ export function Profiles() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
+
           if (name.trim() !== "") create.mutate(name);
         }}
       >

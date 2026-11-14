@@ -193,6 +193,7 @@ export function TrashSection() {
       ))}
       {sessions.map((s) => {
         const project = projectOf(s);
+
         return (
           <Paper key={s.id} p="xs">
             <Group justify="space-between" wrap="nowrap">

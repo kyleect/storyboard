@@ -68,13 +68,16 @@ export function ToolGrantEditor({
   const toggleOpen = (id: string) =>
     setOpen((old) => {
       const next = new Set(old);
+
       if (!next.delete(id)) next.add(id);
+
       return next;
     });
   const setAsk = (tool: string, ask: boolean | undefined) => {
     const rest = Object.fromEntries(
       Object.entries(approval).filter(([n]) => n !== tool),
     );
+
     onApproval(ask === undefined ? rest : { ...rest, [tool]: ask });
   };
 
@@ -102,6 +105,7 @@ export function ToolGrantEditor({
     );
     const isOpen = open.has(id);
     const partial = id !== group;
+
     return (
       <Paper key={id} p="xs">
         <Group justify="space-between" wrap="nowrap">

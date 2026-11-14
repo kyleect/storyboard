@@ -44,8 +44,10 @@ export function confirmClear(what: string, onConfirm: () => void) {
 }
 export function detailText(error: ErrorEntry): string | null {
   const parts: string[] = [];
+
   if (error.details)
     parts.push(`Details:\n${JSON.stringify(error.details, null, 2)}`);
+
   if (error.arguments !== null)
     parts.push(
       `Arguments:\n${
@@ -54,7 +56,9 @@ export function detailText(error: ErrorEntry): string | null {
           : JSON.stringify(error.arguments, null, 2)
       }`,
     );
+
   if (error.stack) parts.push(`Stack:\n${error.stack}`);
+
   return parts.length > 0 ? parts.join("\n\n") : null;
 }
 export function ErrorItem({
@@ -69,6 +73,7 @@ export function ErrorItem({
   const [open, setOpen] = useState(false);
   const extra = detailText(error);
   const { messageId } = error;
+
   return (
     <Paper p="xs" data-testid="error-item">
       <Group gap="xs" wrap="wrap">
@@ -161,6 +166,7 @@ export function ErrorList({
         No errors.
       </Text>
     );
+
   return (
     <Stack gap="xs">
       {errors.map((e) => (

@@ -20,6 +20,7 @@ import {
 
 const must = <T>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
+
   return v;
 };
 const nth = (nodes: TreeNode[] | undefined, i: number): TreeNode =>
@@ -37,12 +38,14 @@ const file = (key: string, extra: Partial<StoredFile> = {}): StoredFile => ({
 describe("rootsFor", () => {
   it("gives a session its own, its project's and the global files", () => {
     const roots = rootsFor({ scope: "session", id: "s1" }, "p1");
+
     expect(roots.map((r) => r.id)).toEqual(["session", "project", "global"]);
     expect(roots[1]?.scope).toEqual({ scope: "project", id: "p1" });
   });
 
   it("gives a standalone session no project root", () => {
     const roots = rootsFor({ scope: "session", id: "s1" }, null);
+
     expect(roots.map((r) => r.id)).toEqual(["session", "global"]);
   });
 
@@ -60,6 +63,7 @@ describe("isHigherScope", () => {
   const session = { scope: "session", id: "s1" } as const;
   const project = { scope: "project", id: "p1" } as const;
   const global = { scope: "global" } as const;
+
   it("ranks global over project over session", () => {
     expect(isHigherScope(global, session)).toBe(true);
     expect(isHigherScope(project, session)).toBe(true);
@@ -89,8 +93,10 @@ describe("new files", () => {
 describe("node values", () => {
   it("round-trip, including a path that holds a bar", () => {
     const ref = { root: "project", kind: "file", path: "a|b/c.md" } as const;
+
     expect(parseNodeValue(nodeValue(ref))).toEqual(ref);
     const root = { root: "global", kind: "root", path: "" } as const;
+
     expect(parseNodeValue(nodeValue(root))).toEqual(root);
   });
 });
@@ -119,8 +125,10 @@ describe("buildTree", () => {
       ],
       null,
     );
+
     expect(names(data)).toEqual(["Session", "Project", "Global"]);
     const session = nth(data, 0);
+
     expect(names(session.children)).toEqual([
       "drafts",
       "empty",
@@ -128,6 +136,7 @@ describe("buildTree", () => {
       "b.md",
     ]);
     const drafts = nth(session.children, 0);
+
     expect(names(drafts.children)).toEqual(["sub", "ch2.md", "ch10.md"]);
     expect(names(nth(data, 2).children)).toEqual(["g.txt"]);
   });
@@ -137,6 +146,7 @@ describe("buildTree", () => {
       [{ root: must(roots[0]), files: [], folders: ["a/b"] }],
       null,
     );
+
     expect(names(nth(data, 0).children)).toEqual(["a"]);
     expect(names(nth(nth(data, 0).children, 0).children)).toEqual(["b"]);
   });
@@ -155,6 +165,7 @@ describe("buildTree", () => {
       null,
     );
     const value = nth(nth(data, 0).children, 0).value;
+
     expect(info.get(value)).toEqual({
       name: "old.md",
       deleted: true,
@@ -168,6 +179,7 @@ describe("buildTree", () => {
       { kind: "new-file", root: "session", parent: "drafts" },
     );
     const drafts = nth(nth(data, 0).children, 0);
+
     expect(nth(drafts.children, 0).value).toBe(
       nodeValue({ root: "session", kind: "new-file", path: "drafts" }),
     );
@@ -183,6 +195,7 @@ describe("tabs", () => {
 
   it("opens a single click as a transient tab that the next one replaces", () => {
     let s = openTab(empty, a, false);
+
     expect(s.tabs).toEqual([{ ...a, transient: true }]);
     s = openTab(s, b, false);
     expect(s.tabs).toEqual([{ ...b, transient: true }]);
@@ -191,6 +204,7 @@ describe("tabs", () => {
 
   it("keeps a tab opened by double click, and a transient tab opens beside it", () => {
     let s = openTab(empty, a, true);
+
     s = openTab(s, b, false);
     expect(s.tabs.map((t) => [t.key, t.transient])).toEqual([
       ["a.md", false],
@@ -202,6 +216,7 @@ describe("tabs", () => {
 
   it("makes an open transient tab permanent when it is opened for good", () => {
     let s = openTab(empty, a, false);
+
     s = openTab(s, a, true);
     expect(s.tabs).toEqual([{ ...a, transient: false }]);
     expect(s.tabs).toHaveLength(1);
@@ -209,18 +224,22 @@ describe("tabs", () => {
 
   it("tells the same key in two roots apart", () => {
     const x = { ...a, root: "global" } as const;
+
     expect(tabId(a)).not.toBe(tabId(x));
   });
 
   it("makes a preview tab permanent from the start", () => {
     const s = openTab(empty, { ...a, kind: "preview" }, true);
+
     expect(s.tabs[0]?.transient).toBe(false);
     const t = openTab(s, b, false);
+
     expect(t.tabs).toHaveLength(2);
   });
 
   it("activates the tab to the right on close, else the left, else none", () => {
     let s = openTab(openTab(openTab(empty, a, true), b, true), c, true);
+
     s = { ...s, active: tabId(b) };
     s = closeTab(s, tabId(b));
     expect(s.active).toBe(tabId(c));
@@ -232,6 +251,7 @@ describe("tabs", () => {
 
   it("leaves the active tab alone when another one is closed", () => {
     let s = openTab(openTab(empty, a, true), b, true);
+
     s = closeTab(s, tabId(a));
     expect(s.active).toBe(tabId(b));
   });
@@ -240,8 +260,10 @@ describe("tabs", () => {
     const inFolder = { kind: "file", root: "session", key: "d/x.md" } as const;
     const other = { kind: "file", root: "global", key: "d/x.md" } as const;
     let s = openTab(openTab(empty, inFolder, true), other, true);
+
     s = { ...s, active: tabId(inFolder) };
     const next = renameFolderInTabs(s, "session", "d", "e/f");
+
     expect(next.tabs.map((t) => [t.root, t.key])).toEqual([
       ["session", "e/f/x.md"],
       ["global", "d/x.md"],
@@ -252,8 +274,10 @@ describe("tabs", () => {
 
 describe("what is remembered", () => {
   const page = { scope: "session", id: "s1" } as const;
+
   beforeEach(() => {
     const store = new Map<string, string>();
+
     vi.stubGlobal("localStorage", {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
@@ -272,6 +296,7 @@ describe("what is remembered", () => {
       { kind: "file", root: "session", key: "a.md", transient: false },
       { kind: "preview", root: "global", key: "b.md", transient: false },
     ] as const;
+
     saveView(page, {
       tabs: [...tabs],
       active: tabId(tabs[1]),
@@ -316,6 +341,7 @@ describe("what is remembered", () => {
       }),
     );
     const view = loadView(page);
+
     expect(view.tabs.map((t) => t.key)).toEqual(["ok.md"]);
     expect(view.active).toBeNull();
     expect(view.width).toBe(520);

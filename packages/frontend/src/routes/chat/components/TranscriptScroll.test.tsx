@@ -47,6 +47,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const name of ["scrollHeight", "clientHeight", "scrollTop"])
     Reflect.deleteProperty(HTMLElement.prototype, name);
+
   vi.unstubAllGlobals();
 });
 
@@ -55,8 +56,10 @@ const VIEWPORT = ".mantine-ScrollArea-viewport";
 function Parent({ scrollTo }: { scrollTo?: number }) {
   useEffect(() => {
     const view = document.querySelector<HTMLElement>(VIEWPORT);
+
     if (view && scrollTo !== undefined) view.scrollTop = scrollTo;
   }, [scrollTo]);
+
   return (
     <TranscriptScroll>
       <p>text</p>
@@ -71,7 +74,9 @@ function show(scrollTo?: number) {
     </MantineProvider>,
   );
   const view = container.querySelector<HTMLElement>(VIEWPORT);
+
   if (!view) throw new Error("No scroll viewport.");
+
   return view;
 }
 
@@ -87,11 +92,13 @@ function scrollTo(view: HTMLElement, top: number) {
 describe("TranscriptScroll", () => {
   it("starts at the bottom", () => {
     const view = show();
+
     expect(view.scrollTop).toBe(1000);
   });
 
   it("follows the content while at the bottom", () => {
     const view = show();
+
     grow(1500);
     expect(view.scrollTop).toBe(1500);
     grow(1800);
@@ -100,6 +107,7 @@ describe("TranscriptScroll", () => {
 
   it("stays where the reader scrolled to", () => {
     const view = show();
+
     scrollTo(view, 200);
     grow(1500);
     expect(view.scrollTop).toBe(200);
@@ -107,6 +115,7 @@ describe("TranscriptScroll", () => {
 
   it("follows again once the reader is back at the bottom", () => {
     const view = show();
+
     scrollTo(view, 200);
     grow(1500);
     scrollTo(view, 1500 - 400);
@@ -116,6 +125,7 @@ describe("TranscriptScroll", () => {
 
   it("is not pulled back down when something scrolls to a message on arrival", () => {
     const view = show(300);
+
     expect(view.scrollTop).toBe(300);
     grow(1500);
     expect(view.scrollTop).toBe(300);
@@ -123,6 +133,7 @@ describe("TranscriptScroll", () => {
 
   it("follows when the visible area shrinks while at the bottom", () => {
     const view = show();
+
     geometry.clientHeight = 300;
     act(() => observers.forEach((callback) => callback()));
     expect(view.scrollTop).toBe(1000);

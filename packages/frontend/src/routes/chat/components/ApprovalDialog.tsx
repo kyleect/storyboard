@@ -80,6 +80,7 @@ export function ApprovalDialog({
       />
     );
   }
+
   return (
     <ArgumentsDialog
       request={request}
@@ -125,6 +126,7 @@ function ArgumentsDialog({
     : request.agentSetting
       ? CHOICES.filter((c) => c.choice !== "always")
       : CHOICES;
+
   return (
     <Modal
       opened={opened}
@@ -176,6 +178,7 @@ function ArgumentsDialog({
                 {choiceLabel(c, request)}
               </Button>
             );
+
             return blocked ? (
               <Tooltip key={c.choice} label="Clear the comment to use this">
                 <span>{button}</span>
@@ -192,11 +195,13 @@ function ArgumentsDialog({
 
 const pathText = (path: string) => {
   const steps = pointerSteps(path);
+
   return steps.length === 0 ? "the whole value" : steps.join(" › ");
 };
 
 const short = (v: unknown) => {
   const text = JSON.stringify(v);
+
   return text.length > 80 ? `${text.slice(0, 77)}…` : text;
 };
 
@@ -256,17 +261,20 @@ function ChangesDialog({
 
   useEffect(() => {
     if (!onCheck) return;
+
     let current = true;
     const timer = setTimeout(() => {
       onCheck(selection).then(
         (r) => {
           if (!current) return;
+
           setProblems(r.errors);
           setStale(r.stale);
         },
         () => {},
       );
     }, 200);
+
     return () => {
       current = false;
       clearTimeout(timer);
@@ -276,16 +284,21 @@ function ChangesDialog({
   const toggle = (key: string, path: string, on: boolean) =>
     setSelection((prev) => {
       const paths = new Set(prev[key] ?? []);
+
       if (on) paths.add(path);
       else paths.delete(path);
+
       return { ...prev, [key]: [...paths] };
     });
 
   const refresh = async () => {
     if (!onRefresh) return;
+
     setRefreshing(true);
+
     try {
       const next = await onRefresh();
+
       if (next.review) {
         setReview(next.review);
         setSelection(selectAll(next.review));

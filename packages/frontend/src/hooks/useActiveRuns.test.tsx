@@ -30,6 +30,7 @@ describe("summarizeRuns", () => {
       run({ runId: "r2", parentRunId: "r1" }),
       run({ runId: "r3", sessionId: "s2", waiting: true }),
     ]);
+
     expect(s.working).toBe(2);
     expect(s.waiting).toBe(1);
     expect(s.bySession).toEqual({ s1: "running", s2: "waiting" });
@@ -38,6 +39,7 @@ describe("summarizeRuns", () => {
   it("shows a session as waiting when any of its runs waits, in either order", () => {
     const working = run();
     const waiting = run({ runId: "r2", parentRunId: "r1", waiting: true });
+
     expect(summarizeRuns([working, waiting]).bySession).toEqual({
       s1: "waiting",
     });
@@ -59,6 +61,7 @@ describe("useDebouncedFlag", () => {
 
   it("shows only after the delay", () => {
     const { result, rerender } = setup();
+
     rerender({ active: true });
     advance(299);
     expect(result.current).toBe(false);
@@ -68,6 +71,7 @@ describe("useDebouncedFlag", () => {
 
   it("never shows for a run shorter than the delay", () => {
     const { result, rerender } = setup();
+
     rerender({ active: true });
     advance(100);
     rerender({ active: false });
@@ -77,6 +81,7 @@ describe("useDebouncedFlag", () => {
 
   it("stays for the minimum time once shown", () => {
     const { result, rerender } = setup();
+
     rerender({ active: true });
     advance(300);
     advance(100);
@@ -89,6 +94,7 @@ describe("useDebouncedFlag", () => {
 
   it("does not flicker between back-to-back runs", () => {
     const { result, rerender } = setup();
+
     rerender({ active: true });
     advance(300);
     rerender({ active: false });

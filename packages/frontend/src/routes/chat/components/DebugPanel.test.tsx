@@ -127,6 +127,7 @@ function renderWith(ui: React.ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return render(
     <MantineProvider>
       <Notifications />
@@ -147,6 +148,7 @@ describe("filterEvents", () => {
 
   it("filters by type, run and text together", () => {
     const all = { ...NO_FILTER, hideStreaming: false };
+
     expect(
       filterEvents(events, { ...all, types: ["run.started", "run.finished"] }),
     ).toHaveLength(2);
@@ -165,6 +167,7 @@ describe("filterEvents", () => {
 describe("copyText", () => {
   it("writes a promised text inside the gesture with ClipboardItem", async () => {
     const write = vi.fn().mockResolvedValue(undefined);
+
     vi.stubGlobal(
       "ClipboardItem",
       class {
@@ -178,11 +181,13 @@ describe("copyText", () => {
       [[{ items: Record<string, Promise<Blob>> }]],
     ];
     const blob = await item.items["text/plain"];
+
     expect(await blob?.text()).toBe("hello");
   });
 
   it("falls back to writeText, and throws what the text's promise throws", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
+
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     await copyText("plain");
     expect(writeText).toHaveBeenCalledWith("plain");
@@ -196,6 +201,7 @@ describe("CopyDebugButton", () => {
   it("copies the linear view as text", async () => {
     const getDebug = vi.spyOn(api, "getSessionDebug").mockResolvedValue(debug);
     const writeText = vi.fn().mockResolvedValue(undefined);
+
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     renderWith(<CopyDebugButton sessionId="s" />);
 
@@ -204,6 +210,7 @@ describe("CopyDebugButton", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     expect(getDebug).toHaveBeenCalledWith("s");
     const [[text]] = writeText.mock.calls as [[string]];
+
     expect(text).toMatch(/^# Session debug export/);
     expect(text.indexOf("Say hi to the reader")).toBeGreaterThan(0);
     expect(text.indexOf("You are a story helper.")).toBeGreaterThan(
@@ -216,6 +223,7 @@ describe("CopyDebugButton", () => {
   it("copies the whole export as JSON from the Export menu item", async () => {
     vi.spyOn(api, "getSessionDebug").mockResolvedValue(debug);
     const writeText = vi.fn().mockResolvedValue(undefined);
+
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     renderWith(<CopyDebugButton sessionId="s" />);
 
@@ -225,6 +233,7 @@ describe("CopyDebugButton", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const [[text]] = writeText.mock.calls as [[string]];
     const copied = JSON.parse(text) as SessionDebug;
+
     expect(copied.runs[0]?.systemPrompt).toBe("You are a story helper.");
     expect(copied.events).toHaveLength(4);
     expect(await screen.findByText(/Session JSON copied/)).toBeTruthy();
@@ -248,6 +257,7 @@ describe("DebugPanel", () => {
     renderWith(<DebugPanel sessionId="s" />);
     const refresh = await screen.findByRole("button", { name: "Refresh" });
     const copy = screen.getByRole("button", { name: "Copy" });
+
     expect(copy.parentElement?.parentElement).toBe(refresh.parentElement);
     fireEvent.click(screen.getByRole("button", { name: "More ways to copy" }));
     expect(
@@ -264,6 +274,7 @@ describe("DebugPanel", () => {
     expect(await screen.findByText(/items, oldest first/)).toBeTruthy();
     const user = screen.getByText("Say hi to the reader");
     const system = screen.getByText("You are a story helper.");
+
     expect(
       user.compareDocumentPosition(system) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -297,7 +308,9 @@ describe("DebugPanel", () => {
     const row = within(screen.getByRole("table"))
       .getByText("tool.called")
       .closest("tr");
+
     if (!row) throw new Error("no row for tool.called");
+
     expect(within(row).getByText(/echo/)).toBeTruthy();
     fireEvent.click(row);
     expect(await screen.findByText(/"callId": "c1"/)).toBeTruthy();

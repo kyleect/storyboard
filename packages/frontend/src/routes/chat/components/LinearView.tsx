@@ -48,6 +48,7 @@ const pre = { whiteSpace: "pre-wrap", wordBreak: "break-word" } as const;
 
 function Body({ item }: { item: LinearItem }) {
   const maxHeight = item.kind === "system" || item.kind === "tools" ? 72 : 240;
+
   return (
     <Spoiler maxHeight={maxHeight} showLabel="Show more" hideLabel="Show less">
       <Stack gap={6}>
@@ -96,6 +97,7 @@ function File({ item, runs }: { item: LinearItem; runs: Map<string, string> }) {
   const empty =
     (item.text === undefined || item.text === "") &&
     (item.blocks === undefined || item.blocks.length === 0);
+
   return (
     <Paper
       p="xs"

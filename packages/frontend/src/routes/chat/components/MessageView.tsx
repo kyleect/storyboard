@@ -67,6 +67,7 @@ export function MessageView({
       </Paper>
     );
   }
+
   if (message.role === "tool") {
     if (
       message.name === ASK_USER &&
@@ -74,6 +75,7 @@ export function MessageView({
     ) {
       return <AskUserResult message={message} />;
     }
+
     return (
       <Paper p="sm">
         <Stack gap="sm">
@@ -94,6 +96,7 @@ export function MessageView({
       </Paper>
     );
   }
+
   if (message.role === "edit") {
     return (
       <Paper p="sm" bg="var(--mantine-color-default-hover)">
@@ -104,6 +107,7 @@ export function MessageView({
       </Paper>
     );
   }
+
   if (message.role !== "assistant") {
     return (
       <Paper p="sm">
@@ -114,6 +118,7 @@ export function MessageView({
       </Paper>
     );
   }
+
   return (
     <Paper p="sm">
       <Group gap="xs" mb="sm">
@@ -185,8 +190,10 @@ export function BlockView({
       );
     case "tool_call": {
       const form = block.name === ASK_USER && readAskUserCall(block.arguments);
+
       if (form) {
         const state = askState(block.callId, asks);
+
         return (
           <AskUserForm
             key={`${state.mode}:${"requestId" in state ? state.requestId : ""}`}
@@ -195,7 +202,9 @@ export function BlockView({
           />
         );
       }
+
       const decisionComment = decisionComments.get(block.callId);
+
       return (
         <Stack gap={2}>
           <Text size="xs" c="dimmed">
@@ -242,11 +251,14 @@ export function SubagentPanel({
 
   const view = asks.subagents.get(callId);
   const [chosen, setChosen] = useState<boolean | null>(null);
+
   if (!view) return null;
+
   const holdsTarget =
     !!asks.reveal &&
     view.messages.some((m) => messageAnchor(m.id) === asks.reveal);
   const expanded = chosen ?? (view.waiting || holdsTarget);
+
   return (
     <Paper
       p="xs"
@@ -327,9 +339,12 @@ export function SubagentPanel({
 export function subagentUserLabel(message: Message, index: number): string {
   if (message.role === "user") {
     if (message.source === "task") return "Task from the agent";
+
     if (message.source === "reminder") return "Reminder";
+
     if (message.source === "user") return "You, to the subagent";
   }
+
   return index === 0 ? "Task from the agent" : "Reminder";
 }
 export function SubagentMessageBox({
@@ -344,9 +359,11 @@ export function SubagentMessageBox({
   const [draft, setDraft] = useState("");
   const send = () => {
     if (!draft.trim() || asks.sendingToSubagent) return;
+
     asks.onSendToSubagent(runId, draft);
     setDraft("");
   };
+
   return (
     <Group align="flex-end" gap="xs" wrap="nowrap">
       <Textarea

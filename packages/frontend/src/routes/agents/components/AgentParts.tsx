@@ -14,6 +14,7 @@ import type { ToolGrant } from "../../../lib/tool-grant";
 
 export function useRefresh(scope: AgentScope) {
   const queryClient = useQueryClient();
+
   return async () => {
     await queryClient.invalidateQueries({
       queryKey: agentKeys.scopeLists(scope),
@@ -128,6 +129,7 @@ export function ToolsSummary({
         {known && !known.has(t) ? " (missing)" : ""}
       </Badge>
     ));
+
   return (
     <Stack gap={4}>
       <Text size="sm">{label}</Text>
@@ -229,6 +231,7 @@ export function VersionsModal({
   const refresh = useRefresh(scope);
   const tools = useSelectableTools();
   const known = tools.data ? new Set(tools.data.map((t) => t.name)) : undefined;
+
   return (
     <GenericVersionsModal
       title={`Versions of ${agent.name}`}
@@ -268,6 +271,7 @@ export function download(filename: string, text: string) {
     new Blob([text], { type: "text/markdown;charset=utf-8" }),
   );
   const a = document.createElement("a");
+
   a.href = url;
   a.download = filename;
   a.click();

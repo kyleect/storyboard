@@ -56,13 +56,18 @@ export const agentPath = (agentId: string, ...rest: string[]): string =>
 export function splitPath(path: string, count: number): string[] {
   const parts: string[] = [];
   let from = 0;
+
   for (let i = 0; i < count; i++) {
     const at = path.indexOf("|", from);
+
     if (at < 0) break;
+
     parts.push(path.slice(from, at));
     from = at + 1;
   }
+
   parts.push(path.slice(from));
+
   return parts;
 }
 
@@ -70,6 +75,7 @@ export const refValue = (r: NodeRef): string => nodeValue(r);
 
 export function parseNodeValue(value: string): NodeRef {
   const r = parseNodeValueOf(value);
+
   return { root: r.root, kind: r.kind as NodeKind, path: r.path };
 }
 
@@ -81,6 +87,7 @@ export interface SkillPlace {
 
 export function skillPlace(ref: NodeRef): SkillPlace {
   const [agentId = "", origin = "own", key = ""] = splitPath(ref.path, 2);
+
   return { agentId, origin: origin as SkillPlace["origin"], key };
 }
 
@@ -129,14 +136,19 @@ export function clashTags(
   places: ReadonlyMap<string, readonly (Origin | "own")[]>,
 ): Map<string, string> {
   const tags = new Map<string, string>();
+
   for (const [name, where] of places) {
     const first = where[0];
+
     if (first === undefined || where.length < 2) continue;
+
     const label = first === "own" ? "Agent" : ORIGIN_LABEL[first];
+
     for (const origin of where.slice(1)) {
       tags.set(`${name}\u0000${origin}`, `Overridden by ${label}`);
     }
   }
+
   return tags;
 }
 
@@ -147,8 +159,11 @@ function placesOf(
   const places = new Map<string, ("own" | Origin)[]>();
   const add = (name: string, where: "own" | Origin) =>
     places.set(name, [...(places.get(name) ?? []), where]);
+
   for (const n of own) add(n, "own");
+
   for (const o of ORIGINS) for (const n of inherited[o]) add(n, o);
+
   return places;
 }
 
@@ -163,8 +178,11 @@ function skillChildren(
   const dirs = new Map<string, TreeNode>();
   const dirAt = (path: string): TreeNode[] => {
     if (path === "") return top;
+
     const have = dirs.get(path);
+
     if (have) return have.children ?? top;
+
     const at = path.lastIndexOf("/");
     const parent = dirAt(at < 0 ? "" : path.slice(0, at));
     const node: TreeNode = {
@@ -176,6 +194,7 @@ function skillChildren(
       }),
       children: [],
     };
+
     info.set(node.value, {
       name: node.label,
       deleted: skill.deleted,
@@ -183,8 +202,10 @@ function skillChildren(
     });
     dirs.set(path, node);
     parent.push(node);
+
     return node.children ?? top;
   };
+
   for (const f of skill.files) {
     const at = f.path.lastIndexOf("/");
     const into = dirAt(at < 0 ? "" : f.path.slice(0, at));
@@ -196,6 +217,7 @@ function skillChildren(
         path: base(`${skill.name}/${f.path}`).file,
       }),
     };
+
     info.set(node.value, {
       name: node.label,
       deleted: skill.deleted,
@@ -203,15 +225,20 @@ function skillChildren(
     });
     into.push(node);
   }
+
   const sort = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => {
       const da = a.children ? 0 : 1;
       const db = b.children ? 0 : 1;
+
       return da - db || byName(a, b);
     });
+
     for (const n of nodes) if (n.children) sort(n.children);
   };
+
   sort(top);
+
   return top;
 }
 
@@ -226,6 +253,7 @@ function skillsFolder(
     value: nodeValue({ root, kind: "skills", path: agentId }),
     children: [],
   };
+
   info.set(folder.value, { name: "Skills", deleted: false });
   const names = (list: readonly SkillWithFiles[]) =>
     list.filter((s) => !s.deleted).map((s) => s.name);
@@ -261,20 +289,26 @@ function skillsFolder(
       ),
     };
     const clash = tags.get(`${skill.name}\u0000${origin}`);
+
     info.set(node.value, {
       name: skill.name,
       deleted: skill.deleted,
       ...extra,
       ...(clash && !skill.deleted ? { clash } : {}),
     });
+
     return node;
   };
 
   const own = load.own.map((s) => row(s, "own")).sort(byName);
+
   folder.children?.push(...own);
+
   for (const origin of ORIGINS) {
     const skills = load.inherited[origin];
+
     if (skills.length === 0) continue;
+
     const group: TreeNode = {
       label: ORIGIN_LABEL[origin],
       value: nodeValue({
@@ -284,9 +318,11 @@ function skillsFolder(
       }),
       children: skills.map((s) => row(s, origin)).sort(byName),
     };
+
     info.set(group.value, { name: group.label, deleted: false, origin });
     folder.children?.push(group);
   }
+
   return folder;
 }
 
@@ -301,6 +337,7 @@ function schemasFolder(
     value: nodeValue({ root, kind: "schemas", path: agentId }),
     children: [],
   };
+
   info.set(folder.value, { name: "Schemas", deleted: false });
 
   const originOf = (s: SchemaInfo): "own" | Origin =>
@@ -335,6 +372,7 @@ function schemasFolder(
       children: [],
     };
     const clash = tags.get(`${s.name}\u0000${origin}`);
+
     info.set(node.value, {
       name: s.name,
       deleted: s.deleted,
@@ -342,6 +380,7 @@ function schemasFolder(
       ...(clash ? { clash } : {}),
     });
     nodes.set(s.id, node);
+
     return node;
   };
   const dataRow = (d: DataItem): TreeNode => {
@@ -353,11 +392,13 @@ function schemasFolder(
         path: agentPath(agentId, d.id),
       }),
     };
+
     info.set(node.value, {
       name: d.name,
       deleted: d.deleted,
       outOfDate: d.outOfDate,
     });
+
     return node;
   };
 
@@ -365,10 +406,14 @@ function schemasFolder(
     .filter((s) => originOf(s) === "own")
     .map(rowOf)
     .sort(byName);
+
   folder.children?.push(...own);
+
   for (const origin of ORIGINS) {
     const schemas = load.schemas.filter((s) => originOf(s) === origin);
+
     if (schemas.length === 0) continue;
+
     const group: TreeNode = {
       label: ORIGIN_LABEL[origin],
       value: nodeValue({
@@ -378,26 +423,33 @@ function schemasFolder(
       }),
       children: schemas.map(rowOf).sort(byName),
     };
+
     info.set(group.value, { name: group.label, deleted: false, origin });
     folder.children?.push(group);
   }
 
   const orphans: DataItem[] = [];
+
   for (const d of load.data) {
     const parent = nodes.get(d.schemaId);
+
     if (parent && known.has(d.schemaId)) parent.children?.push(dataRow(d));
     else orphans.push(d);
   }
+
   for (const n of nodes.values()) n.children?.sort(byName);
+
   if (orphans.length > 0) {
     const node: TreeNode = {
       label: "Unknown schema",
       value: nodeValue({ root, kind: "unknown", path: agentId }),
       children: orphans.map(dataRow).sort(byName),
     };
+
     info.set(node.value, { name: "Unknown schema", deleted: false });
     folder.children?.push(node);
   }
+
   return folder;
 }
 
@@ -412,6 +464,7 @@ export function buildTree(
       value: nodeValue({ root: r.id, kind: "root", path: "" }),
       children: [],
     };
+
     info.set(top.value, { name: r.label, deleted: false });
     const agents = [...r.agents]
       .sort((a, b) =>
@@ -423,13 +476,16 @@ export function buildTree(
           value: nodeValue({ root: r.id, kind: "agent", path: a.id }),
           children: [],
         };
+
         info.set(node.value, { name: a.name, deleted: a.deleted, agent: a });
         const load = loaded.get(a.id);
+
         if (!load) {
           const wait: TreeNode = {
             label: "Loading…",
             value: nodeValue({ root: r.id, kind: "loading", path: a.id }),
           };
+
           info.set(wait.value, { name: "Loading…", deleted: false });
           node.children?.push(wait);
         } else {
@@ -438,11 +494,15 @@ export function buildTree(
             schemasFolder(r.id, a.id, load.schemas, info),
           );
         }
+
         return node;
       });
+
     top.children?.push(...agents);
+
     return top;
   });
+
   return { data, info };
 }
 

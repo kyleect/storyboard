@@ -7,8 +7,11 @@ type Keys = Record<string, readonly unknown[]>;
 /** The names of the queries that invalidating `prefix` marks stale. */
 async function reach(prefix: readonly unknown[], keys: Keys) {
   const client = new QueryClient();
+
   for (const key of Object.values(keys)) client.setQueryData(key, "cached");
+
   await client.invalidateQueries({ queryKey: prefix, refetchType: "none" });
+
   return Object.entries(keys)
     .filter(([, key]) => client.getQueryState(key)?.isInvalidated)
     .map(([name]) => name)

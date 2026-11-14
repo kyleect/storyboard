@@ -43,11 +43,13 @@ afterEach(() => {
 describe("the attachments being written", () => {
   it("survive the composer going away and coming back", async () => {
     const first = renderHook(() => useAttachmentDraft("s1"), { wrapper });
+
     await act(() => first.result.current.add([png()]));
     expect(first.result.current.items).toHaveLength(1);
     first.unmount();
 
     const again = renderHook(() => useAttachmentDraft("s1"), { wrapper });
+
     expect(again.result.current.items.map((i) => i.ref)).toEqual([
       "session://cat.png",
     ]);
@@ -56,13 +58,16 @@ describe("the attachments being written", () => {
 
   it("start empty in another session", async () => {
     const a = renderHook(() => useAttachmentDraft("s1"), { wrapper });
+
     await act(() => a.result.current.add([png()]));
     const b = renderHook(() => useAttachmentDraft("s2"), { wrapper });
+
     expect(b.result.current.items).toEqual([]);
   });
 
   it("release the previews when removed or cleared", async () => {
     const { result } = renderHook(() => useAttachmentDraft("s1"), { wrapper });
+
     await act(() => result.current.add([png(), png()]));
     act(() => result.current.remove("session://cat.png"));
     expect(revoked).toEqual(["blob:1", "blob:2"]);
@@ -74,11 +79,13 @@ describe("the attachments being written", () => {
 
   it("keep an upload that finishes after the composer went away", async () => {
     let finish: (v: UploadedFile) => void = () => {};
+
     vi.spyOn(api, "uploadFile").mockReturnValue(
       new Promise((resolve) => (finish = resolve)),
     );
     const first = renderHook(() => useAttachmentDraft("s1"), { wrapper });
     let pending: Promise<unknown> = Promise.resolve();
+
     act(() => {
       pending = first.result.current.add([png()]);
     });
@@ -93,6 +100,7 @@ describe("the attachments being written", () => {
       await pending;
     });
     const again = renderHook(() => useAttachmentDraft("s1"), { wrapper });
+
     expect(again.result.current.items).toHaveLength(1);
     expect(again.result.current.uploading).toBe(0);
   });
@@ -101,12 +109,14 @@ describe("the attachments being written", () => {
 describe("the text being written", () => {
   it("is kept per session, and dropped with its previews", async () => {
     const files = renderHook(() => useAttachmentDraft("s1"), { wrapper });
+
     await act(() => files.result.current.add([png()]));
     act(() =>
       useDrafts.getState().patch("s1", (d) => ({ ...d, text: "Once upon" })),
     );
     const s1 = renderHook(() => useDraft("s1"), { wrapper });
     const s2 = renderHook(() => useDraft("s2"), { wrapper });
+
     expect(s1.result.current.text).toBe("Once upon");
     expect(s2.result.current.text).toBe("");
 

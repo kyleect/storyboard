@@ -107,7 +107,9 @@ export function ErrorsPage() {
           onChange={(v) =>
             setFilter((f) => {
               const rest = withoutKeys(f, ["source", "tool"]);
+
               if (v === null) return rest;
+
               return v === RUNS
                 ? { ...rest, source: "run" }
                 : { ...rest, source: "tool", tool: v };

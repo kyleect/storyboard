@@ -29,6 +29,7 @@ import {
 
 const must = <T>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
+
   return v;
 };
 const nth = (nodes: TreeNode[] | undefined, i: number): TreeNode =>
@@ -71,7 +72,9 @@ describe("buildTree", () => {
       roots.map((r) => ({ root: r, schemas: [], data: [] })),
       null,
     );
+
     expect(names(data)).toEqual(["Session", "Project", "Global"]);
+
     for (const top of data) expect(names(top.children)).toEqual(["Schemas"]);
   });
 
@@ -91,6 +94,7 @@ describe("buildTree", () => {
       null,
     );
     const folder = nth(nth(data, 0).children, 0);
+
     expect(names(folder.children)).toEqual(["Character", "Setting"]);
     expect(names(nth(folder.children, 0).children)).toEqual(["Aria", "Bram"]);
     expect(names(nth(folder.children, 1).children)).toEqual(["Cove"]);
@@ -115,6 +119,7 @@ describe("buildTree", () => {
     const rows = nth(nth(data, 0).children, 0).children ?? [];
     const flag = (label: string) =>
       info.get(must(rows.find((r) => r.label === label)).value)?.inherited;
+
     expect(flag("Mine")).toBe(false);
     expect(flag("Shared")).toBe(true);
     expect(flag("Project's")).toBe(true);
@@ -148,6 +153,7 @@ describe("buildTree", () => {
     );
     const underSession = nth(nth(nth(data, 0).children, 0).children, 0);
     const underGlobal = nth(nth(nth(data, 1).children, 0).children, 0);
+
     expect(names(underSession.children)).toEqual(["Cove"]);
     expect(names(underGlobal.children)).toEqual(["Harbour"]);
     expect(underSession.value).not.toBe(underGlobal.value);
@@ -168,8 +174,10 @@ describe("buildTree", () => {
       null,
     );
     const folder = nth(nth(data, 0).children, 0);
+
     expect(names(folder.children)).toEqual(["Zebra", "Unknown schema"]);
     const unknown = nth(folder.children, 1);
+
     expect(names(unknown.children)).toEqual(["Lost"]);
     expect(info.get(unknown.value)?.name).toBe("Unknown schema");
   });
@@ -186,6 +194,7 @@ describe("buildTree", () => {
       null,
     );
     const s = nth(nth(nth(data, 0).children, 0).children, 0);
+
     expect(info.get(s.value)?.deleted).toBe(true);
     expect(info.get(nth(s.children, 0).value)).toMatchObject({
       name: "old",
@@ -200,6 +209,7 @@ describe("buildTree", () => {
       { kind: "new-schema", root: "session" },
     );
     const folder = nth(nth(data, 0).children, 0);
+
     expect(nth(folder.children, 0).value).toBe(
       nodeValue({ root: "session", kind: "new-schema", path: "" }),
     );
@@ -218,6 +228,7 @@ describe("buildTree", () => {
       { kind: "new-data", root: "session", schemaId: "A" },
     );
     const a = nth(nth(nth(data, 0).children, 0).children, 0);
+
     expect(nth(a.children, 0).value).toBe(
       nodeValue({ root: "session", kind: "new-data", path: "A" }),
     );
@@ -232,6 +243,7 @@ describe("buildTree", () => {
       ],
       { kind: "new-schema", root: "global" },
     );
+
     expect(names(nth(nth(data, 0).children, 0).children)).toEqual([]);
     expect(names(nth(nth(data, 1).children, 0).children)).toEqual([""]);
   });
@@ -243,6 +255,7 @@ describe("mergeSchemas", () => {
       [schema("a", { deleted: true })],
       [schema("a"), schema("b")],
     );
+
     expect(merged.map((s) => s.id).sort()).toEqual(["a", "b"]);
     expect(must(merged.find((s) => s.id === "a")).deleted).toBe(true);
   });
@@ -295,6 +308,7 @@ describe("where a schema's tab belongs", () => {
 describe("node values", () => {
   it("round-trip, including an id that holds a bar", () => {
     const ref = { root: "project", kind: "data", path: "a|b" } as const;
+
     expect(parseNodeValue(nodeValue(ref))).toEqual(ref);
   });
 });
@@ -306,6 +320,7 @@ describe("tabs", () => {
 
   it("opens a single click as a transient tab that the next one replaces", () => {
     let s = openTab(empty, a, false);
+
     expect(s.tabs).toEqual([{ ...a, transient: true }]);
     s = openTab(s, b, false);
     expect(s.tabs).toEqual([{ ...b, transient: true }]);
@@ -314,6 +329,7 @@ describe("tabs", () => {
 
   it("keeps a tab opened by double click", () => {
     let s = openTab(empty, a, true);
+
     s = openTab(s, b, false);
     expect(s.tabs.map((t) => [t.key, t.transient])).toEqual([
       ["a", false],
@@ -332,8 +348,10 @@ describe("tabs", () => {
 
 describe("what is remembered", () => {
   const page = { scope: "session", id: "s1" } as const;
+
   beforeEach(() => {
     const store = new Map<string, string>();
+
     vi.stubGlobal("localStorage", {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
@@ -350,6 +368,7 @@ describe("what is remembered", () => {
       key: "sa",
       transient: false,
     } as const;
+
     saveView("agent.a1", {
       tabs: [tab],
       active: tabId(tab),
@@ -373,6 +392,7 @@ describe("what is remembered", () => {
       width: 300,
       showDeleted: true,
     };
+
     saveView(page, view);
     expect(loadView(page)).toEqual({ ...view, tabs });
   });
@@ -413,6 +433,7 @@ describe("what is remembered", () => {
       }),
     );
     const view = loadView(page);
+
     expect(view.tabs.map((t) => t.key)).toEqual(["ok"]);
     expect(view.active).toBeNull();
     expect(view.width).toBe(520);

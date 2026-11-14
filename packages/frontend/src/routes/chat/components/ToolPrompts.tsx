@@ -12,9 +12,13 @@ import {
 
 export function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
   const result = asks.results.get(callId);
+
   if (result?.prompt) return <PromptAnswer prompt={result.prompt} />;
+
   if (result) return null;
+
   const open = asks.opens.find((o) => o.request.callId === callId);
+
   if (open) {
     return (
       <AskUserForm
@@ -29,7 +33,9 @@ export function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
       />
     );
   }
+
   const sent = asks.submitted.get(callId);
+
   if (sent) {
     return (
       <AskUserForm
@@ -39,6 +45,7 @@ export function ToolPrompt({ callId, asks }: { callId: string; asks: Asks }) {
       />
     );
   }
+
   return null;
 }
 export function PromptAnswer({ prompt }: { prompt: PromptRecord }) {
@@ -64,6 +71,7 @@ export function PromptAnswer({ prompt }: { prompt: PromptRecord }) {
 }
 export function askState(callId: string, asks: Asks): AskUserState {
   const result = asks.results.get(callId);
+
   if (result && !result.isError) {
     const answers =
       result.data &&
@@ -71,12 +79,18 @@ export function askState(callId: string, asks: Asks): AskUserState {
       !Array.isArray(result.data)
         ? (result.data as Record<string, unknown>)
         : {};
+
     return { mode: "answered", answers };
   }
+
   if (result?.content === DECLINED) return { mode: "skipped" };
+
   const sent = asks.submitted.get(callId);
+
   if (!result && sent) return { mode: "answered", answers: sent.answers };
+
   const open = asks.opens.find((o) => o.request.callId === callId);
+
   if (!result && open) {
     return {
       mode: "open",
@@ -85,6 +99,7 @@ export function askState(callId: string, asks: Asks): AskUserState {
       onAnswer: (answer) => asks.onAnswer(open, answer),
     };
   }
+
   return { mode: "closed" };
 }
 export function AskUserResult({ message }: { message: ToolResultMessage }) {

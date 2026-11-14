@@ -42,6 +42,7 @@ function wrapper(theme?: MantineThemeOverride) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return ({ children }: { children: ReactNode }) => (
     <MantineProvider {...(theme ? { theme } : {})}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -98,6 +99,7 @@ function renderWithClient() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   renderHook(() => useFaviconIndicator(), {
     wrapper: ({ children }: { children: ReactNode }) => (
       <MantineProvider>
@@ -107,12 +109,14 @@ function renderWithClient() {
       </MantineProvider>
     ),
   });
+
   return queryClient;
 }
 
 describe("useFaviconIndicator", () => {
   it("leaves the plain icon while nothing waits", async () => {
     const spy = activeRuns(0);
+
     renderHook(() => useFaviconIndicator(), { wrapper: wrapper() });
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(link().getAttribute("href")).toMatch(PLAIN);
@@ -133,6 +137,7 @@ describe("useFaviconIndicator", () => {
   it("redraws only when it goes from none waiting to some, not for each new count", async () => {
     const spy = activeRuns(1);
     const queryClient = renderWithClient();
+
     await waitFor(() => expect(link().getAttribute("href")).toBe(DATA_URL));
     spy.mockResolvedValue(runs(2));
     await queryClient.invalidateQueries();
@@ -143,6 +148,7 @@ describe("useFaviconIndicator", () => {
   it("brings the plain icon back once nothing waits", async () => {
     const spy = activeRuns(1);
     const queryClient = renderWithClient();
+
     await waitFor(() => expect(link().getAttribute("href")).toBe(DATA_URL));
 
     spy.mockResolvedValue(runs(0, 1));
@@ -172,6 +178,7 @@ describe("useFaviconIndicator", () => {
 
   it("stays one gray with reduced motion", async () => {
     const original = window.matchMedia;
+
     window.matchMedia = (query: string) =>
       ({
         matches: true,
@@ -181,6 +188,7 @@ describe("useFaviconIndicator", () => {
         addListener: () => {},
         removeListener: () => {},
       }) as unknown as MediaQueryList;
+
     try {
       activeRuns(0, 1);
       renderHook(() => useFaviconIndicator(50), { wrapper: wrapper() });
@@ -195,6 +203,7 @@ describe("useFaviconIndicator", () => {
   it("brings the plain icon back after the last run ends", async () => {
     const spy = activeRuns(0, 1);
     const queryClient = renderWithClient();
+
     await waitFor(() => expect(link().getAttribute("href")).toBe(DATA_URL));
     spy.mockResolvedValue(runs(0, 0));
     await queryClient.invalidateQueries();
@@ -206,11 +215,13 @@ describe("useFaviconIndicator", () => {
 
   it("colours the icon from the theme's primary colour", async () => {
     const spy = activeRuns(0);
+
     renderHook(() => useFaviconIndicator(), {
       wrapper: wrapper({ primaryColor: "grape" }),
     });
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const svg = decodeURIComponent(link().getAttribute("href") ?? "");
+
     expect(svg).toContain('fill="#da77f2"');
     expect(svg).toContain('fill="#be4bdb"');
     expect(svg).not.toContain("#4dabf7");
@@ -218,9 +229,11 @@ describe("useFaviconIndicator", () => {
 
   it("uses Mantine's default blue when the theme sets no colour", async () => {
     const spy = activeRuns(0);
+
     renderHook(() => useFaviconIndicator(), { wrapper: wrapper() });
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const svg = decodeURIComponent(link().getAttribute("href") ?? "");
+
     expect(svg).toContain('fill="#4dabf7"');
     expect(svg).toContain('fill="#228be6"');
   });
@@ -249,6 +262,7 @@ describe("useFaviconIndicator", () => {
     activeRuns(0);
     const spy = unread(1);
     const queryClient = renderWithClient();
+
     await waitFor(() => expect(link().getAttribute("href")).toBe(DATA_URL));
     spy.mockResolvedValue({ sessions: [] });
     await queryClient.invalidateQueries();
@@ -281,8 +295,10 @@ describe("useFaviconIndicator", () => {
 
   it("goes from the pulse to green when the run ends with a reply unseen", async () => {
     const spy = activeRuns(0, 1);
+
     unread(1);
     const queryClient = renderWithClient();
+
     await waitFor(() => expect(ctx.fillStyles).toContain(COLORS.working[0]));
     spy.mockResolvedValue(runs(0, 0));
     await queryClient.invalidateQueries();
@@ -294,6 +310,7 @@ describe("useFaviconIndicator", () => {
   it("keeps the plain icon if the canvas cannot draw", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const spy = activeRuns(1);
+
     renderHook(() => useFaviconIndicator(), { wrapper: wrapper() });
     await waitFor(() => expect(spy).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 20));

@@ -32,6 +32,7 @@ beforeEach(() => localStorage.clear());
 
 const must = <T,>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
+
   return v;
 };
 
@@ -131,6 +132,7 @@ const schemaDetail = (s: SchemaInfo, body: unknown = BODY): SchemaDetail => ({
 
 const dataDetail = (d: DataItem): DataDetail => {
   const s = ALL.find((x) => x.id === d.schemaId);
+
   return {
     ...d,
     value: VALUES[d.id],
@@ -144,6 +146,7 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return {
     client,
     ...render(
@@ -158,19 +161,26 @@ function show(ui: React.ReactElement) {
 
 function typeInEditor(text: string) {
   const dom = document.querySelector<HTMLElement>(".cm-editor");
+
   if (!dom) throw new Error("no editor is open");
+
   const view = EditorView.findFromDOM(dom);
+
   if (!view) throw new Error("no editor view");
+
   act(() => {
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: text },
     });
   });
 }
+
 const editorText = () => {
   const dom = document.querySelector<HTMLElement>(".cm-editor");
   const view = dom ? EditorView.findFromDOM(dom) : null;
+
   if (!view) throw new Error("no editor view");
+
   return view.state.doc.toString();
 };
 
@@ -188,7 +198,9 @@ function mockApi() {
   }));
   vi.spyOn(api, "getSchema").mockImplementation(async (_o, id) => {
     const s = ALL.find((x) => x.id === id);
+
     if (!s) throw new Error("not found");
+
     return schemaDetail(s);
   });
   vi.spyOn(api, "schemaBody").mockResolvedValue(BODY);
@@ -196,7 +208,9 @@ function mockApi() {
     const d = [...(DATA.session ?? []), ...(DATA.global ?? [])].find(
       (x) => x.id === id,
     );
+
     if (!d) throw new Error("not found");
+
     return dataDetail(d);
   });
 }
@@ -216,6 +230,7 @@ describe("the tree", () => {
 
   it("shows only Global on the global page, and Project and Global on a project page", async () => {
     const first = show(<StructuredExplorer page={global} />);
+
     await screen.findByText("Setting");
     expect(screen.queryByText("Session")).toBeNull();
     expect(screen.queryByText("Project")).toBeNull();
@@ -230,6 +245,7 @@ describe("the tree", () => {
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     const inherited = screen.getAllByTestId("inherited-schema");
+
     expect(inherited.map((e) => e.textContent).sort()).toEqual([
       "Place",
       "Setting",
@@ -260,6 +276,7 @@ describe("the tree", () => {
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     const list = vi.mocked(api.listData);
+
     expect(list.mock.calls.every(([, deleted]) => deleted === false)).toBe(
       true,
     );
@@ -305,6 +322,7 @@ describe("opening", () => {
 
   it("shows the project's color on the tab of a project's schema, and not on another", async () => {
     const { client } = show(<StructuredExplorer page={project} />);
+
     client.setQueryData(projectKeys.list(), [
       { id: "p1", name: "Novel", color: "teal" },
     ]);
@@ -318,6 +336,7 @@ describe("opening", () => {
       expect(screen.getByRole("tab", { name: /Place/ })).toBeTruthy(),
     );
     const tab = screen.getByRole("tab", { name: /Place/ });
+
     expect(tab.getAttribute("title")).toContain("Project");
     expect(iconBg(tab)).toContain("--mantine-color-teal-filled");
     expect(tab.style.getPropertyValue("--tab-color")).toContain(
@@ -328,6 +347,7 @@ describe("opening", () => {
       screen
         .getAllByRole("tab")
         .find((t) => t.getAttribute("title")?.startsWith("Global"));
+
     fireEvent.doubleClick(screen.getAllByText("Setting")[0] as HTMLElement);
     await waitFor(() => expect(globalTab()).toBeTruthy());
     expect(iconBg(globalTab() as HTMLElement)).not.toContain("teal");
@@ -356,6 +376,7 @@ describe("opening", () => {
 
   it("remembers the open tabs for the page", async () => {
     const first = show(<StructuredExplorer page={session} projectId="p1" />);
+
     fireEvent.click(await screen.findByText("Character"));
     fireEvent.doubleClick(await screen.findByText("Character"));
     await screen.findByLabelText(/^Name/);
@@ -374,6 +395,7 @@ describe("editing data", () => {
   async function openAria() {
     fireEvent.click(await screen.findByText("Character"));
     fireEvent.click(await screen.findByText("Aria"));
+
     return (await screen.findByLabelText(/^Nickname/)) as HTMLInputElement;
   }
 
@@ -381,8 +403,10 @@ describe("editing data", () => {
     const save = vi
       .spyOn(api, "saveData")
       .mockResolvedValue({ ...dataDetail(ARIA) });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     const nick = await openAria();
+
     fireEvent.change(nick, { target: { value: "Ari the Bold" } });
     expect(
       await screen.findByRole("img", { name: "Unsaved changes" }),
@@ -405,6 +429,7 @@ describe("editing data", () => {
     const save = vi
       .spyOn(api, "saveData")
       .mockResolvedValue({ ...dataDetail(ARIA) });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     await openAria();
     fireEvent.click(screen.getByRole("radio", { name: "JSON" }));
@@ -452,8 +477,10 @@ describe("editing data", () => {
 
   it("does not save a form that is missing an answer, and marks the field", async () => {
     const save = vi.spyOn(api, "saveData");
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     const nick = await openAria();
+
     fireEvent.change(nick, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Answer this question.")).toBeTruthy();
@@ -466,6 +493,7 @@ describe("editing data", () => {
     );
     show(<StructuredExplorer page={session} projectId="p1" />);
     const nick = await openAria();
+
     fireEvent.change(nick, { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("must be integer.")).toBeTruthy();
@@ -475,6 +503,7 @@ describe("editing data", () => {
     const save = vi
       .spyOn(api, "saveData")
       .mockResolvedValue({ ...dataDetail(HARBOUR) });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     fireEvent.click(must(screen.getAllByText("Setting").at(-1)));
@@ -482,9 +511,11 @@ describe("editing data", () => {
     const nick = (await screen.findByLabelText(
       /^Nickname/,
     )) as HTMLInputElement;
+
     fireEvent.change(nick, { target: { value: "Port" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("dialog");
+
     expect(within(dialog).getByText(/Save the Global data/)).toBeTruthy();
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -502,6 +533,7 @@ describe("editing data", () => {
       outOfDate: true,
       latestVersion: 2,
     });
+
     DATA.session = [outdated, COVE, LOST];
     vi.spyOn(api, "getData").mockResolvedValue({
       ...dataDetail(outdated),
@@ -510,6 +542,7 @@ describe("editing data", () => {
     const migrate = vi
       .spyOn(api, "migrateData")
       .mockResolvedValue({ ...dataDetail(outdated) });
+
     try {
       show(<StructuredExplorer page={session} projectId="p1" />);
       fireEvent.click(await screen.findByText("Character"));
@@ -538,6 +571,7 @@ describe("editing schemas", () => {
     const save = vi
       .spyOn(api, "saveSchema")
       .mockResolvedValue({ ...CHARACTER, version: 2 });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("Character"));
     await screen.findByText("nickname");
@@ -547,6 +581,7 @@ describe("editing schemas", () => {
     );
     expect(JSON.parse(editorText())).toEqual(BODY);
     const next = { type: "object", properties: { x: { type: "string" } } };
+
     typeInEditor(JSON.stringify(next));
     expect(
       await screen.findByRole("img", { name: "Unsaved changes" }),
@@ -563,9 +598,11 @@ describe("editing schemas", () => {
 
   it("saves a change made in the form (the builder)", async () => {
     const save = vi.spyOn(api, "saveSchema").mockResolvedValue(CHARACTER);
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("Character"));
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     fireEvent.change(name, { target: { value: "Person" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalled());
@@ -578,13 +615,16 @@ describe("editing schemas", () => {
 
   it("asks before saving a schema in a higher scope, and does nothing when declined", async () => {
     const save = vi.spyOn(api, "saveSchema").mockResolvedValue(SETTING);
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     fireEvent.click(must(screen.getAllByText("Setting")[0]));
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     fireEvent.change(name, { target: { value: "Scenery" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("dialog");
+
     expect(within(dialog).getByText(/Save the Global schema/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -594,9 +634,11 @@ describe("editing schemas", () => {
 
   it("does not ask for a schema of the page's own scope", async () => {
     const save = vi.spyOn(api, "saveSchema").mockResolvedValue(SETTING);
+
     show(<StructuredExplorer page={global} />);
     fireEvent.click(await screen.findByText("Setting"));
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     fireEvent.change(name, { target: { value: "Scenery" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalled());
@@ -616,6 +658,7 @@ describe("editing schemas", () => {
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("Character"));
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     fireEvent.change(name, { target: { value: "Person" } });
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
     await waitFor(() =>
@@ -630,6 +673,7 @@ describe("editing schemas", () => {
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("Character"));
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     fireEvent.change(name, { target: { value: "Person" } });
     fireEvent.click(
       await screen.findByRole("button", {
@@ -637,6 +681,7 @@ describe("editing schemas", () => {
       }),
     );
     const dialog = await screen.findByRole("dialog");
+
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Keep editing" }),
     );
@@ -655,6 +700,7 @@ describe("editing schemas", () => {
 
   it("reports whether there are unsaved changes", async () => {
     const onDirtyChange = vi.fn();
+
     show(
       <StructuredExplorer
         page={session}
@@ -664,6 +710,7 @@ describe("editing schemas", () => {
     );
     fireEvent.click(await screen.findByText("Character"));
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
     fireEvent.change(name, { target: { value: "Person" } });
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
@@ -677,14 +724,17 @@ describe("making things in the tree", () => {
     const create = vi
       .spyOn(api, "createSchema")
       .mockResolvedValue(schema("sn", "Monster", "session"));
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     fireEvent.click(screen.getByRole("button", { name: "New schema" }));
     const box = await screen.findByLabelText("New schema name");
+
     fireEvent.change(box, { target: { value: "Monster" } });
     fireEvent.keyDown(box, { key: "Enter" });
     expect(create).not.toHaveBeenCalled();
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     expect(name.value).toBe("Monster");
     expect(screen.getByRole("tab").textContent).toContain("Monster · Session");
     fireEvent.change(screen.getByLabelText(/^Description/), {
@@ -705,10 +755,12 @@ describe("making things in the tree", () => {
 
   it("will not create a schema without a description", async () => {
     const create = vi.spyOn(api, "createSchema");
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     fireEvent.click(screen.getByRole("button", { name: "New schema" }));
     const box = await screen.findByLabelText("New schema name");
+
     fireEvent.change(box, { target: { value: "Monster" } });
     fireEvent.keyDown(box, { key: "Enter" });
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
@@ -722,15 +774,18 @@ describe("making things in the tree", () => {
     const create = vi
       .spyOn(api, "createData")
       .mockResolvedValue({ ...dataDetail(ARIA), id: "d9", name: "Bram" });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.contextMenu(await screen.findByText("Character"));
     fireEvent.click(await screen.findByText("New data here"));
     const box = await screen.findByLabelText("New data name");
+
     fireEvent.change(box, { target: { value: "Bram" } });
     fireEvent.keyDown(box, { key: "Enter" });
     const nick = (await screen.findByLabelText(
       /^Nickname/,
     )) as HTMLInputElement;
+
     fireEvent.change(nick, { target: { value: "Bram the Brave" } });
     fireEvent.change(screen.getByLabelText(/^Description/), {
       target: { value: "A friend" },
@@ -749,11 +804,13 @@ describe("making things in the tree", () => {
     const create = vi
       .spyOn(api, "createData")
       .mockResolvedValue({ ...dataDetail(COVE), id: "d9" });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     await screen.findByText("Character");
     fireEvent.contextMenu(must(screen.getAllByText("Setting")[0]));
     fireEvent.click(await screen.findByText("New data here"));
     const box = await screen.findByLabelText("New data name");
+
     fireEvent.change(box, { target: { value: "Dock" } });
     fireEvent.keyDown(box, { key: "Enter" });
     fireEvent.change(await screen.findByLabelText(/^Nickname/), {
@@ -774,6 +831,7 @@ describe("making things in the tree", () => {
     await screen.findByText("Character");
     const button = () =>
       screen.getByRole("button", { name: "New data" }) as HTMLButtonElement;
+
     expect(button().disabled).toBe(true);
     fireEvent.click(screen.getByText("Character"));
     await waitFor(() => expect(button().disabled).toBe(false));
@@ -781,10 +839,12 @@ describe("making things in the tree", () => {
 
   it("deletes a schema from the right-click menu, after asking", async () => {
     const remove = vi.spyOn(api, "deleteSchema").mockResolvedValue({ data: 2 });
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.contextMenu(await screen.findByText("Character"));
     fireEvent.click(await screen.findByText("Delete schema"));
     const dialog = await screen.findByRole("dialog");
+
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(session, "sc"));
@@ -800,6 +860,7 @@ describe("making things in the tree", () => {
 
   it("deletes data from its tab, after asking", async () => {
     const remove = vi.spyOn(api, "deleteData").mockResolvedValue({});
+
     show(<StructuredExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("Character"));
     fireEvent.click(await screen.findByText("Aria"));
@@ -827,6 +888,7 @@ describe("read-only", () => {
 
   it("cannot be changed in any root while a run is in progress", async () => {
     const save = vi.spyOn(api, "saveSchema");
+
     show(
       <StructuredExplorer
         page={session}
@@ -835,11 +897,13 @@ describe("read-only", () => {
       />,
     );
     await screen.findByText("Character");
+
     for (const name of ["New schema", "New data"]) {
       expect(
         (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
       ).toBe(true);
     }
+
     fireEvent.click(must(screen.getAllByText("Setting").at(-1)));
     expect(await screen.findByText("A run is in progress.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
@@ -892,12 +956,16 @@ describe("the divider", () => {
 
   it("resizes the tree with the arrow keys, within limits, and remembers it", async () => {
     const first = show(<StructuredExplorer page={session} projectId="p1" />);
+
     await screen.findByText("Character");
     const bar = screen.getByRole("separator");
+
     expect(bar.getAttribute("aria-valuenow")).toBe("280");
     fireEvent.keyDown(bar, { key: "ArrowRight" });
     expect(bar.getAttribute("aria-valuenow")).toBe("296");
+
     for (let i = 0; i < 30; i++) fireEvent.keyDown(bar, { key: "ArrowRight" });
+
     expect(bar.getAttribute("aria-valuenow")).toBe("520");
     first.unmount();
     show(<StructuredExplorer page={session} projectId="p1" />);
@@ -951,8 +1019,10 @@ describe("over an agent's root", () => {
     expect(await screen.findByText("Agent")).toBeTruthy();
     expect(screen.getAllByText("Schemas")).toHaveLength(1);
     expect(await screen.findByText("Clue")).toBeTruthy();
+
     for (const name of ["Place", "Setting", "Note"])
       expect(screen.getByText(name)).toBeTruthy();
+
     expect(screen.getAllByTestId("inherited-schema")).toHaveLength(3);
     expect(vi.mocked(api.listSchemas)).toHaveBeenCalledWith(AGENT, false);
     expect(vi.mocked(api.listData)).toHaveBeenCalledWith(AGENT, false);

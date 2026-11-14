@@ -15,6 +15,7 @@ describe("encodeWav", () => {
   it("writes a 16-bit mono PCM header", () => {
     const wav = encodeWav(new Float32Array(4), 16000);
     const view = new DataView(wav.buffer);
+
     expect(wav.length).toBe(44 + 8);
     expect(ascii(wav, 0, 4)).toBe("RIFF");
     expect(view.getUint32(4, true)).toBe(36 + 8);
@@ -32,6 +33,7 @@ describe("encodeWav", () => {
     const wav = encodeWav(new Float32Array([0, 1, -1, 0.5, 2, -2]), 16000);
     const view = new DataView(wav.buffer);
     const at = (i: number) => view.getInt16(44 + i * 2, true);
+
     expect([at(0), at(1), at(2)]).toEqual([0, 32767, -32768]);
     expect(at(3)).toBe(Math.trunc(0.5 * 0x7fff));
     expect([at(4), at(5)]).toEqual([32767, -32768]);
@@ -39,6 +41,7 @@ describe("encodeWav", () => {
 
   it("is accepted by the backend's check for a WAV file", () => {
     const wav = encodeWav(new Float32Array(1), 16000);
+
     expect(ascii(wav, 0, 4)).toBe("RIFF");
     expect(ascii(wav, 8, 12)).toBe("WAVE");
   });

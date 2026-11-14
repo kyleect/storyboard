@@ -24,6 +24,7 @@ describe("Look & Feel", () => {
   it("shows the current theme colour", () => {
     show();
     const input = screen.getByLabelText("Theme color") as HTMLInputElement;
+
     expect(input.value).toBe(swatchOf("blue"));
     expect(screen.getByText(/The blue palette/)).toBeTruthy();
   });
@@ -42,6 +43,7 @@ describe("Look & Feel", () => {
   it("does not let a typed colour through", () => {
     show();
     const input = screen.getByLabelText("Theme color") as HTMLInputElement;
+
     expect(input.readOnly).toBe(true);
   });
 });

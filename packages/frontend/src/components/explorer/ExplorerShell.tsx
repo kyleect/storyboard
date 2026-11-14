@@ -81,6 +81,7 @@ export function ExplorerShell({
   const [over, setOver] = useState<string | null>(null);
   const resizeTo = (clientX: number) => {
     const left = container.current?.getBoundingClientRect().left ?? 0;
+
     onWidthChange(clampWidth(clientX - left));
   };
 
@@ -127,6 +128,7 @@ export function ExplorerShell({
               onKeyDown={(e) => {
                 if (e.key === "ArrowLeft")
                   onWidthChange(clampWidth(width - 16));
+
                 if (e.key === "ArrowRight")
                   onWidthChange(clampWidth(width + 16));
               }}
@@ -146,6 +148,7 @@ export function ExplorerShell({
             {leading}
             {tabs.map((t) => {
               const isActive = t.id === active;
+
               return (
                 <Box
                   key={t.id}
@@ -169,15 +172,19 @@ export function ExplorerShell({
                   }}
                   onDragOver={(e) => {
                     if (dragged === null) return;
+
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
+
                     if (over !== t.id) setOver(t.id);
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
                     const from = dragged;
+
                     setDragged(null);
                     setOver(null);
+
                     if (from !== null && from !== t.id) {
                       onReorder?.(
                         from,
@@ -192,6 +199,7 @@ export function ExplorerShell({
                   onKeyDown={(e) => {
                     if (e.altKey && onReorder) {
                       const at = tabs.findIndex((x) => x.id === t.id);
+
                       if (e.key === "ArrowLeft") {
                         e.preventDefault();
                         onReorder(t.id, at - 1);
@@ -199,8 +207,10 @@ export function ExplorerShell({
                         e.preventDefault();
                         onReorder(t.id, at + 1);
                       }
+
                       return;
                     }
+
                     if (e.key === "Enter" || e.key === " ") onActivate(t.id);
                   }}
                   className={classes.tab}

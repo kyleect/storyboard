@@ -114,6 +114,7 @@ describe("MessageActions", () => {
 describe("EditMessageBox", () => {
   it("saves in the default mode, or the other from the menu", async () => {
     const onSave = vi.fn();
+
     ui(
       <EditMessageBox
         initial="Hello"
@@ -146,6 +147,7 @@ describe("EditMessageBox", () => {
         onCancel={() => {}}
       />,
     );
+
     expect(
       screen.getByText("Save").closest("button")?.hasAttribute("disabled"),
     ).toBe(true);
@@ -167,6 +169,7 @@ describe("EditMessageBox", () => {
 
   it("calls onCancel", () => {
     const onCancel = vi.fn();
+
     ui(
       <EditMessageBox
         initial="x"
@@ -185,6 +188,7 @@ describe("EditMessageBox", () => {
 describe("BranchSwitcher", () => {
   it("shows the place among the branches and moves to the neighbours", () => {
     const onSwitch = vi.fn();
+
     ui(
       <BranchSwitcher
         branches={{ ids: ["a", "b", "c"], index: 1 }}
@@ -219,6 +223,7 @@ describe("BranchSwitcher", () => {
 
   it("deletes the shown branch after a confirmation", async () => {
     const onDelete = vi.fn();
+
     ui(
       <BranchSwitcher
         branches={{ ids: ["a", "b"], index: 1 }}
@@ -241,6 +246,7 @@ describe("BranchSwitcher", () => {
 describe("Continuations", () => {
   it("lists what else continues from the end and switches to it", () => {
     const onSwitch = vi.fn();
+
     ui(
       <Continuations
         items={[{ id: "x", role: "user", preview: "And then?" }]}
@@ -261,11 +267,13 @@ describe("Continuations", () => {
 describe("forking", () => {
   it("asks for a title, starting from the session's, and forks with it", async () => {
     const onCreate = vi.fn();
+
     ui(<div />);
     act(() => openForkDialog("My story", onCreate));
     const box = (await screen.findByLabelText(
       "Title of the new session",
     )) as HTMLInputElement;
+
     expect(box.value).toBe(forkTitle("My story"));
     expect(box.value).toBe("My story (fork)");
     fireEvent.change(box, { target: { value: "  Other draft " } });
@@ -279,9 +287,11 @@ describe("forking", () => {
 
   it("does not fork with an empty title", async () => {
     const onCreate = vi.fn();
+
     ui(<div />);
     act(() => openForkDialog("My story", onCreate));
     const box = await screen.findByLabelText("Title of the new session");
+
     fireEvent.change(box, { target: { value: "   " } });
     expect(
       within(screen.getByRole("dialog"))

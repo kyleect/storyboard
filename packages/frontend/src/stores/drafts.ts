@@ -38,6 +38,7 @@ export const useDrafts = create<DraftsState>((set, get) => ({
     })),
   drop: (sessionId) => {
     for (const i of get().drafts[sessionId]?.items ?? []) revokePreview(i);
+
     set((s) => ({
       drafts: Object.fromEntries(
         Object.entries(s.drafts).filter(([id]) => id !== sessionId),

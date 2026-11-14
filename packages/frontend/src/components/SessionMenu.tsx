@@ -4,6 +4,7 @@ import { useSessionActions } from "../hooks/useSessionActions";
 
 export function SessionMenu({ session }: { session: Session }) {
   const actions = useSessionActions();
+
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>

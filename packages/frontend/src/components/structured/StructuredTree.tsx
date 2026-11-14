@@ -56,6 +56,7 @@ function InlineName({
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
+
   return (
     <TextInput
       size="xs"
@@ -69,7 +70,9 @@ function InlineName({
       onBlur={onCancel}
       onKeyDown={(e) => {
         e.stopPropagation();
+
         if (e.key === "Escape") onCancel();
+
         if (e.key === "Enter" && name.trim() !== "") onCommit(name.trim());
       }}
     />
@@ -106,10 +109,13 @@ export const inheritedNote = (
   root: Root<DataOwner>,
 ): string => {
   const scope = info.schemaScope;
+
   if (scope === "builtin") {
     return `A built-in schema that comes with the app. ${root.label} can make data from it.`;
   }
+
   const name = scope ? scopeName(scope) : "A higher scope";
+
   return `Inherited from ${name}. It is shared, so changing it changes it for everyone who uses it; ${root.label} can make data from it.`;
 };
 
@@ -145,28 +151,35 @@ export function StructuredTree(props: StructuredTreeProps) {
   } | null>(null);
 
   const controller = useRef(tree);
+
   useEffect(() => {
     controller.current = tree;
   });
   const { activeValue } = props;
+
   useEffect(() => {
     if (!activeValue) return;
+
     const ctl = controller.current;
     const ref = parseNodeValue(activeValue);
     const above = [
       nodeValue({ root: ref.root, kind: "root", path: "" }),
       nodeValue({ root: ref.root, kind: "schemas", path: "" }),
     ];
+
     if (ref.kind === "data") {
       const parent = findParent(data, activeValue);
+
       if (parent) above.push(parent);
     }
+
     if (above.some((v) => !ctl.expandedState[v])) {
       ctl.setExpandedState({
         ...ctl.expandedState,
         ...Object.fromEntries(above.map((v) => [v, true])),
       });
     }
+
     ctl.setSelectedState([activeValue]);
   }, [activeValue, data]);
 
@@ -189,6 +202,7 @@ export function StructuredTree(props: StructuredTreeProps) {
   };
   const startData = (ref: NodeRef) => {
     if (ref.kind !== "schema") return;
+
     tree.setExpandedState({
       ...tree.expandedState,
       [nodeValue({ root: ref.root, kind: "root", path: "" })]: true,
@@ -254,11 +268,13 @@ export function StructuredTree(props: StructuredTreeProps) {
           renderNode={({ node, expanded, hasChildren, elementProps }) => {
             const ref = parseNodeValue(node.value);
             const row = info.get(node.value);
+
             if (ref.kind === "new-schema" || ref.kind === "new-data") {
               const p: Pending =
                 ref.kind === "new-schema"
                   ? { kind: "new-schema", root: ref.root }
                   : { kind: "new-data", root: ref.root, schemaId: ref.path };
+
               return (
                 <div
                   className={elementProps.className}
@@ -277,6 +293,7 @@ export function StructuredTree(props: StructuredTreeProps) {
                 </div>
               );
             }
+
             const isFolder =
               ref.kind === "root" ||
               ref.kind === "schemas" ||
@@ -299,12 +316,14 @@ export function StructuredTree(props: StructuredTreeProps) {
                 {node.label}
               </Text>
             );
+
             return (
               <TreeRow
                 elementProps={elementProps}
                 deleted={deleted}
                 onClick={(e) => {
                   elementProps.onClick(e);
+
                   if (openable) props.onOpen(ref, false);
                 }}
                 onDoubleClick={() => {
@@ -403,9 +422,12 @@ export function StructuredTree(props: StructuredTreeProps) {
 function findParent(nodes: readonly TreeNode[], value: string): string | null {
   for (const n of nodes) {
     if (n.children?.some((c) => c.value === value)) return n.value;
+
     const deeper = n.children ? findParent(n.children, value) : null;
+
     if (deeper) return deeper;
   }
+
   return null;
 }
 
@@ -442,8 +464,10 @@ function TreeMenu({
       </>
     );
   }
+
   if (menuRef.kind === "schema") {
     const own = schema?.inherited !== true && schema?.schemaScope !== "builtin";
+
     return (
       <>
         <Menu.Item onClick={onOpen}>Open</Menu.Item>
@@ -462,11 +486,14 @@ function TreeMenu({
       </>
     );
   }
+
   if (menuRef.kind === "unknown") {
     return <Menu.Label>Its schema is not available here.</Menu.Label>;
   }
+
   if (locked) {
     return <Menu.Label>This cannot be changed right now.</Menu.Label>;
   }
+
   return <Menu.Item onClick={onNewSchema}>New schema here</Menu.Item>;
 }

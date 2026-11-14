@@ -25,12 +25,14 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 let liveRun: unknown = undefined;
+
 vi.mock("../../stores/live", () => {
   const state = () => ({ runs: { s1: liveRun }, connected: { s1: true } });
   const useLive = Object.assign(
     (select: (s: unknown) => unknown) => select(state()),
     { getState: state },
   );
+
   return { liveRuns: () => [], useLive };
 });
 vi.mock("../../hooks/useSessionEvents", () => ({ useSessionEvents: () => {} }));
@@ -39,9 +41,11 @@ let voice: {
   onRecorded: (file: File, mode: RecordingMode) => void;
   sendDisabled?: boolean;
 } = { onRecorded: () => {} };
+
 vi.mock("./components/VoiceButtons", () => ({
   VoiceButtons: (props: typeof voice) => {
     voice = props;
+
     return null;
   },
 }));
@@ -140,6 +144,7 @@ async function show() {
       </MantineProvider>
     </QueryClientProvider>,
   );
+
   return screen.findByPlaceholderText(/Write a message/);
 }
 
@@ -148,6 +153,7 @@ const recording = () => new File(["x"], "voice.wav", { type: "audio/wav" });
 describe("recording in the composer", () => {
   it("Record & send sends the recording with the text already written", async () => {
     const box = await show();
+
     fireEvent.change(box, { target: { value: "Summarize this" } });
 
     await act(async () => voice.onRecorded(recording(), "send"));
@@ -164,6 +170,7 @@ describe("recording in the composer", () => {
   it("Record & send sends what was attached before, then the recording", async () => {
     const box = await show();
     const input = screen.getByLabelText("Choose files to attach");
+
     fireEvent.change(input, {
       target: { files: [new File(["x"], "cat.png", { type: "image/png" })] },
     });
@@ -189,6 +196,7 @@ describe("recording in the composer", () => {
   it("does not send while a run is in progress, and says why", async () => {
     liveRun = { runId: "r0", approvals: [], inputs: [], userMessages: [] };
     const shown = vi.spyOn(notifications, "show").mockReturnValue("id");
+
     await show();
     expect(voice.sendDisabled).toBe(true);
 

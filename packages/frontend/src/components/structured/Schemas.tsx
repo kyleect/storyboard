@@ -52,6 +52,7 @@ import { showError } from "../../lib/notify";
 
 function useRefresh() {
   const queryClient = useQueryClient();
+
   return async () => {
     await queryClient.invalidateQueries({ queryKey: dataKeys.all });
   };
@@ -69,6 +70,7 @@ export function VersionsModal({
 }) {
   const newestFirst = [...schema.versions].reverse();
   const [picked, setPicked] = useState(newestFirst[0]);
+
   return (
     <Modal
       opened
@@ -129,6 +131,7 @@ export function CopyModal({
           : scope === "project"
             ? { scope: "project", id }
             : { scope: "agent", id };
+
       return api.copySchema(owner, schema.id, to, name);
     },
     onSuccess: async () => {
@@ -220,6 +223,7 @@ export function Builder({
   const row = rows.find((r) => r.node.id === selected);
   const add = (groupId: string) => {
     const node = newNode("text");
+
     onChange(addField(root, groupId, node));
     setSelected(node.id);
   };
@@ -242,6 +246,7 @@ export function Builder({
             value={root.type}
             onChange={(v) => {
               if (!v) return;
+
               onChange(changeType(root, v as FieldType));
               setSelected(null);
             }}
@@ -365,6 +370,7 @@ function FieldSettings({
 }) {
   const set = (change: Partial<BuilderNode>) =>
     onChange({ ...node, ...change });
+
   return (
     <Stack gap={6}>
       <Group justify="space-between">

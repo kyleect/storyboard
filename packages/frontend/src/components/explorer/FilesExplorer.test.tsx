@@ -83,6 +83,7 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return {
     client,
     ...render(
@@ -97,9 +98,13 @@ function show(ui: React.ReactElement) {
 
 function typeInEditor(text: string) {
   const dom = document.querySelector<HTMLElement>(".cm-editor");
+
   if (!dom) throw new Error("no editor is open");
+
   const view = EditorView.findFromDOM(dom);
+
   if (!view) throw new Error("no editor view");
+
   act(() => {
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: text },
@@ -116,7 +121,9 @@ function mockApi() {
   );
   vi.spyOn(api, "getFile").mockImplementation(async (s, key) => {
     const e = (FILES[s.scope] ?? []).find((f) => f.key === key);
+
     if (!e) throw new Error("not found");
+
     return detail(e);
   });
   vi.spyOn(api, "blobUrl").mockResolvedValue("blob:cat");
@@ -147,6 +154,7 @@ describe("ValueView of a binary file", () => {
         blob={{ hash: "h-voice", size: 3 * 1024 * 1024 }}
       />,
     );
+
     await waitFor(() =>
       expect(container.querySelector("audio")?.getAttribute("src")).toBe(
         "blob:voice",
@@ -196,6 +204,7 @@ describe("the roots of the tree", () => {
 
   it("shows only Global on the global page, and Project and Global on a project page", async () => {
     const first = show(<FilesExplorer page={global} />);
+
     await screen.findByText("bible.txt");
     expect(screen.queryByText("Session")).toBeNull();
     expect(screen.queryByText("Project")).toBeNull();
@@ -210,6 +219,7 @@ describe("the roots of the tree", () => {
     show(<FilesExplorer page={global} />);
     await screen.findByText("bible.txt");
     const list = vi.mocked(api.listFiles);
+
     expect(list).toHaveBeenCalledWith(global, false);
     fireEvent.click(screen.getByRole("button", { name: "Show deleted files" }));
     await waitFor(() => expect(list).toHaveBeenCalledWith(global, true));
@@ -245,6 +255,7 @@ describe("what the tree remembers and shows", () => {
       key: "drafts/notes.md",
       transient: false,
     };
+
     remember({ tabs: [tab], active: "file|session|drafts/notes.md" });
     show(<FilesExplorer page={session} projectId="p1" />);
     expect(await screen.findByText("notes.md")).toBeTruthy();
@@ -276,6 +287,7 @@ describe("tabs", () => {
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("plan.txt"));
     const tabs = () => screen.getAllByRole("tab").map((t) => t.textContent);
+
     await waitFor(() => expect(tabs()).toEqual(["plan.txt · Session"]));
     expect(screen.getByRole("tab").hasAttribute("data-transient")).toBe(true);
     fireEvent.click(screen.getByText("rules.txt"));
@@ -305,6 +317,7 @@ describe("tabs", () => {
 
   it("remembers the open tabs for the page", async () => {
     const first = show(<FilesExplorer page={session} projectId="p1" />);
+
     fireEvent.doubleClick(await screen.findByText("plan.txt"));
     await screen.findByRole("tab");
     first.unmount();
@@ -316,11 +329,14 @@ describe("tabs", () => {
 
   it("tells the same name in two roots apart by the root in the tab", async () => {
     FILES.global = [{ ...bible, key: "plan.txt" }];
+
     try {
       show(<FilesExplorer page={session} projectId="p1" />);
       const plans = await screen.findAllByText("plan.txt");
       const [inSession, inGlobal] = plans;
+
       if (!inSession || !inGlobal) throw new Error("expected two plan.txt");
+
       fireEvent.doubleClick(inSession);
       fireEvent.doubleClick(inGlobal);
       await waitFor(() =>
@@ -342,6 +358,7 @@ describe("editing", () => {
     const write = vi
       .spyOn(api, "writeFile")
       .mockResolvedValue(detail({ ...plan, value: "new plan" }));
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("plan.txt"));
     await waitFor(() =>
@@ -373,6 +390,7 @@ describe("editing", () => {
     const write = vi
       .spyOn(api, "writeFile")
       .mockResolvedValue(detail({ ...bible, value: "changed" }));
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("bible.txt"));
     await waitFor(() =>
@@ -381,6 +399,7 @@ describe("editing", () => {
     typeInEditor("changed");
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("dialog");
+
     expect(within(dialog).getByText(/Save to the Global file/)).toBeTruthy();
     expect(write).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -396,6 +415,7 @@ describe("editing", () => {
 
   it("does not save when the question is declined", async () => {
     const write = vi.spyOn(api, "writeFile");
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("rules.txt"));
     await waitFor(() =>
@@ -404,6 +424,7 @@ describe("editing", () => {
     typeInEditor("changed");
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("dialog");
+
     expect(within(dialog).getByText(/Save to the Project file/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -413,6 +434,7 @@ describe("editing", () => {
 
   it("does not ask for a file of the page's own scope", async () => {
     const write = vi.spyOn(api, "writeFile").mockResolvedValue(detail(bible));
+
     show(<FilesExplorer page={global} />);
     fireEvent.click(await screen.findByText("bible.txt"));
     await waitFor(() =>
@@ -435,6 +457,7 @@ describe("editing", () => {
       await screen.findByRole("button", { name: "Close plan.txt · Session" }),
     );
     const dialog = await screen.findByRole("dialog");
+
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Keep editing" }),
     );
@@ -454,6 +477,7 @@ describe("editing", () => {
 
   it("reports whether there are unsaved changes", async () => {
     const onDirtyChange = vi.fn();
+
     show(
       <FilesExplorer
         page={session}
@@ -472,6 +496,7 @@ describe("editing", () => {
 
   it("warns when the file changed under unsaved text, and can drop the text", async () => {
     const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+
     fireEvent.click(await screen.findByText("plan.txt"));
     await waitFor(() =>
       expect(document.querySelector(".cm-editor")).not.toBeNull(),
@@ -479,6 +504,7 @@ describe("editing", () => {
     typeInEditor("mine");
     await screen.findByText("Unsaved changes");
     FILES.session = [cat, note, { ...plan, value: "theirs" }];
+
     try {
       await act(() =>
         client.invalidateQueries({ queryKey: fileKeys.inScope(session) }),
@@ -575,10 +601,12 @@ describe("making things in the tree", () => {
         value: "",
       }),
     );
+
     show(<FilesExplorer page={session} projectId="p1" />);
     await screen.findByText("plan.txt");
     fireEvent.click(screen.getByRole("button", { name: "New file" }));
     const box = await screen.findByLabelText("New file name");
+
     fireEvent.change(box, { target: { value: "chapter.md" } });
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() =>
@@ -595,10 +623,12 @@ describe("making things in the tree", () => {
     const write = vi
       .spyOn(api, "writeFile")
       .mockResolvedValue(detail({ ...plan, key: "c.json" }));
+
     show(<FilesExplorer page={session} projectId="p1" />);
     await screen.findByText("plan.txt");
     fireEvent.click(screen.getByRole("button", { name: "New file" }));
     const box = await screen.findByLabelText("New file name");
+
     fireEvent.change(box, { target: { value: "c.json" } });
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() =>
@@ -614,10 +644,12 @@ describe("making things in the tree", () => {
   it("does not make a file with a name that is not valid, or one that exists", async () => {
     const write = vi.spyOn(api, "writeFile");
     const warn = vi.spyOn(notifications, "show").mockReturnValue("id");
+
     show(<FilesExplorer page={session} projectId="p1" />);
     await screen.findByText("plan.txt");
     fireEvent.click(screen.getByRole("button", { name: "New file" }));
     let box = await screen.findByLabelText("New file name");
+
     fireEvent.change(box, { target: { value: "bad." } });
     expect(await screen.findByText(/Not a valid name/)).toBeTruthy();
     fireEvent.keyDown(box, { key: "Enter" });
@@ -643,10 +675,12 @@ describe("making things in the tree", () => {
     const make = vi
       .spyOn(api, "createFolder")
       .mockResolvedValue({ path: "drafts/old", created: true });
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("drafts"));
     fireEvent.click(screen.getByRole("button", { name: "New folder" }));
     const box = await screen.findByLabelText("New folder name");
+
     fireEvent.change(box, { target: { value: "old" } });
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() =>
@@ -658,6 +692,7 @@ describe("making things in the tree", () => {
     const rename = vi
       .spyOn(api, "renameFolder")
       .mockResolvedValue({ path: "scenes" });
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.contextMenu(await screen.findByText("ideas"));
     expect(await screen.findByText("New file here")).toBeTruthy();
@@ -666,6 +701,7 @@ describe("making things in the tree", () => {
     expect(screen.getByText("Delete folder")).toBeTruthy();
     fireEvent.click(screen.getByText("Rename folder"));
     const box = await screen.findByLabelText("New name for ideas");
+
     fireEvent.change(box, { target: { value: "scenes" } });
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() =>
@@ -675,10 +711,12 @@ describe("making things in the tree", () => {
 
   it("asks before deleting a folder, then deletes it", async () => {
     const remove = vi.spyOn(api, "deleteFolder").mockResolvedValue({});
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.contextMenu(await screen.findByText("ideas"));
     fireEvent.click(await screen.findByText("Delete folder"));
     const dialog = await screen.findByRole("dialog");
+
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(session, "ideas"));
@@ -686,6 +724,7 @@ describe("making things in the tree", () => {
 
   it("deletes a file from its tab, after asking", async () => {
     const remove = vi.spyOn(api, "deleteFile").mockResolvedValue({});
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("plan.txt"));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
@@ -716,11 +755,13 @@ describe("uploads", () => {
     const upload = vi
       .spyOn(api, "uploadFile")
       .mockResolvedValue(uploaded("drafts/dog.png", "image/png"));
+
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("drafts"));
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
     const input = screen.getByLabelText("Choose files to upload");
     const file = new File(["x"], "dog.png", { type: "image/png" });
+
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() =>
       expect(upload).toHaveBeenCalledWith(session, file, "image/png", {
@@ -732,6 +773,7 @@ describe("uploads", () => {
   it("refuses a file type that cannot be uploaded, without calling the backend", async () => {
     const upload = vi.spyOn(api, "uploadFile");
     const warn = vi.spyOn(notifications, "show").mockReturnValue("id");
+
     show(<FilesExplorer page={session} projectId="p1" />);
     await screen.findByText("plan.txt");
     fireEvent.change(screen.getByLabelText("Choose files to upload"), {
@@ -749,9 +791,11 @@ describe("uploads", () => {
     const upload = vi
       .spyOn(api, "uploadFile")
       .mockResolvedValue(uploaded("ideas/voice.wav", "audio/wav"));
+
     show(<FilesExplorer page={session} projectId="p1" />);
     const folder = await screen.findByText("ideas");
     const file = new File(["x"], "voice.wav", { type: "audio/wav" });
+
     fireEvent.drop(folder, {
       dataTransfer: { files: [file], types: ["Files"] },
     });
@@ -766,9 +810,11 @@ describe("uploads", () => {
     const upload = vi
       .spyOn(api, "uploadFile")
       .mockResolvedValue(uploaded("voice.wav", "audio/wav"));
+
     show(<FilesExplorer page={session} projectId="p1" />);
     const root = await screen.findByText("Global");
     const file = new File(["x"], "voice.wav", { type: "audio/wav" });
+
     fireEvent.drop(root, {
       dataTransfer: { files: [file], types: ["Files"] },
     });
@@ -785,6 +831,7 @@ describe("read-only", () => {
 
   it("cannot be changed in any root while a run is in progress", async () => {
     const write = vi.spyOn(api, "writeFile");
+
     show(
       <FilesExplorer
         page={session}
@@ -793,11 +840,13 @@ describe("read-only", () => {
       />,
     );
     await screen.findByText("plan.txt");
+
     for (const name of ["New file", "New folder", "Upload"]) {
       expect(
         (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
       ).toBe(true);
     }
+
     fireEvent.click(screen.getByText("bible.txt"));
     expect(await screen.findByText("A run is in progress.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
@@ -838,11 +887,14 @@ describe("the divider", () => {
   it("resizes the tree with the arrow keys, within limits, and remembers it", async () => {
     const first = show(<FilesExplorer page={global} />);
     const divider = await screen.findByRole("separator");
+
     expect(divider.getAttribute("aria-valuenow")).toBe("280");
     fireEvent.keyDown(divider, { key: "ArrowRight" });
     expect(divider.getAttribute("aria-valuenow")).toBe("296");
+
     for (let i = 0; i < 40; i++)
       fireEvent.keyDown(divider, { key: "ArrowLeft" });
+
     expect(divider.getAttribute("aria-valuenow")).toBe("180");
     first.unmount();
     show(<FilesExplorer page={global} />);
@@ -865,6 +917,7 @@ describe("a project's color in the Files explorer", () => {
 
   it("colors the tabs of the project's files, and no others", async () => {
     const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+
     client.setQueryData(projectKeys.list(), tealProject("teal"));
 
     fireEvent.doubleClick(await screen.findByText("plan.txt"));
@@ -884,6 +937,7 @@ describe("a project's color in the Files explorer", () => {
 
   it("colors the project's name in the path above its file", async () => {
     const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+
     client.setQueryData(projectKeys.list(), tealProject("teal"));
     fireEvent.click(await screen.findByText("rules.txt"));
     await screen.findByRole("tab");
@@ -892,12 +946,14 @@ describe("a project's color in the Files explorer", () => {
       const root = screen
         .getAllByText("Project")
         .find((el) => el.parentElement?.textContent?.includes("›"));
+
       expect(root?.getAttribute("style") ?? "").toContain("teal");
     });
   });
 
   it("leaves a project without a color as it was", async () => {
     const { client } = show(<FilesExplorer page={session} projectId="p1" />);
+
     client.setQueryData(projectKeys.list(), tealProject(null));
     fireEvent.doubleClick(await screen.findByText("rules.txt"));
     await waitFor(() => expect(tab("rules.txt")).toBeTruthy());

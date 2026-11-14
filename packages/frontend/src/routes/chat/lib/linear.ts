@@ -54,12 +54,15 @@ const ANCHORS: ReadonlySet<string> = new Set([
 
 const messageIdOf = (e: StoredEvent): string | undefined => {
   if (!ANCHORS.has(e.type)) return undefined;
+
   const id = (e.data as { messageId?: unknown }).messageId;
+
   return typeof id === "string" ? id : undefined;
 };
 
 function requestItems(run: DebugRun, depth: number, key: string, time: string) {
   const base = { time, runId: run.id, depth };
+
   if (run.request === "not_recorded") {
     return [
       {
@@ -72,7 +75,9 @@ function requestItems(run: DebugRun, depth: number, key: string, time: string) {
       },
     ];
   }
+
   const tools = run.tools ?? [];
+
   return [
     {
       ...base,
@@ -105,6 +110,7 @@ function metaOf(m: DebugMessage): string | undefined {
       ? `tokens in ${m.usage.promptTokens} / out ${m.usage.completionTokens}`
       : undefined,
   ].filter((p): p is string => p !== undefined);
+
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
@@ -113,7 +119,9 @@ const present = (fields: Record<string, unknown>) =>
 
 function withFiles(text: string, files: readonly string[] | undefined): string {
   if (!files || files.length === 0) return text;
+
   const lines = files.map((ref) => `[attached: ${ref}]`);
+
   return text === "" ? lines.join("\n") : `${lines.join("\n")}\n\n${text}`;
 }
 
@@ -127,6 +135,7 @@ function messageItem(
 ): LinearItem {
   const base = { key, time, runId, depth, raw: m };
   const msg = m.message;
+
   switch (msg.role) {
     case "user":
       return {
@@ -144,6 +153,7 @@ function messageItem(
       };
     case "assistant": {
       const meta = metaOf(m);
+
       return {
         ...base,
         kind: "assistant",
@@ -166,6 +176,7 @@ function messageItem(
             ? undefined
             : msg.data,
       });
+
       return {
         ...base,
         kind: "tool",
@@ -177,6 +188,7 @@ function messageItem(
     }
     case "edit": {
       const extras = present({ files: msg.files, dataOps: msg.dataOps });
+
       return {
         ...base,
         kind: "edit",
@@ -195,19 +207,24 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
   const depthOf = (runId: string | null): number => {
     let depth = 0;
     let run = runId === null ? undefined : runs.get(runId);
+
     while (run?.parentRunId) {
       depth++;
       run = runs.get(run.parentRunId);
     }
+
     return depth;
   };
   const byId = new Map(debug.messages.map((m) => [m.id, m]));
 
   const anchored = new Set<string>();
+
   for (const e of debug.events) {
     const id = messageIdOf(e);
+
     if (id !== undefined && byId.has(id)) anchored.add(id);
   }
+
   const unplaced = debug.messages.filter((m) => !anchored.has(m.id));
   const loose = [
     ...unplaced.filter((m) => m.createdAt !== null),
@@ -220,9 +237,12 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
   const flushLoose = (until: string | null) => {
     while (next < loose.length) {
       const m = loose[next];
+
       if (!m) break;
+
       if (until !== null && (m.createdAt === null || m.createdAt > until))
         break;
+
       next++;
       placed.add(m.id);
       out.push(
@@ -233,6 +253,7 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
 
   for (const e of debug.events) {
     if (REPEATS.has(e.type)) continue;
+
     flushLoose(e.time);
     const runId = e.runId;
     const depth = depthOf(runId);
@@ -246,6 +267,7 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
         e.type === "message.finished"
           ? ` · ${(e.data as { finishReason?: string }).finishReason ?? ""}`
           : "";
+
       out.push(messageItem(message, key, runId, depth, e.time, reason));
       continue;
     }
@@ -264,38 +286,50 @@ export function buildLinear(debug: SessionDebug): LinearItem[] {
 
     if (e.type === "run.started" && runId !== null) {
       const run = runs.get(runId);
+
       if (run) out.push(...requestItems(run, depth, `r-${run.id}`, e.time));
     }
   }
+
   flushLoose(null);
 
   const tag = (id: string) => {
     const i = debug.runs.findIndex((r) => r.id === id);
+
     return i < 0 ? shortId(id) : `${i + 1} (${shortId(id)})`;
   };
   const startedBy = new Map<string, DebugRun>();
+
   for (const r of debug.runs) {
     if (r.parentRunId && r.parentCallId) {
       startedBy.set(`${r.parentRunId}\u0000${r.parentCallId}`, r);
     }
   }
+
   for (const item of out) {
     if (item.kind === "assistant" && item.blocks && item.runId) {
       const calls: Record<string, string> = {};
+
       for (const b of item.blocks) {
         if (b.type !== "tool_call") continue;
+
         const child = startedBy.get(`${item.runId}\u0000${b.callId}`);
+
         if (child) calls[b.callId] = `starts run ${tag(child.id)}`;
       }
+
       if (Object.keys(calls).length > 0) item.calls = calls;
     }
+
     if (item.kind === "event" && item.title === "run.started" && item.runId) {
       const r = runs.get(item.runId);
+
       if (r?.parentRunId && r.parentCallId) {
         item.meta = `started by call ${r.parentCallId} in run ${tag(r.parentRunId)}`;
       }
     }
   }
+
   return out;
 }
 
@@ -317,10 +351,14 @@ export function filterLinear(
 ): LinearItem[] {
   const kinds = new Set(filter.kinds);
   const needle = filter.text.trim().toLowerCase();
+
   return items.filter((i) => {
     if (!kinds.has(i.kind)) return false;
+
     if (filter.runId !== null && i.runId !== filter.runId) return false;
+
     if (needle === "") return true;
+
     return (
       i.title.toLowerCase().includes(needle) ||
       (i.text ?? "").toLowerCase().includes(needle) ||
@@ -342,6 +380,7 @@ const json = (value: unknown) => JSON.stringify(value);
 
 function bodyText(item: LinearItem): string {
   const lines: string[] = [];
+
   if (item.meta) lines.push(item.meta);
 
   if (item.kind === "tools" && Array.isArray(item.raw)) {
@@ -353,6 +392,7 @@ function bodyText(item: LinearItem): string {
       lines.push(`tool ${t.name}: ${t.description}`);
       lines.push(`input schema: ${json(t.inputSchema)}`);
     }
+
     if (item.raw.length === 0) lines.push("None offered.");
   } else if (item.kind === "event") {
     const data = (item.raw as { data?: unknown }).data;
@@ -361,14 +401,17 @@ function bodyText(item: LinearItem): string {
       (typeof data === "object" &&
         data !== null &&
         Object.keys(data).length === 0);
+
     if (!empty) lines.push(json(data));
   } else if (item.blocks) {
     if (item.blocks.length === 0) lines.push("(empty)");
+
     for (const b of item.blocks) {
       if (b.type === "reasoning") lines.push("[reasoning]", b.text);
       else if (b.type === "text") lines.push("[text]", b.text);
       else {
         const starts = item.calls?.[b.callId];
+
         lines.push(
           `[tool call ${b.name} id=${b.callId}${starts ? ` → ${starts}` : ""}]`,
         );
@@ -386,6 +429,7 @@ function bodyText(item: LinearItem): string {
   if (item.extras && Object.keys(item.extras).length > 0) {
     lines.push("[details]", JSON.stringify(item.extras, null, 2));
   }
+
   return lines.join("\n");
 }
 
@@ -407,6 +451,7 @@ export function renderLinearText(
     ...READING_NOTES.map((n) => `- ${n}`),
     "",
   ];
+
   for (const item of items) {
     const where = [
       item.runId === null
@@ -414,17 +459,23 @@ export function renderLinearText(
         : `run ${runNumbers.get(item.runId) ?? shortId(item.runId)}`,
       item.depth > 0 ? `subagent, depth ${item.depth}` : undefined,
     ].filter((p): p is string => p !== undefined);
+
     out.push(
       `----- [${item.time ?? "no time"}] ${item.title}${
         where.length > 0 ? ` · ${where.join(" · ")}` : ""
       } -----`,
     );
+
     if (item.kind === "event" && item.title === "run.started" && item.runId) {
       out.push(`run id: ${item.runId}`);
     }
+
     const body = bodyText(item);
+
     if (body !== "") out.push(body);
+
     out.push("");
   }
+
   return out.join("\n");
 }

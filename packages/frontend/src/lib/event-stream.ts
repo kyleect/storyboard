@@ -27,12 +27,14 @@ export function connectEventStream({
     source.onmessage = onMessage;
     source.onerror = () => {
       onError?.();
+
       if (source?.readyState === EventSource.CLOSED) {
         retry = setTimeout(connect, delay);
         delay = Math.min(delay * 2, LONGEST_RETRY_MS);
       }
     };
   };
+
   connect();
 
   return () => {

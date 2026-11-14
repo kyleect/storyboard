@@ -19,7 +19,9 @@ export function RenameForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
+
         if (!trimmed) return;
+
         setSaving(true);
         onSubmit(trimmed).catch((err: unknown) => {
           setSaving(false);

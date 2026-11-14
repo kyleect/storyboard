@@ -88,8 +88,11 @@ export function MediaDescriptions({ view }: { view: SettingsView }) {
           view.effective.mediaDescriberAgent ||
         saved.effective.mediaDescriberModel !==
           view.effective.mediaDescriberModel;
+
       if (!changed) return;
+
       const info = await api.getMediaDescriber();
+
       if (info.enabled && info.files > 0) askToRegenerate(info);
     },
     onError: (err: Error) =>
@@ -155,6 +158,7 @@ export function askToRegenerate(info: { files: number; empty: number }) {
       )
       .catch(showError("Could not start the descriptions"));
   };
+
   modals.open({
     title: `Generate descriptions for ${info.files} ${info.files === 1 ? "file" : "files"}?`,
     children: (

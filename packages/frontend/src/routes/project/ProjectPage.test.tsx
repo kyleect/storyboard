@@ -66,6 +66,7 @@ describe("a project's page", () => {
     await screen.findByText("sessions table p1");
     const href = (name: string) =>
       screen.getByRole("link", { name }).getAttribute("href");
+
     expect(href("Files")).toBe("/projects/$projectId/files");
     expect(href("Agents")).toBe("/projects/$projectId/agents");
     expect(href("Skills")).toBe("/projects/$projectId/skills");
@@ -96,6 +97,7 @@ describe("a project's color", () => {
     const update = vi
       .spyOn(api, "updateProject")
       .mockResolvedValue({ ...project, color: "orange" });
+
     show({ ...project, color: "teal" });
     await screen.findByText("sessions table p1");
 
@@ -114,6 +116,7 @@ describe("a project's color", () => {
 
   it("cannot be changed for a project in the trash", async () => {
     const update = vi.spyOn(api, "updateProject");
+
     show({ ...project, color: "teal", trashed_at: "2026-02-01" });
     await screen.findByText("sessions table p1");
     fireEvent.click(screen.getByRole("radio", { name: "Red" }));

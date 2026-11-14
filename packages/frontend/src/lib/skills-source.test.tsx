@@ -75,6 +75,7 @@ describe("splitKey", () => {
 describe("skillsSource", () => {
   it("names its query keys with the skills key factory", () => {
     const s = skillsSource(GLOBAL, "builtin");
+
     expect(s.keys.all).toEqual(skillKeys.treeOf(GLOBAL, "builtin"));
     expect(s.keys.list(true)).toEqual(skillKeys.tree(GLOBAL, "builtin", true));
     expect(s.keys.detail("a/b").slice(0, 1)).toEqual(["skills"]);
@@ -84,6 +85,7 @@ describe("skillsSource", () => {
   it("lists each skill's files under the skill's name", async () => {
     tree(skill());
     const files = await skillsSource(GLOBAL).list(false);
+
     expect(files.map((f) => f.key)).toEqual([
       "outline/SKILL.md",
       "outline/refs/guide.md",
@@ -98,6 +100,7 @@ describe("skillsSource", () => {
     tree(skill({ id: "b", name: "builtin-tasks", scope: "builtin" }), skill());
     const builtin = await skillsSource(GLOBAL, "builtin").list(false);
     const own = await skillsSource(GLOBAL, "own").list(false);
+
     expect(builtin.every((f) => f.key.startsWith("builtin-tasks/"))).toBe(true);
     expect(own.every((f) => f.key.startsWith("outline/"))).toBe(true);
   });
@@ -105,6 +108,7 @@ describe("skillsSource", () => {
   it("marks a deleted skill's files deleted", async () => {
     tree(skill({ deleted: true }));
     const files = await skillsSource(GLOBAL).list(true);
+
     expect(files.every((f) => f.deleted)).toBe(true);
   });
 
@@ -136,6 +140,7 @@ describe("skillsSource", () => {
     const byKey = Object.fromEntries(
       (await skillsSource(GLOBAL).list(false)).map((f) => [f.key, f]),
     );
+
     expect(byKey["outline/logo.png"]).toMatchObject({
       mediaType: "image/png",
       blob: { hash: "h-png", size: 9 },
@@ -152,15 +157,18 @@ describe("skillsSource", () => {
 
   it("opens a file with its versions, skipping versions without it", async () => {
     const s = skill();
+
     tree(s);
     vi.spyOn(api, "getSkill").mockResolvedValue(detail(s));
     const getFile = vi
       .spyOn(api, "getSkillFile")
       .mockImplementation(async (_id, path, seq) => {
         if (seq === 1) throw new Error("No file");
+
         return { ...info({ path }), value: seq === 2 ? "v2" : "now" };
       });
     const f = await skillsSource(GLOBAL).get("outline/refs/guide.md");
+
     expect(f.value).toBe("now");
     expect(f.versions.map((v) => [v.seq, v.value])).toEqual([[2, "v2"]]);
     expect(getFile).toHaveBeenCalledWith("k1", "refs/guide.md", 1);
@@ -171,6 +179,7 @@ describe("skillsSource", () => {
       .spyOn(api, "createSkill")
       .mockResolvedValue(detail(skill()));
     const s = skillsSource(GLOBAL);
+
     await s.createFolder("scene-outline");
     expect(create).toHaveBeenCalledWith(GLOBAL, {
       name: "scene-outline",
@@ -191,6 +200,7 @@ describe("skillsSource", () => {
       .spyOn(api, "moveSkillPath")
       .mockResolvedValue(detail(skill()));
     const s = skillsSource(GLOBAL);
+
     await s.renameFolder("outline", "story-outline");
     expect(rename).toHaveBeenCalledWith("k1", "story-outline");
     await s.renameFolder("outline/refs", "outline/notes");
@@ -208,6 +218,7 @@ describe("skillsSource", () => {
       .spyOn(api, "deleteSkillPath")
       .mockResolvedValue(detail(skill()));
     const s = skillsSource(GLOBAL);
+
     await s.deleteFolder("outline");
     expect(del).toHaveBeenCalledWith("k1");
     await s.deleteFolder("outline/refs");
@@ -218,6 +229,7 @@ describe("skillsSource", () => {
 
   it("saves, restores and uploads inside a skill, and refuses a loose file", async () => {
     const s0 = skill();
+
     tree(s0);
     vi.spyOn(api, "getSkill").mockResolvedValue(detail(s0));
     vi.spyOn(api, "getSkillFile").mockResolvedValue({ ...info(), value: "x" });
@@ -227,11 +239,13 @@ describe("skillsSource", () => {
       .mockResolvedValue(detail(s0));
     const restore = vi.spyOn(api, "restoreSkill").mockResolvedValue(detail(s0));
     const s = skillsSource(GLOBAL);
+
     await s.write("outline/SKILL.md", "text/markdown", "new text");
     expect(put).toHaveBeenCalledWith("k1", "SKILL.md", "new text");
     await s.restore("outline/SKILL.md", 1);
     expect(restore).toHaveBeenCalledWith("k1", 1);
     const file = new File(["x"], "logo.bin");
+
     expect(
       await s.upload(file, "application/octet-stream", "outline/logo.bin"),
     ).toEqual({

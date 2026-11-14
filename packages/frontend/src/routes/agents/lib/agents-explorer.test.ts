@@ -22,6 +22,7 @@ import {
 
 const must = <T>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
+
   return v;
 };
 
@@ -97,6 +98,7 @@ const labels = (nodes: readonly { label: string }[] | undefined) =>
 describe("paths", () => {
   it("joins an agent's id with what is under it, and splits them again", () => {
     const p = agentPath("a1", "own", "pov/refs/a|b.md");
+
     expect(splitPath(p, 2)).toEqual(["a1", "own", "pov/refs/a|b.md"]);
     expect(splitPath("a1", 1)).toEqual(["a1"]);
   });
@@ -108,6 +110,7 @@ describe("paths", () => {
         path: agentPath("a1", "project", "pov/SKILL.md"),
       }),
     );
+
     expect(skillPlace(ref)).toEqual({
       agentId: "a1",
       origin: "project",
@@ -124,6 +127,7 @@ describe("clashTags", () => {
         ["solo", ["global"]],
       ]),
     );
+
     expect(tags.get("pov\u0000global")).toBe("Overridden by Agent");
     expect(tags.get("pov\u0000builtin")).toBe("Overridden by Agent");
     expect(tags.get("pov\u0000own")).toBeUndefined();
@@ -131,6 +135,7 @@ describe("clashTags", () => {
   });
   it("names the origin that wins when the agent has none", () => {
     const tags = clashTags(new Map([["pov", ["project", "global"]]]));
+
     expect(tags.get("pov\u0000global")).toBe("Overridden by Project");
   });
 });
@@ -151,6 +156,7 @@ describe("buildTree", () => {
 
   it("has a root for each input, with its agents by name", () => {
     const { data } = buildTree(roots, new Map());
+
     expect(labels(data)).toEqual(["Built-in", "Global"]);
     expect(labels(data[1]?.children)).toEqual(["Editor", "Zed"]);
   });
@@ -158,6 +164,7 @@ describe("buildTree", () => {
   it("holds only a Loading row for an agent that has not been read", () => {
     const { data, info } = buildTree(roots, new Map());
     const editor = must(data[1]?.children?.[0]);
+
     expect(labels(editor.children)).toEqual(["Loading…"]);
     expect(info.get(editor.value)?.agent?.name).toBe("Editor");
   });
@@ -165,6 +172,7 @@ describe("buildTree", () => {
   it("holds the Skills and Schemas folders of an agent that has", () => {
     const { data } = buildTree(roots, new Map([["a1", EMPTY]]));
     const editor = must(data[1]?.children?.[0]);
+
     expect(labels(editor.children)).toEqual(["Skills", "Schemas"]);
   });
 
@@ -182,6 +190,7 @@ describe("buildTree", () => {
     };
     const { data, info } = buildTree(roots, new Map([["a1", load]]));
     const skills = must(must(data[1]?.children?.[0]).children?.[0]);
+
     expect(labels(skills.children)).toEqual([
       "pov",
       "Project",
@@ -189,6 +198,7 @@ describe("buildTree", () => {
       "Built-in",
     ]);
     const pov = must(skills.children?.[0]);
+
     expect(labels(pov.children)).toEqual(["refs", "SKILL.md"]);
     expect(labels(must(pov.children?.[0]).children)).toEqual(["deep", "a.md"]);
     expect(
@@ -202,6 +212,7 @@ describe("buildTree", () => {
     const global = must(skills.children?.[2]);
     const inheritedPov = must(global.children?.find((c) => c.label === "pov"));
     const i = must(info.get(inheritedPov.value));
+
     expect(i.inherited).toBe(true);
     expect(i.origin).toBe("global");
     expect(i.clash).toBe("Overridden by Agent");
@@ -227,6 +238,7 @@ describe("buildTree", () => {
     };
     const { data, info } = buildTree(roots, new Map([["a1", load]]));
     const schemas = must(must(data[1]?.children?.[0]).children?.[1]);
+
     expect(labels(schemas.children)).toEqual([
       "Clue",
       "Project",
@@ -236,10 +248,12 @@ describe("buildTree", () => {
     ]);
     expect(labels(schemas.children?.[0]?.children)).toEqual(["Case notes"]);
     const global = must(schemas.children?.[2]);
+
     expect(labels(must(global.children?.[0]).children)).toEqual(["Harbour"]);
     const place = info.get(
       must(must(schemas.children?.[1]).children?.[0]).value,
     );
+
     expect(place).toMatchObject({ inherited: true, origin: "project" });
     expect(info.get(must(schemas.children?.[0]).value)?.inherited).toBe(
       undefined,
@@ -263,6 +277,7 @@ describe("buildTree", () => {
         walk((n as { children?: never[] }).children ?? []);
       }
     };
+
     walk(data as never);
     expect(new Set(values).size).toBe(values.length);
   });
@@ -283,6 +298,7 @@ describe("tabs", () => {
       key: "a1|own|pov/SKILL.md",
       transient: false,
     } as const;
+
     expect(tabNode(t)).toBe("global|file|a1|own|pov/SKILL.md");
     expect(tabAgent(t)).toBe("a1");
     expect(tabNode({ ...t, kind: "agent", key: "a1" })).toBe("global|agent|a1");
@@ -296,6 +312,7 @@ describe("tabs", () => {
       false,
     );
     const b = openTab(a, { kind: "agent", root: "global", key: "a2" }, false);
+
     expect(b.tabs.map(tabId)).toEqual(["agent|global|a2"]);
   });
 });
@@ -303,6 +320,7 @@ describe("tabs", () => {
 describe("what is remembered", () => {
   beforeEach(() => {
     const store = new Map<string, string>();
+
     vi.stubGlobal("localStorage", {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
@@ -322,6 +340,7 @@ describe("what is remembered", () => {
         transient: true,
       },
     ] as const;
+
     saveView("global", {
       tabs: [...tabs],
       active: tabId(tabs[0]),

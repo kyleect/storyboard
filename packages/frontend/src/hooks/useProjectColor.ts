@@ -11,6 +11,7 @@ export function useProjectColor(): (
     queryFn: api.listProjects,
     enabled: false,
   });
+
   return (projectId) =>
     projectId
       ? (projects.data?.find((p) => p.id === projectId)?.color ?? null)

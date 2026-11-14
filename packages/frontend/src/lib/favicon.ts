@@ -40,12 +40,14 @@ export function accentColors(theme: MantineTheme): {
     typeof theme.primaryShade === "number"
       ? theme.primaryShade
       : theme.primaryShade.light;
+
   return { eye: palette?.[4] ?? "#4dabf7", tip: palette?.[shade] ?? "#228be6" };
 }
 
 function loadIcon(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image(SIZE, SIZE);
+
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("The favicon did not load."));
     image.src = src;
@@ -57,11 +59,15 @@ export function withIndicator(
   dotColor: string,
 ): string | null {
   const canvas = document.createElement("canvas");
+
   canvas.width = SIZE;
   canvas.height = SIZE;
   const ctx = canvas.getContext("2d");
+
   if (!ctx) return null;
+
   ctx.drawImage(icon, 0, 0, SIZE, SIZE);
+
   for (const [radius, color] of [
     [DOT.ring, "#ffffff"],
     [DOT.fill, dotColor],
@@ -71,16 +77,19 @@ export function withIndicator(
     ctx.fillStyle = color;
     ctx.fill();
   }
+
   return canvas.toDataURL("image/png");
 }
 
 function iconLink(): HTMLLinkElement {
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+
   if (!link) {
     link = document.createElement("link");
     link.rel = "icon";
     document.head.appendChild(link);
   }
+
   return link;
 }
 
@@ -96,18 +105,25 @@ export function showIcon(
 ): () => void {
   const link = iconLink();
   const icon = svgUrl(robotSvg(eye, tip));
+
   if (dotColor === null) {
     setIcon(link, icon, ICON_TYPE);
+
     return () => {};
   }
+
   let cancelled = false;
+
   loadIcon(icon)
     .then((image) => {
       if (cancelled) return;
+
       const href = withIndicator(image, dotColor);
+
       if (href) setIcon(link, href, "image/png");
     })
     .catch(() => {});
+
   return () => {
     cancelled = true;
   };

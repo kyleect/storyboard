@@ -88,6 +88,7 @@ function view(
       },
     ],
   ]);
+
   render(
     <MantineProvider>
       <MessageView
@@ -111,6 +112,7 @@ function view(
       />
     </MantineProvider>,
   );
+
   return { onAnswer, onSendToSubagent };
 }
 
@@ -130,6 +132,7 @@ describe("a subagent under its call", () => {
     const { onAnswer } = view({ running: true, waiting: true }, [
       { request: form, runId: "child-run" },
     ]);
+
     expect(screen.getByText("waiting for you")).toBeTruthy();
     expect(screen.getByText("Hide its work")).toBeTruthy();
 
@@ -142,6 +145,7 @@ describe("a subagent under its call", () => {
       { runId: string },
       { outcome: string },
     ];
+
     expect(open.runId).toBe("child-run");
     expect(answer.outcome).toBe("answered");
   });
@@ -165,8 +169,10 @@ describe("a message to a running subagent", () => {
 
   it("has a box in its panel that sends to its own run", () => {
     const { onSendToSubagent } = view({ running: true, waiting: false });
+
     open();
     const box = screen.getByLabelText("Message to Editor");
+
     fireEvent.change(box, { target: { value: "  Use tool_b  " } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(onSendToSubagent).toHaveBeenCalledWith(
@@ -178,8 +184,10 @@ describe("a message to a running subagent", () => {
 
   it("sends with Ctrl+Enter", () => {
     const { onSendToSubagent } = view({ running: true, waiting: false });
+
     open();
     const box = screen.getByLabelText("Message to Editor");
+
     fireEvent.change(box, { target: { value: "Stop" } });
     fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
     expect(onSendToSubagent).toHaveBeenCalledWith("child-run", "Stop");
@@ -187,8 +195,10 @@ describe("a message to a running subagent", () => {
 
   it("does not send an empty message", () => {
     const { onSendToSubagent } = view({ running: true, waiting: false });
+
     open();
     const button = screen.getByRole("button", { name: "Send" });
+
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(screen.getByLabelText("Message to Editor"), {
       key: "Enter",
@@ -219,6 +229,7 @@ describe("a message to a running subagent", () => {
       agent: null,
       streaming: false,
     });
+
     view({
       running: true,
       waiting: false,

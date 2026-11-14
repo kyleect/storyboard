@@ -79,6 +79,7 @@ function renderPage(projectId: string | null = null) {
     </MantineProvider>
   );
   const { rerender } = render(page(projectId));
+
   return {
     queryClient,
     showProject: (id: string | null) => rerender(page(id)),
@@ -131,6 +132,7 @@ describe("the Sessions page: the table", () => {
     const spy = vi
       .spyOn(api, "listSessionsPage")
       .mockResolvedValue({ items: [item(1)], total: 1 });
+
     renderPage();
     await screen.findByText("Session 1");
     expect(lastRequest(spy)).toEqual({
@@ -178,6 +180,7 @@ describe("the Sessions page: sorting", () => {
       items: [item(1)],
       total: 25,
     });
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(screen.getByRole("button", { name: "2" }));
@@ -231,6 +234,7 @@ describe("the Sessions page: sorting", () => {
     vi.resetModules();
     const { useSessionsPrefs: fresh } =
       await import("../../stores/sessionsPrefs");
+
     expect(fresh.getState()).toMatchObject({ direction: "asc", pageSize: 50 });
   });
 
@@ -242,11 +246,13 @@ describe("the Sessions page: sorting", () => {
     vi.resetModules();
     const { useSessionsPrefs: fresh } =
       await import("../../stores/sessionsPrefs");
+
     expect(fresh.getState()).toMatchObject({ direction: "desc", pageSize: 10 });
 
     localStorage.setItem("harness.sessionsPrefs", "not json");
     vi.resetModules();
     const again = await import("../../stores/sessionsPrefs");
+
     expect(again.useSessionsPrefs.getState()).toMatchObject({
       direction: "desc",
       pageSize: 10,
@@ -260,6 +266,7 @@ describe("the Sessions page: paging", () => {
       items: [item(1)],
       total: 25,
     });
+
     renderPage();
     await screen.findByText("Session 1");
     expect(screen.getByRole("button", { name: "3" })).toBeTruthy();
@@ -283,6 +290,7 @@ describe("the Sessions page: paging", () => {
       items: [item(1)],
       total: 120,
     });
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(screen.getByRole("button", { name: "2" }));
@@ -309,6 +317,7 @@ describe("the Sessions page: paging", () => {
     await screen.findByText("Session 1");
     fireEvent.click(perPage());
     const options = await screen.findAllByRole("option", { hidden: true });
+
     expect(options.map((o) => o.textContent)).toEqual([
       "10",
       "25",
@@ -323,6 +332,7 @@ describe("the Sessions page: paging", () => {
       total: 15,
     });
     const { queryClient } = renderPage();
+
     await screen.findByText("Session 1");
     fireEvent.click(screen.getByRole("button", { name: "2" }));
     await waitFor(() => expect(lastRequest(spy)).toMatchObject({ page: 2 }));
@@ -370,6 +380,7 @@ describe("the Sessions page: selecting", () => {
         running: false,
       })),
     });
+
     renderPage();
     await screen.findByText("Session 1");
 
@@ -427,6 +438,7 @@ describe("the Sessions page: selecting", () => {
       items: [item(1)],
       total: 25,
     });
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select Session 1"));
@@ -449,6 +461,7 @@ describe("the Sessions page: selecting", () => {
     twoRows();
     vi.spyOn(api, "listSessionIds").mockRejectedValue(new Error("Nope"));
     const show = vi.spyOn(notifications, "show");
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select all sessions"));
@@ -469,6 +482,7 @@ describe("the Sessions page: selecting", () => {
       total: 25,
     });
     const { showProject } = renderPage();
+
     await screen.findByText("Session 1");
     fireEvent.click(screen.getByRole("button", { name: "2" }));
     await waitFor(() => expect(lastRequest(spy)).toMatchObject({ page: 2 }));
@@ -495,6 +509,7 @@ describe("the Sessions page: selecting", () => {
     const ids = vi.spyOn(api, "listSessionIds").mockResolvedValue({
       sessions: [{ id: "s1", running: false }],
     });
+
     renderPage("p1");
     await screen.findByText("Session 1");
     fireEvent.click(box("Select all sessions"));
@@ -522,6 +537,7 @@ describe("the Sessions page: moving to the trash", () => {
     const button = screen.getByRole("button", {
       name: "Move to trash",
     }) as HTMLButtonElement;
+
     expect(button.disabled).toBe(true);
     expect(
       (
@@ -538,6 +554,7 @@ describe("the Sessions page: moving to the trash", () => {
       trashed: ["s1", "s2"],
       refused: [],
     });
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select Session 1"));
@@ -545,10 +562,12 @@ describe("the Sessions page: moving to the trash", () => {
     fireEvent.click(screen.getByRole("button", { name: "Move to trash" }));
 
     const dialog = await screen.findByRole("dialog");
+
     expect(within(dialog).getByText("Move 2 sessions to trash?")).toBeTruthy();
     expect(trash).not.toHaveBeenCalled();
 
     const callsBefore = list.mock.calls.length;
+
     fireEvent.click(await confirmButton());
     await waitFor(() => expect(trash).toHaveBeenCalledWith(["s1", "s2"]));
     expect(await screen.findByText("0 selected")).toBeTruthy();
@@ -573,11 +592,13 @@ describe("the Sessions page: moving to the trash", () => {
   it("moves nothing when the dialog is cancelled", async () => {
     rows();
     const trash = vi.spyOn(api, "trashSessions");
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select Session 1"));
     fireEvent.click(screen.getByRole("button", { name: "Move to trash" }));
     const dialog = await screen.findByRole("dialog");
+
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(trash).not.toHaveBeenCalled();
@@ -596,6 +617,7 @@ describe("the Sessions page: moving to the trash", () => {
       trashed: ["s1", "s2", "s3", "s4"],
       refused: [],
     });
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select all sessions"));
@@ -617,6 +639,7 @@ describe("the Sessions page: moving to the trash", () => {
       ],
     });
     const show = vi.spyOn(notifications, "show");
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select Session 1"));
@@ -641,6 +664,7 @@ describe("the Sessions page: moving to the trash", () => {
       refused: [{ id: "s1", error: "The session is already in the trash." }],
     });
     const show = vi.spyOn(notifications, "show");
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select Session 1"));
@@ -657,6 +681,7 @@ describe("the Sessions page: moving to the trash", () => {
     rows();
     vi.spyOn(api, "trashSessions").mockRejectedValue(new Error("Disk full"));
     const show = vi.spyOn(notifications, "show");
+
     renderPage();
     await screen.findByText("Session 1");
     fireEvent.click(box("Select Session 1"));

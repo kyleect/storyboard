@@ -32,6 +32,7 @@ export interface NodeRef {
 
 export function parseNodeValue(value: string): NodeRef {
   const r = parseNodeValueOf(value);
+
   return { root: r.root, kind: r.kind as NodeKind, path: r.path };
 }
 
@@ -79,6 +80,7 @@ export function schemaTabRoot(
   roots: readonly Root<DataOwner>[],
 ): RootId {
   const home = scope === "builtin" ? "global" : scope;
+
   return roots.find((r) => r.scope.scope === home)?.id ?? from;
 }
 
@@ -87,8 +89,11 @@ export function mergeSchemas(
   usable: readonly SchemaInfo[],
 ): SchemaInfo[] {
   const byId = new Map<string, SchemaInfo>();
+
   for (const s of usable) byId.set(s.id, s);
+
   for (const s of own) byId.set(s.id, s);
+
   return [...byId.values()];
 }
 
@@ -103,12 +108,14 @@ export function buildTree(
       value: nodeValue({ root: root.id, kind: "root", path: "" }),
       children: [],
     };
+
     info.set(top.value, { name: root.label, deleted: false });
     const folder: TreeNode = {
       label: "Schemas",
       value: nodeValue({ root: root.id, kind: "schemas", path: "" }),
       children: [],
     };
+
     info.set(folder.value, { name: "Schemas", deleted: false });
     top.children?.push(folder);
 
@@ -117,22 +124,26 @@ export function buildTree(
         label: d.name,
         value: nodeValue({ root: root.id, kind: "data", path: d.id }),
       };
+
       info.set(node.value, {
         name: d.name,
         deleted: d.deleted,
         outOfDate: d.outOfDate,
       });
+
       return node;
     };
 
     const known = new Set(schemas.map((s) => s.id));
     const nodes = new Map<string, TreeNode>();
+
     for (const s of schemas) {
       const node: TreeNode = {
         label: s.name,
         value: nodeValue({ root: root.id, kind: "schema", path: s.id }),
         children: [],
       };
+
       nodes.set(s.id, node);
       info.set(node.value, {
         name: s.name,
@@ -142,32 +153,42 @@ export function buildTree(
       });
       folder.children?.push(node);
     }
+
     const orphans: DataItem[] = [];
+
     for (const d of items) {
       const parent = nodes.get(d.schemaId);
+
       if (parent && known.has(d.schemaId)) parent.children?.push(dataRow(d));
       else orphans.push(d);
     }
+
     if (orphans.length > 0) {
       const node: TreeNode = {
         label: "Unknown schema",
         value: nodeValue({ root: root.id, kind: "unknown", path: "" }),
         children: orphans.map(dataRow),
       };
+
       info.set(node.value, { name: "Unknown schema", deleted: false });
       folder.children?.push(node);
     }
+
     const sortRows = (n: TreeNode) => {
       n.children?.sort(byName);
     };
+
     sortRows(folder);
     const unknown = folder.children?.findIndex(
       (c) => parseNodeValue(c.value).kind === "unknown",
     );
+
     if (unknown !== undefined && unknown >= 0 && folder.children) {
       const [moved] = folder.children.splice(unknown, 1);
+
       if (moved) folder.children.push(moved);
     }
+
     for (const n of folder.children ?? []) sortRows(n);
 
     if (pending && pending.root === root.id) {
@@ -178,6 +199,7 @@ export function buildTree(
         });
       } else {
         const parent = nodes.get(pending.schemaId);
+
         parent?.children?.unshift({
           label: "",
           value: nodeValue({
@@ -188,8 +210,10 @@ export function buildTree(
         });
       }
     }
+
     return top;
   });
+
   return { data, info };
 }
 

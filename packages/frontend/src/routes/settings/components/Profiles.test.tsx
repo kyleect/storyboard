@@ -30,7 +30,9 @@ function renderSection(over: Partial<ProfileListing> = {}) {
     trashed: [],
     ...over,
   };
+
   vi.spyOn(api, "listProfiles").mockResolvedValue(listing);
+
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
@@ -78,9 +80,11 @@ describe("Profiles", () => {
     const spy = vi
       .spyOn(api, "createProfile")
       .mockResolvedValue(profile("n", "Novel"));
+
     renderSection();
     await screen.findByText("Work");
     const create = screen.getByRole("button", { name: "Create" });
+
     expect((create as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("New profile"), {
       target: { value: "Novel" },
@@ -93,6 +97,7 @@ describe("Profiles", () => {
     const spy = vi
       .spyOn(api, "renameProfile")
       .mockResolvedValue(profile("w", "Job"));
+
     renderSection();
     await screen.findByText("Work");
     fireEvent.click(inRow("Work", "Rename"));
@@ -111,6 +116,7 @@ describe("Profiles", () => {
     const re = vi
       .spyOn(api, "restoreProfile")
       .mockResolvedValue(profile("o", "Old"));
+
     renderSection({ trashed: [profile("o", "Old", { trashedAt: "x" })] });
     await screen.findByText("Work");
     fireEvent.click(inRow("Work", "Switch to"));

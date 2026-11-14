@@ -18,6 +18,7 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return render(
     <QueryClientProvider client={client}>
       <MantineProvider>
@@ -38,6 +39,7 @@ describe("DerivedTextField", () => {
   const setup = (derived: DerivedText, describer = info()) => {
     vi.spyOn(api, "getDerivedText").mockResolvedValue(derived);
     vi.spyOn(api, "getMediaDescriber").mockResolvedValue(describer);
+
     return show(<DerivedTextField hash="h1" />);
   };
 
@@ -52,6 +54,7 @@ describe("DerivedTextField", () => {
     const describe = vi
       .spyOn(api, "describeFile")
       .mockResolvedValue({ text: "", state: "pending" });
+
     setup({ text: "", state: "failed" });
     expect(await screen.findByText("Not generated.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -63,8 +66,10 @@ describe("DerivedTextField", () => {
     const set = vi
       .spyOn(api, "setDerivedText")
       .mockResolvedValue({ text: "My cat", state: "edited" });
+
     setup({ text: "", state: "none" });
     const box = await screen.findByLabelText(/Text for search/);
+
     expect(screen.queryByRole("button", { name: "Save text" })).toBeNull();
     fireEvent.change(box, { target: { value: "My cat" } });
     fireEvent.click(screen.getByRole("button", { name: "Save text" }));
@@ -75,6 +80,7 @@ describe("DerivedTextField", () => {
   it("cannot generate while descriptions are off, and says how to turn them on", async () => {
     setup({ text: "", state: "none" }, info({ enabled: false }));
     const button = await screen.findByRole("button", { name: "Generate" });
+
     await waitFor(() =>
       expect((button as HTMLButtonElement).disabled).toBe(true),
     );
@@ -108,6 +114,7 @@ describe("MediaDescriptions settings", () => {
     ] as never);
     vi.spyOn(api, "saveSettings").mockResolvedValue(view(saved));
     vi.spyOn(api, "getMediaDescriber").mockResolvedValue(describer);
+
     return show(<MediaDescriptions view={view("gemma")} />);
   };
 
@@ -123,6 +130,7 @@ describe("MediaDescriptions settings", () => {
     const regenerate = vi
       .spyOn(api, "regenerateDescriptions")
       .mockResolvedValue({ queued: 2 });
+
     setup(info());
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     expect(
@@ -140,6 +148,7 @@ describe("MediaDescriptions settings", () => {
     const regenerate = vi
       .spyOn(api, "regenerateDescriptions")
       .mockResolvedValue({ queued: 3 });
+
     setup(info());
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     fireEvent.click(
@@ -157,6 +166,7 @@ describe("MediaDescriptions settings", () => {
 
   it("Not now leaves everything alone", async () => {
     const regenerate = vi.spyOn(api, "regenerateDescriptions");
+
     setup(info());
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     fireEvent.click(await screen.findByRole("button", { name: "Not now" }));

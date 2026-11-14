@@ -4,6 +4,7 @@ import { loadViewIn, rootLabel, saveViewIn } from "./explorer";
 describe("roots that are not files'", () => {
   beforeEach(() => {
     const store = new Map<string, string>();
+
     vi.stubGlobal("localStorage", {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
@@ -33,8 +34,10 @@ describe("roots that are not files'", () => {
       width: 300,
       showDeleted: true,
     };
+
     saveViewIn("skills", "global", view);
     const isRoot = (v: unknown) => v === "agent";
+
     expect(loadViewIn("skills", "global", ["file"], isRoot)).toEqual(view);
     expect(localStorage.getItem("harness.skills.global")).not.toBeNull();
   });
@@ -56,6 +59,7 @@ describe("roots that are not files'", () => {
       ["file"],
       (v) => v === "agent",
     );
+
     expect(loaded.tabs.map((t) => t.root)).toEqual(["agent"]);
     expect(loaded.active).toBeNull();
   });

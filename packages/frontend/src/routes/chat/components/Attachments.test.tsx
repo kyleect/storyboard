@@ -16,6 +16,7 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return render(
     <QueryClientProvider client={client}>
       <MantineProvider>{ui}</MantineProvider>
@@ -49,11 +50,14 @@ describe("MessageFiles keep choice", () => {
     ]);
     vi.spyOn(api, "blobUrl").mockResolvedValue("blob:image");
     let saved = choices;
+
     vi.spyOn(api, "getMediaChoices").mockImplementation(async () => saved);
+
     return vi
       .spyOn(api, "setMediaChoice")
       .mockImplementation(async (_id, ref, keep) => {
         saved = keep === null ? [] : [{ ref, keep }];
+
         return { ref, keep };
       });
   };
@@ -69,6 +73,7 @@ describe("MessageFiles keep choice", () => {
 
   it("saves keep, drop and a return to the default", async () => {
     const set = setup([]);
+
     showFiles(["session://cat.png"]);
     await waitFor(() => expect(radio("Default").checked).toBe(true));
     fireEvent.click(radio("Keep in view"));
@@ -95,9 +100,11 @@ describe("MessageFiles", () => {
         file("hi.wav", "audio/wav", "h2"),
       ]);
     const urls: Record<string, string> = { h1: "blob:image", h2: "blob:audio" };
+
     vi.spyOn(api, "blobUrl").mockImplementation(async (h) => urls[h] ?? "");
     const { container } = showFiles(["session://cat.png", "session://hi.wav"]);
     const img = await screen.findByAltText("cat.png");
+
     expect(img.getAttribute("src")).toBe("blob:image");
     await waitFor(() =>
       expect(container.querySelector("audio")?.getAttribute("src")).toBe(
@@ -116,6 +123,7 @@ describe("MessageFiles", () => {
           ? [file("p.png", "image/png", "hp")]
           : [file("g.png", "image/png", "hg")],
       );
+
     vi.spyOn(api, "blobUrl").mockImplementation(async (h) => `blob:${h}`);
     showFiles(["project://p.png", "global://g.png"]);
     expect((await screen.findByAltText("p.png")).getAttribute("src")).toBe(
@@ -150,6 +158,7 @@ describe("MessageFiles", () => {
 describe("DraftAttachments", () => {
   it("lists the chosen files and removes one", () => {
     const removed: string[] = [];
+
     show(
       <DraftAttachments
         items={[
@@ -196,6 +205,7 @@ describe("DraftAttachments", () => {
         onRemove={() => {}}
       />,
     );
+
     expect(container.querySelector("audio")?.getAttribute("src")).toBe(
       "blob:voice",
     );
@@ -205,6 +215,7 @@ describe("DraftAttachments", () => {
     const { container } = show(
       <DraftAttachments items={[]} uploading={0} onRemove={() => {}} />,
     );
+
     expect(
       container.querySelectorAll("button, img, [aria-label]"),
     ).toHaveLength(0);

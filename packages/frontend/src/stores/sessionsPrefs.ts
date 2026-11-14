@@ -21,8 +21,11 @@ function isPageSize(value: unknown): value is PageSize {
 function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY);
+
     if (raw === null) return DEFAULTS;
+
     const saved = JSON.parse(raw) as Partial<Saved> | null;
+
     return {
       direction: saved?.direction === "asc" ? "asc" : DEFAULTS.direction,
       pageSize: isPageSize(saved?.pageSize)

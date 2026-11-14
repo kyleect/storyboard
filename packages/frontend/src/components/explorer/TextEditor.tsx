@@ -65,6 +65,7 @@ export function TextEditor({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const latest = useRef({ onChange, onSave, onCursor });
+
   useEffect(() => {
     latest.current = { onChange, onSave, onCursor };
   }, [onChange, onSave, onCursor]);
@@ -73,6 +74,7 @@ export function TextEditor({
   // is applied below, because remaking the editor would lose the cursor.
   useEffect(() => {
     if (!host.current) return;
+
     const editor = new EditorView({
       parent: host.current,
       state: EditorState.create({
@@ -91,6 +93,7 @@ export function TextEditor({
                 preventDefault: true,
                 run: () => {
                   latest.current.onSave?.();
+
                   return true;
                 },
               },
@@ -98,9 +101,11 @@ export function TextEditor({
           ),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) latest.current.onChange(u.state.doc.toString());
+
             if (u.docChanged || u.selectionSet) {
               const head = u.state.selection.main.head;
               const line = u.state.doc.lineAt(head);
+
               latest.current.onCursor?.({
                 line: line.number,
                 column: head - line.from + 1,
@@ -111,7 +116,9 @@ export function TextEditor({
         ],
       }),
     });
+
     view.current = editor;
+
     return () => {
       editor.destroy();
       view.current = null;
@@ -121,8 +128,11 @@ export function TextEditor({
 
   useEffect(() => {
     const editor = view.current;
+
     if (!editor) return;
+
     const current = editor.state.doc.toString();
+
     if (current !== value) {
       editor.dispatch({
         changes: { from: 0, to: current.length, insert: value },

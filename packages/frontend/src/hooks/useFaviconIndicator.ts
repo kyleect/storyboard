@@ -25,12 +25,15 @@ export function useFaviconIndicator(pulseMs = PULSE_MS): void {
   const reduced = useReducedMotion();
 
   const [phase, setPhase] = useState<0 | 1>(0);
+
   useEffect(() => {
     if (state !== "working" || reduced) return;
+
     const timer = setInterval(
       () => setPhase((p) => (p === 0 ? 1 : 0)),
       pulseMs,
     );
+
     return () => {
       clearInterval(timer);
       setPhase(0);

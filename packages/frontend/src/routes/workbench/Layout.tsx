@@ -5,5 +5,6 @@ import { Workbench } from "./components/Workbench";
 export function Layout() {
   useAppEvents();
   useFaviconIndicator();
+
   return <Workbench />;
 }

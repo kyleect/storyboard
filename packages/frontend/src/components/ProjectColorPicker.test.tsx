@@ -48,6 +48,7 @@ describe("the project color picker", () => {
 
   it("reports the color that is clicked, and none when that is clicked", () => {
     const onChange = vi.fn();
+
     show("blue", onChange);
     fireEvent.click(screen.getByRole("radio", { name: "Orange" }));
     expect(onChange).toHaveBeenLastCalledWith("orange");
@@ -57,6 +58,7 @@ describe("the project color picker", () => {
 
   it("does not report the choice that is already made", () => {
     const onChange = vi.fn();
+
     show("blue", onChange);
     fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
     expect(onChange).not.toHaveBeenCalled();
@@ -64,6 +66,7 @@ describe("the project color picker", () => {
 
   it("cannot be changed while disabled", () => {
     const onChange = vi.fn();
+
     show("blue", onChange, true);
     fireEvent.click(screen.getByRole("radio", { name: "Red" }));
     expect(onChange).not.toHaveBeenCalled();

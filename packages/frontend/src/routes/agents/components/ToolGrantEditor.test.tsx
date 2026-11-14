@@ -51,11 +51,14 @@ function setup(
   list: AgentToolInfo[] = TOOLS,
 ) {
   const seen = { grant: start, approval: startApproval };
+
   function Host() {
     const [grant, setGrant] = useState(start);
     const [approval, setApproval] = useState(startApproval);
+
     seen.grant = grant;
     seen.approval = approval;
+
     return (
       <ToolGrantEditor
         grant={grant}
@@ -68,11 +71,13 @@ function setup(
       />
     );
   }
+
   render(
     <MantineProvider>
       <Host />
     </MantineProvider>,
   );
+
   return seen;
 }
 
@@ -102,6 +107,7 @@ describe("ToolGrantEditor", () => {
 
   it("grants a whole group from its header", () => {
     const seen = setup();
+
     fireEvent.click(screen.getByLabelText("Web tools"));
     expect(seen.grant.groups).toEqual(["web"]);
     expect(screen.getByText("2 of 2")).toBeTruthy();
@@ -109,12 +115,14 @@ describe("ToolGrantEditor", () => {
 
   it("does not grant a tool that needs review with its group", () => {
     const seen = setup();
+
     fireEvent.click(screen.getByLabelText("Files tools"));
     expect(seen.grant.groups).toEqual(["files"]);
     expect(screen.getByText("2 of 3")).toBeTruthy();
     open("Files");
     expect(screen.getByText("needs review")).toBeTruthy();
     const kill = boxOf("files_kill");
+
     expect(kill.checked).toBe(false);
     fireEvent.click(kill);
     expect(seen.grant.extras).toEqual(["files_kill"]);
@@ -129,12 +137,14 @@ describe("ToolGrantEditor", () => {
     const locked = [...boxes].filter(
       (b) => (b as HTMLInputElement).disabled,
     ) as HTMLInputElement[];
+
     expect(locked).toHaveLength(1);
     expect(locked[0]?.checked).toBe(true);
   });
 
   it("leaves one tool out of a granted group", () => {
     const seen = setup({ ...emptyGrant(), groups: ["web"] });
+
     open("Web");
     fireEvent.click(boxOf("web_search"));
     expect(seen.grant.except).toEqual(["web_search"]);
@@ -157,6 +167,7 @@ describe("ToolGrantEditor", () => {
 
   it("sets approval for a whole group", () => {
     const seen = setup();
+
     fireEvent.click(select("Approval for Web tools"));
     fireEvent.click(screen.getByRole("option", { name: "Ask for all" }));
     expect(seen.approval).toEqual({ web_search: true, read_webpage: true });
@@ -165,6 +176,7 @@ describe("ToolGrantEditor", () => {
   it("shows mixed approval when tools differ", () => {
     setup(emptyGrant(), [], { web_search: true });
     const mixed = select("Approval for Web tools");
+
     expect(mixed.value).toBe("");
     expect(mixed.placeholder).toBe("Mixed");
   });
@@ -186,6 +198,7 @@ describe("ToolGrantEditor", () => {
 
   it("grants the whole MCP group from its header", () => {
     const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+
     fireEvent.click(screen.getByLabelText("MCP tools"));
     expect(seen.grant.groups).toEqual(["mcp"]);
     expect(screen.getByText("2 of 3")).toBeTruthy();
@@ -193,6 +206,7 @@ describe("ToolGrantEditor", () => {
 
   it("grants one server from its header, not the others", () => {
     const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+
     open("MCP");
     fireEvent.click(screen.getByLabelText("calendar tools"));
     expect(seen.grant.groups).toEqual([]);
@@ -209,6 +223,7 @@ describe("ToolGrantEditor", () => {
 
   it("sets approval for one server only", () => {
     const seen = setup(emptyGrant(), [], {}, MCP_TOOLS);
+
     open("MCP");
     fireEvent.click(select("Approval for notes tools"));
     fireEvent.click(screen.getByRole("option", { name: "Don't ask for all" }));
@@ -220,6 +235,7 @@ describe("ToolGrantEditor", () => {
 
   it("keeps the same tools when switching between allow and deny", () => {
     const seen = setup({ ...emptyGrant(), groups: ["web"] });
+
     fireEvent.click(screen.getByText("Every tool except the unticked ones"));
     expect(seen.grant.mode).toBe("deny");
     expect(screen.getByText("2 of 2")).toBeTruthy();
@@ -228,6 +244,7 @@ describe("ToolGrantEditor", () => {
 
   it("lists names with no tool and removes them", () => {
     const seen = setup({ ...emptyGrant(), extras: ["gone_tool"] });
+
     expect(screen.getByText("gone_tool (missing)")).toBeTruthy();
     fireEvent.click(screen.getByText("Remove"));
     expect(seen.grant.extras).toEqual([]);

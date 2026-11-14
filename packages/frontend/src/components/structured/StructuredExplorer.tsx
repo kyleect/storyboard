@@ -19,6 +19,7 @@ export function StructuredRoots({
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }) {
   const s = useStructured({ roots, viewKey, pageRoot, onDirtyChange });
+
   return <StructuredLayout s={s} />;
 }
 
@@ -111,5 +112,6 @@ export function StructuredExplorer({
     pageRoot: pageScope,
     onDirtyChange,
   });
+
   return <StructuredLayout s={s} />;
 }

@@ -80,6 +80,7 @@ export function useBranchActions(sessionId: string, choices: Choices) {
     },
     onError,
   });
+
   return {
     fork,
     edit,
@@ -119,7 +120,9 @@ export function MessageActions({
   const canEdit = branching.editable.includes(messageId);
   const canBranch = branching.points.includes(messageId);
   const canRegenerate = last && branching.regenerate !== null;
+
   if (!canEdit && !canBranch && !canRegenerate) return null;
+
   return (
     <Group gap={2} mt={2}>
       {canEdit && (
@@ -177,10 +180,12 @@ function ForkForm({
 }) {
   const [title, setTitle] = useState(defaultTitle);
   const trimmed = title.trim();
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+
         if (trimmed !== "") onCreate(trimmed);
       }}
     >
@@ -248,6 +253,7 @@ export function ForkedFromLine({
       </Text>
     );
   }
+
   return (
     <Text size="xs" c="dimmed">
       Forked from {from.title} (deleted)
@@ -273,6 +279,7 @@ export function EditMessageBox({
   const [text, setText] = useState(initial);
   const other = defaultMode === "branch" ? "in_place" : "branch";
   const empty = text === "" && !hasFiles;
+
   return (
     <Paper p="sm">
       <Stack gap="xs">
@@ -349,6 +356,7 @@ export function BranchSwitcher({
   const previous = ids[index - 1];
   const next = ids[index + 1];
   const current = ids[index];
+
   return (
     <Group gap={4} mb={4}>
       <ActionIcon
@@ -408,6 +416,7 @@ export function Continuations({
   onSwitch: (messageId: string) => void;
 }) {
   if (items.length === 0) return null;
+
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed">

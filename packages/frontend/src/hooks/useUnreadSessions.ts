@@ -22,5 +22,6 @@ export function useUnreadSessions(): UnreadSessions {
     queryFn: api.listUnreadSessions,
     select,
   });
+
   return data ?? NONE;
 }

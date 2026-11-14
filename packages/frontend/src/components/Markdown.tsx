@@ -18,8 +18,11 @@ import remarkGfm from "remark-gfm";
 
 function textOf(node: unknown): string {
   if (typeof node !== "object" || node === null) return "";
+
   const n = node as { value?: unknown; children?: unknown };
+
   if (typeof n.value === "string") return n.value;
+
   return Array.isArray(n.children) ? n.children.map(textOf).join("") : "";
 }
 

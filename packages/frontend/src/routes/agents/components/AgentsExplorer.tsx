@@ -117,9 +117,11 @@ function askName(
     const [name, setName] = useState("");
     const go = () => {
       if (name.trim() === "") return;
+
       modals.closeAll();
       onSubmit(name.trim());
     };
+
     return (
       <Stack gap="xs">
         <TextInput
@@ -142,6 +144,7 @@ function askName(
       </Stack>
     );
   };
+
   modals.open({ title, children: <NameForm /> });
 }
 
@@ -180,6 +183,7 @@ export function AgentsExplorer({
       : tabs[0]
         ? tabId(tabs[0])
         : null;
+
     return { tabs, active };
   });
   const [expanded, setExpanded] = useState(initial.expanded);
@@ -202,11 +206,15 @@ export function AgentsExplorer({
 
   const [wanted, setWanted] = useState<ReadonlySet<string>>(() => {
     const ids = new Set<string>();
+
     for (const [value, on] of Object.entries(initial.expanded)) {
       const ref = parseRef(value);
+
       if (on && ref.kind === "agent") ids.add(ref.path);
     }
+
     for (const t of initial.tabs) ids.add(tabAgent(t));
+
     return ids;
   });
   const want = (id: string) =>
@@ -227,6 +235,7 @@ export function AgentsExplorer({
       Object.keys(fileDrafts).length +
       Object.keys(structDrafts).length >
     0;
+
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
@@ -285,6 +294,7 @@ export function AgentsExplorer({
       },
       { id: "global", label: "Global", agents: all.filter((a) => !a.builtin) },
     ];
+
     if (projectId) {
       list.push({
         id: "project",
@@ -292,21 +302,26 @@ export function AgentsExplorer({
         agents: rows(projectAgents.data),
       });
     }
+
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalAgents.data, projectAgents.data, projectId]);
   const agentRows = useMemo(() => {
     const m = new Map<string, { row: AgentRow; root: string }>();
+
     for (const r of roots)
       for (const a of r.agents) m.set(a.id, { row: a, root: r.id });
+
     return m;
   }, [roots]);
   const [handled, setHandled] = useState<object | null>(null);
   const listsIn =
     !globalAgents.isPending && !(projectId && projectAgents.isPending);
+
   if (request && request !== handled && listsIn) {
     setHandled(request);
     const found = agentRows.get(request.agentId);
+
     if (found) {
       setShowVersion({ agentId: request.agentId, version: request.version });
       setTabsState((s) =>
@@ -318,6 +333,7 @@ export function AgentsExplorer({
       );
     }
   }
+
   useEffect(() => {
     if (request && request === handled) clearRequest();
   }, [request, handled, clearRequest]);
@@ -330,9 +346,12 @@ export function AgentsExplorer({
         : undefined;
   const agentReason = (agentId: string): string | undefined => {
     const a = agentRows.get(agentId);
+
     if (!a) return undefined;
+
     if (a.row.deleted)
       return "The agent is deleted, so this can be read but not changed.";
+
     return reasonOf(a.root);
   };
 
@@ -343,11 +362,15 @@ export function AgentsExplorer({
   const skillOwners = useMemo(() => {
     const owners: SkillOwner[] = [{ scope: "global" }];
     const projects = new Set<string>();
+
     for (const id of loadIds) {
       const p = agentRows.get(id)?.row.projectId;
+
       if (p) projects.add(p);
     }
+
     for (const p of projects) owners.push({ scope: "project", id: p });
+
     return owners;
   }, [loadIds, agentRows]);
 
@@ -362,6 +385,7 @@ export function AgentsExplorer({
   const lists = useQueries({
     queries: loadIds.flatMap((id) => {
       const owner = { scope: "agent", id } as const;
+
       return [
         {
           queryKey: skillKeys.withFiles(owner, "own", showDeleted),
@@ -394,9 +418,12 @@ export function AgentsExplorer({
             ("id" in x ? x.id : "") === ("id" in o ? o.id : ""),
         )
       ] as SkillWithFiles[] | undefined) ?? [];
+
     loadIds.forEach((id, i) => {
       const at = 4 * i;
+
       if (lists.pending.slice(at, at + 4).some(Boolean)) return;
+
       const projectOf = agentRows.get(id)?.row.projectId;
       const global = sharedBy({ scope: "global" });
       const inherited: Record<Origin, readonly SkillWithFiles[]> = {
@@ -418,8 +445,11 @@ export function AgentsExplorer({
         (lists.data[at + 2] as { schemas: SchemaInfo[] } | undefined)
           ?.schemas ?? [];
       const byId = new Map<string, SchemaInfo>();
+
       for (const s of usable) byId.set(s.id, s);
+
       for (const s of ownSchemas) byId.set(s.id, s);
+
       m.set(id, {
         skills: { own, inherited },
         schemas: {
@@ -430,6 +460,7 @@ export function AgentsExplorer({
         },
       });
     });
+
     return m;
   }, [loadIds, lists.data, lists.pending, shared.data, skillOwners, agentRows]);
 
@@ -448,6 +479,7 @@ export function AgentsExplorer({
   const forget = (id: string) => {
     const without = <T,>(r: Record<string, T>) =>
       Object.fromEntries(Object.entries(r).filter(([k]) => k !== id));
+
     setAgentDrafts(without);
     setFileDrafts(without);
     setStructDrafts(without);
@@ -462,15 +494,22 @@ export function AgentsExplorer({
     id in agentDrafts || id in fileDrafts || id in structDrafts;
   const nameOf = (t: TabState): string => {
     const id = tabId(t);
+
     if (t.kind === "agent") {
       const a = agentDrafts[id];
+
       if (isNewKey(t.key)) return a?.name || starts[id]?.name || "New agent";
+
       return agentRows.get(t.key)?.row.name ?? "Agent";
     }
+
     if (t.kind === "skill") return skillPlace(refOf(t)).key;
+
     const draft = structDrafts[id];
+
     if (isNewKey(t.key))
       return draft?.name || (t.kind === "schema" ? "New schema" : "New data");
+
     return (
       tree.info.get(tabNode(t))?.name ??
       (t.kind === "schema" ? "Schema" : "Data")
@@ -478,10 +517,13 @@ export function AgentsExplorer({
   };
   const requestClose = (id: string) => {
     const tab = tabsState.tabs.find((t) => tabId(t) === id);
+
     if (!tab || !drafted(id)) {
       close(id);
+
       return;
     }
+
     confirmAction({
       title: `Close “${nameOf(tab)}” without saving?`,
       message: <>Your unsaved changes to it will be lost.</>,
@@ -498,6 +540,7 @@ export function AgentsExplorer({
 
   const openRef = (ref: NodeRef, permanent: boolean) => {
     const [agentId = ""] = splitPath(ref.path, 1);
+
     if (ref.kind === "agent") {
       open({ kind: "agent", root: ref.root, key: ref.path }, permanent);
     } else if (ref.kind === "file") {
@@ -518,7 +561,9 @@ export function AgentsExplorer({
     counter.current += 1;
     const tab = { kind: "agent" as const, root, key: `new:${counter.current}` };
     const id = tabId(tab);
+
     if (start) setStarts((s) => ({ ...s, [id]: start }));
+
     setTabsState((s) => openTab(s, tab, true));
   };
 
@@ -561,7 +606,9 @@ export function AgentsExplorer({
           const found = (
             await api.listSkillTree({ scope: "agent", id: agentId }, false)
           ).find((s) => s.name === skill);
+
           if (!found) throw new Error(`There is no skill named “${skill}”.`);
+
           await api.putSkillFile(found.id, name, "");
           await refresh();
           open(
@@ -596,9 +643,12 @@ export function AgentsExplorer({
             const found = (
               await api.listSkillTree({ scope: "agent", id: agentId }, true)
             ).find((s) => s.name === skill && !s.deleted);
+
             if (!found) throw new Error(`There is no skill named “${skill}”.`);
+
             if (path === "") await api.deleteSkill(found.id);
             else await api.deleteSkillPath(found.id, path);
+
             await refresh();
           } catch (err) {
             showError("Could not delete it")(err);
@@ -616,6 +666,7 @@ export function AgentsExplorer({
         key: agentPath(agentId, `new:${counter.current}`),
       };
       const id = tabId(tab);
+
       setStructDrafts((d) => ({ ...d, [id]: newSchemaDraft(name) }));
       setViews((v) => ({ ...v, [id]: "form" }));
       open(tab, true);
@@ -630,6 +681,7 @@ export function AgentsExplorer({
         key: agentPath(agentId, `new:${counter.current}`),
       };
       const id = tabId(tab);
+
       setStructDrafts((d) => ({ ...d, [id]: newDataDraft(name, schemaId) }));
       setViews((v) => ({ ...v, [id]: "form" }));
       open(tab, true);
@@ -679,6 +731,7 @@ export function AgentsExplorer({
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: agentKeys.all });
       open({ kind: "agent", root: pageRoot, key: result.agent.id }, true);
+
       for (const warning of result.warnings) {
         notifications.show({
           color: "yellow",
@@ -692,10 +745,13 @@ export function AgentsExplorer({
         err instanceof ApiError && err.status === 409
           ? (err.body as { conflict?: ImportConflict } | undefined)?.conflict
           : undefined;
+
       if (!conflict) {
         showError("Could not import the agent")(err);
+
         return;
       }
+
       confirmAction({
         title: "An agent with this name exists",
         message: (
@@ -718,9 +774,11 @@ export function AgentsExplorer({
     const agent = agentRows.get(agentId);
     const editable = agent !== undefined && agentReason(agentId) === undefined;
     const list: TreeAction[] = [];
+
     switch (ref.kind) {
       case "agent": {
         if (!agent) return [];
+
         list.push({
           label: "Export",
           onClick: () => {
@@ -730,12 +788,14 @@ export function AgentsExplorer({
               .catch(showError("Could not export the agent"));
           },
         });
+
         if (agent.row.builtin) {
           list.push({
             label: "Copy to global",
             onClick: () => void copyBuiltin(agent.row.id),
           });
         }
+
         return list;
       }
       case "skills":
@@ -744,7 +804,9 @@ export function AgentsExplorer({
           : [];
       case "skill": {
         const p = skillPlace(ref);
+
         if (p.origin !== "own" || !editable) return [];
+
         return [
           {
             label: "New file",
@@ -759,8 +821,11 @@ export function AgentsExplorer({
       }
       case "file": {
         const p = skillPlace(ref);
+
         if (p.origin !== "own" || !editable) return [];
+
         const [skill = "", path = ""] = splitKey(p.key);
+
         return path === ""
           ? []
           : [
@@ -785,18 +850,22 @@ export function AgentsExplorer({
         const schema = loaded
           .get(agentId)
           ?.schemas.schemas.find((s) => s.id === rest);
+
         if (!schema || !editable) return [];
+
         if (!schema.deleted)
           list.push({
             label: "New data",
             onClick: () => newData(agentId, ref.root, schema.id),
           });
+
         if (!info?.inherited && !schema.deleted)
           list.push({
             label: "Delete",
             color: "red",
             onClick: () => deleteSchema(agentId, schema),
           });
+
         return list;
       }
       case "data":
@@ -825,6 +894,7 @@ export function AgentsExplorer({
         queryKey: agentKeys.detail(id),
         queryFn: () => api.getAgent(id),
       });
+
       newAgent("global", {
         ...contentOf(source),
         name: `${source.name} (copy)`,
@@ -853,6 +923,7 @@ export function AgentsExplorer({
         accept=".md,text/markdown,text/plain"
         onChange={(file) => {
           if (!file) return;
+
           void file
             .text()
             .then((markdown) =>
@@ -903,8 +974,10 @@ export function AgentsExplorer({
         }}
         onExpandedChange={(state) => {
           setExpanded(state);
+
           for (const [value, on] of Object.entries(state)) {
             const ref = parseRef(value);
+
             if (on && ref.kind === "agent") want(ref.path);
           }
         }}
@@ -949,12 +1022,15 @@ export function AgentsExplorer({
 
   let content: ReactNode = null;
   let activeReason: string | undefined;
+
   if (activeTab) {
     const id = tabId(activeTab);
     const agentId = tabAgent(activeTab);
     const reason = agentReason(agentId);
+
     if (activeTab.kind === "agent") {
       const isNew = isNewKey(activeTab.key);
+
       content = (
         <AgentTabContent
           key={id}
@@ -996,6 +1072,7 @@ export function AgentsExplorer({
         />
       );
       const a = agentRows.get(activeTab.key);
+
       activeReason = a
         ? (agentReason(a.row.id) ??
           (a.row.builtin ? BUILTIN_REASON : undefined))
@@ -1012,6 +1089,7 @@ export function AgentsExplorer({
               }
             : { scope: "global" };
       const readOnlyReason = p.origin === "own" ? reason : INHERITED_REASON;
+
       activeReason = readOnlyReason;
       content = (
         <FileTab
@@ -1056,14 +1134,18 @@ export function AgentsExplorer({
         onKeep: () => keep(id),
         higher: false,
       };
+
       activeReason = reason;
+
       if (activeTab.kind === "schema") {
         const info = isNew
           ? undefined
           : loaded.get(agentId)?.schemas.schemas.find((s) => s.id === itemId);
         const own = info === undefined || info.scope === "agent";
+
         if (!own || info?.scope === "builtin")
           activeReason = reason ?? INHERITED_REASON;
+
         content = (
           <SchemaTab
             key={id}
@@ -1216,18 +1298,22 @@ function AgentTabContent({
     queryFn: () => api.getAgent(agentId ?? ""),
     enabled: agentId !== undefined,
   });
+
   if (agentId !== undefined && agent.isPending)
     return <Loader size="sm" m="sm" />;
+
   if (agentId !== undefined && agent.isError)
     return (
       <Alert color="red" m="sm">
         {agent.error.message}
       </Alert>
     );
+
   const scope: AgentScope =
     root === "project" && projectId
       ? { scope: "project", id: projectId }
       : GLOBAL;
+
   return (
     <AgentForm
       scope={scope}
@@ -1248,6 +1334,7 @@ function AgentTabContent({
 function parseRef(value: string): NodeRef {
   const first = value.indexOf("|");
   const second = value.indexOf("|", first + 1);
+
   return {
     root: value.slice(0, first),
     kind: value.slice(first + 1, second) as NodeRef["kind"],

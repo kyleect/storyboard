@@ -15,6 +15,7 @@ import {
 
 const must = <T>(v: T | null | undefined): T => {
   if (v === null || v === undefined) throw new Error("missing");
+
   return v;
 };
 
@@ -45,6 +46,7 @@ describe("tabForPath and pathForTab", () => {
   it("map every route to a tab and back", () => {
     for (const path of ROUTES) {
       const t = tabForPath(path);
+
       expect(t, path).not.toBeNull();
       expect(pathForTab(must(t)), path).toBe(path);
     }
@@ -68,6 +70,7 @@ describe("tabForPath and pathForTab", () => {
   it("gives one settings tab whatever the section", () => {
     const a = tabForPath("/settings/general/models");
     const b = tabForPath("/settings/mcp/servers");
+
     expect(a).toEqual(b);
     expect(pathForTab(must(a), "/settings/mcp/servers")).toBe(
       "/settings/mcp/servers",
@@ -92,6 +95,7 @@ describe("tabForPath and pathForTab", () => {
   it("keeps ids with a bar, a slash or a space", () => {
     for (const id of ["a|b", "a/b", "a b", "100%"]) {
       const path = pathForTab(tab("chat", "session", id));
+
       expect(tabForPath(path)).toEqual({
         kind: "chat",
         root: "session",
@@ -143,6 +147,7 @@ describe("carryOver", () => {
       width: 300,
       showDeleted: false,
     });
+
     expect(view.tabs.map(tabId)).toEqual([
       "agents|project|p1",
       "skills|project|p1",
@@ -164,6 +169,7 @@ describe("carryOver", () => {
       width: 280,
       showDeleted: false,
     });
+
     expect(view.tabs.map(tabId)).toEqual(["agents|project|p1"]);
     expect(view.active).toBe("agents|project|p1");
   });
@@ -176,6 +182,7 @@ describe("carryOver", () => {
       width: 280,
       showDeleted: true,
     };
+
     expect(carryOver(view)).toEqual(view);
   });
 });
@@ -268,11 +275,13 @@ describe("closeTarget", () => {
 
   it("goes home when the last tab closes", () => {
     const only = { tabs: [must(tabs[0])], active: tabId(must(tabs[0])) };
+
     expect(closeTarget(only, tabId(must(tabs[0])))).toBe("/");
   });
 
   it("uses the settings section last used", () => {
     const s = [tab("settings", "global"), tab("chat", "session", "a")];
+
     expect(
       closeTarget(
         { tabs: s, active: tabId(must(s[1])) },
@@ -350,6 +359,7 @@ describe("moveTab", () => {
 describe("the saved view", () => {
   beforeEach(() => {
     const store = new Map<string, string>();
+
     vi.stubGlobal("localStorage", {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
@@ -367,6 +377,7 @@ describe("the saved view", () => {
       width: 300,
       showDeleted: false,
     };
+
     saveViewIn("workbench", { scope: "global" }, view);
     expect(
       loadViewIn("workbench", { scope: "global" }, WORKBENCH_KINDS),

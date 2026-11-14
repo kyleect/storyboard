@@ -89,20 +89,25 @@ export function AgentsTree(props: AgentsTreeProps) {
   } | null>(null);
 
   const controller = useRef(tree);
+
   useEffect(() => {
     controller.current = tree;
   });
   const { activeValue } = props;
+
   useEffect(() => {
     if (!activeValue) return;
+
     const ctl = controller.current;
     const above = ancestors(data, activeValue);
+
     if (above.some((v) => !ctl.expandedState[v])) {
       ctl.setExpandedState({
         ...ctl.expandedState,
         ...Object.fromEntries(above.map((v) => [v, true])),
       });
     }
+
     ctl.setSelectedState([activeValue]);
   }, [activeValue, data]);
 
@@ -148,6 +153,7 @@ export function AgentsTree(props: AgentsTreeProps) {
             const agentRow = ref.kind === "agent" ? row?.agent : undefined;
             const isDefault =
               agentRow !== undefined && agentRow.id === props.defaultId;
+
             return (
               <TreeRow
                 elementProps={elementProps}
@@ -157,6 +163,7 @@ export function AgentsTree(props: AgentsTreeProps) {
                 waiting={waiting}
                 onClick={(e) => {
                   elementProps.onClick(e);
+
                   if (openable) props.onOpen(ref, false);
                 }}
                 onDoubleClick={() => {
@@ -164,6 +171,7 @@ export function AgentsTree(props: AgentsTreeProps) {
                 }}
                 onContextMenu={(e) => {
                   if (props.actionsFor(ref).length === 0) return;
+
                   e.preventDefault();
                   e.stopPropagation();
                   tree.setSelectedState([node.value]);
@@ -314,10 +322,14 @@ function ancestors(nodes: readonly TreeNode[], value: string): string[] {
   const walk = (list: readonly TreeNode[], path: string[]): string[] | null => {
     for (const n of list) {
       if (n.value === value) return path;
+
       const found = n.children ? walk(n.children, [...path, n.value]) : null;
+
       if (found) return found;
     }
+
     return null;
   };
+
   return walk(nodes, []) ?? [];
 }

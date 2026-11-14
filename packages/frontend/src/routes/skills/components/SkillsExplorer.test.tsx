@@ -68,6 +68,7 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return render(
     <QueryClientProvider client={client}>
       <MantineProvider env="test">
@@ -85,7 +86,9 @@ function mockApi() {
     const s = Object.values(SKILLS)
       .flat()
       .find((k) => k.id === id);
+
     if (!s) throw new Error("not found");
+
     return asDetail(s);
   });
   vi.spyOn(api, "getSkillFile").mockImplementation(async (_id, path) => ({
@@ -133,6 +136,7 @@ describe("SkillsExplorer", () => {
     const exported = vi
       .spyOn(api, "exportSkill")
       .mockResolvedValue(new Blob(["zip"]));
+
     URL.createObjectURL = vi.fn(() => "blob:zip");
     URL.revokeObjectURL = vi.fn();
     show(<SkillsExplorer />);
@@ -155,6 +159,7 @@ describe("SkillsExplorer", () => {
     const copy = vi
       .spyOn(api, "copySkill")
       .mockResolvedValue(asDetail(skill("g2", "builtin-tasks")));
+
     show(<SkillsExplorer />);
     await menuOf("builtin-tasks");
     fireEvent.click(await screen.findByText("Copy to Global"));
@@ -168,6 +173,7 @@ describe("SkillsExplorer", () => {
     const copy = vi
       .spyOn(api, "copySkill")
       .mockResolvedValue(asDetail(skill("p2", "outline", "project")));
+
     show(<SkillsExplorer projectId="p1" />);
     await menuOf("outline");
     fireEvent.click(await screen.findByText("Copy to this project"));
@@ -199,7 +205,9 @@ describe("importing a skill", () => {
     const file = new File(["zip"], "new-skill.zip", {
       type: "application/zip",
     });
+
     fireEvent.change(input, { target: { files: [file] } });
+
     return file;
   }
 
@@ -213,6 +221,7 @@ describe("importing a skill", () => {
       warnings: [],
     });
     const file = await pickZip();
+
     expect(await screen.findByText("new-skill")).toBeTruthy();
     expect(screen.getByText("refs/a.md")).toBeTruthy();
     expect(screen.getByText("2 files")).toBeTruthy();
@@ -234,8 +243,10 @@ describe("importing a skill", () => {
       warnings: [],
     });
     const file = await pickZip();
+
     await screen.findByText(/already exists here/);
     const go = screen.getByRole("button", { name: "Import" });
+
     expect((go as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(/Replace it/));
     await waitFor(() => expect((go as HTMLButtonElement).disabled).toBe(false));
@@ -257,6 +268,7 @@ describe("importing a skill", () => {
       warnings: [],
     });
     const file = await pickZip();
+
     await screen.findByText(/already exists here/);
     fireEvent.change(screen.getByLabelText("New name"), {
       target: { value: "other-name" },
@@ -288,8 +300,10 @@ describe("importing a skill", () => {
       new Error("The zip has no SKILL.md at its top level."),
     );
     const imp = vi.spyOn(api, "importSkill");
+
     await pickZip();
     const dialog = await screen.findByRole("dialog");
+
     expect(await within(dialog).findByText(/no SKILL\.md/)).toBeTruthy();
     expect(imp).not.toHaveBeenCalled();
   });

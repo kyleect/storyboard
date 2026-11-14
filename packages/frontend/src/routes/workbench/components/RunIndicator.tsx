@@ -28,6 +28,7 @@ import { Led } from "@gfazioli/mantine-led";
 function Spinner({ label }: { label: string }) {
   const reduced = useReducedMotion();
   const theme = useMantineTheme();
+
   return (
     <Center inline role="img" aria-label={label} title={label}>
       {reduced ? (
@@ -80,10 +81,14 @@ export function SessionRunBadge({
 }) {
   const shown = useDebouncedFlag(state !== undefined);
   const theme = useMantineTheme();
+
   if (state === "waiting") return <WaitingBadge />;
+
   if (shown) return <Loader color={theme.primaryColor} type="dots" size="xs" />;
+
   // Show nothing, not the dot, or the dot would flash before the spinner.
   if (state !== undefined) return null;
+
   return unread ? <UnreadDot /> : null;
 }
 
@@ -97,6 +102,7 @@ export function GlobalRunIndicator({
   const showWorking = useDebouncedFlag(workingNow > 0);
 
   const [lastWorking, setLastWorking] = useState(0);
+
   if (workingNow > 0 && workingNow !== lastWorking) setLastWorking(workingNow);
 
   if (!summary || (!showWorking && waiting === 0)) return null;
@@ -165,11 +171,14 @@ export function GlobalUnreadIndicator({
   const shown = useDebouncedFlag(unread > 0);
 
   const [last, setLast] = useState(0);
+
   if (unread > 0 && unread !== last) setLast(unread);
 
   if (!shown) return null;
+
   const label =
     last === 1 ? "1 chat has a new reply" : `${last} chats have new replies`;
+
   return (
     <Stack p="xs" align="center">
       <UnreadDot label={label} />

@@ -21,8 +21,10 @@ export function latestUsage(
 ): Usage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const u = messages[i]?.usage;
+
     if (u) return u;
   }
+
   return undefined;
 }
 
@@ -46,6 +48,7 @@ export function ContextMeter({
     queryFn: () => api.contextSize(model),
     retry: false,
   });
+
   if (!usage) return null;
 
   const total = used(usage);
@@ -89,6 +92,7 @@ export function ContextMeter({
 
   const percent = (total / contextSize) * 100;
   const left = Math.max(0, contextSize - total);
+
   return (
     <Tooltip label={split} multiline withArrow>
       <Group gap={6} wrap="nowrap" aria-label="Context used">
@@ -118,7 +122,9 @@ export function ContextMeter({
 
 export function UsageBadge({ usage }: { usage: Usage | null }) {
   if (!usage) return null;
+
   const total = used(usage);
+
   return (
     <Badge color="gray" tt="none" title={`${tokens(total)} tokens in context`}>
       {compact.format(total)}

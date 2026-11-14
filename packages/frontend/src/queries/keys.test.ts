@@ -23,8 +23,11 @@ type Keys = Record<string, readonly unknown[]>;
 /** The names of the queries that invalidating `prefix` marks stale. */
 async function reach(prefix: readonly unknown[], keys: Keys) {
   const client = new QueryClient();
+
   for (const key of Object.values(keys)) client.setQueryData(key, "cached");
+
   await client.invalidateQueries({ queryKey: prefix, refetchType: "none" });
+
   return Object.entries(keys)
     .filter(([, key]) => client.getQueryState(key)?.isInvalidated)
     .map(([name]) => name)
@@ -254,6 +257,7 @@ describe("tool, model and error keys", () => {
       approvals: toolKeys.approvals(),
       mcp: mcpKeys.list(),
     };
+
     expect(await reach(toolKeys.list(), keys)).toEqual(["list"]);
     expect(await reach(toolKeys.selectable(), keys)).toEqual(["selectable"]);
     expect(await reach(toolKeys.approvals(), keys)).toEqual(["approvals"]);
@@ -267,6 +271,7 @@ describe("tool, model and error keys", () => {
       defaultLevels: modelKeys.reasoningLevel(undefined),
       size: modelKeys.contextSize("m1"),
     };
+
     expect(await reach(modelKeys.list(), keys)).toEqual(["list"]);
     expect(await reach(modelKeys.reasoningLevels(), keys)).toEqual([
       "defaultLevels",
@@ -281,6 +286,7 @@ describe("tool, model and error keys", () => {
       otherSession: errorKeys.list({ sessionId: "s2" }),
       filters: errorKeys.filters(),
     };
+
     expect(await reach(errorKeys.list({ sessionId: "s1" }), keys)).toEqual([
       "session",
     ]);
@@ -307,6 +313,7 @@ describe("tool, model and error keys", () => {
       file: workspaceKeys.file("s1", "workspace://w1/a.png"),
       agents: agentKeys.all,
     };
+
     expect(await reach(workspaceKeys.lists(), keys)).toEqual(["list", "trash"]);
     expect(await reach(workspaceKeys.attached("sessions", "s1"), keys)).toEqual(
       ["sessionAttached"],
@@ -332,6 +339,7 @@ describe("run keys", () => {
       sessions: sessionKeys.list(null),
       detail: sessionKeys.detail("s1"),
     };
+
     expect(await reach(runKeys.all, keys)).toEqual(["active"]);
     expect(await reach(runKeys.active(), keys)).toEqual(["active"]);
   });

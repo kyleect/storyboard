@@ -8,6 +8,7 @@ import { dataKeys } from "../../queries";
 
 function useRefresh() {
   const queryClient = useQueryClient();
+
   return async () => {
     await queryClient.invalidateQueries({ queryKey: dataKeys.all });
   };
@@ -24,16 +25,23 @@ export function errorsFromMessage(
   message: string,
 ): Record<string, string> | undefined {
   const out: Record<string, string> = {};
+
   for (const line of message.split("\n")) {
     const m = /^- (\(value\)|\/\S*): (.*)$/.exec(line.trim());
+
     if (!m) continue;
+
     const [, at = "", text = ""] = m;
     let steps = at === "(value)" ? [] : at.slice(1).split("/");
     const missing = /^missing required property '(.+)'\.$/.exec(text);
+
     if (missing?.[1]) steps = [...steps, missing[1]];
+
     if (form.scalar) steps = ["value", ...steps];
+
     out[steps.join(".")] = missing ? "Answer this question." : text;
   }
+
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -60,6 +68,7 @@ export function VersionsModal({
 }) {
   const refresh = useRefresh();
   const latest = item.versions.at(-1);
+
   return (
     <GenericVersionsModal
       title={`Versions of ${item.name}`}

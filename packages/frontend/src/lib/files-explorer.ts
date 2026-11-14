@@ -44,9 +44,12 @@ export const rootsFor = (
 
 export function mediaTypeForName(name: string): MediaType {
   const lower = name.toLowerCase();
+
   if (lower.endsWith(".md") || lower.endsWith(".markdown"))
     return "text/markdown";
+
   if (lower.endsWith(".json")) return "application/json";
+
   return "text/plain";
 }
 
@@ -68,6 +71,7 @@ export interface NodeRef {
 
 export function parseNodeValue(value: string): NodeRef {
   const r = parseNodeValueOf(value);
+
   return { root: r.root, kind: r.kind as NodeKind, path: r.path };
 }
 
@@ -99,19 +103,24 @@ export function buildTree(
   const info = new Map<string, NodeInfo>();
   const data = inputs.map(({ root, files, folders }) => {
     const folderPaths = new Set<string>();
+
     for (const f of files) {
       for (const p of parentFolders(f.key)) folderPaths.add(p);
     }
+
     for (const path of folders) {
       for (const p of parentFolders(path)) folderPaths.add(p);
+
       folderPaths.add(path);
     }
+
     const nodes = new Map<string, TreeNode>();
     const top: TreeNode = {
       label: root.label,
       value: nodeValue({ root: root.id, kind: "root", path: "" }),
       children: [],
     };
+
     info.set(top.value, { name: root.label, deleted: false });
     const childrenOf = (folder: string): TreeNode[] =>
       folder === ""
@@ -124,18 +133,23 @@ export function buildTree(
         value: nodeValue({ root: root.id, kind: "folder", path }),
         children: [],
       };
+
       nodes.set(path, node);
       info.set(node.value, { name: node.label, deleted: false });
     }
+
     for (const path of folderPaths) {
       const node = nodes.get(path);
+
       if (node) childrenOf(dirName(path)).push(node);
     }
+
     for (const f of files) {
       const node: TreeNode = {
         label: baseName(f.key),
         value: nodeValue({ root: root.id, kind: "file", path: f.key }),
       };
+
       info.set(node.value, {
         name: node.label,
         deleted: f.deleted,
@@ -143,14 +157,17 @@ export function buildTree(
       });
       childrenOf(dirName(f.key)).push(node);
     }
+
     const sort = (n: TreeNode) => {
       n.children?.sort((a, b) => {
         const af = a.children ? 0 : 1;
         const bf = b.children ? 0 : 1;
+
         return af - bf || byName(a, b);
       });
       n.children?.forEach(sort);
     };
+
     sort(top);
 
     if (pending && pending.root === root.id) {
@@ -163,10 +180,13 @@ export function buildTree(
           path: pending.parent,
         }),
       };
+
       (parent ?? top).children?.unshift(box);
     }
+
     return top;
   });
+
   return { data, info };
 }
 
@@ -192,6 +212,7 @@ export function renameFolderInTabs(
       : t;
   const tabs = state.tabs.map(rename);
   const active = state.tabs.find((t) => tabId(t) === state.active);
+
   return { tabs, active: active ? tabId(rename(active)) : null };
 }
 

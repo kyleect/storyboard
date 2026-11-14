@@ -182,6 +182,7 @@ function ChatRow({
     root: "session",
     key: session.id,
   };
+
   return (
     <Row
       label={session.title}
@@ -228,6 +229,7 @@ function ChatList({
     projectId === null
       ? { kind: "sessions", root: "global", key: "" }
       : { kind: "project", root: "project", key: projectId };
+
   return (
     <>
       {shown.map((s) => (
@@ -260,6 +262,7 @@ function ProjectMenu({
   onOpenPage: (kind: NewWorkbenchTab["kind"]) => void;
 }) {
   const actions = useProjectActions();
+
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
@@ -312,12 +315,15 @@ function ProjectGroup({
   const visible =
     matches(project.name, h.filter) ||
     loaded.some((s) => matches(s.title, h.filter));
+
   if (!visible) return null;
+
   const tab: NewWorkbenchTab = {
     kind: "project",
     root: "project",
     key: project.id,
   };
+
   return (
     <div role="group" aria-label={project.name}>
       <Row
@@ -382,8 +388,11 @@ function NoProjectGroup({ h }: { h: Handlers }) {
   const visible =
     matches("No project", h.filter) ||
     loaded.some((s) => matches(s.title, h.filter));
+
   if (!visible) return null;
+
   const tab: NewWorkbenchTab = { kind: "sessions", root: "global", key: "" };
+
   return (
     <div role="group" aria-label="No project">
       <Row

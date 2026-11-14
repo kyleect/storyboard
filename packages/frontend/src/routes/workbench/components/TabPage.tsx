@@ -54,6 +54,7 @@ export const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
 };
 export function TabPage({ tab }: { tab: WorkbenchTab }) {
   const id = tab.key;
+
   switch (tab.kind) {
     case "chat":
       return <Chat sessionId={id} />;

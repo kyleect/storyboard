@@ -60,6 +60,7 @@ export function AttachedWorkspaces({
   const choices = (all.data ?? [])
     .filter((w) => !taken.has(w.id))
     .map((w) => ({ value: w.id, label: w.name }));
+
   return (
     <Stack gap="xs">
       <Title order={5}>Workspaces</Title>

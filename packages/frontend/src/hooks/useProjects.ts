@@ -18,6 +18,7 @@ export function useProject(projectId: string | undefined) {
 
 export function useSaveProject(projectId: string) {
   const queryClient = useQueryClient();
+
   return async (fields: {
     name?: string;
     description?: string;
@@ -25,6 +26,7 @@ export function useSaveProject(projectId: string) {
     color?: ProjectColor | null;
   }) => {
     const updated = await api.updateProject(projectId, fields);
+
     queryClient.setQueryData<Project>(projectKeys.detail(projectId), updated);
     await queryClient.invalidateQueries({ queryKey: projectKeys.list() });
   };
@@ -32,6 +34,7 @@ export function useSaveProject(projectId: string) {
 
 export function useSetDefaultAgent(projectId?: string) {
   const queryClient = useQueryClient();
+
   return useMutation<Project | SettingsView, Error, string | null>({
     mutationFn: (agentId) =>
       projectId
@@ -47,6 +50,7 @@ export function useSetDefaultAgent(projectId?: string) {
       } else {
         queryClient.setQueryData(settingsKeys.all, result);
       }
+
       await queryClient.invalidateQueries({ queryKey: agentKeys.all });
       await queryClient.invalidateQueries({
         queryKey: sessionKeys.pickableAgents(),

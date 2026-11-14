@@ -49,10 +49,15 @@ export function FileIcon({
   size?: number;
 }) {
   const kind = mediaType ? mediaKindOf(mediaType) : undefined;
+
   if (kind === "image") return <IconPhoto size={size} />;
+
   if (kind === "audio") return <IconMusic size={size} />;
+
   if (mediaType === "text/markdown") return <IconMarkdown size={size} />;
+
   if (mediaType === "application/json") return <IconJson size={size} />;
+
   return <IconFile size={size} />;
 }
 
@@ -69,6 +74,7 @@ function InlineName({
 }) {
   const [name, setName] = useState(initial);
   const problem = name === "" ? undefined : nameError(name);
+
   return (
     <TextInput
       size="xs"
@@ -83,7 +89,9 @@ function InlineName({
       onBlur={onCancel}
       onKeyDown={(e) => {
         e.stopPropagation();
+
         if (e.key === "Escape") onCancel();
+
         if (e.key === "Enter" && name !== "" && !problem) onCommit(name);
       }}
     />
@@ -169,12 +177,15 @@ export function FileTree(props: FileTreeProps) {
   });
 
   const controller = useRef(tree);
+
   useEffect(() => {
     controller.current = tree;
   });
   const { activeValue } = props;
+
   useEffect(() => {
     if (!activeValue) return;
+
     const ctl = controller.current;
     const ref = parseNodeValue(activeValue);
     const above = [
@@ -183,12 +194,14 @@ export function FileTree(props: FileTreeProps) {
         nodeValue({ root: ref.root, kind: "folder", path }),
       ),
     ];
+
     if (above.some((v) => !ctl.expandedState[v])) {
       ctl.setExpandedState({
         ...ctl.expandedState,
         ...Object.fromEntries(above.map((v) => [v, true])),
       });
     }
+
     ctl.setSelectedState([activeValue]);
   }, [activeValue]);
 
@@ -200,6 +213,7 @@ export function FileTree(props: FileTreeProps) {
 
   const startPending = (kind: Pending["kind"], ref: NodeRef) => {
     const parent = folderOf(ref);
+
     tree.setExpandedState({
       ...tree.expandedState,
       [nodeValue({ root: ref.root, kind: "root", path: "" })]: true,
@@ -220,6 +234,7 @@ export function FileTree(props: FileTreeProps) {
     !locked(root) && e.dataTransfer.types.includes("Files");
   const drop = (e: React.DragEvent, root: RootId, folder: string) => {
     if (locked(root) || e.dataTransfer.files.length === 0) return;
+
     e.preventDefault();
     e.stopPropagation();
     props.onUpload(root, folder, Array.from(e.dataTransfer.files));
@@ -239,7 +254,9 @@ export function FileTree(props: FileTreeProps) {
         aria-label="Choose files to upload"
         onChange={(e) => {
           const files = Array.from(e.currentTarget.files ?? []);
+
           e.currentTarget.value = "";
+
           if (files.length > 0)
             props.onUpload(pickFor.current.root, pickFor.current.folder, files);
         }}
@@ -298,12 +315,14 @@ export function FileTree(props: FileTreeProps) {
           renderNode={({ node, expanded, hasChildren, elementProps }) => {
             const ref = parseNodeValue(node.value);
             const row = info.get(node.value);
+
             if (ref.kind === "new-file" || ref.kind === "new-folder") {
               const p: Pending = {
                 kind: ref.kind,
                 root: ref.root,
                 parent: ref.path,
               };
+
               return (
                 <div
                   className={elementProps.className}
@@ -323,9 +342,11 @@ export function FileTree(props: FileTreeProps) {
                 </div>
               );
             }
+
             const isFolder = ref.kind === "folder" || ref.kind === "root";
             const isRenaming = renaming?.value === node.value;
             const deleted = row?.deleted ?? false;
+
             return (
               <TreeRow
                 elementProps={elementProps}
@@ -333,6 +354,7 @@ export function FileTree(props: FileTreeProps) {
                 deleted={deleted}
                 onClick={(e) => {
                   elementProps.onClick(e);
+
                   if (ref.kind === "file") props.onOpenFile(ref, false);
                 }}
                 onDoubleClick={() => {
@@ -452,6 +474,7 @@ function TreeMenu({
       {a.label}
     </Menu.Item>
   ));
+
   if (menuRef.kind === "file") {
     return (
       <>
@@ -465,6 +488,7 @@ function TreeMenu({
       </>
     );
   }
+
   if (locked) {
     return (
       <>
@@ -473,6 +497,7 @@ function TreeMenu({
       </>
     );
   }
+
   return (
     <>
       {extras}

@@ -20,7 +20,9 @@ function renderSwitcher(onManage = () => {}) {
     profiles: [profile("default", "Default", true), profile("w", "Work")],
     trashed: [],
   };
+
   vi.spyOn(api, "listProfiles").mockResolvedValue(listing);
+
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
@@ -40,6 +42,7 @@ describe("ProfileSwitcher", () => {
     fireEvent.click(screen.getByLabelText("Profile"));
     expect(await screen.findByText("Work")).toBeTruthy();
     const current = screen.getByText("Default").closest("button");
+
     expect(current?.getAttribute("aria-current")).toBe("true");
   });
 
@@ -47,6 +50,7 @@ describe("ProfileSwitcher", () => {
     const spy = vi.spyOn(api, "switchProfile").mockResolvedValue({
       active: "w",
     } as never);
+
     renderSwitcher();
     fireEvent.click(screen.getByLabelText("Profile"));
     fireEvent.click(await screen.findByText("Work"));
@@ -55,6 +59,7 @@ describe("ProfileSwitcher", () => {
 
   it("does nothing when the active profile is picked", async () => {
     const spy = vi.spyOn(api, "switchProfile");
+
     renderSwitcher();
     fireEvent.click(screen.getByLabelText("Profile"));
     fireEvent.click(await screen.findByText("Default"));
@@ -63,6 +68,7 @@ describe("ProfileSwitcher", () => {
 
   it("opens the management page", async () => {
     const onManage = vi.fn();
+
     renderSwitcher(onManage);
     fireEvent.click(screen.getByLabelText("Profile"));
     fireEvent.click(await screen.findByText("Manage profiles…"));

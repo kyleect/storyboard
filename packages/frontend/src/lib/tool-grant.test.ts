@@ -42,6 +42,7 @@ const has = (g: ToolGrant) =>
 describe("groupTools", () => {
   it("orders groups as the app shows them and leaves out empty ones", () => {
     const groups = groupTools([...web, ...files]);
+
     expect(groups.map((g) => [g.id, g.label])).toEqual([
       ["files", "Files"],
       ["web", "Web"],
@@ -68,6 +69,7 @@ describe("mcpServerOf", () => {
 describe("sectionTools", () => {
   it("nests a section per server in the MCP group, in order of server name", () => {
     const sections = sectionTools([...mcp, ...web]);
+
     expect(sections.map((x) => [x.id, x.label])).toEqual([
       ["web", "Web"],
       ["mcp", "MCP"],
@@ -75,6 +77,7 @@ describe("sectionTools", () => {
     expect(sections[0]?.children).toBeUndefined();
     expect(sections[1]?.tools).toEqual(mcp);
     const servers = sections[1]?.children ?? [];
+
     expect(servers.map((x) => [x.id, x.label, x.group])).toEqual([
       ["mcp:calendar-app", "calendar-app", "mcp"],
       ["mcp:notes", "notes", "mcp"],
@@ -87,6 +90,7 @@ describe("sectionTools", () => {
 
   it("puts an MCP tool with no server in a section named Other, last", () => {
     const sections = sectionTools([t("mcp", "mcp"), ...mcp]);
+
     expect(sections[0]?.children?.map((x) => x.label)).toEqual([
       "calendar-app",
       "notes",
@@ -100,6 +104,7 @@ describe("setTools", () => {
 
   it("switches one server on without granting the whole MCP group", () => {
     const g = setTools(grant(), server, true);
+
     expect(g.groups).toEqual([]);
     expect(g.extras).toEqual(["mcp_notes_search"]);
     expect(hasTool(g, calendarTool)).toBe(false);
@@ -111,11 +116,13 @@ describe("setTools", () => {
       server,
       false,
     );
+
     expect(g.extras).toEqual([]);
   });
 
   it("leaves the other servers alone when the MCP group is granted", () => {
     const g = setTools(grant({ groups: ["mcp"] }), server, false);
+
     expect(g.except).toEqual(["mcp_notes_search"]);
     expect(hasTool(g, calendarTool)).toBe(true);
   });
@@ -132,6 +139,7 @@ describe("hasTool", () => {
       except: ["read_webpage"],
       extras: ["files_edit"],
     });
+
     expect(has(g)).toEqual(["files_read", "files_edit", "web_search"]);
   });
 
@@ -149,11 +157,13 @@ describe("hasTool", () => {
 
   it("has everything but what a deny grant denies", () => {
     const g = grant({ mode: "deny", groups: ["web"], except: ["web_search"] });
+
     expect(has(g)).toEqual(["files_read", "files_edit", "web_search"]);
   });
 
   it("gives a tool that needs review in deny mode only when it is in except", () => {
     const g = grant({ mode: "deny", except: ["files_kill"] });
+
     expect(has(g)).toContain("files_kill");
     expect(
       has(grant({ mode: "deny", groups: ["files"], except: ["files_kill"] })),
@@ -164,12 +174,14 @@ describe("hasTool", () => {
 describe("setTool", () => {
   it("adds a single tool as an extra when its group is not granted", () => {
     const g = setTool(grant(), web[0] as GrantTool, true);
+
     expect(g.extras).toEqual(["web_search"]);
     expect(setTool(g, web[0] as GrantTool, false)).toEqual(grant());
   });
 
   it("makes an exception when a tool of a granted group is switched off", () => {
     const g = setTool(grant({ groups: ["web"] }), web[0] as GrantTool, false);
+
     expect(g).toEqual(grant({ groups: ["web"], except: ["web_search"] }));
     expect(setTool(g, web[0] as GrantTool, true)).toEqual(
       grant({ groups: ["web"] }),
@@ -179,6 +191,7 @@ describe("setTool", () => {
   it("accepts a tool that needs review by listing it on its own", () => {
     const review = files[2] as GrantTool;
     const g = setTool(grant({ groups: ["files"] }), review, true);
+
     expect(g.extras).toEqual(["files_kill"]);
     expect(g.except).toEqual([]);
     expect(setTool(g, review, false).extras).toEqual([]);
@@ -187,6 +200,7 @@ describe("setTool", () => {
   it("denies and allows in deny mode", () => {
     const g = grant({ mode: "deny" });
     const denied = setTool(g, web[0] as GrantTool, false);
+
     expect(denied.extras).toEqual(["web_search"]);
     expect(setTool(denied, web[0] as GrantTool, true)).toEqual(g);
     const inGroup = setTool(
@@ -194,6 +208,7 @@ describe("setTool", () => {
       web[0] as GrantTool,
       true,
     );
+
     expect(inGroup.except).toEqual(["web_search"]);
     expect(has(inGroup)).toContain("web_search");
   });
@@ -204,9 +219,11 @@ describe("tools that need review in deny mode", () => {
 
   it("gives and takes back a tool by listing it in except", () => {
     const on = setTool(grant({ mode: "deny" }), kill, true);
+
     expect(on.except).toEqual(["files_kill"]);
     expect(hasTool(on, kill)).toBe(true);
     const off = setTool(on, kill, false);
+
     expect(off.except).toEqual([]);
     expect(hasTool(off, kill)).toBe(false);
   });
@@ -218,6 +235,7 @@ describe("tools that need review in deny mode", () => {
       except: ["files_kill"],
     });
     const on = setGroup(given, "files", files, true);
+
     expect(on.groups).toEqual([]);
     expect(on.except).toEqual(["files_kill"]);
     const notGiven = setGroup(
@@ -226,6 +244,7 @@ describe("tools that need review in deny mode", () => {
       files,
       true,
     );
+
     expect(hasTool(notGiven, kill)).toBe(false);
   });
 
@@ -236,6 +255,7 @@ describe("tools that need review in deny mode", () => {
       files,
       false,
     );
+
     expect(off.groups).toEqual(["files"]);
     expect(hasTool(off, kill)).toBe(false);
   });
@@ -248,12 +268,14 @@ describe("setGroup", () => {
       extras: ["web_search", "files_edit"],
     });
     const g = setGroup(start, "web", web, true);
+
     expect(g.groups).toEqual(["web"]);
     expect(g.extras).toEqual(["files_edit"]);
   });
 
   it("keeps an accepted tool that needs review when the group is switched on", () => {
     const g = setGroup(grant({ extras: ["files_kill"] }), "files", files, true);
+
     expect(g.extras).toEqual(["files_kill"]);
     expect(has(g)).toEqual(["files_read", "files_edit", "files_kill"]);
   });
@@ -269,13 +291,16 @@ describe("setGroup", () => {
       files,
       false,
     );
+
     expect(g).toEqual(grant());
   });
 
   it("denies a group in deny mode when it is switched off, and allows it when on", () => {
     const denied = setGroup(grant({ mode: "deny" }), "web", web, false);
+
     expect(denied.groups).toEqual(["web"]);
     const allowed = setGroup(denied, "web", web, true);
+
     expect(allowed.groups).toEqual([]);
   });
 });
@@ -337,12 +362,14 @@ describe("switchMode", () => {
 
   it("does nothing when the mode is already that", () => {
     const g = grant({ groups: ["web"] });
+
     expect(switchMode(g, "allow", ALL)).toBe(g);
   });
 
   it("writes an allow list as a deny list with the same tools", () => {
     const g = grant({ groups: ["web"], extras: ["files_edit"] });
     const d = switchMode(g, "deny", ALL);
+
     expect(d.mode).toBe("deny");
     same(g, d);
     expect(d.groups).toEqual([]);
@@ -353,10 +380,12 @@ describe("switchMode", () => {
   it("keeps a tool that needs review that is given when going to deny", () => {
     const g = grant({ extras: ["files_kill"], groups: ["files"] });
     const d = switchMode(g, "deny", ALL);
+
     same(g, d);
     expect(d.except).toEqual(["files_kill"]);
     expect(d.groups).toEqual(["web"]);
     const back = switchMode(d, "allow", ALL);
+
     same(g, back);
     expect(back.groups).toEqual(["files"]);
     expect(back.extras).toEqual(["files_kill"]);
@@ -365,6 +394,7 @@ describe("switchMode", () => {
   it("writes a deny list as an allow list with the same tools", () => {
     const g = grant({ mode: "deny", groups: ["web"] });
     const a = switchMode(g, "allow", ALL);
+
     expect(a.mode).toBe("allow");
     same(g, a);
     expect(a.groups).toEqual(["files"]);
@@ -373,9 +403,11 @@ describe("switchMode", () => {
   it("uses a whole group where every tool is covered", () => {
     const g = grant({ mode: "deny", groups: ["files"] });
     const a = switchMode(g, "allow", ALL);
+
     expect(a.groups).toEqual(["web"]);
     expect(a.extras).toEqual([]);
     const back = switchMode(a, "deny", ALL);
+
     expect(back.groups).toEqual(["files"]);
   });
 });

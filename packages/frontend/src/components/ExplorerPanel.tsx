@@ -10,7 +10,9 @@ export function ExplorerPanel({
   children: (onDirtyChange: (dirty: boolean) => void) => ReactNode;
 }) {
   const [dirty, setDirty] = useState(false);
+
   useReportDirty(dirty);
+
   return (
     <Box h={height} mih={420}>
       {children(setDirty)}

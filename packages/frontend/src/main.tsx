@@ -122,10 +122,12 @@ const queryClient = new QueryClient({
 });
 
 const root = document.getElementById("root");
+
 if (!root) throw new Error("No #root element");
 
 function App() {
   const primaryColor = useAppearance((s) => s.primaryColor);
+
   return (
     <MantineProvider defaultColorScheme="auto" theme={{ primaryColor }}>
       <Notifications />
@@ -149,6 +151,7 @@ async function start(container: HTMLElement) {
   if (token) {
     try {
       const listing = await api.listProfiles();
+
       setCurrentProfile(listing.active);
       useWorkbench.getState().reload();
       useAppearance.getState().reload();
@@ -156,6 +159,7 @@ async function start(container: HTMLElement) {
       // backend not reachable yet: the app opens on the Default profile and the event stream corrects it once it connects
     }
   }
+
   createRoot(container).render(
     <StrictMode>
       <App />

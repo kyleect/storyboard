@@ -64,7 +64,9 @@ function initial() {
   } catch {
     // storage can be unavailable
   }
+
   const view = carryOver(loadViewIn("workbench", PAGE, SAVED_KINDS));
+
   return {
     tabs: view.tabs,
     active: view.active,
@@ -86,6 +88,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         permanent,
         mayBeTransient,
       );
+
       return { tabs: next.tabs, active: next.active };
     }),
 
@@ -94,12 +97,14 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   keep: (id) =>
     set((s) => {
       const next = keepTab({ tabs: s.tabs, active: s.active }, id);
+
       return { tabs: next.tabs };
     }),
 
   move: (id, toIndex) =>
     set((s) => {
       const next = moveTab({ tabs: s.tabs, active: s.active }, id, toIndex);
+
       return next.tabs === s.tabs ? s : { tabs: next.tabs };
     }),
 
@@ -107,14 +112,19 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     const before = get();
     let state = { tabs: before.tabs, active: before.active };
     let go: string | null = null;
+
     for (const id of ids) {
       if (id === state.active) {
         go = closeTarget(state, id, before.settingsPath);
       }
+
       state = closeTab(state, id);
     }
+
     if (state.tabs.length === before.tabs.length) return null;
+
     set({ tabs: state.tabs, active: state.active });
+
     return go;
   },
 
@@ -129,6 +139,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     } catch {
       // storage can be unavailable
     }
+
     set({ sidebarOpen: open });
   },
 
@@ -138,6 +149,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     } catch {
       // storage can be unavailable
     }
+
     set({ settingsPath: path });
   },
 
@@ -152,6 +164,7 @@ useWorkbench.subscribe((s, prev) => {
     s.width === prev.width
   )
     return;
+
   saveViewIn("workbench", PAGE, {
     tabs: s.tabs,
     active: s.active,
@@ -162,6 +175,7 @@ useWorkbench.subscribe((s, prev) => {
 });
 
 let navigator: ((path: string) => void) | null = null;
+
 export const setWorkbenchNavigator = (
   fn: ((path: string) => void) | null,
 ): void => {
@@ -173,6 +187,8 @@ export const navigateWorkbench = (path: string): void => navigator?.(path);
 export function closeTabsAndGo(ids: readonly string[]): boolean {
   const before = useWorkbench.getState().tabs.length;
   const to = useWorkbench.getState().close(ids);
+
   if (to !== null) navigator?.(to);
+
   return useWorkbench.getState().tabs.length !== before;
 }

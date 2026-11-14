@@ -37,6 +37,7 @@ function renderPage(
     Promise.resolve(deleted ? trash : list),
   );
   vi.spyOn(api, "listWorkspaceGrants").mockResolvedValue(grants);
+
   return renderWith(<WorkspacesPage />);
 }
 
@@ -70,6 +71,7 @@ describe("WorkspacesPage", () => {
     const create = vi
       .spyOn(api, "createWorkspace")
       .mockResolvedValue(workspace());
+
     renderPage([]);
     fireEvent.click(
       await screen.findByRole("button", { name: "New workspace" }),
@@ -142,6 +144,7 @@ describe("WorkspacesPage", () => {
     const restore = vi
       .spyOn(api, "restoreWorkspace")
       .mockResolvedValue(workspace());
+
     renderPage([workspace()], [], [workspace({ deleted: true })]);
     fireEvent.click(
       await screen.findByRole("button", { name: "Move to trash" }),
@@ -154,6 +157,7 @@ describe("WorkspacesPage", () => {
 
   it("lists the always-allowed tools and removes one", async () => {
     const revoke = vi.spyOn(api, "revokeWorkspaceGrant").mockResolvedValue({});
+
     renderPage(
       [workspace()],
       [{ tool: "workspace_write", workspaceId: "w1", workspaceName: "Book" }],
@@ -205,6 +209,7 @@ describe("searched parts", () => {
       }),
     );
     renderPage([workspace({ ticks: ["notes"] })]);
+
     return screen.findByRole("button", { name: "Searched parts" });
   }
 
@@ -226,6 +231,7 @@ describe("searched parts", () => {
     const toggle = vi
       .spyOn(api, "toggleWorkspaceTick")
       .mockResolvedValue({ ticks: [], status: null });
+
     fireEvent.click(await open());
     fireEvent.click(await screen.findByLabelText("ch1.md"));
     await waitFor(() =>
@@ -252,6 +258,7 @@ describe("searched parts", () => {
       .spyOn(api, "toggleWorkspaceTick")
       .mockResolvedValue({ ticks: [""], status: null });
     const rescan = vi.spyOn(api, "rescanWorkspace").mockResolvedValue({});
+
     fireEvent.click(await open());
     fireEvent.click(await screen.findByLabelText("The whole folder"));
     await waitFor(() => expect(toggle).toHaveBeenCalledWith("w1", "", true));

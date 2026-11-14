@@ -51,8 +51,11 @@ export function SkillImportDialog({
   const run = useMutation({
     mutationFn: () => {
       const p = preview.data;
+
       if (!p) throw new Error("Nothing to import.");
+
       if (!p.clash) return api.importSkill(owner, zip);
+
       return resolution === "replace"
         ? api.importSkill(owner, zip, { resolve: "replace" })
         : api.importSkill(owner, zip, {
@@ -62,9 +65,11 @@ export function SkillImportDialog({
     },
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: skillKeys.all });
+
       for (const w of saved.warnings) {
         notifications.show({ color: "yellow", title: "Imported", message: w });
       }
+
       onImported?.(saved.name);
       onClose();
     },
@@ -179,7 +184,10 @@ export async function archiveFrom(
   kind: "zip" | "folder",
 ): Promise<Blob> {
   if (kind === "folder") return zipPickedFolder(files);
+
   const [file] = files;
+
   if (!file) throw new Error("No file was picked.");
+
   return file;
 }

@@ -13,7 +13,9 @@ export const useDirtyTabs = create<DirtyState>((set) => ({
   set: (id, on) =>
     set((s) => {
       if (on === (s.dirty[id] === true)) return s;
+
       if (on) return { dirty: { ...s.dirty, [id]: true } };
+
       return {
         dirty: Object.fromEntries(
           Object.entries(s.dirty).filter(([k]) => k !== id),
@@ -25,9 +27,12 @@ export const useDirtyTabs = create<DirtyState>((set) => ({
 export function useReportDirty(dirty: boolean): void {
   const id = useContext(TabIdContext);
   const set = useDirtyTabs((s) => s.set);
+
   useEffect(() => {
     if (id === null) return;
+
     set(id, dirty);
+
     return () => set(id, false);
   }, [id, dirty, set]);
 }

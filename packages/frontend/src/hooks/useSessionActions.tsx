@@ -66,8 +66,10 @@ export function useSessionActions() {
             const closed = closeTabsAndGo(
               tabsForSession(useWorkbench.getState().tabs, session.id),
             );
+
             if (!closed && params.sessionId === session.id)
               await navigate({ to: "/" });
+
             await refresh(session.id);
           })
           .catch(showError("Could not move to trash"));
@@ -78,6 +80,7 @@ export function useSessionActions() {
   const confirmTrashMany = (ids: readonly string[], onDone: () => void) => {
     const count = ids.length;
     const noun = count === 1 ? "session" : "sessions";
+
     confirmAction({
       title: `Move ${count} ${noun} to trash?`,
       message: (
@@ -95,24 +98,30 @@ export function useSessionActions() {
           .trashSessions(ids)
           .then(async (result) => {
             const refused = new Set(result.refused.map((r) => r.id));
+
             for (const id of ids) {
               if (refused.has(id)) continue;
+
               dropDraft(id);
               closeTabsAndGo(tabsForSession(useWorkbench.getState().tabs, id));
             }
+
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
               queryClient.invalidateQueries({ queryKey: trashKeys.all }),
             ]);
+
             if (result.refused.length > 0) {
               const reasons = [...new Set(result.refused.map((r) => r.error))];
               const n = result.refused.length;
+
               notifications.show({
                 color: "yellow",
                 title: `${n} ${n === 1 ? "session was" : "sessions were"} not moved`,
                 message: reasons.join(" "),
               });
             }
+
             onDone();
           })
           .catch(showError("Could not move to trash"));
@@ -134,6 +143,7 @@ export function useSessionActions() {
     if (!trashedProject) {
       return api.restoreSession(session.id).then(() => refreshProjects());
     }
+
     return new Promise<void>((resolve, reject) => {
       let chosen = false;
       const choose = (choice: "all" | "only") => {

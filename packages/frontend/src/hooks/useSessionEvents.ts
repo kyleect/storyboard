@@ -25,8 +25,10 @@ export function useSessionEvents(
 
   useEffect(() => {
     if (!detail) return;
+
     const live = useLive.getState();
     const snapshot = detail.activeRun;
+
     live.set(
       sessionId,
       snapshot
@@ -50,6 +52,7 @@ export function useSessionEvents(
 
     const onMessage = (msg: MessageEvent<string>) => {
       if (msg.lastEventId) lastId = Number(msg.lastEventId);
+
       const event = JSON.parse(msg.data) as HarnessEvent;
       const state = useLive.getState();
 
@@ -85,8 +88,10 @@ export function useSessionEvents(
           });
           void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+
           if (event.data.reason !== "edit")
             void queryClient.invalidateQueries({ queryKey: trashKeys.all });
+
           break;
         case "session.agent_changed":
           void queryClient.invalidateQueries({
@@ -117,6 +122,7 @@ export function useSessionEvents(
             userMessages: [],
           };
           const { parentRunId, parentCallId } = event.data;
+
           if (parentRunId && parentCallId) {
             state.addChild(sessionId, {
               ...started,
@@ -126,6 +132,7 @@ export function useSessionEvents(
           } else {
             state.set(sessionId, { ...started, children: {} });
           }
+
           break;
         }
         case "message.started": {
@@ -136,6 +143,7 @@ export function useSessionEvents(
             (m) => m.id === event.data.messageId,
           );
           const continuing = event.data.continuing ?? false;
+
           state.update(sessionId, event.runId, (run) => ({
             ...run,
             message: {
@@ -155,10 +163,12 @@ export function useSessionEvents(
           const parentCallId =
             (event.runId !== null ? top?.children[event.runId] : undefined)
               ?.parentCallId ?? null;
+
           queryClient.setQueryData<SessionDetail>(
             sessionKeys.detail(sessionId),
             (old) => {
               if (!old || event.data.message.content.length === 0) return old;
+
               const at = old.messages.findIndex(
                 (m) => m.id === event.data.messageId,
               );
@@ -175,8 +185,10 @@ export function useSessionEvents(
                 branches: old.messages[at]?.branches ?? null,
               };
               const messages = [...old.messages];
+
               if (at === -1) messages.push(stored);
               else messages[at] = stored;
+
               return { ...old, messages };
             },
           );
@@ -190,17 +202,21 @@ export function useSessionEvents(
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
+
           if (/^(schemas?|data)_/.test(event.data.name)) {
             void queryClient.invalidateQueries({ queryKey: dataKeys.all });
           }
+
           if (/^files_/.test(event.data.name)) {
             void queryClient.invalidateQueries({ queryKey: fileKeys.all });
           }
+
           if (event.data.isError) {
             void queryClient.invalidateQueries({
               queryKey: errorKeys.list({ sessionId }),
             });
           }
+
           break;
         case "user.message":
           state.update(sessionId, event.runId, (run) => ({
@@ -249,8 +265,10 @@ export function useSessionEvents(
               queryKey: errorKeys.list({ sessionId }),
             });
           }
+
           answering.delete(event.runId);
           refreshModelInfo();
+
           if (
             event.runId &&
             useLive.getState().runs[sessionId]?.children[event.runId]
@@ -258,6 +276,7 @@ export function useSessionEvents(
             const unread =
               useLive.getState().runs[sessionId]?.children[event.runId]
                 ?.userMessages ?? [];
+
             if (unread.length > 0) {
               notifications.show({
                 color: "yellow",
@@ -268,6 +287,7 @@ export function useSessionEvents(
                 autoClose: false,
               });
             }
+
             void queryClient
               .invalidateQueries({ queryKey: sessionKeys.detail(sessionId) })
               .then(() =>
@@ -277,11 +297,13 @@ export function useSessionEvents(
               );
             break;
           }
+
           void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
           void queryClient
             .invalidateQueries({ queryKey: sessionKeys.detail(sessionId) })
             .then(() => {
               const current = useLive.getState().runs[sessionId];
+
               if (current?.runId === event.runId)
                 useLive.getState().set(sessionId, undefined);
             });
@@ -294,6 +316,7 @@ export function useSessionEvents(
             answering.add(event.runId);
             refreshModelInfo();
           }
+
           state.update(sessionId, event.runId, (run) => {
             const usage =
               (event.type === "text.delta" ||
@@ -311,6 +334,7 @@ export function useSessionEvents(
                   ),
                 }
               : null;
+
             return { ...run, message, ...(usage ? { usage } : {}) };
           });
       }

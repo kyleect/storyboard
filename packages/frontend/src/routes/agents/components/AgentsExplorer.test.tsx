@@ -33,6 +33,7 @@ beforeEach(() => localStorage.clear());
 
 const must = <T,>(v: T | undefined): T => {
   if (v === undefined) throw new Error("expected a value");
+
   return v;
 };
 
@@ -132,7 +133,9 @@ function mockApi() {
   );
   vi.spyOn(api, "getAgent").mockImplementation(async (id) => {
     const a = [DISPATCHER, EDITOR, SCOUT].find((x) => x.id === id);
+
     if (!a) throw new Error("not found");
+
     return detail(a);
   });
   vi.spyOn(api, "agentTools").mockResolvedValue([]);
@@ -140,7 +143,9 @@ function mockApi() {
   vi.spyOn(api, "listSkillTree").mockImplementation(async (o) => {
     if (o.scope === "agent")
       return [skill("pov", "agent", ["SKILL.md", "refs/a.md"])];
+
     if (o.scope === "project") return [skill("tone", "project")];
+
     return [skill("pov", "global"), skill("outline", "builtin")];
   });
   vi.spyOn(api, "dataSchemas").mockResolvedValue([CLUE, SETTING]);
@@ -171,6 +176,7 @@ function show(ui: React.ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   return {
     client,
     ...render(
@@ -214,9 +220,11 @@ describe("the tree", () => {
       { scope: "agent", id: "a1" },
       false,
     );
+
     for (const call of vi.mocked(api.listSkillTree).mock.calls) {
       if (call[0].scope === "agent") expect(call[0].id).toBe("a1");
     }
+
     expect(vi.mocked(api.listSchemas)).toHaveBeenCalledTimes(1);
   });
 
@@ -241,6 +249,7 @@ describe("the tree", () => {
     fireEvent.click(screen.getByText("Clue"));
     expect(await screen.findByText("Case notes")).toBeTruthy();
     const groups = screen.getAllByText("Global");
+
     fireEvent.click(must(groups.at(-1)));
     expect(await screen.findByText("Setting")).toBeTruthy();
     expect(screen.getAllByLabelText("Inherited").length).toBeGreaterThan(0);
@@ -256,6 +265,7 @@ describe("opening", () => {
     const prompt = (await screen.findByLabelText(
       /^System prompt/,
     )) as HTMLTextAreaElement;
+
     expect(prompt.value).toBe("You are Editor.");
     expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe(
       "Editor",
@@ -267,9 +277,11 @@ describe("opening", () => {
 
   it("makes one version of the agent with one Save, and only after an edit", async () => {
     const save = vi.spyOn(api, "saveAgent").mockResolvedValue(detail(EDITOR));
+
     show(<AgentsExplorer />);
     fireEvent.click(await screen.findByText("Editor"));
     const prompt = await screen.findByLabelText(/^System prompt/);
+
     expect(
       (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
         .disabled,
@@ -294,6 +306,7 @@ describe("opening", () => {
     const prompt = (await screen.findByLabelText(
       /^System prompt/,
     )) as HTMLTextAreaElement;
+
     fireEvent.change(prompt, { target: { value: "x" } });
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
     await waitFor(() =>
@@ -318,12 +331,14 @@ describe("opening", () => {
     const create = vi
       .spyOn(api, "createAgent")
       .mockResolvedValue(detail(EDITOR));
+
     show(<AgentsExplorer />);
     fireEvent.click(await screen.findByText("Dispatcher"));
     fireEvent.click(
       await screen.findByRole("button", { name: "Copy to global" }),
     );
     const name = (await screen.findByLabelText(/^Name/)) as HTMLInputElement;
+
     await waitFor(() => expect(name.value).toBe("Dispatcher (copy)"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(create).toHaveBeenCalled());
@@ -338,6 +353,7 @@ describe("opening", () => {
     const create = vi
       .spyOn(api, "createAgent")
       .mockResolvedValue(detail(EDITOR));
+
     show(<AgentsExplorer />);
     await screen.findByText("Editor");
     fireEvent.click(screen.getByRole("button", { name: "New agent" }));
@@ -345,6 +361,7 @@ describe("opening", () => {
     const save = screen.getByRole("button", {
       name: "Save",
     }) as HTMLButtonElement;
+
     expect(save.disabled).toBe(true);
     fireEvent.change(name, { target: { value: "Reviser" } });
     expect(save.disabled).toBe(false);
@@ -372,6 +389,7 @@ describe("opening", () => {
     fireEvent.click(await screen.findByText("Skills"));
     fireEvent.click(await screen.findByText("pov"));
     const tree = screen.getByRole("tree", { name: "Agents" });
+
     fireEvent.click(await within(tree).findByText("refs"));
     fireEvent.click(await within(tree).findByText("a.md"));
     await waitFor(() =>
@@ -415,7 +433,9 @@ describe("a request from a chat message's badge", () => {
     mockApi();
     vi.spyOn(api, "getAgent").mockImplementation(async (id) => {
       const a = [DISPATCHER, EDITOR, SCOUT].find((x) => x.id === id);
+
       if (!a) throw new Error("not found");
+
       return {
         ...a,
         version: 3,
@@ -465,16 +485,19 @@ describe("a request from a chat message's badge", () => {
       .getState()
       .ask({ agentId: "a2", version: 1, projectId: "p1" });
     const { client } = show(<AgentsExplorer projectId="p1" />);
+
     client.setQueryData(projectKeys.list(), [
       { id: "p1", name: "Novel", color: "teal" },
     ]);
     const tab = await screen.findByRole("tab");
+
     await waitFor(() =>
       expect(tab.style.getPropertyValue("--tab-color")).toContain(
         "--mantine-color-teal-filled",
       ),
     );
     const icon = tab.querySelector(".mantine-ThemeIcon-root") as HTMLElement;
+
     expect(icon.style.getPropertyValue("--ti-bg")).toContain(
       "--mantine-color-teal-filled",
     );
@@ -512,6 +535,7 @@ class FakeEventSource {
 
 describe("skills.changed", () => {
   const originalEventSource = globalThis.EventSource;
+
   afterEach(() => {
     globalThis.EventSource = originalEventSource;
     FakeEventSource.last = undefined;
@@ -520,10 +544,13 @@ describe("skills.changed", () => {
   it("refetches the skills of an agent that is open", async () => {
     mockApi();
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+
     function Listening() {
       useAppEvents();
+
       return <AgentsExplorer />;
     }
+
     show(<Listening />);
     fireEvent.click(await screen.findByText("Editor"));
     await screen.findByText("Skills");
@@ -562,6 +589,7 @@ describe("the default agent", () => {
     const save = vi
       .spyOn(api, "saveSettings")
       .mockResolvedValue(settings("b1"));
+
     show(<AgentsExplorer />);
     await screen.findByText("Dispatcher");
     fireEvent.click(radio("Dispatcher"));
@@ -573,6 +601,7 @@ describe("the default agent", () => {
 
   it("is cleared by clicking the icon of the default", async () => {
     const save = vi.spyOn(api, "saveSettings").mockResolvedValue(settings(""));
+
     show(<AgentsExplorer />);
     await screen.findByText("Editor");
     await waitFor(() =>
@@ -600,6 +629,7 @@ describe("the default agent", () => {
       id: "p1",
       default_agent_id: "a1",
     } as unknown as Awaited<ReturnType<typeof api.updateProject>>);
+
     show(<AgentsExplorer projectId="p1" />);
     await screen.findByText("Scout");
     await waitFor(() =>

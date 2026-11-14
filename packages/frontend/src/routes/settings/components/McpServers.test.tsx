@@ -23,6 +23,7 @@ const server = (over: Partial<McpServerView> = {}): McpServerView => ({
 
 function renderSection(servers: McpServerView[]) {
   vi.spyOn(api, "listMcpServers").mockResolvedValue(servers);
+
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
@@ -66,6 +67,7 @@ describe("McpServers", () => {
     const save = vi
       .spyOn(api, "saveMcpServer")
       .mockResolvedValue(server({ enabled: false }));
+
     renderSection([server()]);
     fireEvent.click(await screen.findByLabelText("files: enabled"));
     await waitFor(() =>
@@ -81,6 +83,7 @@ describe("McpServers", () => {
     const reconnect = vi
       .spyOn(api, "reconnectMcpServer")
       .mockResolvedValue(server());
+
     renderSection([server()]);
     fireEvent.click(await screen.findByText("Reconnect"));
     await waitFor(() => expect(reconnect).toHaveBeenCalledWith("s1"));
@@ -88,6 +91,7 @@ describe("McpServers", () => {
 
   it("adds a stdio server from the form", async () => {
     const create = vi.spyOn(api, "createMcpServer").mockResolvedValue(server());
+
     renderSection([]);
     fireEvent.click(await screen.findByText("Add server"));
     fireEvent.change(screen.getByLabelText(/^Name/), {
@@ -119,6 +123,7 @@ describe("McpServers", () => {
 
   it("adds an http server from the form", async () => {
     const create = vi.spyOn(api, "createMcpServer").mockResolvedValue(server());
+
     renderSection([]);
     fireEvent.click(await screen.findByText("Add server"));
     fireEvent.click(screen.getByText("Remote (HTTP)"));
@@ -147,6 +152,7 @@ describe("McpServers", () => {
 
   it("explains a line that is not NAME=value instead of saving", async () => {
     const create = vi.spyOn(api, "createMcpServer");
+
     renderSection([]);
     fireEvent.click(await screen.findByText("Add server"));
     fireEvent.change(screen.getByLabelText(/^Name/), {

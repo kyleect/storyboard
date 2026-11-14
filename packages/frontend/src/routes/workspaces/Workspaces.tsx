@@ -44,6 +44,7 @@ function FolderPicker({
     enabled: opened,
   });
   const here = dirs.data?.path ?? path;
+
   return (
     <Modal opened={opened} onClose={onClose} title="Choose a folder" size="md">
       <Stack gap="xs">
@@ -122,6 +123,7 @@ function WorkspaceForm({
     onSuccess: onDone,
     onError: (err: Error) => setProblem(err.message),
   });
+
   return (
     <Paper p="sm">
       <form
@@ -207,8 +209,11 @@ function TreeFolder({
       queryClient.invalidateQueries({ queryKey: workspaceKeys.all }),
     onError: showError("Could not change what is searched"),
   });
+
   if (tree.isPending) return <Loader size="xs" />;
+
   if (tree.isError) return <Alert color="red">{tree.error.message}</Alert>;
+
   if (tree.data.entries.length === 0) {
     return (
       <Text size="xs" c="dimmed">
@@ -216,6 +221,7 @@ function TreeFolder({
       </Text>
     );
   }
+
   const row = (e: WorkspaceTreeEntry) => (
     <div key={e.path}>
       <Group gap="xs" wrap="nowrap">
@@ -247,6 +253,7 @@ function TreeFolder({
       )}
     </div>
   );
+
   return <Stack gap={2}>{tree.data.entries.map(row)}</Stack>;
 }
 
@@ -272,6 +279,7 @@ function SearchedParts({ workspace }: { workspace: Workspace }) {
     onError: showError("Could not rescan"),
   });
   const status = index.data?.status;
+
   return (
     <Stack gap="xs" mt="xs">
       <Group gap="xs">
@@ -345,7 +353,9 @@ function Grants() {
       queryClient.invalidateQueries({ queryKey: workspaceKeys.all }),
     onError: showError("Could not remove"),
   });
+
   if (!grants.data || grants.data.length === 0) return null;
+
   return (
     <Stack gap="xs">
       <Title order={4}>Always allowed</Title>

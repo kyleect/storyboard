@@ -13,16 +13,21 @@ export function useDebouncedFlag(
 ): boolean {
   const [visible, setVisible] = useState(false);
   const shownAt = useRef(0);
+
   useEffect(() => {
     if (active === visible) return;
+
     const wait = active
       ? showDelay
       : Math.max(0, minVisible - (Date.now() - shownAt.current));
     const timer = setTimeout(() => {
       if (active) shownAt.current = Date.now();
+
       setVisible(active);
     }, wait);
+
     return () => clearTimeout(timer);
   }, [active, visible, showDelay, minVisible]);
+
   return visible;
 }

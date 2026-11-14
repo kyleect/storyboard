@@ -77,6 +77,7 @@ const assistantCall = {
 
 function session(): SessionDebug {
   id = 0;
+
   return {
     format: 2,
     exportedAt: t(20),
@@ -136,6 +137,7 @@ function session(): SessionDebug {
 describe("buildLinear", () => {
   it("lays the session out in the order it happened", () => {
     const items = buildLinear(session());
+
     expect(items.map((i) => `${i.kind}:${i.title}`)).toEqual([
       "user:User",
       "event:run.started",
@@ -180,6 +182,7 @@ describe("buildLinear", () => {
       ],
     });
     const sent = items.find((i) => i.text === "Label\n\nUse tool_b");
+
     expect(sent?.title).toBe("User (sent to the subagent)");
     expect(items.filter((i) => i.text === "Label\n\nUse tool_b")).toHaveLength(
       1,
@@ -193,6 +196,7 @@ describe("buildLinear", () => {
     const types = buildLinear(session())
       .filter((i) => i.kind === "event")
       .map((i) => i.title);
+
     for (const repeat of ["step.started", "text.delta", "tool.called"]) {
       expect(types).not.toContain(repeat);
     }
@@ -201,6 +205,7 @@ describe("buildLinear", () => {
   it("carries the content: reasoning, calls and results", () => {
     const items = buildLinear(session());
     const assistant = items.find((i) => i.key.startsWith("e-4"));
+
     expect(assistant?.blocks?.map((b) => b.type)).toEqual([
       "reasoning",
       "tool_call",
@@ -212,6 +217,7 @@ describe("buildLinear", () => {
   it("indents a subagent's items", () => {
     const items = buildLinear(session());
     const depths = items.filter((i) => i.runId === "B").map((i) => i.depth);
+
     expect(depths.length).toBeGreaterThan(0);
     expect(new Set(depths)).toEqual(new Set([1]));
     expect(
@@ -221,16 +227,19 @@ describe("buildLinear", () => {
 
   it("says so when a run's system prompt was not recorded", () => {
     const s = session();
+
     s.runs = [
       run("A", { request: "not_recorded", systemPrompt: null, tools: null }),
     ];
     const system = buildLinear(s).find((i) => i.kind === "system");
+
     expect(system?.text).toMatch(/Not recorded/);
     expect(buildLinear(s).some((i) => i.kind === "tools")).toBe(false);
   });
 
   it("keeps a message no event places, by its time, and one with no time last", () => {
     const s = session();
+
     s.messages.push(
       msg("late", null, "A", { role: "user", content: "no time" }),
       msg("partial", 6, "A", {
@@ -242,6 +251,7 @@ describe("buildLinear", () => {
       (i) => i.raw && (i.raw as { id?: string }).id,
     );
     const at = (m: string) => titles.indexOf(m);
+
     expect(at("partial")).toBeGreaterThan(at("task"));
     expect(at("partial")).toBeLessThan(at("a2"));
     expect(at("late")).toBe(titles.length - 1);
@@ -249,6 +259,7 @@ describe("buildLinear", () => {
 
   it("shows a repeated finish of one message as an event, not a second copy", () => {
     const s = session();
+
     s.events.splice(
       4,
       0,
@@ -259,6 +270,7 @@ describe("buildLinear", () => {
       }),
     );
     const items = buildLinear(s);
+
     expect(
       items.filter(
         (i) =>
@@ -274,6 +286,7 @@ describe("buildLinear", () => {
 describe("filterLinear", () => {
   it("filters by kind, run and text (also inside tool arguments)", () => {
     const items = buildLinear(session());
+
     expect(
       filterLinear(items, { ...NO_LINEAR_FILTER, kinds: ["user"] }),
     ).toHaveLength(2);
@@ -300,6 +313,7 @@ describe("renderLinearText", () => {
 
   function detailed(): SessionDebug {
     const s = session();
+
     s.session = { id: "s", title: "My story" } as SessionDebug["session"];
     s.messages[1] = {
       ...(s.messages[1] as DebugMessage),
@@ -329,11 +343,13 @@ describe("renderLinearText", () => {
       ],
     });
     s.events.push(ev(9, "A", "run.failed", { error: LONG }));
+
     return s;
   }
 
   it("starts with a header that says how to read it", () => {
     const text = renderLinearText(detailed());
+
     expect(text).toMatch(
       /^# Session debug export\nSession: My story \(s\)\nProject: none/,
     );
@@ -355,12 +371,14 @@ describe("renderLinearText", () => {
       "] Assistant · tool_calls",
       "] Result of echo",
     ].map(at);
+
     expect(order.every((n) => n >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it("does not shorten anything: events, tools, decision comments", () => {
     const text = renderLinearText(detailed());
+
     expect(text).toContain(LONG);
     expect(text).toContain("tool echo: Echoes its input.");
     expect(text).toContain(
@@ -378,12 +396,14 @@ describe("renderLinearText", () => {
 
   it("shows reasoning and tool calls inside an assistant message", () => {
     const text = renderLinearText(detailed());
+
     expect(text).toContain("[reasoning]\nthinking");
     expect(text).toContain("[tool call echo id=c1]");
   });
 
   it("leaves a result's data out when the content already says it", () => {
     const s = session();
+
     s.messages[2] = msg("tr1", 4, "A", {
       role: "tool",
       callId: "c1",
@@ -397,6 +417,7 @@ describe("renderLinearText", () => {
 
   it("says when a run's system prompt was not recorded", () => {
     const s = session();
+
     s.runs = [
       run("A", { request: "not_recorded", systemPrompt: null, tools: null }),
     ];
@@ -409,47 +430,58 @@ describe("renderLinearText", () => {
 describe("subagents in the linear view", () => {
   function withCall(): SessionDebug {
     const s = session();
+
     s.runs[1] = run("B", {
       parentRunId: "A",
       parentCallId: "c1",
       startedAt: t(5),
     });
+
     return s;
   }
 
   it("ties the call that started a subagent to its run, both ways", () => {
     const items = buildLinear(withCall());
     const assistant = items.find((i) => i.kind === "assistant");
+
     expect(assistant?.calls).toEqual({ c1: "starts run 2 (B)" });
     const started = items.find(
       (i) => i.title === "run.started" && i.runId === "B",
     );
+
     expect(started?.meta).toBe("started by call c1 in run 1 (A)");
 
     const text = renderLinearText(withCall());
+
     expect(text).toContain("[tool call echo id=c1 → starts run 2 (B)]");
     expect(text).toContain("started by call c1 in run 1 (A)");
   });
 
   it("does not tie a call that started nothing", () => {
     const items = buildLinear(session());
+
     expect(items.find((i) => i.kind === "assistant")?.calls).toBeUndefined();
   });
 
   it("times a run's prompt and tools by the run.started event, not the run row", () => {
     const s = session();
+
     s.runs[0] = run("A", { startedAt: t(0) });
     const items = buildLinear(s);
     const startedAt = items.find(
       (i) => i.title === "run.started" && i.runId === "A",
     )?.time;
+
     expect(startedAt).toBe(t(1));
+
     for (const kind of ["system", "tools"] as const) {
       expect(items.find((i) => i.kind === kind && i.runId === "A")?.time).toBe(
         startedAt,
       );
     }
+
     const times = items.flatMap((i) => (i.time === null ? [] : [i.time]));
+
     expect(times).toEqual([...times].sort());
   });
 });

@@ -10,18 +10,24 @@ export function TranscriptScroll({ children }: { children: ReactNode }) {
   useEffect(() => {
     const view = viewport.current;
     const inner = content.current;
+
     if (!view || !inner) return;
+
     view.scrollTop = view.scrollHeight;
     let height = view.scrollHeight;
     let visible = view.clientHeight;
     const observer = new ResizeObserver(() => {
       const atBottom = height - view.scrollTop - visible <= NEAR_BOTTOM;
+
       height = view.scrollHeight;
       visible = view.clientHeight;
+
       if (atBottom) view.scrollTop = height;
     });
+
     observer.observe(inner);
     observer.observe(view);
+
     return () => observer.disconnect();
   }, []);
 

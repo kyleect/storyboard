@@ -74,6 +74,7 @@ type AppEvent =
 
 export function useAppEvents() {
   const queryClient = useQueryClient();
+
   useEffect(() => {
     const refreshAgents = () => {
       void queryClient.invalidateQueries({ queryKey: agentKeys.all });
@@ -113,6 +114,7 @@ export function useAppEvents() {
       void queryClient.resetQueries();
       const { tabs, active, settingsPath } = useWorkbench.getState();
       const tab = tabs.find((t) => tabId(t) === active);
+
       navigateWorkbench(tab ? pathForTab(tab, settingsPath) : "/");
     };
     const syncProfile = () => {
@@ -126,6 +128,7 @@ export function useAppEvents() {
     };
     const onMessage = (msg: MessageEvent<string>) => {
       const event = JSON.parse(msg.data) as AppEvent;
+
       switch (event.type) {
         case "runs.changed":
           refreshRuns();
@@ -157,11 +160,13 @@ export function useAppEvents() {
           break;
         case "agents.changed":
           refreshAgents();
+
           for (const id of event.data.clearedSessions) {
             void queryClient.invalidateQueries({
               queryKey: sessionKeys.detail(id),
             });
           }
+
           break;
       }
     };

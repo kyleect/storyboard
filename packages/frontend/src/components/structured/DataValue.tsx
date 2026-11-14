@@ -42,6 +42,7 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
       {field.label}
     </Text>
   );
+
   if (value === undefined) {
     return (
       <Stack gap={2}>
@@ -50,8 +51,10 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
       </Stack>
     );
   }
+
   if (field.kind === "object") {
     const v = isObject(value) ? value : {};
+
     return (
       <Stack gap={4}>
         {label}
@@ -65,8 +68,10 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
       </Stack>
     );
   }
+
   if (field.kind === "list") {
     const items = Array.isArray(value) ? value : [];
+
     return (
       <Stack gap={4}>
         {label}
@@ -85,7 +90,9 @@ function FieldValue({ field, value }: { field: FormField; value: unknown }) {
       </Stack>
     );
   }
+
   const text = scalarText(field, value);
+
   return (
     <Stack gap={2}>
       {label}
@@ -113,6 +120,7 @@ export function DataValue({
     : isObject(value)
       ? value
       : {};
+
   return (
     <Paper p="sm">
       <Stack gap="sm">

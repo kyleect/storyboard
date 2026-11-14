@@ -61,6 +61,7 @@ class FakeEventSource {
 }
 
 const originalEventSource = globalThis.EventSource;
+
 afterEach(() => {
   globalThis.EventSource = originalEventSource;
   FakeEventSource.last = undefined;
@@ -119,6 +120,7 @@ function renderWith(node: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
   render(
     <MantineProvider>
       <ModalsProvider>
@@ -130,6 +132,7 @@ function renderWith(node: ReactNode) {
 
 function Page() {
   useAppEvents();
+
   return <ErrorsPage />;
 }
 
@@ -140,8 +143,10 @@ describe("the errors page", () => {
     renderWith(<ErrorsPage />);
 
     const items = await screen.findAllByTestId("error-item");
+
     expect(items).toHaveLength(2);
     const tool = within(items[1] as HTMLElement);
+
     expect(tool.getByText(toolError.message)).toBeTruthy();
     expect(tool.getByText("read_webpage")).toBeTruthy();
     expect(
@@ -153,11 +158,13 @@ describe("the errors page", () => {
 
     fireEvent.click(tool.getByText("Show details"));
     const code = tool.getByText(/Details:/);
+
     expect(code.textContent).toContain('"status": 404');
     expect(code.textContent).toContain("Arguments:");
     expect(code.textContent).toContain("at fetchText");
 
     const run = within(items[0] as HTMLElement);
+
     expect(run.getByText("run")).toBeTruthy();
     expect(run.getByText("Solo")).toBeTruthy();
     expect(run.queryByText("Show in transcript")).toBeNull();
@@ -166,6 +173,7 @@ describe("the errors page", () => {
 
   it("filters by session, project and tool or source", async () => {
     const list = vi.spyOn(api, "listErrors").mockResolvedValue([]);
+
     vi.spyOn(api, "errorFilters").mockResolvedValue(filterOptions);
     renderWith(<ErrorsPage />);
     expect(await screen.findByText("No errors.")).toBeTruthy();
@@ -175,13 +183,16 @@ describe("the errors page", () => {
       const input = screen
         .getAllByLabelText(label)
         .find((el) => el.tagName === "INPUT");
+
       if (!input) throw new Error(`no ${label} input`);
+
       fireEvent.click(input);
       // Mantine's dropdown is still in its transition in jsdom.
       fireEvent.click(
         await screen.findByRole("option", { name: option, hidden: true }),
       );
     };
+
     await pick("Project", "No project");
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith({ projectId: "none" }),
@@ -218,10 +229,12 @@ describe("the errors page", () => {
     const clear = vi
       .spyOn(api, "clearErrors")
       .mockResolvedValue({ cleared: 1 });
+
     renderWith(<ErrorsPage />);
     await screen.findByTestId("error-item");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     const dialog = await screen.findByRole("dialog");
+
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(clear).toHaveBeenCalledWith());
   });
@@ -229,6 +242,7 @@ describe("the errors page", () => {
   it("updates when an error is recorded", async () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const list = vi.spyOn(api, "listErrors").mockResolvedValue([]);
+
     vi.spyOn(api, "errorFilters").mockResolvedValue(filterOptions);
     renderWith(<Page />);
     expect(await screen.findByText("No errors.")).toBeTruthy();

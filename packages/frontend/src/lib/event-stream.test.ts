@@ -39,6 +39,7 @@ describe("connectEventStream", () => {
   it("opens the stream and passes on its messages and opening", () => {
     const onOpen = vi.fn();
     const onMessage = vi.fn();
+
     connectEventStream({ url: () => "/events", onOpen, onMessage });
 
     expect(last().url).toBe("/events");
@@ -46,12 +47,14 @@ describe("connectEventStream", () => {
     expect(onOpen).toHaveBeenCalledOnce();
 
     const message = { data: "{}" } as MessageEvent<string>;
+
     last().onmessage?.(message);
     expect(onMessage).toHaveBeenCalledWith(message);
   });
 
   it("opens a new stream when the browser gives up, asking for the address again", () => {
     let from = 0;
+
     connectEventStream({
       url: () => `/events?from=${from}`,
       onMessage: () => {},
@@ -68,16 +71,21 @@ describe("connectEventStream", () => {
   it("waits twice as long after each failure, up to five seconds", () => {
     connectEventStream({ url: () => "/events", onMessage: () => {} });
     const waits: number[] = [];
+
     for (let i = 0; i < 6; i++) {
       const before = FakeEventSource.instances.length;
+
       last().giveUp();
       let waited = 0;
+
       while (FakeEventSource.instances.length === before) {
         vi.advanceTimersByTime(100);
         waited += 100;
       }
+
       waits.push(waited);
     }
+
     expect(waits).toEqual([500, 1000, 2000, 4000, 5000, 5000]);
   });
 
@@ -98,6 +106,7 @@ describe("connectEventStream", () => {
 
   it("leaves a stream the browser is still retrying alone, and says it failed", () => {
     const onError = vi.fn();
+
     connectEventStream({
       url: () => "/events",
       onMessage: () => {},
@@ -115,6 +124,7 @@ describe("connectEventStream", () => {
       url: () => "/events",
       onMessage: () => {},
     });
+
     last().giveUp();
     disconnect();
     vi.advanceTimersByTime(10_000);

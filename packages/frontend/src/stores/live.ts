@@ -43,6 +43,7 @@ export function findLiveRun(
   runId: string | null,
 ): LiveRunState | undefined {
   if (!run) return undefined;
+
   return (runId !== null ? run.children[runId] : undefined) ?? run;
 }
 
@@ -68,7 +69,9 @@ export const useLive = create<LiveState>((set) => ({
   update: (sessionId, runId, f) =>
     set((s) => {
       const run = s.runs[sessionId];
+
       if (!run) return s;
+
       const child = runId !== null ? run.children[runId] : undefined;
       const next: LiveRun = child
         ? {
@@ -79,11 +82,13 @@ export const useLive = create<LiveState>((set) => ({
             },
           }
         : { ...run, ...f(run) };
+
       return { runs: { ...s.runs, [sessionId]: next } };
     }),
   addChild: (sessionId, child) =>
     set((s) => {
       const run = s.runs[sessionId];
+
       return run
         ? {
             runs: {
@@ -99,10 +104,13 @@ export const useLive = create<LiveState>((set) => ({
   removeChild: (sessionId, runId) =>
     set((s) => {
       const run = s.runs[sessionId];
+
       if (!run?.children[runId]) return s;
+
       const children = Object.fromEntries(
         Object.entries(run.children).filter(([id]) => id !== runId),
       );
+
       return { runs: { ...s.runs, [sessionId]: { ...run, children } } };
     }),
   setConnected: (sessionId, connected) =>

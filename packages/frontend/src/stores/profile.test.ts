@@ -8,6 +8,7 @@ import {
 } from "./profile";
 
 const store = new Map<string, string>();
+
 beforeEach(() => {
   store.clear();
   vi.stubGlobal("localStorage", {

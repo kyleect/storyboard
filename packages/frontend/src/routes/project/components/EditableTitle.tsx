@@ -33,11 +33,15 @@ export function EditableTitle({
 
   const save = () => {
     if (saving) return;
+
     const trimmed = draft.trim();
+
     if (!trimmed || trimmed === title) {
       setDraft(null);
+
       return;
     }
+
     setSaving(true);
     onSave(trimmed)
       .then(() => setDraft(null))

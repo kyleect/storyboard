@@ -86,6 +86,7 @@ export function useStructured({
       : tabs[0]
         ? tabId(tabs[0])
         : null;
+
     return { tabs, active };
   });
   const [expanded, setExpanded] = useState(initial.expanded);
@@ -111,6 +112,7 @@ export function useStructured({
   }, [viewKey, tabsState, expanded, width, showDeleted]);
 
   const dirty = Object.keys(drafts).length > 0;
+
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
@@ -142,6 +144,7 @@ export function useStructured({
         const data =
           (lists.data[3 * i + 2] as { data: DataItem[] } | undefined)?.data ??
           [];
+
         return { root, schemas: mergeSchemas(own, usable), data };
       }),
     [roots, lists.data],
@@ -149,7 +152,9 @@ export function useStructured({
   const tree = useMemo(() => buildTree(inputs, pending), [inputs, pending]);
   const schemaById = useMemo(() => {
     const m = new Map<string, SchemaInfo>();
+
     for (const i of inputs) for (const s of i.schemas) m.set(s.id, s);
+
     return m;
   }, [inputs]);
 
@@ -159,6 +164,7 @@ export function useStructured({
         roots.map((r, i) => {
           const list = lists.data[3 * i + 2] as
             { readOnly: string | null } | undefined;
+
           return [r.id, r.readOnly ?? list?.readOnly ?? undefined];
         }),
       ),
@@ -175,6 +181,7 @@ export function useStructured({
   const forget = (id: string) => {
     const without = <T,>(r: Record<string, T>) =>
       Object.fromEntries(Object.entries(r).filter(([k]) => k !== id));
+
     setDrafts(without);
     setViews(without);
   };
@@ -184,8 +191,10 @@ export function useStructured({
   };
   const nameOf = (t: TabState): string => {
     const draft = drafts[tabId(t)];
+
     if (draft && isNewKey(t.key))
       return draft.name || (t.kind === "schema" ? "New schema" : "New data");
+
     return (
       tree.info.get(tabNode(t))?.name ??
       (t.kind === "schema" ? "Schema" : "Data")
@@ -193,10 +202,13 @@ export function useStructured({
   };
   const requestClose = (id: string) => {
     const tab = tabsState.tabs.find((t) => tabId(t) === id);
+
     if (!tab || !drafts[id]) {
       close(id);
+
       return;
     }
+
     confirmAction({
       title: `Close “${nameOf(tab)}” without saving?`,
       message: <>Your unsaved changes to it will be lost.</>,
@@ -213,17 +225,23 @@ export function useStructured({
     from: RootId,
   ): { owner: DataOwner; own: boolean } => {
     const fallback = rootOwner(from) ?? ownOwner;
+
     if (!fallback) throw new Error(`No root "${from}" in this view.`);
+
     if (!info) return { owner: fallback, own: true };
+
     if (info.scope === "builtin")
       return { owner: { scope: "global" }, own: true };
+
     const home = roots.find((r) => r.scope.scope === info.scope)?.scope;
+
     return home ? { owner: home, own: true } : { owner: fallback, own: false };
   };
 
   const openRef = (ref: NodeRef, permanent: boolean) => {
     if (ref.kind === "schema") {
       const info = schemaById.get(ref.path);
+
       open(
         {
           kind: "schema",
@@ -246,6 +264,7 @@ export function useStructured({
       key: `new:${counter.current}`,
     };
     const id = tabId(tab);
+
     setDrafts((d) => ({
       ...d,
       [id]:
@@ -259,6 +278,7 @@ export function useStructured({
 
   const deleteSchema = (schema: SchemaInfo, from: RootId) => {
     const { owner } = schemaOwner(schema, from);
+
     confirmAction({
       title: `Delete “${schema.name}”?`,
       message: (
@@ -280,7 +300,9 @@ export function useStructured({
 
   const deleteData = (id: string, name: string, root: RootId) => {
     const owner = rootOwner(root);
+
     if (!owner) return;
+
     confirmAction({
       title: `Delete “${name}”?`,
       message: (
@@ -327,12 +349,14 @@ export function useStructured({
     onCancelPending: () => setPending(null),
     onCopy: (ref) => {
       const schema = schemaById.get(ref.path);
+
       if (schema)
         setCopying({ owner: schemaOwner(schema, ref.root).owner, schema });
     },
     onDelete: (ref) => {
       if (ref.kind === "schema") {
         const schema = schemaById.get(ref.path);
+
         if (schema) deleteSchema(schema, ref.root);
       } else if (ref.kind === "data") {
         deleteData(
@@ -351,6 +375,7 @@ export function useStructured({
   const colorProps = (root: RootId): { iconColor?: ProjectColor } => {
     const owner = rootOwner(root);
     const color = owner?.scope === "project" ? colorOf(owner.id) : null;
+
     return color ? { iconColor: color } : {};
   };
 
@@ -372,10 +397,12 @@ export function useStructured({
   const setDraftFor = (id: string, draft: Draft | undefined) =>
     setDrafts((d) => {
       if (draft) return { ...d, [id]: draft };
+
       return Object.fromEntries(Object.entries(d).filter(([k]) => k !== id));
     });
 
   let content: React.ReactNode = null;
+
   if (activeTab) {
     const id = tabId(activeTab);
     const isNew = isNewKey(activeTab.key);
@@ -389,9 +416,11 @@ export function useStructured({
       onView: (v: View) => setViews((m) => ({ ...m, [id]: v })),
       onKeep: () => keep(id),
     };
+
     if (activeTab.kind === "schema") {
       const info = isNew ? undefined : schemaById.get(activeTab.key);
       const { owner, own } = schemaOwner(info, activeTab.root);
+
       content = (
         <SchemaTab
           key={id}
@@ -420,6 +449,7 @@ export function useStructured({
       );
     } else {
       const owner = rootOwner(activeTab.root);
+
       if (owner) {
         content = (
           <DataTab

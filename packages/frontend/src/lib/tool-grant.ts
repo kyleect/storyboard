@@ -51,11 +51,15 @@ export function sectionTools<T extends { name: string; group: ToolGroup }>(
 ): ToolSection<T>[] {
   return groupTools(tools).map((g): ToolSection<T> => {
     if (g.id !== "mcp") return { ...g, group: g.id };
+
     const servers = new Map<string, T[]>();
+
     for (const t of g.tools) {
       const server = mcpServerOf(t.name) ?? "";
+
       servers.set(server, [...(servers.get(server) ?? []), t]);
     }
+
     return {
       ...g,
       group: g.id,
@@ -73,14 +77,18 @@ export function sectionTools<T extends { name: string; group: ToolGroup }>(
 
 function covered(g: ToolGrant, t: GrantTool): boolean {
   const inGroup = g.groups.includes(t.group);
+
   if (g.mode === "allow") {
     return (
       g.extras.includes(t.name) ||
       (inGroup && !g.except.includes(t.name) && !t.needsReview)
     );
   }
+
   if (g.extras.includes(t.name)) return false;
+
   if (t.needsReview) return g.except.includes(t.name);
+
   return !(inGroup && !g.except.includes(t.name));
 }
 
@@ -95,16 +103,21 @@ export function setTool(g: ToolGrant, t: GrantTool, on: boolean): ToolGrant {
   const self = new Set([t.name]);
   let except = without(g.except, self);
   let extras = without(g.extras, self);
+
   if (g.mode === "allow") {
     const byGroup = inGroup && !t.needsReview;
+
     if (on && !byGroup) extras = [...extras, t.name];
+
     if (!on && byGroup) except = [...except, t.name];
   } else if (t.needsReview) {
     if (on) except = [...except, t.name];
   } else {
     if (on && inGroup) except = [...except, t.name];
+
     if (!on && !inGroup) extras = [...extras, t.name];
   }
+
   return { ...g, except, extras };
 }
 
@@ -123,6 +136,7 @@ export function setGroup(
   const listed = g.mode === "allow" ? on : !on;
   const keptExtras = g.mode === "allow" ? keepReview : new Set<string>();
   const keptExcept = g.mode === "deny" ? keepReview : new Set<string>();
+
   return {
     ...g,
     groups: listed ? [...groups, group] : groups,
@@ -155,6 +169,7 @@ export function toggleState(
   tools: readonly GrantTool[],
 ): ToggleState {
   const { on, total } = groupCount(g, tools);
+
   return on === total ? "all" : on === 0 ? "none" : "mixed";
 }
 
@@ -176,9 +191,13 @@ export function groupApproval(
   tools: readonly ApprovalTool[],
 ): GroupApproval {
   const values = tools.filter((t) => !t.fixed).map((t) => approval[t.name]);
+
   if (values.every((v) => v === undefined)) return "own";
+
   if (values.every((v) => v === true)) return "ask";
+
   if (values.every((v) => v === false)) return "skip";
+
   return "mixed";
 }
 
@@ -191,7 +210,9 @@ export function setGroupApproval(
   const rest = Object.fromEntries(
     Object.entries(approval).filter(([n]) => !names.has(n)),
   );
+
   if (value === "own") return rest;
+
   return {
     ...rest,
     ...Object.fromEntries([...names].map((n) => [n, value === "ask"])),
@@ -204,15 +225,20 @@ export function switchMode(
   tools: readonly GrantTool[],
 ): ToolGrant {
   if (g.mode === mode) return g;
+
   const have = new Set(tools.filter((t) => covered(g, t)).map((t) => t.name));
   const usual = tools.filter((t) => !t.alwaysOn);
   const groups: ToolGroup[] = [];
+
   for (const { id, tools: inGroup } of groupTools(usual)) {
     const plain = inGroup.filter((t) => !t.needsReview);
     const want = (t: GrantTool) => have.has(t.name) === (mode === "allow");
+
     if (plain.length > 0 && plain.every(want)) groups.push(id);
   }
+
   const inGroups = (t: GrantTool) => groups.includes(t.group);
+
   if (mode === "allow") {
     return {
       ...g,
@@ -224,6 +250,7 @@ export function switchMode(
         .map((t) => t.name),
     };
   }
+
   return {
     ...g,
     mode,

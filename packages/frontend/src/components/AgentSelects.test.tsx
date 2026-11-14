@@ -5,6 +5,7 @@ import { useAgentFocus } from "../stores/agentFocus";
 import { AgentBadge } from "./AgentSelects";
 
 const navigate = vi.fn();
+
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<typeof import("@tanstack/react-router")>()),
   useNavigate: () => navigate,

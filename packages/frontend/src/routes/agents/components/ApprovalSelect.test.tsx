@@ -20,6 +20,7 @@ function setup(props: {
   disabled?: boolean;
 }) {
   const changes: (boolean | undefined)[] = [];
+
   render(
     <MantineProvider>
       <ApprovalSelect
@@ -33,6 +34,7 @@ function setup(props: {
   const input = screen
     .getAllByLabelText("Approval for web_fetch")
     .find((el) => el.tagName === "INPUT") as HTMLInputElement;
+
   return { changes, input };
 }
 
@@ -57,18 +59,21 @@ describe("ApprovalSelect", () => {
 
   it("is locked for a tool that always asks", () => {
     const { input } = setup({ tool: tool({ fixed: true, ask: true }) });
+
     expect(input.value).toBe("Always asks");
     expect(input.disabled).toBe(true);
   });
 
   it("is disabled for a tool the agent does not have, and keeps its value", () => {
     const { input } = setup({ value: true, disabled: true });
+
     expect(input.disabled).toBe(true);
     expect(input.value).toBe("Ask");
   });
 
   it("reports a choice, and undefined for the tool's own setting", () => {
     const { changes, input } = setup({ value: true });
+
     fireEvent.click(input);
     fireEvent.click(screen.getByRole("option", { name: "Don't ask" }));
     fireEvent.click(input);

@@ -29,6 +29,7 @@ export function FilesExplorer({
       pageScope === "global"
         ? { scope: "global" }
         : { scope: pageScope, id: pageId };
+
     return rootsFor(stable, projectId).map((r) => ({
       id: r.id,
       label: r.label,

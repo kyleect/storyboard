@@ -66,6 +66,7 @@ describe("ExplorerShell tabs of a project", () => {
     const icon = screen
       .getByRole("tab", { name: /Chat a/ })
       .querySelector(".mantine-ThemeIcon-root") as HTMLElement;
+
     expect(icon.style.getPropertyValue("--ti-bg")).toContain(
       "--mantine-color-teal-filled",
     );

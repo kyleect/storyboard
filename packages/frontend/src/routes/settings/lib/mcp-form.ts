@@ -19,14 +19,18 @@ function parsePairs(
   shape: string,
 ): Record<string, string> {
   const out: Record<string, string> = {};
+
   for (const line of parseLines(text)) {
     const at = line.indexOf(separator);
     const key = at < 1 ? "" : line.slice(0, at).trim();
+
     if (key === "") {
       throw new Error(`"${line}" is not in the form ${shape}.`);
     }
+
     out[key] = line.slice(at + 1).trim();
   }
+
   return out;
 }
 

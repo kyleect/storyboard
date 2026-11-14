@@ -49,6 +49,7 @@ export function CopyDebugButton({ sessionId }: { sessionId: string }) {
   const copy = (format: CopyFormat) => {
     setBusy(true);
     const text = api.getSessionDebug(sessionId).then(FORMATS[format]);
+
     copyText(text)
       .then(async () =>
         notifications.show({
@@ -66,6 +67,7 @@ export function CopyDebugButton({ sessionId }: { sessionId: string }) {
       )
       .finally(() => setBusy(false));
   };
+
   return (
     <Button.Group>
       <Button
@@ -184,11 +186,14 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
   const toggle = (id: number) =>
     setOpen((prev) => {
       const next = new Set(prev);
+
       if (!next.delete(id)) next.add(id);
+
       return next;
     });
 
   if (query.isPending) return <Loader size="sm" />;
+
   if (query.isError || !debug) {
     return (
       <Alert color="red" title="Could not load the session export">
@@ -298,6 +303,7 @@ export function DebugPanel({ sessionId }: { sessionId: string }) {
                   const expanded = open.has(e.id);
                   const index =
                     e.runId === null ? undefined : runIndex.get(e.runId);
+
                   return [
                     <Table.Tr
                       key={e.id}

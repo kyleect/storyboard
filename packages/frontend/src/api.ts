@@ -25,19 +25,23 @@ const TOKEN_KEY = "harness.token";
 
 function readToken(): string | null {
   const match = /(?:^|[#&])token=([0-9a-f]+)/.exec(window.location.hash);
+
   if (match?.[1]) {
     try {
       sessionStorage.setItem(TOKEN_KEY, match[1]);
     } catch {
       // storage can be unavailable
     }
+
     history.replaceState(
       null,
       "",
       window.location.pathname + window.location.search,
     );
+
     return match[1];
   }
+
   try {
     return sessionStorage.getItem(TOKEN_KEY);
   } catch {
@@ -76,6 +80,7 @@ async function request<T>(
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+
   return readJson<T>(res);
 }
 
@@ -92,19 +97,23 @@ async function requestFile<T>(
     },
     body: file,
   });
+
   return readJson<T>(res);
 }
 
 async function readJson<T>(res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as { error?: string };
+
   if (res.status === 401) {
     throw new ApiError(
       "The backend rejected the token. Open the link the backend printed when it started.",
       401,
     );
   }
+
   if (!res.ok)
     throw new ApiError(data.error ?? res.statusText, res.status, data);
+
   return data as T;
 }
 
@@ -112,10 +121,13 @@ async function requestText(path: string): Promise<string> {
   const res = await fetch(path, {
     headers: { authorization: `Bearer ${token ?? ""}` },
   });
+
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
+
     throw new ApiError(data.error ?? res.statusText, res.status, data);
   }
+
   return res.text();
 }
 
@@ -818,6 +830,7 @@ export const api = {
         (e): e is [string, string] => e[1] !== undefined,
       ),
     ).toString();
+
     return request<ErrorEntry[]>("GET", `/api/errors${q ? `?${q}` : ""}`);
   },
   errorFilters: () => request<ErrorFilterOptions>("GET", "/api/errors/filters"),
@@ -870,7 +883,9 @@ export const api = {
       page: String(q.page),
       pageSize: String(q.pageSize),
     });
+
     if (q.projectId) params.set("projectId", q.projectId);
+
     return request<SessionPage>("GET", `/api/sessions-page?${params}`);
   },
   listUnreadSessions: () =>
@@ -994,6 +1009,7 @@ export const api = {
       ...(name ? [`name=${encodeURIComponent(name)}`] : []),
       ...(options.replace ? ["replace=true"] : []),
     ].join("&");
+
     return requestFile<UploadedFile>(
       `${filesBase(s)}${query ? `?${query}` : ""}`,
       file,
@@ -1004,10 +1020,13 @@ export const api = {
     const res = await fetch(`/api/blobs/${hash}`, {
       headers: { authorization: `Bearer ${token ?? ""}` },
     });
+
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
+
       throw new ApiError(data.error ?? res.statusText, res.status, data);
     }
+
     return URL.createObjectURL(await res.blob());
   },
   continueLast: (id: string, choices: Choices) =>
@@ -1117,11 +1136,15 @@ export const api = {
       `/api/sessions/${encodeURIComponent(sessionId)}/workspace-file?ref=${encodeURIComponent(ref)}`,
       { headers: { authorization: `Bearer ${token ?? ""}` } },
     );
+
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
+
       throw new ApiError(data.error ?? res.statusText, res.status, data);
     }
+
     const blob = await res.blob();
+
     return { url: URL.createObjectURL(blob), mediaType: blob.type };
   },
   listProfiles: () => request<ProfileListing>("GET", "/api/profiles"),
@@ -1288,6 +1311,7 @@ export const api = {
         body: file,
       },
     );
+
     return readJson<SkillDetail>(res);
   },
   deleteSkillPath: (id: string, path: string) =>
@@ -1308,6 +1332,7 @@ export const api = {
       },
       body: zip,
     });
+
     return readJson<SkillImportPreview>(res);
   },
   importSkill: async (
@@ -1328,6 +1353,7 @@ export const api = {
       },
       body: zip,
     });
+
     return readJson<SkillDetail & { warnings: string[] }>(res);
   },
   exportSkill: async (id: string, seq?: number): Promise<Blob> => {
@@ -1335,10 +1361,13 @@ export const api = {
       `/api/skills/${id}/export${seq === undefined ? "" : `?seq=${seq}`}`,
       { headers: { authorization: `Bearer ${token ?? ""}` } },
     );
+
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
+
       throw new ApiError(data.error ?? res.statusText, res.status, data);
     }
+
     return res.blob();
   },
   renameSkill: (id: string, name: string) =>
@@ -1453,5 +1482,6 @@ export function eventsUrl(sessionId: string, lastEventId: number): string {
     token: token ?? "",
     lastEventId: String(lastEventId),
   });
+
   return `/api/sessions/${sessionId}/events?${q.toString()}`;
 }

@@ -25,6 +25,7 @@ export function useProjectActions() {
           onCancel={() => modals.close(modalId)}
           onSubmit={async (fields) => {
             const project = await api.createProject(fields);
+
             await refreshProjects();
             modals.close(modalId);
             onCreated(project);
@@ -55,13 +56,17 @@ export function useProjectActions() {
                 session: { project_id: string | null };
               }>(sessionKeys.detail(id))?.session.project_id ?? null;
             const tabs = useWorkbench.getState().tabs;
+
             for (const t of tabs)
               if (t.kind === "chat" && projectOfSession(t.key) === project.id)
                 dropDraft(t.key);
+
             const closed = closeTabsAndGo(
               tabsForProject(tabs, project.id, projectOfSession),
             );
+
             if (!closed) await navigate({ to: "/" });
+
             await refreshProjects();
           })
           .catch(showError("Could not move to trash"));

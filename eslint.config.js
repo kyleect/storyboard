@@ -65,5 +65,50 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["packages/frontend/**/*.{ts,tsx}"],
+    rules: {
+      "padding-line-between-statements": [
+        "error",
+        {
+          blankLine: "always",
+          prev: "*",
+          next: [
+            "if",
+            "for",
+            "while",
+            "do",
+            "switch",
+            "try",
+            "function",
+            "class",
+            "return",
+            "throw",
+          ],
+        },
+        {
+          blankLine: "always",
+          prev: [
+            "if",
+            "for",
+            "while",
+            "do",
+            "switch",
+            "try",
+            "function",
+            "class",
+          ],
+          next: "*",
+        },
+        { blankLine: "always", prev: ["const", "let", "var"], next: "*" },
+        {
+          blankLine: "any",
+          prev: ["const", "let", "var"],
+          next: ["const", "let", "var"],
+        },
+        { blankLine: "any", prev: ["case", "default"], next: "*" },
+      ],
+    },
+  },
   prettier,
 );

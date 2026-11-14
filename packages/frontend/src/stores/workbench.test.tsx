@@ -34,6 +34,7 @@ beforeEach(() => {
 describe("closing tabs from outside the strip", () => {
   it("shows the neighbour when the active tab closes", () => {
     const go = vi.fn();
+
     setWorkbenchNavigator(go);
     expect(closeTabsAndGo(["chat|session|a"])).toBe(true);
     expect(ids()).toEqual(["chat:b", "agents:"]);
@@ -42,6 +43,7 @@ describe("closing tabs from outside the strip", () => {
 
   it("aims past a neighbour that closes too", () => {
     const go = vi.fn();
+
     setWorkbenchNavigator(go);
     closeTabsAndGo(["chat|session|a", "chat|session|b"]);
     expect(ids()).toEqual(["agents:"]);
@@ -50,6 +52,7 @@ describe("closing tabs from outside the strip", () => {
 
   it("goes home when nothing is left", () => {
     const go = vi.fn();
+
     setWorkbenchNavigator(go);
     closeTabsAndGo(["chat|session|a", "chat|session|b", "agents|global|"]);
     expect(go).toHaveBeenLastCalledWith("/");
@@ -57,6 +60,7 @@ describe("closing tabs from outside the strip", () => {
 
   it("does not move the address when another tab closes", () => {
     const go = vi.fn();
+
     setWorkbenchNavigator(go);
     closeTabsAndGo(["chat|session|b"]);
     expect(go).not.toHaveBeenCalled();
@@ -74,6 +78,7 @@ describe("closing tabs from outside the strip", () => {
       settingsPath: "/settings/mcp/servers",
     });
     const go = vi.fn();
+
     setWorkbenchNavigator(go);
     closeTabsAndGo(["chat|session|a"]);
     expect(go).toHaveBeenCalledWith("/settings/mcp/servers");
@@ -87,6 +92,7 @@ describe("what is kept between visits", () => {
     const saved = JSON.parse(
       localStorage.getItem("harness.workbench.global.-") ?? "{}",
     );
+
     expect(saved.expanded).toEqual({ "project:p1": true });
     expect(saved.width).toBe(520);
     expect(saved.tabs).toHaveLength(3);
@@ -113,6 +119,7 @@ describe("what is kept between visits", () => {
     );
     vi.resetModules();
     const fresh = await import("./workbench");
+
     expect(fresh.useWorkbench.getState().tabs.map((t) => t.kind)).toEqual([
       "agents",
       "chat",
@@ -141,6 +148,7 @@ describe("what is kept between visits", () => {
     const saved = JSON.parse(
       localStorage.getItem("harness.workbench.global.-") ?? "{}",
     );
+
     expect(saved.tabs.map((t: { kind: string }) => t.kind)).toEqual([
       "agents",
       "chat",
