@@ -1,7 +1,6 @@
 import {
   ActionIcon,
   Badge,
-  Group,
   Menu,
   ScrollArea,
   Text,
@@ -9,6 +8,7 @@ import {
   Tree,
   useTree,
   Stack,
+  Indicator,
 } from "@mantine/core";
 import {
   INHERITED,
@@ -182,34 +182,42 @@ export function AgentsTree(props: AgentsTreeProps) {
                   show={hasChildren && !waiting}
                   expanded={expanded}
                 />
-                <TreeIcon inherited={inherited}>
-                  {waiting ? null : ref.kind === "agent" ? (
-                    builtin ? (
-                      <IconLock size={16} aria-label="Built-in agent" />
-                    ) : (
-                      <IconRobot size={16} />
-                    )
-                  ) : inherited &&
-                    (ref.kind === "skill" || ref.kind === "schema") ? (
-                    <IconLink size={16} aria-label="Inherited" />
-                  ) : ref.kind === "skills" ? (
-                    <IconBolt size={16} />
-                  ) : ref.kind === "schemas" ? (
-                    <IconSchema size={16} />
-                  ) : ref.kind === "schema" ? (
-                    <IconSchema size={16} />
-                  ) : ref.kind === "data" ? (
-                    <IconFileDatabase size={16} />
-                  ) : ref.kind === "file" ? (
-                    <IconFile size={16} />
-                  ) : folder ? (
-                    expanded && hasChildren ? (
-                      <IconFolderOpen size={16} />
-                    ) : (
-                      <IconFolder size={16} />
-                    )
-                  ) : null}
-                </TreeIcon>
+                <Indicator
+                  title="New tools available for this agent"
+                  disabled={
+                    !(ref.kind === "agent" && (row?.agent?.newTools ?? 0) > 0)
+                  }
+                  size={5}
+                >
+                  <TreeIcon inherited={inherited}>
+                    {waiting ? null : ref.kind === "agent" ? (
+                      builtin ? (
+                        <IconLock size={16} aria-label="Built-in agent" />
+                      ) : (
+                        <IconRobot size={16} />
+                      )
+                    ) : inherited &&
+                      (ref.kind === "skill" || ref.kind === "schema") ? (
+                      <IconLink size={16} aria-label="Inherited" />
+                    ) : ref.kind === "skills" ? (
+                      <IconBolt size={16} />
+                    ) : ref.kind === "schemas" ? (
+                      <IconSchema size={16} />
+                    ) : ref.kind === "schema" ? (
+                      <IconSchema size={16} />
+                    ) : ref.kind === "data" ? (
+                      <IconFileDatabase size={16} />
+                    ) : ref.kind === "file" ? (
+                      <IconFile size={16} />
+                    ) : folder ? (
+                      expanded && hasChildren ? (
+                        <IconFolderOpen size={16} />
+                      ) : (
+                        <IconFolder size={16} />
+                      )
+                    ) : null}
+                  </TreeIcon>
+                </Indicator>
                 <Text
                   size="sm"
                   truncate
@@ -231,13 +239,6 @@ export function AgentsTree(props: AgentsTreeProps) {
                       {row.clash}
                     </Badge>
                   </Tooltip>
-                )}
-                {ref.kind === "agent" && (
-                  <Group gap={4} wrap="nowrap">
-                    {(row?.agent?.newTools ?? 0) > 0 && (
-                      <Badge color="blue">{row?.agent?.newTools} new</Badge>
-                    )}
-                  </Group>
                 )}
                 {agentRow && !agentRow.deleted && (
                   <Tooltip
