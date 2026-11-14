@@ -1,8 +1,34 @@
 import { ActionIcon, Menu } from "@mantine/core";
+import type { ReactNode } from "react";
 import type { Session } from "../api";
 import { useSessionActions } from "../hooks/useSessionActions";
 
-export function SessionMenu({ session }: { session: Session }) {
+export type SessionActions = ReturnType<typeof useSessionActions>;
+
+export function SessionMenuItems({
+  session,
+  actions,
+}: {
+  session: Session;
+  actions: SessionActions;
+}) {
+  return (
+    <>
+      <Menu.Item onClick={() => actions.openRename(session)}>Rename</Menu.Item>
+      <Menu.Item color="red" onClick={() => actions.confirmTrash(session)}>
+        Move to trash
+      </Menu.Item>
+    </>
+  );
+}
+
+export function SessionMenu({
+  session,
+  extra,
+}: {
+  session: Session;
+  extra?: ReactNode;
+}) {
   const actions = useSessionActions();
 
   return (
@@ -22,12 +48,8 @@ export function SessionMenu({ session }: { session: Session }) {
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
-        <Menu.Item onClick={() => actions.openRename(session)}>
-          Rename
-        </Menu.Item>
-        <Menu.Item color="red" onClick={() => actions.confirmTrash(session)}>
-          Move to trash
-        </Menu.Item>
+        <SessionMenuItems session={session} actions={actions} />
+        {extra}
       </Menu.Dropdown>
     </Menu>
   );

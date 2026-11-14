@@ -601,6 +601,85 @@ describe("the chats tree", () => {
     ).toMatchObject({ "project:p1": true });
   });
 
+  it("opens every project from the header, and remembers it", async () => {
+    mockApi();
+    await show("/");
+    await screen.findByRole("button", { name: "Open Novel" });
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(await screen.findByText("Alpha chat")).toBeTruthy();
+    await waitFor(() => expect(api.listSessions).toHaveBeenCalledWith("p2"));
+    expect(screen.getByText("Loose chat")).toBeTruthy();
+    expect(useWorkbench.getState().expanded).toMatchObject({
+      "project:p1": true,
+      "project:p2": true,
+    });
+  });
+
+  it("closes every project, and No project, from the header", async () => {
+    mockApi();
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    await screen.findByText("Alpha chat");
+    expect(screen.getByText("Loose chat")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await waitFor(() => expect(screen.queryByText("Alpha chat")).toBeNull());
+    expect(screen.queryByText("Loose chat")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open Novel" })).toBeTruthy();
+  });
+
+  it("opens the project's menu on right-click, with Expand all and Collapse all", async () => {
+    const create = mockApi();
+
+    await show("/");
+    fireEvent.contextMenu(await screen.findByText("Novel"));
+    expect(await screen.findByText("Files")).toBeTruthy();
+    expect(screen.getByText("Move to trash")).toBeTruthy();
+    expect(screen.getByText("Expand all")).toBeTruthy();
+    expect(screen.getByText("Collapse all")).toBeTruthy();
+    fireEvent.click(screen.getByText("New chat", { selector: "button *" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith("p1"));
+  });
+
+  it("opens the chat's menu on right-click, with Expand all and Collapse all", async () => {
+    mockApi();
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    fireEvent.contextMenu(await screen.findByText("Alpha chat"));
+    expect(await screen.findByText("Rename")).toBeTruthy();
+    expect(screen.getByText("Move to trash")).toBeTruthy();
+    fireEvent.click(screen.getByText("Collapse all"));
+    await waitFor(() => expect(screen.queryByText("Alpha chat")).toBeNull());
+    expect(screen.queryByText("Loose chat")).toBeNull();
+  });
+
+  it("opens only Expand all and Collapse all on right-click of No project", async () => {
+    mockApi();
+    await show("/");
+    fireEvent.contextMenu(await screen.findByText("No project"));
+    fireEvent.click(await screen.findByText("Collapse all"));
+    await waitFor(() => expect(screen.queryByText("Loose chat")).toBeNull());
+    fireEvent.contextMenu(screen.getByText("No project"));
+    expect(await screen.findByText("Expand all")).toBeTruthy();
+    expect(screen.queryByText("Rename")).toBeNull();
+    expect(screen.queryByText("Move to trash")).toBeNull();
+  });
+
+  it("has Expand all and Collapse all in the project and chat action menus too", async () => {
+    mockApi();
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    await screen.findByText("Alpha chat");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Novel" }));
+    expect(await screen.findByText("Expand all")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("Expand all")).toBeNull());
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Alpha chat" }),
+    );
+    expect(await screen.findByText("Collapse all")).toBeTruthy();
+    expect(screen.getByText("Rename")).toBeTruthy();
+  });
+
   it("filters by project name and by the chats shown", async () => {
     mockApi();
     await show("/");

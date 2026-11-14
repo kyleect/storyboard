@@ -474,7 +474,13 @@ all, Expand all, Show deleted) and a right-click menu on roots, folders and file
 Collapse all and Expand all use the controller's `collapseAllNodes` and
 `expandAllNodes`, roots included; a root's or folder's menu has Expand all and
 Collapse all for just what is inside it (`branchValues` in `lib/explorer.ts`). The
-Structured Data and Agents trees have the same header buttons and menu items. A new file or
+Structured Data and Agents trees have the same header buttons and menu items; a
+row with nothing inside it has no Expand all or Collapse all. The chats tree
+(`ChatsTree.tsx`) is not a Mantine `Tree`: its header buttons set every project,
+and No project, open or closed through `setExpandedMany` in the workbench store. Right-clicking a project, a chat or No project opens a menu: the same items as the
+row's `⋯` menu (`ProjectMenuItems` here, `SessionMenuItems` in `SessionMenu.tsx`), plus
+Expand all and Collapse all, which act on the whole tree because a project holds only
+chats. A new file or
 folder, and a folder rename, are typed into a name box in the tree. A new file's
 type follows its extension (`.md` Markdown, `.json` JSON, anything else plain);
 a new JSON file starts as `{}`, because JSON must parse. The tree is made once

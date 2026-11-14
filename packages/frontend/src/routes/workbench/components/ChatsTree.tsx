@@ -15,6 +15,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   IconChevronDown,
   IconChevronRight,
+  IconChevronsDown,
+  IconChevronsUp,
   IconDots,
   IconFolder,
   IconFolderPlus,
@@ -23,7 +25,7 @@ import {
   IconPlus,
   IconSearch,
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useState } from "react";
 import type { ProjectColor } from "@harness/core";
 import { api, type Project, type SessionListItem } from "../../../api";
@@ -39,7 +41,9 @@ import {
   type UnreadSessions,
 } from "../../../hooks/useUnreadSessions";
 import { UnreadDot } from "../../../components/UnreadDot";
-import { SessionMenu } from "../../../components/SessionMenu";
+import { TreeMenuAnchor } from "../../../components/TreeParts";
+import { SessionMenu, SessionMenuItems } from "../../../components/SessionMenu";
+import { useSessionActions } from "../../../hooks/useSessionActions";
 import { useProjectActions } from "../../../hooks/useProjectActions";
 
 export const NO_PROJECT_NODE = "none";
@@ -58,6 +62,38 @@ interface Handlers {
   activity: RunSummary | undefined;
   filter: string;
   unread: UnreadSessions;
+  onContext: (e: MouseEvent, target: ContextTarget) => void;
+}
+
+type ContextTarget =
+  | { kind: "project"; project: Project }
+  | { kind: "chat"; session: SessionListItem }
+  | { kind: "no-project" };
+
+const treeNodes = (projects: readonly Project[]) => [
+  ...projects.map((p) => projectNode(p.id)),
+  NO_PROJECT_NODE,
+];
+
+function ExpandCollapseItems({ divider = true }: { divider?: boolean }) {
+  const projects = useProjects();
+  const nodes = treeNodes(projects.data ?? []);
+
+  return (
+    <>
+      {divider && <Menu.Divider />}
+      <Menu.Item
+        onClick={() => useWorkbench.getState().setExpandedMany(nodes, true)}
+      >
+        Expand all
+      </Menu.Item>
+      <Menu.Item
+        onClick={() => useWorkbench.getState().setExpandedMany(nodes, false)}
+      >
+        Collapse all
+      </Menu.Item>
+    </>
+  );
 }
 
 const selectedChatBackground = (color: ProjectColor) =>
@@ -70,6 +106,7 @@ function Row({
   active,
   onClick,
   onDoubleClick,
+  onContextMenu,
   right,
   expanded,
   onToggle,
@@ -83,6 +120,7 @@ function Row({
   active: boolean;
   onClick: () => void;
   onDoubleClick?: () => void;
+  onContextMenu?: (e: MouseEvent) => void;
   right?: ReactNode;
   expanded?: boolean;
   onToggle?: () => void;
@@ -99,6 +137,7 @@ function Row({
       tabIndex={0}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -195,13 +234,14 @@ function ChatRow({
         h.onOpen(tab, false);
       }}
       onDoubleClick={() => h.onOpen(tab, true)}
+      onContextMenu={(e) => h.onContext(e, { kind: "chat", session })}
       right={
         <Group gap={4} wrap="nowrap">
           <SessionRunBadge
             state={h.activity?.bySession[session.id]}
             unread={session.unread}
           />
-          <SessionMenu session={session} />
+          <SessionMenu session={session} extra={<ExpandCollapseItems />} />
         </Group>
       }
     />
@@ -252,6 +292,37 @@ function ChatList({
   );
 }
 
+type ProjectActions = ReturnType<typeof useProjectActions>;
+
+function ProjectMenuItems({
+  project,
+  actions,
+  onNewChat,
+  onOpenPage,
+}: {
+  project: Project;
+  actions: ProjectActions;
+  onNewChat: (projectId: string) => void;
+  onOpenPage: (kind: NewWorkbenchTab["kind"]) => void;
+}) {
+  return (
+    <>
+      <Menu.Item onClick={() => onNewChat(project.id)}>New chat</Menu.Item>
+      <Menu.Divider />
+      <Menu.Item onClick={() => onOpenPage("project-files")}>Files</Menu.Item>
+      <Menu.Item onClick={() => onOpenPage("agents")}>Agents</Menu.Item>
+      <Menu.Item onClick={() => onOpenPage("skills")}>Skills</Menu.Item>
+      <Menu.Item onClick={() => onOpenPage("project-data")}>
+        Structured Data
+      </Menu.Item>
+      <Menu.Divider />
+      <Menu.Item color="red" onClick={() => actions.confirmTrash(project)}>
+        Move to trash
+      </Menu.Item>
+    </>
+  );
+}
+
 function ProjectMenu({
   project,
   onNewChat,
@@ -277,18 +348,13 @@ function ProjectMenu({
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
-        <Menu.Item onClick={() => onNewChat(project.id)}>New chat</Menu.Item>
-        <Menu.Divider />
-        <Menu.Item onClick={() => onOpenPage("project-files")}>Files</Menu.Item>
-        <Menu.Item onClick={() => onOpenPage("agents")}>Agents</Menu.Item>
-        <Menu.Item onClick={() => onOpenPage("skills")}>Skills</Menu.Item>
-        <Menu.Item onClick={() => onOpenPage("project-data")}>
-          Structured Data
-        </Menu.Item>
-        <Menu.Divider />
-        <Menu.Item color="red" onClick={() => actions.confirmTrash(project)}>
-          Move to trash
-        </Menu.Item>
+        <ProjectMenuItems
+          project={project}
+          actions={actions}
+          onNewChat={onNewChat}
+          onOpenPage={onOpenPage}
+        />
+        <ExpandCollapseItems />
       </Menu.Dropdown>
     </Menu>
   );
@@ -341,6 +407,7 @@ function ProjectGroup({
         }}
         onToggle={() => setExpanded(node, !open)}
         onDoubleClick={() => h.onOpen(tab, true)}
+        onContextMenu={(e) => h.onContext(e, { kind: "project", project })}
         right={
           <Group gap={4} wrap="nowrap">
             {groupHasUnread(h, project.id) && (
@@ -408,6 +475,7 @@ function NoProjectGroup({ h }: { h: Handlers }) {
           h.onOpen(tab, false);
         }}
         onDoubleClick={() => h.onOpen(tab, true)}
+        onContextMenu={(e) => h.onContext(e, { kind: "no-project" })}
         onToggle={() => setExpanded(NO_PROJECT_NODE, !open)}
         right={
           groupHasUnread(h, null) ? (
@@ -452,9 +520,21 @@ export function ChatsTree({
   activity: RunSummary | undefined;
 }) {
   const [filter, setFilter] = useState("");
+  const [context, setContext] = useState<{
+    x: number;
+    y: number;
+    target: ContextTarget;
+  } | null>(null);
   const projects = useProjects();
   const unread = useUnreadSessions();
+  const projectActions = useProjectActions();
+  const sessionActions = useSessionActions();
   const h: Handlers = {
+    onContext: (e, target) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContext({ x: e.clientX, y: e.clientY, target });
+    },
     activeId,
     onOpen,
     onFocusRow,
@@ -465,6 +545,8 @@ export function ChatsTree({
   const sorted = [...(projects.data ?? [])].sort((a, b) =>
     b.last_used_at.localeCompare(a.last_used_at),
   );
+
+  const everyNode = treeNodes(sorted);
 
   return (
     <Stack gap={0} h="100%">
@@ -492,6 +574,28 @@ export function ChatsTree({
               <IconFolderPlus size={16} />
             </ActionIcon>
           </Tooltip>
+          <Tooltip label="Collapse all">
+            <ActionIcon
+              aria-label="Collapse all"
+              variant="subtle"
+              onClick={() =>
+                useWorkbench.getState().setExpandedMany(everyNode, false)
+              }
+            >
+              <IconChevronsUp size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Expand all">
+            <ActionIcon
+              aria-label="Expand all"
+              variant="subtle"
+              onClick={() =>
+                useWorkbench.getState().setExpandedMany(everyNode, true)
+              }
+            >
+              <IconChevronsDown size={16} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
       </Group>
       <Box px="xs" pb={6}>
@@ -516,6 +620,47 @@ export function ChatsTree({
           ))}
           <NoProjectGroup h={h} />
         </div>
+        <Menu
+          opened={context !== null}
+          onChange={(open) => {
+            if (!open) setContext(null);
+          }}
+          position="bottom-start"
+          withinPortal
+        >
+          <Menu.Target>
+            <TreeMenuAnchor menu={context} />
+          </Menu.Target>
+          <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
+            {context?.target.kind === "project" && (
+              <ProjectMenuItems
+                project={context.target.project}
+                actions={projectActions}
+                onNewChat={onNewChat}
+                onOpenPage={(kind) => {
+                  if (context.target.kind === "project")
+                    onOpen(
+                      {
+                        kind,
+                        root: "project",
+                        key: context.target.project.id,
+                      },
+                      false,
+                    );
+                }}
+              />
+            )}
+            {context?.target.kind === "chat" && (
+              <SessionMenuItems
+                session={context.target.session}
+                actions={sessionActions}
+              />
+            )}
+            <ExpandCollapseItems
+              divider={context?.target.kind !== "no-project"}
+            />
+          </Menu.Dropdown>
+        </Menu>
         {h.filter !== "" && (
           <Text size="xs" c="dimmed" px="xs" py={6}>
             Matches project names and the chats shown; open a project to search

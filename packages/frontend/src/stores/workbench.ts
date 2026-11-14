@@ -36,6 +36,7 @@ interface WorkbenchState {
   move: (id: string, toIndex: number) => void;
   close: (ids: readonly string[]) => string | null;
   setExpanded: (node: string, open: boolean) => void;
+  setExpandedMany: (nodes: readonly string[], open: boolean) => void;
   setWidth: (width: number) => void;
   setSidebarOpen: (open: boolean) => void;
   setSettingsPath: (path: string) => void;
@@ -130,6 +131,14 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   setExpanded: (node, open) =>
     set((s) => ({ expanded: { ...s.expanded, [node]: open } })),
+
+  setExpandedMany: (nodes, open) =>
+    set((s) => ({
+      expanded: {
+        ...s.expanded,
+        ...Object.fromEntries(nodes.map((n) => [n, open] as const)),
+      },
+    })),
 
   setWidth: (width) => set({ width: clampWidth(width) }),
 
