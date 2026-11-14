@@ -69,7 +69,9 @@ llama-server (`@harness/core/testing`).
 - Comments explain why, and often cite the design decision behind the code
   (for example "tools design, section 6", "D15"). Those design documents are
   not in this repository; keep the existing citations when you edit nearby
-  code, and do not invent new ones.
+  code, and do not invent new ones. The frontend is the exception: it keeps only
+  comments that give a specific technical reason (see
+  `packages/frontend/AGENTS.md`).
 
 ## Design principles to preserve
 

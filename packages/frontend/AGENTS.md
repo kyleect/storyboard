@@ -26,7 +26,7 @@ second UI library, router, or state manager.
   `["sessions", "detail", id]`) so a mutation or stream event can invalidate
   exactly what it changed. A new feature gets a new factory, and
   `queries/keys.test.ts` pins how far each prefix reaches.
-- **The cache holds what is stored; `useLive` (Zustand, `live.ts`) holds what is
+- **The cache holds what is stored; `useLive` (Zustand, `stores/live.ts`) holds what is
   happening right now.** When something finishes, update or invalidate the
   cache and clear the live file. Do not keep server data in `useState` or in
   a second store.
@@ -35,7 +35,7 @@ second UI library, router, or state manager.
   `/api` elsewhere, and never put the token anywhere but `sessionStorage` and
   those two places. The token arrives once in the URL fragment and is removed
   from the address bar.
-- **Render untrusted content safely.** `routes/Markdown.tsx` shows raw HTML as
+- **Render untrusted content safely.** `components/Markdown.tsx` shows raw HTML as
   text, never loads images, and opens links in a new tab only for `http`,
   `https` and `mailto`. Route all model and user Markdown through it. Binary
   files (images, audio) are fetched with the token and shown from object URLs,
@@ -48,34 +48,43 @@ src/
   main.tsx             providers, router, route table (every page renders inside Layout)
   api.ts               token handling, typed API client, stream URLs
   queries/             query-key factories, one file per feature
-  live.ts              live run state (Zustand) and the two event-stream hooks
-  profile.ts           the active profile; saved views are kept per profile
-  linear.ts, debug.ts  debug export to linear view; clipboard helpers
-  schema-builder.ts    JSON Schema <-> editable field tree
-  tool-grant.ts        tool grants: which tools a grant allows, and the edits a click makes
-  attachments.ts, audio.ts   allowed file types; voice recording to 16 kHz mono WAV
-  routes/              pages and components (Chat, Files, Agents, Skills, Schemas, Data,
-                       Errors, Settings, Workspaces, McpServers, ...)
+  stores/              client state (Zustand): live runs, tabs, drafts, profile, ...
+  hooks/               high-level hooks: data, live updates, actions
+  lib/                 plain logic: event-stream, workbench tabs, explorers, schema builder, tool grants
+  components/          shared components (used by more than one route)
+  routes/<route>/      <Route>.tsx (the route component), components/ and lib/ (only this route's)
   test-setup.ts        jsdom stand-ins for Mantine
 ```
 
 ## Conventions
 
 - Relative imports have **no file extension** (unlike the other packages).
-- Pages and components live in `routes/` as `Name.tsx` with a `Name.test.tsx`
-  beside them.
+- **Three kinds of component.** A route component (`routes/<route>/<Route>.tsx`)
+  renders for an address. A route-specific component lives in that route's
+  `components/`. A component that more than one route uses lives in
+  `components/`. Each has its `Name.test.tsx` beside it.
+- **Layers.** `components/`, `hooks/`, `stores/` and `lib/` never import from
+  `routes/`; a route does not import another route's `components/` or `lib/`.
+- **Hooks, not inline queries.** A component calls a hook from `hooks/`
+  (`useProjects`, `useSession`, `useUnreadSessions`, ...) rather than writing
+  `useQuery` or `useMutation` with a key. The hook owns the key, the `select`,
+  the invalidation and the error notification. Add a hook when a second place
+  needs the same query or mutation. See "Hooks" in `docs/frontend.md`.
+- **Comments.** Do not comment what the code says. Keep a comment only when it
+  gives a specific technical reason: a browser or jsdom limit, a workaround, why
+  an effect's dependencies are what they are. Do not cite design documents.
 - A new page needs a route in `main.tsx` and, if it shows server data, a query
   factory and the matching invalidation in the event handlers.
-- **Live events.** `useSessionEvents` (one session's stream) and `useAppEvents`
-  (the app-wide stream, mounted once in `Layout`) are the only event
-  consumers. The session handler is a switch on `event.type`; when core adds
+- **Live events.** `hooks/useSessionEvents.ts` (one session's stream) and
+  `hooks/useAppEvents.ts` (the app-wide stream, mounted once in `Layout`) are the
+  only event consumers; both open their stream with `connectEventStream`. The session handler is a switch on `event.type`; when core adds
   an event, handle it there. App events are not replayed, so the data they
   invalidate is also refetched whenever the stream opens. Both hooks
   reconnect with exponential backoff.
-- **`tool-grant.ts` mirrors backend logic** (`packages/backend/src/tool-grants.ts`):
+- **`lib/tool-grant.ts` mirrors backend logic** (`packages/backend/src/tool-grants.ts`):
   it must decide which tools a grant allows by the same rules. If you change one,
   change the other and their tests.
-- **`attachments.ts` mirrors backend limits** on accepted image and audio types
+- **`lib/attachments.ts` mirrors backend limits** on accepted image and audio types
   (`packages/backend/src/media-detect.ts`); keep them in step.
 
 ## Testing
@@ -86,7 +95,7 @@ src/
   tests in `*.test.ts` run in the `node` project.
 - Component tests wrap the component in `MantineProvider` (and
   `ModalsProvider` / `QueryClientProvider` where needed) and stub calls with
-  `vi.spyOn(api, "...")`; see `routes/Skills.test.tsx` for the pattern.
+  `vi.spyOn(api, "...")`; see `routes/skills/Skills.test.tsx` for the pattern.
 - Check keys with `queries/keys.test.ts` when you add a factory.
 
 ## Running and building

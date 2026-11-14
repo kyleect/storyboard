@@ -34,7 +34,6 @@ import {
   type LiveChild,
   type LiveRunState,
 } from "../../stores/live";
-import { AgentPicker } from "../agents/Agents";
 import { ApprovalDialog } from "./components/ApprovalDialog";
 import {
   AttachButton,
@@ -49,7 +48,6 @@ import { useChatStatus } from "../../stores/chatStatus";
 import { useReportDirty } from "../../stores/dirty";
 import { useDraft, useDrafts } from "../../stores/drafts";
 import { StructuredExplorer } from "../../components/structured/StructuredExplorer";
-import { messageAnchor, SessionErrorsPanel } from "../errors/Errors";
 import {
   BranchSwitcher,
   Continuations,
@@ -59,7 +57,6 @@ import {
   useBranchActions,
 } from "./components/Branching";
 import { ModelPicker } from "../../components/ModelPicker";
-import { AttachedWorkspaces } from "../workspaces/Workspaces";
 import { effortLabel, ReasoningPicker } from "../../components/ReasoningPicker";
 import { DebugPanel } from "./components/DebugPanel";
 import { useSessionActions } from "../../hooks/useSessionActions";
@@ -73,6 +70,9 @@ import type {
   Sent,
   ShownMessage,
 } from "./lib/transcript-types";
+import { AgentPicker } from "../../components/AgentSelects";
+import { messageAnchor, SessionErrorsPanel } from "../../components/ErrorList";
+import { AttachedWorkspaces } from "../../components/AttachedWorkspaces";
 
 function PublishStatus({
   sessionId,

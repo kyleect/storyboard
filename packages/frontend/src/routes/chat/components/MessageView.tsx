@@ -22,7 +22,6 @@ import {
   type ToolResultMessage,
   type Usage,
 } from "@harness/core";
-import { AgentBadge } from "../../agents/Agents";
 import { AskUserForm } from "../../../components/AskUserForm";
 import { MessageFiles } from "./Attachments";
 import { Markdown } from "../../../components/Markdown";
@@ -30,7 +29,8 @@ import { effortLabel } from "../../../components/ReasoningPicker";
 import { LiveReasoning } from "./LiveReasoning";
 import { AskUserResult, ToolPrompt, askState, showResult } from "./ToolPrompts";
 import { useState } from "react";
-import { messageAnchor } from "../../errors/Errors";
+import { AgentBadge } from "../../../components/AgentSelects";
+import { messageAnchor } from "../../../components/ErrorList";
 
 export type DecisionComments = ReadonlyMap<
   string,

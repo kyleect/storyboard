@@ -2,14 +2,14 @@ import { Alert, Button, Group, Loader, Stack, Textarea } from "@mantine/core";
 import { useCreateSession } from "../../hooks/useSessions";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { DefaultAgentSelect } from "../agents/Agents";
 import { EditableTitle } from "./components/EditableTitle";
 import { ProjectColorPicker } from "../../components/ProjectColorPicker";
 import { SessionsPage } from "../sessions/Sessions";
-import { AttachedWorkspaces } from "../workspaces/Workspaces";
 import { showError } from "../../lib/notify";
 import { useProjectActions } from "../../hooks/useProjectActions";
 import { useProject, useSaveProject } from "../../hooks/useProjects";
+import { DefaultAgentSelect } from "../../components/AgentSelects";
+import { AttachedWorkspaces } from "../../components/AttachedWorkspaces";
 
 export function ProjectPage({ projectId }: { projectId: string }) {
   const navigate = useNavigate();

@@ -1,8 +1,8 @@
 import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useAgentFocus } from "../../stores/agentFocus";
-import { AgentBadge } from "./Agents";
+import { useAgentFocus } from "../stores/agentFocus";
+import { AgentBadge } from "./AgentSelects";
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({

@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type ErrorEntry, type ErrorFilterOptions } from "../../api";
 import { useAppEvents } from "../../hooks/useAppEvents";
-import { ErrorsPage, SessionErrorsPanel } from "./Errors";
+import { ErrorsPage } from "./Errors";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -241,68 +241,5 @@ describe("the errors page", () => {
       }),
     );
     expect(await screen.findByText(toolError.message)).toBeTruthy();
-  });
-});
-
-describe("the session's errors panel", () => {
-  it("starts collapsed with a count, and lists the session's errors", async () => {
-    const list = vi.spyOn(api, "listErrors").mockResolvedValue([toolError]);
-    const shown: string[] = [];
-    renderWith(
-      <SessionErrorsPanel
-        sessionId="s1"
-        onShowInTranscript={(id) => shown.push(id)}
-      />,
-    );
-    const toggle = screen.getByRole("button", { name: /Errors/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    await waitFor(() => expect(within(toggle).getByText("1")).toBeTruthy());
-    expect(list).toHaveBeenCalledWith({ sessionId: "s1" });
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.queryByText("Stories / Lighthouse")).toBeNull();
-    // Shown in a Collapse, which jsdom does not animate open.
-    fireEvent.click(screen.getByText("Show in transcript"));
-    expect(shown).toEqual(["m1"]);
-  });
-
-  it("clears the session's errors after confirming", async () => {
-    vi.spyOn(api, "listErrors").mockResolvedValue([toolError]);
-    const clear = vi
-      .spyOn(api, "clearErrors")
-      .mockResolvedValue({ cleared: 1 });
-    renderWith(
-      <SessionErrorsPanel sessionId="s1" onShowInTranscript={() => {}} />,
-    );
-    const toggle = screen.getByRole("button", { name: /Errors/ });
-    await waitFor(() => expect(within(toggle).getByText("1")).toBeTruthy());
-    fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Clear" }));
-    await waitFor(() => expect(clear).toHaveBeenCalledWith("s1"));
-  });
-
-  it("updates when one of the session's tool calls fails", async () => {
-    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
-    const list = vi.spyOn(api, "listErrors").mockResolvedValue([]);
-    function Panel() {
-      useAppEvents();
-      return (
-        <SessionErrorsPanel sessionId="s1" onShowInTranscript={() => {}} />
-      );
-    }
-    renderWith(<Panel />);
-    const toggle = screen.getByRole("button", { name: /Errors/ });
-    await waitFor(() => expect(within(toggle).getByText("0")).toBeTruthy());
-    list.mockResolvedValue([toolError]);
-    act(() =>
-      FakeEventSource.last?.push({
-        type: "errors.changed",
-        data: { sessionId: "s1" },
-      }),
-    );
-    await waitFor(() => expect(within(toggle).getByText("1")).toBeTruthy());
   });
 });

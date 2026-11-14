@@ -16,64 +16,34 @@ packages/frontend/src
   main.tsx               providers, router, route table
   api.ts                 token handling, typed API client, stream URLs
   queries/               query-key factories, one file per feature
-  live.ts                live run state (Zustand) and the two event-stream hooks
-  workbench.ts           the workbench's tabs: address ⇄ tab, the New chat target, what closing a tab shows
-  workbenchStore.ts      the open tabs, open folders and sidebar width (Zustand, saved)
-  drafts.ts              the message being written in each session (Zustand)
-  dirty.ts               which tabs have unsaved edits
-  chatStatus.ts          what the status bar says about the chat on screen
-  sessionsPrefs.ts       the Sessions page's sort direction and page size
-  linear.ts, debug.ts    debug export → linear view; clipboard helpers
-  schema-builder.ts      JSON Schema ⇄ editable field tree
-  tool-grant.ts          tool grants: allowed tools and the edits a click makes
-  mcp-form.ts            parsing and formatting the MCP server form's text fields
-  attachments.ts, audio.ts   accepted file types; voice recording to WAV
-  explorer.ts            what the explorers share: roots, tab rules, saved view
-  agents-explorer.ts     the Agents view's logic: its tree, inherited skills and schemas, tabs
-  agent-focus.ts         a request to show an agent at a version (from a message's badge)
-  explorer-source.ts     ExplorerSource (where a root's files come from) and the files adapter
-  files-explorer.ts      the Files view's logic: its tree, new files, folder renames
-  structured-explorer.ts the Structured Data view's logic: its tree of schemas and data, tabs
-  routes/
-    Layout.tsx           the app-wide stream, and the workbench
-    Workbench.tsx        the workbench: rail, chats tree, tab strip, tab hosting, status bar
-    Rail.tsx, ChatsTree.tsx   its icon rail and its chats tree
-    Sessions.tsx         the Sessions page: a paged, sortable table of sessions
-    SessionActions.tsx   rename, trash and restore sessions and projects
-    Chat.tsx             a session: transcript, composer, tabs
-    TranscriptScroll.tsx keeps the transcript pinned to the bottom
-    ApprovalDialog.tsx   tool approval prompt
-    AskUserForm.tsx      inline forms
-    Files.tsx          the pieces for viewing a file (preview, versions)
-    FilesPages.tsx     the global and project pages for files
-    ExplorerShell.tsx    the frame both explorers share: tree pane, divider, tab strip, status bar
-    SourceExplorer.tsx   an explorer over any roots: file tree, tabs, status bar
-    FilesExplorer.tsx    the Files view: SourceExplorer over the session, project and global roots
-    FileTree.tsx, FileTab.tsx, TextEditor.tsx   its tree, its tab content, its editor
-    StructuredExplorer.tsx   the Structured Data view: schemas and data as a tree and tabs
-    useStructured.tsx        its logic apart from layout: lists, tree, tabs, drafts, actions
-    StructuredTree.tsx, StructuredTabs.tsx   its tree, its schema and data tabs (form and JSON)
-    StructuredDataPages.tsx  the global and project pages for Structured Data
-    AgentsExplorer.tsx       the Agents view: agents, with their skills and schemas, as a tree and tabs
-    AgentsTree.tsx, AgentForm.tsx   its tree, and an agent's tab (prompt and settings)
-    AgentParts.tsx           what the agent screens share: badges, tool summary, versions
-    Agents.tsx, Skills.tsx   the pages around those views, the project page's default-agent select, the picker and the badge
-    Schemas.tsx, Data.tsx    the schema builder, the copy dialog, and data forms (used by the explorers)
-    Workspaces.tsx       workspaces and what they search
-    Errors.tsx           errors console
-    Settings.tsx         settings (areas and sections)
-    ToolSettings.tsx     the Settings Tools → Permissions section
-    McpServers.tsx       the Settings Tools → MCP servers section
-    ToolGrantEditor.tsx  the agent editor's tools section
-    ApprovalSelect.tsx   ask / don't ask choice
-    ProjectPage.tsx      one project
-    ProjectColorPicker.tsx   the palette of project colors (New project dialog, project page)
-    DebugPanel.tsx, LinearView.tsx   debugging tab
-    EditableTitle.tsx    click-to-edit project name
-    JsonEditor.tsx       CodeMirror JSON editor
-    Branching.tsx        editing, branching, regenerating and forking controls in the chat
-    ContextMeter.tsx, ModelPicker.tsx, ReasoningPicker.tsx, Markdown.tsx, …
+  stores/                client state (Zustand): live runs, tabs, drafts, dirty tabs, chat status, appearance, profile
+  hooks/                 high-level hooks: data, live updates, actions (see Hooks)
+  lib/                   plain logic with no React state: event-stream, favicon, notify, workbench tabs, explorers, schema builder, tool grants
+  components/            shared components, reusable across routes
+    explorer/            the file explorer: shell, tree, tabs, editor, the Files view
+    structured/          the Structured Data view, schema builder and data forms
+  routes/<route>/        one folder per route
+    <Route>.tsx          the route component: what renders for the route's address
+    components/          components only this route uses
+    lib/                 logic only this route uses
 ```
+
+### Three kinds of component
+
+- **Route components** (`routes/<route>/<Route>.tsx`) render for an address: the
+  page a workbench tab shows. They wire hooks to components and own no layout
+  that another page could reuse.
+- **Route-specific components** (`routes/<route>/components/`) belong to one
+  route and are imported only by it, or by its tests.
+- **Shared components** (`components/`) are reused by more than one route. A
+  component starts in its route's `components/` and moves here when a second
+  route needs it.
+
+Shared layers (`components/`, `hooks/`, `stores/`, `lib/`) never import from
+`routes/`, and a route does not import another route's `components/` or `lib/`.
+The route components of other routes may be imported where a page embeds
+another (the project page shows `Sessions`, for example). Tests may cross these
+boundaries.
 
 ## Development setup
 
@@ -119,6 +89,52 @@ render nothing themselves.
 | `/errors`                                                   | Errors console across all sessions                                                |
 | `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                                         |
 
+## Hooks
+
+Components do not write `useQuery`, `useMutation` or stream code themselves.
+They call a high-level hook from `hooks/` that returns what the UI needs, the
+way `useUnreadSessions` returns the unread counts. A hook owns its query key
+(from `queries/`), the `select` that shapes the data, and the invalidation that
+follows a change. Components never see a key.
+
+**Data**
+
+| Hook                                            | Returns                                                                                |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `useProjects()`, `useProject(id)`               | The project list (most recently used first); one project.                              |
+| `useSaveProject(id)`                            | A function that saves project fields, updates the cache and refetches the list.        |
+| `useSetDefaultAgent(projectId?)`                | A mutation that sets a project's default agent, or the app's when there is no project. |
+| `useSession(id)`, `useCreateSession(onCreated)` | One session's detail; a mutation that creates a session in a project or none.          |
+| `useSettings()`                                 | The settings and which are set by an environment variable.                             |
+| `useModels()`                                   | The models, polled while one is loading.                                               |
+| `useUnreadSessions()`                           | `{ sessions, ids, count }`: the sessions with a reply the user has not seen.           |
+| `useActiveRuns()`                               | The runs in progress, summed up per session (working, waiting).                        |
+| `useProjectColor()`                             | A function from a project id to its color.                                             |
+| `useStructured(...)`                            | The Structured Data view's lists, tree, tabs and actions.                              |
+
+**Live updates**
+
+| Hook                                  | Does                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `useSessionEvents(sessionId, detail)` | Seeds `useLive` from the session snapshot and applies one session's events (see Live updates).          |
+| `useAppEvents()`                      | Mounted once in `Layout`; invalidates query families on app events and refetches when the stream opens. |
+
+**Actions and effects**
+
+| Hook                                         | Does                                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `useSessionActions()`, `useProjectActions()` | Rename, trash, restore and delete, each with its confirmation, notification and refetching. |
+| `useFaviconIndicator()`                      | Draws the tab icon and its dot from `useActiveRuns` and `useUnreadSessions`.                |
+| `useDebouncedFlag(active, delays)`           | Follows a flag with a delay so an indicator does not flicker.                               |
+
+**Writing one.** Put the query in `useX`, with the key from `queries/` and, if
+the component needs a different shape, a `select`. Put a mutation's
+invalidation in the hook's `onSuccess` and its failure message in `onError`
+(`showError("Could not …")` from `lib/notify.ts`). Keep a pure part, such as
+`summarizeRuns`, next to the hook and test it without React. Test the hook by
+rendering a small component that calls it, as `hooks/useUnreadSessions.test.tsx`
+does.
+
 ## Where state lives
 
 | Kind of state             | Held in                                         | Examples                                                                                                                                                     |
@@ -146,11 +162,11 @@ far each prefix reaches.
 
 ## The workbench
 
-The whole app is one workbench (`routes/Workbench.tsx`, drawn by `Layout`): a 52px
+The whole app is one workbench (`routes/workbench/components/Workbench.tsx`, drawn by `Layout`): a 52px
 icon rail (`Rail.tsx`), a resizable chats tree (`ChatsTree.tsx`), a strip of tabs
 with the active tab's page below it, and a status bar. It uses the frame the Files
 and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
-`explorer.ts`. `workbench.ts` is the pure part: the kinds of tab, `tabForPath` and
+`lib/explorer.ts`. `lib/workbench.ts` is the pure part: the kinds of tab, `tabForPath` and
 `pathForTab` (an address and its tab), `newChatTarget`, and `closeTarget`.
 
 - **The address decides the active tab.** Clicking a tab navigates; an address that
@@ -165,7 +181,7 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
   text spells the kind out ("Project: …", "Chat: …", "Files (all
   projects)").
 - **Reordering.** Tabs are dragged to a new place, or moved with Alt and the left or
-  right arrow (`moveTab` in `explorer.ts`); the order is saved with the tabs.
+  right arrow (`moveTab` in `lib/explorer.ts`); the order is saved with the tabs.
 - **Which tabs are mounted.** The active tab, and any tab with unsaved edits, which
   stays mounted but hidden. The rest are unmounted, so only the active chat holds an
   event stream (the browser allows about six HTTP/1.1 connections to a host). A chat
@@ -211,9 +227,11 @@ and Structured Data views share (`ExplorerShell.tsx`) and the tab rules in
 
 ## Live updates
 
-Two hooks in `live.ts` keep the UI current. Both use `EventSource` and reconnect
-with exponential backoff (500 ms, doubling, capped at 5 s) when the browser
-gives up on a closed stream.
+Two hooks, `hooks/useSessionEvents.ts` and `hooks/useAppEvents.ts`, keep the UI
+current. Both open their stream with `connectEventStream` (`lib/event-stream.ts`),
+which reconnects with exponential backoff (500 ms, doubling, capped at 5 s)
+when the browser gives up on a closed stream. The live run state they write is
+the `useLive` store in `stores/live.ts`.
 
 ### `useSessionEvents(sessionId, detail)`: one session's stream
 
@@ -258,8 +276,8 @@ other window.
 
 `runs.changed` invalidates `runKeys.active()`, the query for
 `GET /api/runs/active`: every run in progress in any session. The workbench reads it
-once through `useActiveRuns()` (`src/runs.ts`) and shows it two ways
-(`routes/RunIndicator.tsx`):
+once through `useActiveRuns()` (`hooks/useActiveRuns.ts`) and shows it two ways
+(`routes/workbench/components/RunIndicator.tsx`):
 
 - **At the top of the rail**, a summary ("N agents working", "N waiting") with a
   popover that lists the runs and links to their sessions. It covers sessions the
@@ -274,7 +292,7 @@ in the query cache rather than in `useLive`.
 
 ## The Chat page
 
-`routes/Chat.tsx` is the main screen, shown in a workbench tab. A segmented control
+`routes/chat/Chat.tsx` is the main screen, shown in a workbench tab. A segmented control
 at the top of the page chooses one of six views:
 
 | Tab        | Content                                                                |
@@ -286,7 +304,7 @@ at the top of the page chooses one of six views:
 | Debug      | The linear view, an event table, and each run's request.               |
 
 **Editing and branching.** The transcript is a tree (see
-[Branches](backend.md#branches)); the page shows one line of it. `routes/Branching.tsx`
+[Branches](backend.md#branches)); the page shows one line of it. `routes/chat/components/Branching.tsx`
 holds the controls, and the session detail's `branching` field says where each
 applies: `points` (messages a branch or fork may start at), `editable` (the user's
 own messages), `regenerate` (the user message that started the turn _Regenerate_
@@ -328,7 +346,7 @@ never loaded (shown as their alt text), and links open in a new tab and only for
 
 **Attachments.** The composer's Attach button, pasting a file (a screenshot, for
 example) and dropping files on the composer all upload to the session's files
-at once (`routes/Attachments.tsx`, `useAttachmentDraft`); the message then sends
+at once (`routes/chat/components/Attachments.tsx`, `useAttachmentDraft`); the message then sends
 the files' references. Each shows a chip with a
 thumbnail for images. Only PNG, JPEG, GIF and BMP images and WAV, MP3 and FLAC
 audio are taken (`attachments.ts`, which matches the backend's limits). When
@@ -342,7 +360,7 @@ goes into it), previews a binary file as an image or audio player, and shows no
 text editor for it. Chosen audio can be played back in the composer before it is sent. Each file in a message, and each file a tool read, has a _Default / Keep in view / Drop later_ choice that says whether the model keeps seeing it in later turns (saved per session; Default follows the agent and the Settings page). Settings has the number of kept files and the keep-by-default switch, and a section for the Media describer model and agent. After either changes, a dialog asks "Generate descriptions for N files?" with _Fill the ones with no text_, _Write all again_ and _Not now_; nothing is written before the answer. In the Files view an image or audio file shows its text under the preview, with its source ("Written by the Media Describer", "Edited by you", "Not generated" after a failure), Save text, and Retry or Generate (disabled while descriptions are off). The bytes are fetched by hash with the token and shown from object
 URLs, because `<img>` and `<audio>` cannot send the token themselves.
 
-**Voice.** Two buttons record from the microphone (`routes/VoiceButtons.tsx`,
+**Voice.** Two buttons record from the microphone (`routes/chat/components/VoiceButtons.tsx`,
 helpers in `audio.ts`). **Record** attaches the recording like any other file;
 the user then sends it with or without text. **Record & send** sends the
 message as soon as the recording has uploaded, with the text already in the
@@ -400,7 +418,7 @@ answered against the child run.
 pages. It looks like a code editor: a file tree on the left, the open files as
 tabs on the right, a status bar below. The rules behind it (roots, tree, tabs,
 what is remembered) are in `files-explorer.ts` and, for what it shares with
-Structured Data, `explorer.ts`; both are tested without a DOM. The frame
+Structured Data, `lib/explorer.ts`; both are tested without a DOM. The frame
 (`ExplorerShell.tsx`) is shared too.
 
 The tree, tabs and editor live in `SourceExplorer.tsx`, which never calls the
@@ -559,7 +577,7 @@ and its Versions list on that version (`agent-focus.ts` carries the request).
 **Tab kinds.** A project's Agents and Skills pages are the Agents and Skills tabs of
 the workbench with the project as their root, not kinds of their own. Tabs saved
 under the old kinds (`project-agents`, `project-skills`) are carried over when the
-workbench loads (`carryOver` in `workbench.ts`).
+workbench loads (`carryOver` in `lib/workbench.ts`).
 
 ## Management pages
 
@@ -597,7 +615,7 @@ are disabled while a run is active.
 
 ## The Sessions page
 
-`routes/Sessions.tsx` lists the sessions of one project, as part of the project's page,
+`routes/sessions/Sessions.tsx` lists the sessions of one project, as part of the project's page,
 or the standalone ones (`/sessions`, the "No project" row of the tree), in a table: title, creation
 time, context use and agents. The server pages and sorts it
 (`GET /api/sessions-page`): the user chooses newest or oldest first and 10, 25, 50
@@ -609,7 +627,7 @@ a running session cannot be trashed. _Move to trash_ sends the ids to
 
 ## Settings
 
-`routes/Settings.tsx` is one route (`/settings/$`) whose address names the tab:
+`routes/settings/Settings.tsx` is one route (`/settings/$`) whose address names the tab:
 `/settings/<area>/<section>`, so changing tabs does not remount the page and a tab
 can be linked to. An unknown area or section is replaced by the first one.
 
@@ -682,5 +700,5 @@ The export can be copied to the clipboard as the linear text or as JSON.
 ## Testing
 
 Tests run with Vitest and `jsdom` with Testing Library (`test-setup.ts`). They
-cover the stream reducer (`live.test.tsx`), the linear view, the schema builder,
+cover the stream reducer (`hooks/useEvents.test.tsx`), the linear view, the schema builder,
 and the major components (approval dialog, forms, data, schemas, errors, Markdown).
