@@ -10,7 +10,7 @@ import {
   type SettingsView,
 } from "../../api";
 import { DerivedTextField } from "./FileViews";
-import { MediaDescriptions } from "../../routes/settings/Settings";
+import { MediaDescriptions } from "../../routes/settings/components/MediaSettings";
 
 afterEach(() => vi.restoreAllMocks());
 

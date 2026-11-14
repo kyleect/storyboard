@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DraftAttachment } from "../routes/chat/components/Attachments";
+import type { MediaKind } from "@harness/core";
 
 /*
  * The message being written in each session: its text, the files attached to
@@ -7,6 +7,18 @@ import type { DraftAttachment } from "../routes/chat/components/Attachments";
  * so that leaving a chat (its tab is not the active one, so it is not
  * mounted) does not lose what was typed. Not saved across reloads.
  */
+
+/** A file uploaded for the message being written. */
+export interface DraftAttachment {
+  /** Where the file is, such as `session://cat.png`. */
+  ref: string;
+  /** The file's name in the session. */
+  name: string;
+  mediaType: string;
+  kind: MediaKind;
+  /** An object URL of the local file, for a thumbnail or to play it back. */
+  previewUrl: string | undefined;
+}
 
 export interface SessionDraft {
   text: string;

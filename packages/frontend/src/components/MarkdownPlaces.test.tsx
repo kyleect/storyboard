@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import type { Message, ToolResultMessage } from "@harness/core";
-import { MessageView } from "../routes/chat/Chat";
+import { MessageView } from "../routes/chat/components/MessageView";
 import { ValueView } from "./explorer/FileViews";
 
 /* Where Markdown is rendered, and where it is not (markdown rendering plan M1, M2, M3). */

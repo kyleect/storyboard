@@ -14,20 +14,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import {
-  IconAlertTriangle,
-  IconBolt,
-  IconBox,
-  IconDatabase,
-  IconFiles,
-  IconFolder,
-  IconInbox,
-  IconMenu2,
-  IconMessage,
-  IconRobot,
-  IconSettings,
-} from "@tabler/icons-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { IconMenu2 } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../../../api";
 import { TabIdContext, useDirtyTabs } from "../../../stores/dirty";
 import { dropDraft } from "../../../stores/drafts";
@@ -42,109 +30,18 @@ import {
   projectOfTab,
   tabForPath,
   type NewWorkbenchTab,
-  type WorkbenchKind,
   type WorkbenchTab,
 } from "../../../lib/workbench";
 import { setWorkbenchNavigator, useWorkbench } from "../../../stores/workbench";
-import { GlobalAgentsPage, ProjectAgentsPage } from "../../agents/Agents";
-import { Chat } from "../../chat/Chat";
 import { ChatsTree, type FocusedRow } from "./ChatsTree";
 import { ContextMeter } from "../../../components/ContextMeter";
-import { GlobalFilesPage, ProjectFilesPage } from "../../files/FilesPages";
-import { ErrorsPage } from "../../errors/Errors";
 import {
   ExplorerShell,
   type ShellTab,
 } from "../../../components/explorer/ExplorerShell";
-import { ProjectPage } from "../../project/ProjectPage";
 import { Rail } from "./Rail";
-import { SessionsPage } from "../../sessions/Sessions";
-import { Settings } from "../../settings/Settings";
-import { GlobalSkillsPage, ProjectSkillsPage } from "../../skills/Skills";
-import {
-  GlobalStructuredDataPage,
-  ProjectStructuredDataPage,
-} from "../../data/StructuredDataPages";
-import { WorkspacesPage } from "../../workspaces/Workspaces";
 import { useProjectActions } from "../../../hooks/useProjectActions";
-
-/*
- * The chat workbench (chat workbench design): the icon rail, the chats tree,
- * and the tabs, in the frame the Files and Structured Data views use.
- *
- * The address decides which tab is active. A tab that is clicked navigates;
- * an address that is opened (a link, the address bar, Back) opens or
- * activates its tab. Only the active tab is mounted, and tabs with unsaved
- * edits, which stay mounted, hidden (D5).
- */
-
-const ICONS: Record<WorkbenchKind, ReactNode> = {
-  chat: <IconMessage size={14} />,
-  sessions: <IconInbox size={14} />,
-  project: <IconFolder size={14} />,
-  "project-files": <IconFiles size={14} />,
-  "project-data": <IconDatabase size={14} />,
-  agents: <IconRobot size={14} />,
-  skills: <IconBolt size={14} />,
-  files: <IconFiles size={14} />,
-  data: <IconDatabase size={14} />,
-  workspaces: <IconBox size={14} />,
-  errors: <IconAlertTriangle size={14} />,
-  settings: <IconSettings size={14} />,
-};
-
-/** What each page is called, in a project or globally. */
-const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
-  sessions: "No project",
-  agents: "Agents",
-  skills: "Skills",
-  files: "Files",
-  data: "Structured Data",
-  workspaces: "Workspaces",
-  errors: "Errors",
-  settings: "Settings",
-  "project-files": "Files",
-  "project-data": "Structured Data",
-};
-
-/** The page a tab shows. */
-function TabPage({ tab }: { tab: WorkbenchTab }) {
-  const id = tab.key;
-  switch (tab.kind) {
-    case "chat":
-      return <Chat sessionId={id} />;
-    case "sessions":
-      return <SessionsPage projectId={tab.root === "project" ? id : null} />;
-    case "project":
-      return <ProjectPage projectId={id} />;
-    case "project-files":
-      return <ProjectFilesPage projectId={id} />;
-    case "project-data":
-      return <ProjectStructuredDataPage projectId={id} />;
-    case "agents":
-      return tab.root === "project" ? (
-        <ProjectAgentsPage projectId={id} />
-      ) : (
-        <GlobalAgentsPage />
-      );
-    case "skills":
-      return tab.root === "project" ? (
-        <ProjectSkillsPage projectId={id} />
-      ) : (
-        <GlobalSkillsPage />
-      );
-    case "files":
-      return <GlobalFilesPage />;
-    case "data":
-      return <GlobalStructuredDataPage />;
-    case "workspaces":
-      return <WorkspacesPage />;
-    case "errors":
-      return <ErrorsPage />;
-    case "settings":
-      return <Settings />;
-  }
-}
+import { ICONS, PAGE_LABEL, TabPage } from "./TabPage";
 
 export function Workbench() {
   const navigate = useNavigate();

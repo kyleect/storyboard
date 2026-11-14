@@ -10,6 +10,7 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
+import type { DraftAttachment } from "../../../stores/drafts";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useRef } from "react";
@@ -39,18 +40,6 @@ import {
  * are fetched again to show them in the transcript, with the token, and
  * shown from an object URL.
  */
-
-/** A file uploaded for the message being written. */
-export interface DraftAttachment {
-  /** Where the file is, such as `session://cat.png`. */
-  ref: string;
-  /** The file's name in the session. */
-  name: string;
-  mediaType: string;
-  kind: MediaKind;
-  /** An object URL of the local file, for a thumbnail or to play it back. */
-  previewUrl: string | undefined;
-}
 
 /** What a message needs to find the files it names. */
 export interface SessionFiles {

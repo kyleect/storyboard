@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { InputRequest, Message } from "@harness/core";
-import { MessageView } from "../Chat";
+import { MessageView } from "./MessageView";
 
 /* The work of a subagent under the call that started it (agent delegation design, decision 42). */
 
