@@ -256,6 +256,54 @@ describe("the tree", () => {
   });
 });
 
+describe("collapsing and expanding the tree", () => {
+  beforeEach(mockApi);
+
+  it("opens every agent from the header, which reads what is inside them", async () => {
+    show(<AgentsExplorer />);
+    await screen.findByText("Editor");
+    expect(screen.queryByText("Skills")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect((await screen.findAllByText("Skills")).length).toBeGreaterThan(0);
+    expect(vi.mocked(api.listSkillTree)).toHaveBeenCalledWith(
+      { scope: "agent", id: "a1" },
+      false,
+    );
+  });
+
+  it("closes everything from the header, the roots too", async () => {
+    show(<AgentsExplorer />);
+    await screen.findByText("Editor");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    await waitFor(() => expect(screen.queryByText("Editor")).toBeNull());
+    expect(screen.getByText("Built-in")).toBeTruthy();
+    expect(screen.getByText("Global")).toBeTruthy();
+  });
+
+  it("closes and opens what is inside an agent from its menu", async () => {
+    show(<AgentsExplorer />);
+    fireEvent.click(await screen.findByText("Editor"));
+    await screen.findByText("Skills");
+    fireEvent.contextMenu(must(screen.getAllByText("Editor")[0]));
+    fireEvent.click(await screen.findByText("Collapse all"));
+    await waitFor(() => expect(screen.queryByText("Skills")).toBeNull());
+    fireEvent.contextMenu(must(screen.getAllByText("Editor")[0]));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("Skills")).toBeTruthy();
+  });
+
+  it("reads an agent's content when it is opened from its menu", async () => {
+    show(<AgentsExplorer />);
+    fireEvent.contextMenu(await screen.findByText("Editor"));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("Skills")).toBeTruthy();
+    expect(vi.mocked(api.listSkillTree)).toHaveBeenCalledWith(
+      { scope: "agent", id: "a1" },
+      false,
+    );
+  });
+});
+
 describe("opening", () => {
   beforeEach(mockApi);
 

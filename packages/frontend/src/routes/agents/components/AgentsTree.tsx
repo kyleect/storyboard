@@ -20,6 +20,8 @@ import {
 import { PaneHeader } from "../../../components/PaneHeader";
 import {
   IconBolt,
+  IconChevronsDown,
+  IconChevronsUp,
   IconCircle,
   IconCircleCheck,
   IconEye,
@@ -34,9 +36,10 @@ import {
   IconSchema,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { TreeNode } from "../../../lib/explorer";
+import { branchValues, type TreeNode } from "../../../lib/explorer";
 import {
   parseNodeValue,
+  refValue,
   type NodeInfo,
   type NodeRef,
 } from "../lib/agents-explorer";
@@ -112,11 +115,36 @@ export function AgentsTree(props: AgentsTreeProps) {
   }, [activeValue, data]);
 
   const actions = menu ? props.actionsFor(menu.ref) : [];
+  const menuValue = menu ? refValue(menu.ref) : null;
+  const menuBranches = menuValue ? branchValues(data, menuValue) : [];
+  const setBranches = (open: boolean) =>
+    tree.setExpandedState({
+      ...tree.expandedState,
+      ...Object.fromEntries(menuBranches.map((v) => [v, open] as const)),
+    });
 
   return (
     <Stack gap={0} flex={1} mih={0}>
       <PaneHeader title="Agents">
         {props.header}
+        <Tooltip label="Collapse all" openDelay={400}>
+          <ActionIcon
+            color="gray"
+            aria-label="Collapse all"
+            onClick={() => tree.collapseAllNodes()}
+          >
+            <IconChevronsUp size={16} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Expand all" openDelay={400}>
+          <ActionIcon
+            color="gray"
+            aria-label="Expand all"
+            onClick={() => tree.expandAllNodes()}
+          >
+            <IconChevronsDown size={16} />
+          </ActionIcon>
+        </Tooltip>
         <Tooltip
           label={showDeleted ? "Hide deleted items" : "Show deleted items"}
           openDelay={400}
@@ -313,6 +341,16 @@ export function AgentsTree(props: AgentsTreeProps) {
               {a.label}
             </Menu.Item>
           ))}
+          {menuBranches.length > 0 && (
+            <>
+              <Menu.Item onClick={() => setBranches(true)}>
+                Expand all
+              </Menu.Item>
+              <Menu.Item onClick={() => setBranches(false)}>
+                Collapse all
+              </Menu.Item>
+            </>
+          )}
         </Menu.Dropdown>
       </Menu>
     </Stack>

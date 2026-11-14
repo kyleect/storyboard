@@ -474,7 +474,7 @@ all, Expand all, Show deleted) and a right-click menu on roots, folders and file
 Collapse all and Expand all use the controller's `collapseAllNodes` and
 `expandAllNodes`, roots included; a root's or folder's menu has Expand all and
 Collapse all for just what is inside it (`branchValues` in `lib/explorer.ts`). The
-Structured Data tree has the same header buttons and menu items. A new file or
+Structured Data and Agents trees have the same header buttons and menu items. A new file or
 folder, and a folder rename, are typed into a name box in the tree. A new file's
 type follows its extension (`.md` Markdown, `.json` JSON, anything else plain);
 a new JSON file starts as `{}`, because JSON must parse. The tree is made once
