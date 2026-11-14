@@ -198,7 +198,11 @@ export function AgentsTree(props: AgentsTreeProps) {
                   if (openable) props.onOpen(ref, true);
                 }}
                 onContextMenu={(e) => {
-                  if (props.actionsFor(ref).length === 0) return;
+                  if (
+                    props.actionsFor(ref).length === 0 &&
+                    branchValues(data, node.value).length === 0
+                  )
+                    return;
 
                   e.preventDefault();
                   e.stopPropagation();

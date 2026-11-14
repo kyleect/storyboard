@@ -292,6 +292,17 @@ describe("collapsing and expanding the tree", () => {
     expect(await screen.findByText("Skills")).toBeTruthy();
   });
 
+  it("offers the menu on a scope, which has no other actions", async () => {
+    show(<AgentsExplorer />);
+    fireEvent.contextMenu(await screen.findByText("Global"));
+    fireEvent.click(await screen.findByText("Collapse all"));
+    await waitFor(() => expect(screen.queryByText("Editor")).toBeNull());
+    expect(screen.getByText("Global")).toBeTruthy();
+    fireEvent.contextMenu(screen.getByText("Global"));
+    fireEvent.click(await screen.findByText("Expand all"));
+    expect(await screen.findByText("Editor")).toBeTruthy();
+  });
+
   it("reads an agent's content when it is opened from its menu", async () => {
     show(<AgentsExplorer />);
     fireEvent.contextMenu(await screen.findByText("Editor"));
