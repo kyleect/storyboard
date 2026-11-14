@@ -610,7 +610,10 @@ routes return them as `newTools`), and `grantFromNames` builds a grant of single
 tools only (used by imports, so a file can never grant more than it names).
 
 On every agent save the routes remove always-on tools from `except` and
-`extras`, and set `known` to the tools that exist now.
+`extras`, and set `known` to the tools that exist now. `AgentStore.markToolsSeen`
+sets `known` the same way without saving: it rewrites the grant on the agent and
+on its current version in place, so no version is added (`POST
+/api/agents/:id/tools-seen`).
 
 ### The system message
 
@@ -1125,7 +1128,7 @@ The same sub-paths exist under each scope prefix:
 | `/folders`, `/folders/rename`, `/folders/delete`            | global, project, session        | List, create, rename and delete explicit folders of files (see [Folders](#folders)).                                                                                                                                                                                                                                |
 | `/data`, `/data/:dataId` (plus `/migrate`, `/restore`)      | global, project, agent, session | Data.                                                                                                                                                                                                                                                                                                               |
 | `/schemas`, `/schemas/:schemaId` (plus `/restore`, `/copy`) | global, project, agent, session | Schemas.                                                                                                                                                                                                                                                                                                            |
-| `/agents`                                                   | global, project                 | Agents. Also `GET/PUT/DELETE /api/agents/:id`, `…/restore`, `…/versions/:seq`, `…/export`, `POST …/agents/import`.                                                                                                                                                                                                  |
+| `/agents`                                                   | global, project                 | Agents. Also `GET/PUT/DELETE /api/agents/:id`, `…/restore`, `…/versions/:seq`, `…/export`, `POST …/agents/import`, `POST …/tools-seen` (records the current tools as known, in place, with no new version).                                                                                                         |
 | `/skills`                                                   | global, project, agent          | Skills. Also `POST …/skills/import` (and `/import/preview`), `GET/PUT/DELETE /api/skills/:id`, `…/restore`, `…/skills/copy`, `…/rename`, `…/move`, `…/export`, `…/file`, `…/file/raw`; `GET …/skills?files=true` adds each skill's files. A run records the skill versions it started with (`runs.skill_versions`). |
 
 Other agent routes: `GET /api/sessions/:id/agents` (agents the session can pick),

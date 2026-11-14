@@ -301,6 +301,35 @@ export class AgentStore {
   }
 
   /**
+   * Records the tools that exist now as the ones the agent knows, so none show
+   * as new. It changes the current version in place instead of adding one:
+   * `known` only drives the "new" mark, and no run reads it.
+   */
+  markToolsSeen(id: string, tools: readonly string[]): Agent {
+    return this.db.transaction(() => {
+      const agent = this.requireEditable(id);
+      if (agent.deleted) {
+        throw new AgentError(
+          "The agent is deleted. Restore a version first.",
+          409,
+        );
+      }
+      const json = JSON.stringify(
+        normalizeGrant({ ...agent.toolGrant, known: [...tools] }),
+      );
+      this.db
+        .prepare("UPDATE agents SET tool_grant = ? WHERE id = ?")
+        .run(json, id);
+      this.db
+        .prepare(
+          "UPDATE agent_versions SET tool_grant = ? WHERE agent_id = ? AND seq = ?",
+        )
+        .run(json, id, agent.version);
+      return this.get(id) as Agent;
+    })();
+  }
+
+  /**
    * Saves content as the next version even when the agent is deleted, which
    * restores it (an import that replaces, decision 28).
    */

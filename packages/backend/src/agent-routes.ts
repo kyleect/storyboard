@@ -232,6 +232,18 @@ export function registerAgentRoutes(
     return detail(agent);
   });
 
+  /** Counts the tools that exist now as seen; no new version is made. */
+  app.post("/api/agents/:id/tools-seen", async (req) => {
+    const current = agentOf(req);
+    requireWritableScope(current.projectId);
+    const agent = agents.markToolsSeen(
+      current.id,
+      runs.tools.map((t) => t.name),
+    );
+    announce(agent);
+    return detail(agent);
+  });
+
   app.delete("/api/agents/:id", async (req, reply) => {
     const current = agentOf(req);
     requireWritableScope(current.projectId);

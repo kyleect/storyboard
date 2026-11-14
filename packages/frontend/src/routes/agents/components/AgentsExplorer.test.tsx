@@ -347,6 +347,55 @@ describe("opening", () => {
     });
   });
 
+  it("shows new tools under the Tools heading and clears them on Dismiss, keeping edits", async () => {
+    const info = {
+      name: "web_search",
+      description: "Searches the web.",
+      group: "web",
+      alwaysOn: false,
+      off: false,
+      needsReview: false,
+    } as const;
+    let fresh = ["web_search"];
+
+    vi.spyOn(api, "agentTools").mockResolvedValue([info]);
+    vi.spyOn(api, "agentToolApprovals").mockResolvedValue([
+      { ...info, ask: false, fixed: false },
+    ]);
+    vi.spyOn(api, "getAgent").mockImplementation(async () => ({
+      ...detail(EDITOR),
+      newTools: fresh,
+    }));
+    const seen = vi
+      .spyOn(api, "markAgentToolsSeen")
+      .mockImplementation(async () => {
+        fresh = [];
+
+        return { ...detail(EDITOR), newTools: [] };
+      });
+
+    show(<AgentsExplorer />);
+    fireEvent.click(await screen.findByText("Editor"));
+    const title = await screen.findByText("New tools");
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+    expect(follows(screen.getByText("Tools"), title)).toBe(true);
+    expect(follows(title, await screen.findByLabelText("Web tools"))).toBe(
+      true,
+    );
+    fireEvent.change(screen.getByLabelText(/^System prompt/), {
+      target: { value: "You edit." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText("New tools")).toBeNull());
+    expect(seen).toHaveBeenCalledWith("a1");
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    expect(
+      (screen.getByLabelText(/^System prompt/) as HTMLTextAreaElement).value,
+    ).toBe("You edit.");
+  });
+
   it("can be put back as it was", async () => {
     show(<AgentsExplorer />);
     fireEvent.click(await screen.findByText("Editor"));

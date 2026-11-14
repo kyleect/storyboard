@@ -405,6 +405,44 @@ describe("agents and the editor's tool list", () => {
     expect(saved.body["newTools"]).toEqual([]);
   });
 
+  it("counts new tools as seen without making a new version", async () => {
+    const c = await setup();
+    const old = c.agents.create(null, {
+      ...content({ prompt: "Keep me." }),
+      toolGrant: grant("allow", ["files_edit"], ["core_read", "files_edit"]),
+    });
+    const res = await api(c.app, "POST", `/api/agents/${old.id}/tools-seen`);
+
+    expect(res.status).toBe(200);
+    expect(res.body["newTools"]).toEqual([]);
+    expect(res.body["version"]).toBe(1);
+    expect(res.body["prompt"]).toBe("Keep me.");
+    expect((res.body["versions"] as unknown[]).length).toBe(1);
+    // The stored version knows them too, so a reload still shows none.
+    const again = await api(c.app, "GET", `/api/agents/${old.id}`);
+
+    expect(again.body["newTools"]).toEqual([]);
+    expect(c.agents.version(old.id, 1)?.toolGrant.known).toEqual(NAMES);
+    // The choices already made are untouched.
+    expect(c.agents.get(old.id)?.toolGrant).toMatchObject({
+      mode: "allow",
+      extras: ["files_edit"],
+    });
+  });
+
+  it("refuses to count tools as seen for a built-in or deleted agent", async () => {
+    const c = await setup();
+    const gone = c.agents.create(null, content({ name: "Gone" }));
+
+    c.agents.delete(gone.id);
+    const res = await api(c.app, "POST", `/api/agents/${gone.id}/tools-seen`);
+
+    expect(res.status).toBe(409);
+    expect(
+      (await api(c.app, "POST", "/api/agents/nope/tools-seen")).status,
+    ).toBe(404);
+  });
+
   it("shows a deny agent only new tools that need review", async () => {
     const c = await setup();
     const old = c.agents.create(null, {

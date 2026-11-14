@@ -619,6 +619,9 @@ tools added since the agent was last saved (`newTools`) are marked, and a switch
 changes the agent between `allow` and `deny` mode. `ToolGrantModal` is the same
 editor in a wide dialog, opened from the icon next to the "Tools" heading: a
 group list on the left and a table of the selected group's tools on the right.
+The "New tools" notice sits under the "Tools" heading in `AgentForm`; its Dismiss
+button calls `POST /api/agents/:id/tools-seen`, which clears the mark without
+making a version, and keeps any unsaved edits.
 It edits local copies and hands them to the form only on Done; Cancel, Escape and
 a click outside discard them. `ToolGrantParts.tsx` holds what both share (the
 approval control, badges and the per-tool menu). `tool-grant.ts` holds the pure

@@ -39,6 +39,7 @@ The **Tools** part lists everything the agent could use. Tools come in groups, l
 - Open a group to pick single tools.
 - Tools that change things must be ticked one by one.
 - Once a group has something ticked, choose whether the agent asks you before it uses those tools: **Tool's setting**, **Ask** or **Don't ask**. You can choose for the whole group or for one tool.
+- When tools have been added since you last saved an agent, a **New tools** notice appears under **Tools**. Choose **Dismiss** to clear it. Saving the agent clears it too.
 - Choose the expand button next to **Tools** to open a larger editor. Its changes apply when you choose **Done**. **Cancel** throws them away.
 
 There are two modes. **Only the ticked tools** gives it just what you tick. **Every tool except the unticked ones** gives it everything you don't remove. The small list shortens these to **Only ticked tools** and **All except unticked**.

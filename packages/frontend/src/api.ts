@@ -1259,6 +1259,8 @@ export const api = {
   saveAgent: (id: string, c: AgentContent) =>
     request<AgentDetail>("PUT", `/api/agents/${id}`, c),
   deleteAgent: (id: string) => request<unknown>("DELETE", `/api/agents/${id}`),
+  markAgentToolsSeen: (id: string) =>
+    request<AgentDetail>("POST", `/api/agents/${id}/tools-seen`),
   restoreAgent: (id: string, seq: number) =>
     request<AgentDetail>("POST", `/api/agents/${id}/restore`, { seq }),
   getAgentVersion: (id: string, seq: number) =>

@@ -139,6 +139,22 @@ export function AgentForm({
     },
     onError: showError("Could not delete the agent"),
   });
+  const seen = useMutation({
+    mutationFn: () => api.markAgentToolsSeen(agent?.id ?? ""),
+    onSuccess: async (updated) => {
+      if (draft) {
+        const next = {
+          ...draft,
+          toolGrant: { ...draft.toolGrant, known: updated.toolGrant.known },
+        };
+
+        onDraft(same(next, contentOf(updated)) ? undefined : next);
+      }
+
+      await refresh();
+    },
+    onError: showError("Could not dismiss the notice"),
+  });
   const exportFile = useMutation({
     mutationFn: () => api.exportAgent(agent?.id ?? ""),
     onSuccess: (text) => {
@@ -257,14 +273,6 @@ export function AgentForm({
         <Text size="xs" c="dimmed" px="sm" pt={6}>
           {why}
         </Text>
-      )}
-      {newTools.size > 0 && (
-        <Alert color="blue" p="xs" m="sm" title="New tools">
-          {newTools.size === 1
-            ? "1 tool has been added since this agent was last saved: "
-            : `${newTools.size} tools have been added since this agent was last saved: `}
-          {[...newTools].join(", ")}. Save the agent to count them as seen.
-        </Alert>
       )}
       <Flex align="stretch" flex={1} mih={0}>
         <ScrollArea flex={1} miw={0}>
@@ -401,6 +409,25 @@ export function AgentForm({
                     before a call, or follows the tool&apos;s own setting.
                     Saving counts new tools as seen.
                   </Text>
+                  {newTools.size > 0 && (
+                    <Alert color="blue" p="xs" title="New tools">
+                      {newTools.size === 1
+                        ? "1 tool has been added since this agent was last saved: "
+                        : `${newTools.size} tools have been added since this agent was last saved: `}
+                      {[...newTools].join(", ")}. Dismiss this, or save the
+                      agent, to count them as seen.
+                      <Group justify="flex-end" mt="xs">
+                        <Button
+                          size="compact-xs"
+                          variant="light"
+                          loading={seen.isPending}
+                          onClick={() => seen.mutate()}
+                        >
+                          Dismiss
+                        </Button>
+                      </Group>
+                    </Alert>
+                  )}
                   {(tools.isPending || approvals.isPending) && (
                     <Loader size="xs" />
                   )}
