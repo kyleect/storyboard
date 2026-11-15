@@ -40,7 +40,12 @@ import {
 } from "../../lib/workspace-source";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
 import { useProjectColor } from "../../hooks/useProjectColor";
-import { FileIcon, FileTree, type NodeAction } from "./FileTree";
+import {
+  FileIcon,
+  FileTree,
+  type NodeAction,
+  type NodeMarks,
+} from "./FileTree";
 import { FileTab, PreviewTab, type Draft } from "./FileTab";
 import type { Cursor } from "./TextEditor";
 import { showError } from "../../lib/notify";
@@ -191,6 +196,37 @@ export function SourceExplorer({
     })),
     combine: combineResults,
   });
+  const marked = useQueries({
+    queries: roots.map((r) => ({
+      queryKey: r.source.marks ? r.source.marks.key() : ["no-marks", r.id],
+      queryFn: () => (r.source.marks ? r.source.marks.load() : null),
+      enabled: r.source.marks !== undefined && r.deleted !== true,
+    })),
+    combine: (results) => results.map((q) => q.data),
+  });
+  const marks = useMemo(
+    () =>
+      Object.fromEntries(
+        roots.flatMap((r, i) => {
+          const m = marked[i];
+
+          return r.source.marks && m
+            ? [
+                [
+                  r.id,
+                  {
+                    ignored: new Set(m.ignored),
+                    hidden: m.hidden,
+                    hiddenAbove: m.hiddenAbove,
+                    who: r.source.marks.who,
+                  },
+                ],
+              ]
+            : [];
+        }),
+      ) as Record<RootId, NodeMarks>,
+    [roots, marked],
+  );
   const tree = useMemo(() => {
     const built = buildTree(
       roots.flatMap((root, i) =>
@@ -368,6 +404,15 @@ export function SourceExplorer({
     }
   };
 
+  const toggleVisible = (ref: NodeRef, visible: boolean) => {
+    const source = rootOf(ref.root)?.source;
+
+    void source?.marks
+      ?.toggle(ref.path, visible)
+      .then(() => refreshRoot(ref.root))
+      .catch(showError("Could not change what is visible"));
+  };
+
   const deleteFolder = (ref: NodeRef) => {
     const source = rootOf(ref.root)?.source;
 
@@ -496,6 +541,8 @@ export function SourceExplorer({
         reasons={reasons}
         pageRoot={pageRoot}
         parentsOf={parentsOf}
+        marks={marks}
+        onToggleVisible={toggleVisible}
         initialExpanded={{
           ...Object.fromEntries(
             [

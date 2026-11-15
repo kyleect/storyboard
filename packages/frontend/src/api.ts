@@ -389,6 +389,8 @@ export interface Workspace {
   ownerId: string | null;
   /** A folder the app made for one session; it goes with the session. */
   temporary: boolean;
+  /** Files its .gitignore files ignore are not scanned or shown to helpers. */
+  respectGitignore: boolean;
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
@@ -399,6 +401,7 @@ export interface WorkspaceInput {
   name: string;
   path: string;
   writable: boolean;
+  respectGitignore?: boolean;
 }
 
 export interface WorkspaceFileEntry {
@@ -407,6 +410,8 @@ export interface WorkspaceFileEntry {
   mediaType?: string;
   size?: number;
   modifiedAt?: string;
+  /** Ignored by a .gitignore file of the workspace. */
+  ignored?: boolean;
 }
 
 export interface WorkspaceFiles {
@@ -415,6 +420,9 @@ export interface WorkspaceFiles {
   truncated: boolean;
   /** The folder is not on this computer right now. */
   unavailable: boolean;
+  /** With a scope: the paths it hides, and those the broader scopes hide. */
+  hidden?: string[];
+  hiddenAbove?: string[];
 }
 
 export type WorkspacePreview =
@@ -441,6 +449,9 @@ export interface WorkspaceTreeEntry {
   path: string;
   kind: "file" | "folder";
   state: TickState;
+  ignored?: boolean;
+  /** With a scope: how much of it that scope and the broader ones hide. */
+  hidden?: TickState;
 }
 
 export interface WorkspaceTree {
@@ -494,6 +505,12 @@ const scopeBase = (s: FileScope) =>
       : `/api/sessions/${s.id}`;
 
 const filesBase = (s: FileScope) => `${scopeBase(s)}/files`;
+
+/** `?scope=session&scopeId=s1`, or nothing; `&` to add to a query. */
+const scopeQuery = (s: FileScope | undefined, start = "?"): string =>
+  s === undefined
+    ? ""
+    : `${start}scope=${s.scope}${"id" in s ? `&scopeId=${encodeURIComponent(s.id)}` : ""}`;
 
 export interface UploadedFile {
   key: string;
@@ -1142,20 +1159,36 @@ export const api = {
       "POST",
       `/api/workspaces/${encodeURIComponent(id)}/restore`,
     ),
-  listWorkspaceFiles: (id: string) =>
+  listWorkspaceFiles: (id: string, scope?: FileScope) =>
     request<WorkspaceFiles>(
       "GET",
-      `/api/workspaces/${encodeURIComponent(id)}/files`,
+      `/api/workspaces/${encodeURIComponent(id)}/files${scopeQuery(scope)}`,
+    ),
+  toggleWorkspaceVisibility: (
+    id: string,
+    scope: FileScope,
+    path: string,
+    visible: boolean,
+  ) =>
+    request<{ hidden: string[]; hiddenAbove: string[] }>(
+      "POST",
+      `/api/workspaces/${encodeURIComponent(id)}/visibility/toggle`,
+      {
+        scope: scope.scope,
+        ...("id" in scope ? { scopeId: scope.id } : {}),
+        path,
+        visible,
+      },
     ),
   previewWorkspaceFile: (id: string, path: string) =>
     request<WorkspacePreview>(
       "GET",
       `/api/workspaces/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
     ),
-  getWorkspaceTree: (id: string, path = "") =>
+  getWorkspaceTree: (id: string, path = "", scope?: FileScope) =>
     request<WorkspaceTree>(
       "GET",
-      `/api/workspaces/${encodeURIComponent(id)}/tree?path=${encodeURIComponent(path)}`,
+      `/api/workspaces/${encodeURIComponent(id)}/tree?path=${encodeURIComponent(path)}${scopeQuery(scope, "&")}`,
     ),
   getWorkspaceIndex: (id: string) =>
     request<WorkspaceIndexView>(

@@ -101,7 +101,7 @@ export function FilesExplorer({
         projectId: r.scope.scope === "project" ? r.scope.id : undefined,
       })),
       ...fileRoots.flatMap((r) =>
-        (workspaces.get(r.id) ?? []).map((w) => workspaceRoot(w, r.id)),
+        (workspaces.get(r.id) ?? []).map((w) => workspaceRoot(w, r.id, stable)),
       ),
     ],
     [fileRoots, workspaces, stable, readOnly, projectReadOnly],
@@ -137,7 +137,10 @@ export function FilesExplorer({
       render: (t, close) => {
         const w = everyWorkspace.find((x) => x.id === workspaceIdOf(t.root));
 
-        if (w) return <WorkspaceSettings workspace={w} onClose={close} />;
+        if (w)
+          return (
+            <WorkspaceSettings workspace={w} scope={stable} onClose={close} />
+          );
 
         const scope = scopeOfGroup(t.root.slice(WORKSPACE_GROUP.length));
 
@@ -152,7 +155,7 @@ export function FilesExplorer({
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeOfGroup reads fileRoots
-    [everyWorkspace, fileRoots],
+    [everyWorkspace, fileRoots, stable],
   );
 
   const nodeActions = (

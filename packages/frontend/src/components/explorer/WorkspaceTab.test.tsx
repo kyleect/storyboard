@@ -19,6 +19,7 @@ const workspace = (over: Partial<Workspace> = {}): Workspace => ({
   scope: "global",
   ownerId: null,
   temporary: false,
+  respectGitignore: true,
   createdAt: "2026-11-06T00:00:00Z",
   updatedAt: "2026-11-06T00:00:00Z",
   deleted: false,
@@ -44,7 +45,13 @@ function renderPage(w: Workspace, grants: WorkspaceGrant[] = []) {
     unavailable: false,
   });
 
-  return renderWith(<WorkspaceSettings workspace={w} onClose={() => {}} />);
+  return renderWith(
+    <WorkspaceSettings
+      workspace={w}
+      scope={{ scope: "global" }}
+      onClose={() => {}}
+    />,
+  );
 }
 
 function renderNew(
@@ -83,6 +90,7 @@ describe("a workspace's tab", () => {
         name: "Book",
         path: "/Users/me/Book",
         writable: true,
+        respectGitignore: true,
       }),
     );
   });
@@ -104,7 +112,11 @@ describe("a workspace's tab", () => {
       unavailable: true,
     });
     renderWith(
-      <WorkspaceSettings workspace={workspace()} onClose={() => {}} />,
+      <WorkspaceSettings
+        workspace={workspace()}
+        scope={{ scope: "global" }}
+        onClose={() => {}}
+      />,
     );
     expect(
       await screen.findByText("The folder is not there right now."),
@@ -123,6 +135,48 @@ describe("a workspace's tab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() =>
       expect(revoke).toHaveBeenCalledWith("workspace_write", "w1"),
+    );
+  });
+});
+
+describe("respecting .gitignore", () => {
+  it("is on for a workspace, and saved when turned off", async () => {
+    const save = vi.spyOn(api, "saveWorkspace").mockResolvedValue(workspace());
+
+    renderPage(workspace());
+    const sw = (await screen.findByLabelText(
+      /Respect .gitignore/,
+    )) as HTMLInputElement;
+
+    expect(sw.checked).toBe(true);
+    fireEvent.click(sw);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith("w1", {
+        name: "Book",
+        path: "/Users/me/Book",
+        writable: false,
+        respectGitignore: false,
+      }),
+    );
+  });
+
+  it("is on by default for a new workspace", async () => {
+    const create = vi
+      .spyOn(api, "createWorkspace")
+      .mockResolvedValue(workspace());
+
+    renderNew({ scope: "global" });
+    fireEvent.change(screen.getByLabelText(/Name/), { target: { value: "A" } });
+    fireEvent.change(screen.getByLabelText(/Folder/), {
+      target: { value: "/a" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        { scope: "global" },
+        { name: "A", path: "/a", writable: false, respectGitignore: true },
+      ),
     );
   });
 });
@@ -149,7 +203,12 @@ describe("a new workspace", () => {
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith(
         { scope: "project", id: "p1" },
-        { name: "Novel", path: "/Users/me/Novel", writable: true },
+        {
+          name: "Novel",
+          path: "/Users/me/Novel",
+          writable: true,
+          respectGitignore: true,
+        },
       ),
     );
     await waitFor(() => expect(done).toHaveBeenCalled());
@@ -302,6 +361,57 @@ describe("searched parts", () => {
     await waitFor(() => expect(toggle).toHaveBeenCalledWith("w1", "", true));
     fireEvent.click(await screen.findByRole("button", { name: "Rescan" }));
     await waitFor(() => expect(rescan).toHaveBeenCalledWith("w1"));
+  });
+
+  it("does not let an ignored file be ticked, or one the page's scope hides", async () => {
+    vi.spyOn(api, "getWorkspaceIndex").mockResolvedValue({
+      ticks: [""],
+      status: null,
+    });
+    const tree = vi.spyOn(api, "getWorkspaceTree").mockResolvedValue({
+      path: "",
+      entries: [
+        {
+          name: "build",
+          path: "build",
+          kind: "folder",
+          state: "all",
+          ignored: true,
+          hidden: "none",
+        },
+        {
+          name: "private",
+          path: "private",
+          kind: "folder",
+          state: "all",
+          hidden: "all",
+        },
+        {
+          name: "ch1.md",
+          path: "ch1.md",
+          kind: "file",
+          state: "all",
+          hidden: "none",
+        },
+      ],
+    });
+
+    renderPage(workspace({ ticks: [""] }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Searched parts" }),
+    );
+    const build = (await screen.findByLabelText("build/")) as HTMLInputElement;
+    const hidden = screen.getByLabelText("private/") as HTMLInputElement;
+    const normal = screen.getByLabelText("ch1.md") as HTMLInputElement;
+
+    expect(build.checked).toBe(false);
+    expect(build.disabled).toBe(true);
+    expect(hidden.checked).toBe(false);
+    expect(hidden.disabled).toBe(true);
+    expect(normal.checked).toBe(true);
+    expect(screen.getByText("ignored")).toBeTruthy();
+    expect(screen.getByText("hidden here")).toBeTruthy();
+    expect(tree).toHaveBeenCalledWith("w1", "", { scope: "global" });
   });
 
   it("says when the folder is not there", async () => {

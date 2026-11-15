@@ -45,6 +45,7 @@ packages/backend
     workspace-fs.ts      disk access for workspaces (path safety, stale check)
     workspace-index.ts   indexes ticked workspace files for search
     workspace-ticks.ts   the set of paths the user chose to search
+    workspace-visibility.ts  .gitignore matching and hidden paths: what a session is shown
     blobs.ts             bytes of binary files, by SHA-256
     file-lookup.ts       reads a referenced file's kind and bytes for a request
     media-detect.ts      which uploads are accepted, and how they are checked
@@ -474,20 +475,22 @@ attached to several owners or none became global and read-only.
 `{{workspaces}}` expands to one line per workspace the run has (name, reference,
 where it is defined, "can be changed" or "read-only").
 
-| Route                                                                          | Purpose                                                                                                  |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `GET/POST /api/{global,projects/:id,sessions/:id}/workspaces`                  | The workspaces defined at that scope (`?deleted=true` for the trash); create one.                        |
-| `POST /api/sessions/:id/workspaces/temporary`                                  | Make a temporary workspace (`{ name }`).                                                                 |
-| `GET/PUT/DELETE /api/workspaces/:id`                                           | One workspace; save; move to the trash (a temporary one is deleted with its folder).                     |
-| `POST /api/workspaces/:id/restore`                                             | Restore from the trash.                                                                                  |
-| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`                    | "Always allow" grants per tool and workspace; remove one.                                                |
-| `GET /api/fs/dirs?path=`                                                       | The folders inside a folder, for the folder picker.                                                      |
-| `GET /api/sessions/:id/workspace-file?ref=`                                    | The bytes of a workspace image or audio file, for the chat.                                              |
-| `GET /api/workspaces/:id/tree?path=`                                           | One folder of the tree, each entry with its tick state (`all`, `some`, `none`).                          |
-| `GET /api/workspaces/:id/file?path=`, `GET /api/workspaces/:id/file/raw?path=` | The start of a file for the Files tree (text, media or binary), and the bytes of an image or audio file. |
-| `GET /api/workspaces/:id/index`                                                | The ticks and the index status (files, chunks, scanning, truncated, unavailable).                        |
-| `PUT /api/workspaces/:id/ticks`, `POST /api/workspaces/:id/ticks/toggle`       | Set the ticks (`{ ticks }`) or tick or untick one path (`{ path, on }`).                                 |
-| `POST /api/workspaces/:id/rescan`                                              | Rescan now.                                                                                              |
+| Route                                                                          | Purpose                                                                                                                                                                      |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET/POST /api/{global,projects/:id,sessions/:id}/workspaces`                  | The workspaces defined at that scope (`?deleted=true` for the trash); create one.                                                                                            |
+| `POST /api/sessions/:id/workspaces/temporary`                                  | Make a temporary workspace (`{ name }`).                                                                                                                                     |
+| `GET/PUT/DELETE /api/workspaces/:id`                                           | One workspace; save; move to the trash (a temporary one is deleted with its folder).                                                                                         |
+| `POST /api/workspaces/:id/restore`                                             | Restore from the trash.                                                                                                                                                      |
+| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`                    | "Always allow" grants per tool and workspace; remove one.                                                                                                                    |
+| `GET /api/fs/dirs?path=`                                                       | The folders inside a folder, for the folder picker.                                                                                                                          |
+| `GET /api/sessions/:id/workspace-file?ref=`                                    | The bytes of a workspace image or audio file, for the chat.                                                                                                                  |
+| `GET /api/workspaces/:id/tree?path=`                                           | One folder of the tree, each entry with its tick state (`all`, `some`, `none`).                                                                                              |
+| `GET /api/workspaces/:id/file?path=`, `GET /api/workspaces/:id/file/raw?path=` | The start of a file for the Files tree (text, media or binary), and the bytes of an image or audio file.                                                                     |
+| `GET /api/workspaces/:id/index`                                                | The ticks and the index status (files, chunks, scanning, truncated, unavailable).                                                                                            |
+| `PUT /api/workspaces/:id/ticks`, `POST /api/workspaces/:id/ticks/toggle`       | Set the ticks (`{ ticks }`) or tick or untick one path (`{ path, on }`).                                                                                                     |
+| `GET /api/workspaces/:id/files` (`?scope=&scopeId=`)                           | Every file and folder, up to 2,000, shallowest first; ignored ones carry `ignored`. With a scope: the paths it hides (`hidden`) and the broader scopes hide (`hiddenAbove`). |
+| `POST /api/workspaces/:id/visibility/toggle`                                   | `{ scope, scopeId?, path, visible }`: show or hide a path in one scope. The scope must see the workspace.                                                                    |
+| `POST /api/workspaces/:id/rescan`                                              | Rescan now.                                                                                                                                                                  |
 
 ### Searching a workspace
 
@@ -514,6 +517,37 @@ file's modified time and size, so a rescan reads only what changed.
   are not indexed, and links to folders are not entered.
 - **A folder that is gone** (an unplugged drive) keeps its index and is marked
   `unavailable`.
+
+### Ignored and hidden paths
+
+A path is _shown_ to a session when it is not ignored and not hidden
+(`workspace-visibility.ts`, `visibilityOf`).
+
+- **Ignored.** A workspace with `respect_gitignore` (on by default; `PUT` takes
+  `respectGitignore`) ignores what its `.gitignore` files ignore, using the
+  `ignore` package: each `.gitignore` applies below its own folder, a deeper one
+  wins over a higher one, `.git/info/exclude` is the lowest, and `.git` is always
+  ignored. An ignored folder ignores what is in it, even a pattern that re-includes
+  a file. The user's global git ignore file is not read. A matcher reads the files
+  as needed and is made again for each operation, so a change shows at once.
+- **Hidden.** `workspace_hidden` has the paths a scope hides (`global`, a project
+  or a session; `scope_id` is `''` for global). A hidden folder hides what is in it.
+  A session is shown what is hidden by none of its own scope, its project's and the
+  global one. A scope can only set a workspace it sees (its own, or one defined at
+  or above it). Toggling reuses the tick logic: showing a file inside a hidden
+  folder hides the folder's other entries instead.
+
+`createWorkspaceAccess` takes `visibility(w)` (made in `RunManager.workspaceAccessFor`
+from the session's hidden paths). A path that is not shown does not exist for the
+helper: it is left out of `workspace_list`, a read, edit, move or delete says
+"There is no file", a write or move into it is refused, and `workspace_search`
+drops its hits. A folder that holds a path that is not shown cannot be deleted.
+The scan (`WorkspaceIndexer.collect`) skips ignored paths, whoever is asking;
+hidden paths are not removed from the index, because the index is shared by every
+session and each search filters for its own. A fork gets the paths its source
+session hid; a purge removes what the purged scope hid.
+
+Migration `0039` adds `respect_gitignore` and `workspace_hidden`.
 
 Migration `0030` adds the ticks, the fingerprint table and the `workspace` scope
 of `chunks`. SQLite cannot change a CHECK, so it rebuilds `chunks`: it keeps the

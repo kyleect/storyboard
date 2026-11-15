@@ -13,6 +13,7 @@ import {
 } from "./workspace-fs.js";
 import type { WorkspaceIndexer } from "./workspace-index.js";
 import { normalizeTicks, tickState, toggleTick } from "./workspace-ticks.js";
+import { createGitignore } from "./workspace-visibility.js";
 import {
   WorkspaceStoreError,
   type WorkspaceOwner,
@@ -36,7 +37,9 @@ import { WorkspaceError } from "@harness/core";
  *   DELETE /api/workspace-grants                                { tool, workspaceId }
  *   GET    /api/fs/dirs?path=                                   folders, for the folder picker
  *   GET    /api/workspaces/:id/tree?path=                       one folder of the tree, with what is searched
- *   GET    /api/workspaces/:id/files                            every file and folder, shallowest first (capped), for the Files tree
+ *   GET    /api/workspaces/:id/files                            every file and folder, shallowest first (capped), for the Files tree;
+ *                                                                ?scope=&scopeId= adds what that scope and the broader ones hide
+ *   POST   /api/workspaces/:id/visibility/toggle                { scope, scopeId?, path, visible }: show or hide a path in one scope
  *   GET    /api/workspaces/:id/file?path=                       the start of a file, for the Files tree
  *   GET    /api/workspaces/:id/file/raw?path=                   the bytes of an image or audio file
  *   GET    /api/workspaces/:id/index                            the ticks and the index's status
@@ -51,6 +54,18 @@ const Content = z.object({
   name: z.string(),
   path: z.string(),
   writable: z.boolean(),
+  respectGitignore: z.boolean().optional(),
+});
+const ScopeName = z.enum(["global", "project", "session"]);
+const ScopeQuery = z.object({
+  scope: ScopeName.optional(),
+  scopeId: z.string().optional(),
+});
+const VisibilityBody = z.object({
+  scope: ScopeName,
+  scopeId: z.string().optional(),
+  path: z.string(),
+  visible: z.boolean(),
 });
 const IdParams = z.object({ id: z.string() });
 const ListQuery = z.object({ deleted: z.enum(["true", "false"]).optional() });
@@ -58,7 +73,7 @@ const TempBody = z.object({ name: z.string() });
 const FileQuery = z.object({ path: z.string() });
 const GrantBody = z.object({ tool: z.string(), workspaceId: z.string() });
 const DirsQuery = z.object({ path: z.string().optional() });
-const TreeQuery = z.object({ path: z.string().default("") });
+const TreeQuery = z.object({ path: z.string().default("") }).merge(ScopeQuery);
 const TicksBody = z.object({ ticks: z.array(z.string()) });
 const ToggleBody = z.object({ path: z.string(), on: z.boolean() });
 
@@ -173,6 +188,53 @@ export function registerWorkspaceRoutes(
     return w;
   };
 
+  // ---- What a scope sees ---------------------------------------------------
+
+  /** The scope a request is about, which must exist. */
+  const scopeFrom = (
+    q: z.infer<typeof ScopeQuery>,
+  ): WorkspaceOwner | undefined => {
+    if (q.scope === undefined) return undefined;
+    if (q.scope === "global") return { scope: "global" };
+    if (!q.scopeId) {
+      throw new WorkspaceStoreError("Name the project or session.", 400);
+    }
+    return checkOwner({ scope: q.scope, id: q.scopeId });
+  };
+
+  /** The scopes broader than this one, whose choices it cannot undo. */
+  const broaderThan = (scope: WorkspaceOwner): WorkspaceOwner[] => {
+    if (scope.scope === "global") return [];
+    if (scope.scope === "project") return [{ scope: "global" }];
+    const projectId = store.getSession(scope.id)?.project_id ?? null;
+    return [
+      { scope: "global" },
+      ...(projectId ? [{ scope: "project" as const, id: projectId }] : []),
+    ];
+  };
+
+  /** A scope can only set what it can see: a workspace defined at or above it. */
+  const checkSees = (
+    w: { scope: string; ownerId: string | null },
+    scope: WorkspaceOwner,
+  ) => {
+    const sees =
+      w.scope === "global" ||
+      (scope.scope === "project" &&
+        w.scope === "project" &&
+        w.ownerId === scope.id) ||
+      (scope.scope === "session" &&
+        ((w.scope === "session" && w.ownerId === scope.id) ||
+          (w.scope === "project" &&
+            w.ownerId === (store.getSession(scope.id)?.project_id ?? null))));
+    if (!sees) {
+      throw new WorkspaceStoreError(
+        "That scope does not see this workspace.",
+        400,
+      );
+    }
+  };
+
   /** The entries of a folder as paths, folders first, for the tree. */
   const filesOf = (root: string, folder: string) => {
     let abs: string;
@@ -208,13 +270,22 @@ export function registerWorkspaceRoutes(
 
   app.get("/api/workspaces/:id/tree", async (req) => {
     const w = live(IdParams.parse(req.params).id);
-    const { path } = TreeQuery.parse(req.query);
+    const { path, ...q } = TreeQuery.parse(req.query);
     const folder = path.replace(/^\/+|\/+$/g, "");
+    const scope = scopeFrom(q);
+    if (scope) checkSees(w, scope);
+    // What this scope and the broader ones hide is not searched there.
+    const hidden = scope
+      ? workspaces.hiddenIn(w.id, [scope, ...broaderThan(scope)])
+      : [];
+    const ig = w.respectGitignore ? createGitignore(w.path) : null;
     return {
       path: folder,
       entries: filesOf(w.path, folder).map((e) => ({
         ...e,
         state: tickState(w.ticks, e.path),
+        ...(ig?.ignored(e.path) ? { ignored: true } : {}),
+        ...(scope ? { hidden: tickState(hidden, e.path) } : {}),
       })),
     };
   });
@@ -283,10 +354,53 @@ export function registerWorkspaceRoutes(
 
   app.get("/api/workspaces/:id/files", async (req) => {
     const w = live(IdParams.parse(req.params).id);
+    const scope = scopeFrom(ScopeQuery.parse(req.query));
+    if (scope) checkSees(w, scope);
+    const hidden = scope
+      ? {
+          hidden: workspaces.hiddenAt(w.id, scope),
+          hiddenAbove: workspaces.hiddenIn(w.id, broaderThan(scope)),
+        }
+      : {};
     if (!existsSync(w.path)) {
-      return { entries: [], truncated: false, unavailable: true };
+      return { entries: [], truncated: false, unavailable: true, ...hidden };
     }
-    return { ...walkWorkspace(w.path), unavailable: false };
+    const walk = walkWorkspace(w.path);
+    const ig = w.respectGitignore ? createGitignore(w.path) : null;
+    return {
+      entries: walk.entries.map((e) =>
+        ig?.ignored(e.path) ? { ...e, ignored: true } : e,
+      ),
+      truncated: walk.truncated,
+      unavailable: false,
+      ...hidden,
+    };
+  });
+
+  app.post("/api/workspaces/:id/visibility/toggle", async (req) => {
+    const w = live(IdParams.parse(req.params).id);
+    const body = VisibilityBody.parse(req.body);
+    const scope = scopeFrom(body) as WorkspaceOwner;
+    checkSees(w, scope);
+    let next: string[];
+    try {
+      // "on" of the tick logic is hiding here.
+      next = toggleTick(
+        workspaces.hiddenAt(w.id, scope),
+        body.path,
+        !body.visible,
+        (folder) => filesOf(w.path, folder).map((e) => e.path),
+      );
+    } catch (err) {
+      if (err instanceof WorkspaceStoreError) throw err;
+      throw new WorkspaceStoreError((err as Error).message, 400);
+    }
+    workspaces.setHidden(w.id, scope, next);
+    announce();
+    return {
+      hidden: next,
+      hiddenAbove: workspaces.hiddenIn(w.id, broaderThan(scope)),
+    };
   });
 
   app.get("/api/workspaces/:id/file", async (req) => {

@@ -305,10 +305,11 @@ describe("tool, model and error keys", () => {
       trash: workspaceKeys.list({ scope: "global" }, true),
       sessionList: workspaceKeys.list({ scope: "session", id: "s1" }, false),
       one: workspaceKeys.one("w1"),
-      listing: workspaceKeys.listing("w1"),
-      folders: workspaceKeys.folders("w1"),
+      listing: workspaceKeys.listing("w1", { scope: "global" }),
+      folders: workspaceKeys.folders("w1", { scope: "global" }),
+      marks: workspaceKeys.marks("w1", { scope: "session", id: "s1" }),
       detail: workspaceKeys.detail("w1", "a.md"),
-      otherListing: workspaceKeys.listing("w2"),
+      otherListing: workspaceKeys.listing("w2", { scope: "global" }),
       grants: workspaceKeys.grants(),
       dirs: workspaceKeys.dirs("/a"),
       tree: workspaceKeys.tree("w1", "notes"),
@@ -327,6 +328,7 @@ describe("tool, model and error keys", () => {
       "detail",
       "folders",
       "listing",
+      "marks",
     ]);
     expect(await reach(workspaceKeys.trees("w1"), keys)).toEqual(["tree"]);
     expect(await reach(workspaceKeys.index("w1"), keys)).toEqual(["index"]);

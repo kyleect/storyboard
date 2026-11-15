@@ -9,6 +9,23 @@ import {
 import { fileKeys } from "../queries";
 import type { RootId } from "./explorer";
 
+/**
+ * What a source marks on its nodes: the paths that are ignored, and what the
+ * page's scope hides and what the broader scopes hide, with a checkbox for
+ * showing or hiding a path in the page's scope.
+ */
+export interface ExplorerMarks {
+  key: () => readonly unknown[];
+  load: () => Promise<{
+    ignored: string[];
+    hidden: string[];
+    hiddenAbove: string[];
+  }>;
+  toggle: (path: string, visible: boolean) => Promise<unknown>;
+  /** Who the checkbox is for, as in "Visible to this session". */
+  who: string;
+}
+
 export interface ExplorerSource {
   keys: {
     all: readonly unknown[];
@@ -30,6 +47,7 @@ export interface ExplorerSource {
   renameFolder: (path: string, to: string) => Promise<unknown>;
   deleteFolder: (path: string) => Promise<unknown>;
   accepts?: { anyType: true };
+  marks?: ExplorerMarks;
   upload: (
     file: File,
     mediaType: string,

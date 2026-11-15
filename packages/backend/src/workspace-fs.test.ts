@@ -24,6 +24,7 @@ import {
   walkWorkspace,
   workspaceMediaSource,
   type ReadRecord,
+  type WorkspaceFsOptions,
 } from "./workspace-fs.js";
 import type { WorkspaceRow } from "./workspaces-store.js";
 
@@ -45,7 +46,14 @@ afterEach(() => {
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
-function setup(over: { writable?: boolean; cap?: number } = {}) {
+function setup(
+  over: {
+    writable?: boolean;
+    cap?: number;
+    shown?: (rel: string) => boolean;
+    index?: WorkspaceFsOptions["index"];
+  } = {},
+) {
   const ws: WorkspaceRow = {
     id: "w1",
     name: "Notes",
@@ -58,12 +66,15 @@ function setup(over: { writable?: boolean; cap?: number } = {}) {
     updatedAt: "t",
     deleted: false,
     ticks: [],
+    respectGitignore: true,
   };
   const reads = new Map<string, ReadRecord>();
   const access = createWorkspaceAccess({
     attached: () => [ws],
     readCap: () => over.cap ?? 10_000,
     reads,
+    ...(over.shown ? { visibility: () => over.shown as never } : {}),
+    ...(over.index ? { index: over.index } : {}),
   });
   return { ws, reads, access };
 }
@@ -440,6 +451,110 @@ describe("classify and media source", () => {
     // A file with an image name that is not an image has no bytes to give.
     writeFileSync(join(root, "fake.png"), "words");
     expect(source("w1", "fake.png")?.bytes()).toBeUndefined();
+  });
+});
+
+describe("what is not shown (ignored or hidden)", () => {
+  const shown = (rel: string) =>
+    !(rel === "build" || rel.startsWith("build/") || rel === "secret.md");
+
+  function files() {
+    mkdirSync(join(root, "build"));
+    writeFileSync(join(root, "build", "out.js"), "x");
+    writeFileSync(join(root, "secret.md"), "s");
+    writeFileSync(join(root, "a.md"), "a");
+
+    return setup({ shown });
+  }
+
+  it("leaves them out of a listing, also a recursive one", async () => {
+    const { access } = files();
+    const names = (await access.listDir("w1", "", { recursive: true })).map(
+      (e) => e.path,
+    );
+
+    expect(names).toEqual(["a.md"]);
+  });
+
+  it("says a file or folder that is not shown does not exist", async () => {
+    const { access } = files();
+
+    expect(await code(access.read("w1", "secret.md"))).toBe("not_found");
+    expect(await code(access.read("w1", "build/out.js"))).toBe("not_found");
+    expect(await code(access.listDir("w1", "build"))).toBe("not_found");
+  });
+
+  it("refuses to change them, and to make a new one there", async () => {
+    const { access } = files();
+
+    expect(await code(access.write("w1", "secret.md", "x"))).toBe("not_found");
+    expect(await code(access.write("w1", "build/new.js", "x"))).toBe("invalid");
+    expect(await code(access.edit("w1", "secret.md", "s", "t"))).toBe(
+      "not_found",
+    );
+    expect(await code(access.remove("w1", "secret.md"))).toBe("not_found");
+    expect(await code(access.move("w1", "a.md", "secret.md"))).toBe("invalid");
+    expect(await code(access.createFolder("w1", "build/sub"))).toBe("invalid");
+    expect(readFileSync(join(root, "secret.md"), "utf8")).toBe("s");
+  });
+
+  it("does not delete a folder that holds one", async () => {
+    mkdirSync(join(root, "docs"));
+    writeFileSync(join(root, "docs", "a.md"), "a");
+    writeFileSync(join(root, "docs", "secret.md"), "s");
+    const { access } = setup({ shown: (rel) => !rel.endsWith("secret.md") });
+
+    expect(
+      await code(access.deleteFolder("w1", "docs", { recursive: true })),
+    ).toBe("invalid");
+    expect(existsSync(join(root, "docs", "secret.md"))).toBe(true);
+  });
+
+  it("still reads and writes what is shown", async () => {
+    const { access } = files();
+
+    expect((await access.read("w1", "a.md")).kind).toBe("text");
+    await access.read("w1", "a.md");
+    await access.write("w1", "a.md", "b");
+    expect(readFileSync(join(root, "a.md"), "utf8")).toBe("b");
+  });
+
+  it("drops them from search results", async () => {
+    mkdirSync(join(root, "build"), { recursive: true });
+    const { access, ws } = setup({
+      shown,
+      index: {
+        files: () => 2,
+        search: async () => ({
+          mode: "keyword" as const,
+          hits: [
+            {
+              workspaceId: "w1",
+              path: "a.md",
+              excerpt: "a",
+              matched: "keyword" as const,
+            },
+            {
+              workspaceId: "w1",
+              path: "build/out.js",
+              excerpt: "b",
+              matched: "keyword" as const,
+            },
+            {
+              workspaceId: "w1",
+              path: "secret.md",
+              excerpt: "s",
+              matched: "keyword" as const,
+            },
+          ],
+        }),
+      },
+    });
+
+    ws.ticks = [""];
+    const found = await access.search("x", 10);
+
+    expect(found.hits.map((h) => h.path)).toEqual(["a.md"]);
   });
 });
 

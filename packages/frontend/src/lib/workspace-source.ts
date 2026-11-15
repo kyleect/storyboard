@@ -3,6 +3,7 @@ import {
   api,
   workspaceBlob,
   type FileDetail,
+  type FileScope,
   type StoredFile,
   type Workspace,
   type WorkspaceFiles,
@@ -37,7 +38,40 @@ const unchangeable = (): Promise<never> =>
  * the whole workspace; the files and the folders are read from it, so the two
  * lists asked for at once are one request.
  */
-export function workspaceSource(workspace: Workspace): ExplorerSource {
+export const SCOPE_WORDS: Record<FileScope["scope"], string> = {
+  session: "this session",
+  project: "every session in this project",
+  global: "every session",
+};
+
+const isUnder = (path: string, folder: string): boolean =>
+  folder === "" || path === folder || path.startsWith(`${folder}/`);
+
+/**
+ * How visible a path is in the page's scope: `all` of it, `some` of it or
+ * `none` (hidden). `locked` when a broader scope hides it, which this scope
+ * cannot undo.
+ */
+export function visibleState(
+  hidden: readonly string[],
+  above: readonly string[],
+  path: string,
+): { state: "all" | "some" | "none"; locked: boolean } {
+  const all = [...hidden, ...above];
+  const locked = above.some((h) => isUnder(path, h));
+
+  if (all.some((h) => isUnder(path, h))) return { state: "none", locked };
+
+  return {
+    state: all.some((h) => isUnder(h, path)) ? "some" : "all",
+    locked,
+  };
+}
+
+export function workspaceSource(
+  workspace: Workspace,
+  scope: FileScope,
+): ExplorerSource {
   const id = workspace.id;
   let pending: Promise<WorkspaceFiles> | null = null;
   const listing = (): Promise<WorkspaceFiles> => {
@@ -49,7 +83,7 @@ export function workspaceSource(workspace: Workspace): ExplorerSource {
       });
     }
 
-    pending ??= api.listWorkspaceFiles(id).finally(() => {
+    pending ??= api.listWorkspaceFiles(id, scope).finally(() => {
       pending = null;
     });
 
@@ -59,8 +93,8 @@ export function workspaceSource(workspace: Workspace): ExplorerSource {
   return {
     keys: {
       all: workspaceKeys.contents(id),
-      list: () => workspaceKeys.listing(id),
-      folders: () => workspaceKeys.folders(id),
+      list: () => workspaceKeys.listing(id, scope),
+      folders: () => workspaceKeys.folders(id, scope),
       detail: (key) => workspaceKeys.detail(id, key),
     },
     list: async (): Promise<StoredFile[]> =>
@@ -109,6 +143,21 @@ export function workspaceSource(workspace: Workspace): ExplorerSource {
         value: `A binary file of ${p.size} bytes. It cannot be shown here.`,
       };
     },
+    marks: {
+      key: () => workspaceKeys.marks(id, scope),
+      load: async () => {
+        const l = await listing();
+
+        return {
+          ignored: l.entries.flatMap((e) => (e.ignored ? [e.path] : [])),
+          hidden: l.hidden ?? [],
+          hiddenAbove: l.hiddenAbove ?? [],
+        };
+      },
+      toggle: (path, visible) =>
+        api.toggleWorkspaceVisibility(id, scope, path, visible),
+      who: SCOPE_WORDS[scope.scope],
+    },
     write: unchangeable,
     remove: unchangeable,
     restore: unchangeable,
@@ -122,10 +171,11 @@ export function workspaceSource(workspace: Workspace): ExplorerSource {
 export const workspaceRoot = (
   workspace: Workspace,
   group: string,
+  scope: FileScope,
 ): ExplorerRoot => ({
   id: workspaceRootId(workspace.id),
   label: workspace.name,
-  source: workspaceSource(workspace),
+  source: workspaceSource(workspace, scope),
   readOnly: READ_ONLY_HERE,
   group,
   deleted: workspace.deleted,

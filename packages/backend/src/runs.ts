@@ -58,6 +58,7 @@ import {
 } from "./media-describer.js";
 import { fileLookup, fileResolver } from "./file-lookup.js";
 import type { SearchIndex } from "./search-index.js";
+import { visibilityOf } from "./workspace-visibility.js";
 import {
   DEFAULT_TITLE,
   NO_GENERATION,
@@ -1516,6 +1517,8 @@ export class RunManager {
     return createWorkspaceAccess({
       attached: () => store.forSession(sessionId, projectId),
       readCap: () => this.options.settings().workspaceReadCap,
+      visibility: (w) =>
+        visibilityOf(w, store.hiddenForSession(w.id, sessionId, projectId)),
       reads,
       ...(this.options.workspaceIndex
         ? { index: this.options.workspaceIndex }

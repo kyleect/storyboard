@@ -11,6 +11,7 @@ import type { Database } from "better-sqlite3-multiple-ciphers";
 import { classify, resolveIn } from "./workspace-fs.js";
 import type { SearchIndex } from "./search-index.js";
 import { isUnder } from "./workspace-ticks.js";
+import { createGitignore } from "./workspace-visibility.js";
 import type { WorkspaceRow, WorkspaceStore } from "./workspaces-store.js";
 
 /*
@@ -208,6 +209,9 @@ export class WorkspaceIndexer {
       out.add(rel);
       return true;
     };
+    // What a .gitignore ignores is not scanned (when the workspace says so).
+    const ig = w.respectGitignore ? createGitignore(w.path) : null;
+    const skipped = (rel: string) => ig?.ignored(rel) ?? false;
     const walk = (dirAbs: string, dirRel: string): boolean => {
       let names: string[];
       try {
@@ -224,6 +228,7 @@ export class WorkspaceIndexer {
         } catch {
           continue;
         }
+        if (skipped(rel)) continue;
         if (l.isSymbolicLink()) {
           // A link to a file is followed if it stays in the folder; a link to
           // a folder is not entered.
@@ -254,6 +259,7 @@ export class WorkspaceIndexer {
       } catch {
         continue;
       }
+      if (tick !== "" && skipped(tick)) continue;
       if (l.isDirectory() && !l.isSymbolicLink()) {
         if (!walk(abs, tick)) break;
       } else if (statSync(abs, { throwIfNoEntry: false })?.isFile()) {
@@ -389,7 +395,7 @@ export class WorkspaceIndexer {
 
   private async watch(w: WorkspaceRow) {
     if (this.options.watch === false || this.stopped) return;
-    const key = JSON.stringify([w.path, w.ticks]);
+    const key = JSON.stringify([w.path, w.ticks, w.respectGitignore]);
     const existing = this.watchers.get(w.id);
     if (existing?.key === key) return;
     await this.unwatch(w.id);
