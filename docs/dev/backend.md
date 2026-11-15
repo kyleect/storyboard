@@ -156,7 +156,7 @@ before `files-rename` read a message's file changes from `entries`, with a
 | Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments).                                                                 |
 | Workspaces       | `workspaces`, `workspace_index_files`                                                                          | Folders, each owned by the profile, a project or a session; see [Workspaces](#workspaces).                                                                         |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                                                                                         |
-| Files            | `files`, `file_versions`, `folders`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`             | Project and global files, and indexed workspace files (scope `workspace`).                                                                                         |
+| Files            | `files`, `file_versions`, `folders`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`             | Project and global files, indexed workspace files (scope `workspace`) and the messages of continued sessions (scope `transcript`).                                 |
 | Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                                                                                    |
 | Skills           | `skills`, `skill_versions`, `skill_files`                                                                      | A skill is a folder. `skill_files` is one version's manifest (path, type, size, blob hash); the bytes are in `blobs`. A binary file keeps its last three contents. |
 | Schemas and data | `schemas`, `schema_versions`, `data`, `data_versions`                                                          | Global, project and agent only.                                                                                                                                    |
@@ -165,7 +165,11 @@ before `files-rename` read a message's file changes from `entries`, with a
 
 **Sessions** have `title`, `project_id`, `agent_id`, `model`,
 `reasoning_effort`, `trashed_at` and `trashed_with_project`. A `NULL` model or
-effort means "use the default setting". **Projects** have `name`,
+effort means "use the default setting". A session that continues an earlier one
+(see [Session rollover](#session-rollover)) also has `continued_from_id`,
+`continued_from_title` (the earlier title then, so a purged session can still be
+named) and `continued_carried` (how many messages were copied in). There is no
+foreign key, so purging the earlier session is never blocked by the later one. **Projects** have `name`,
 `description`, `system_prompt`, `default_agent_id`, `last_used_at` and
 `trashed_at`.
 
@@ -236,43 +240,46 @@ resolved by precedence: **environment variable, then stored value, then
 default.** `GET /api/settings` returns the effective values, the stored values,
 and which are overridden by the environment.
 
-| Setting                 | Env variable                     | Default                   | Meaning                                                                           |
-| ----------------------- | -------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
-| `llamaServerUrl`        | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080`   | Address of llama-server.                                                          |
-| `model`                 | `HARNESS_MODEL`                  | empty (not sent)          | Default model (router mode).                                                      |
-| `reasoningEffort`       | `HARNESS_REASONING_EFFORT`       | empty (not sent)          | Default effort; `none` turns reasoning off.                                       |
-| `port`                  | `HARNESS_PORT`                   | `4317`                    | Backend port.                                                                     |
-| `loopLimit`             | `HARNESS_LOOP_LIMIT`             | `20`                      | Most model calls per run.                                                         |
-| `copyLimit`             | `HARNESS_COPY_LIMIT`             | `20` (max 200)            | Most keys per copy/move call.                                                     |
-| `skillFileMaxMib`       | `HARNESS_SKILL_FILE_MAX_MIB`     | `20` (1–1024)             | Most MiB in one file of a skill.                                                  |
-| `skillMaxMib`           | `HARNESS_SKILL_MAX_MIB`          | `100` (1–4096)            | Most MiB in all the files of one skill.                                           |
-| `skillMaxFiles`         | `HARNESS_SKILL_MAX_FILES`        | `500` (1–10000)           | Most files in one skill.                                                          |
-| `trashRetentionDays`    | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                      | Days in trash before purge at startup; `0` never.                                 |
-| `embeddingModel`        | `HARNESS_EMBEDDING_MODEL`        | empty                     | Router model for embeddings; empty means keyword search only.                     |
-| `autoRename`            | `HARNESS_AUTO_RENAME`            | `true`                    | Title a new session from its first message.                                       |
-| `autoRenameSource`      | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                   | `model` or `message`.                                                             |
-| `titleModel`            | `HARNESS_TITLE_MODEL`            | empty                     | Model that writes titles; empty uses the session's model.                         |
-| `titlePrompt`           | `HARNESS_TITLE_PROMPT`           | built-in text             | System prompt of the title call.                                                  |
-| `systemPrompt`          | `HARNESS_SYSTEM_PROMPT`          | built-in text             | Global system prompt (see below).                                                 |
-| `skillsInstruction`     | `HARNESS_SKILLS_INSTRUCTION`     | built-in text             | Wording before the skill list when it is auto-inserted; `{{skills_instruction}}`. |
-| `schemasInstruction`    | `HARNESS_SCHEMAS_INSTRUCTION`    | built-in text             | The same for the schema list; `{{schemas_instruction}}`.                          |
-| `toolsInstruction`      | `HARNESS_TOOLS_INSTRUCTION`      | built-in text             | Wording for `{{tools_instruction}}`; empty when the list is.                      |
-| `dataInstruction`       | `HARNESS_DATA_INSTRUCTION`       | built-in text             | Wording for `{{data_instruction}}`; empty when the list is.                       |
-| `agentsInstruction`     | `HARNESS_AGENTS_INSTRUCTION`     | built-in text             | Wording for `{{agents_instruction}}`; empty when the list is.                     |
-| `workspacesInstruction` | `HARNESS_WORKSPACES_INSTRUCTION` | built-in text             | Wording for `{{workspaces_instruction}}`; empty when the list is.                 |
-| `filesInstruction`      | `HARNESS_FILES_INSTRUCTION`      | built-in text             | Wording for `{{files_instruction}}`; empty when the list is.                      |
-| `defaultAgentId`        | `HARNESS_DEFAULT_AGENT_ID`       | empty                     | Global default agent.                                                             |
-| `childReminders`        | `HARNESS_CHILD_REMINDERS`        | `2`                       | Reminders a subagent gets before its last text is taken as output.                |
-| `childPrompt`           | `HARNESS_CHILD_PROMPT`           | built-in text             | Line appended to a subagent's system message.                                     |
-| `subagentMessageLabel`  | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.      |
-| `subagentDepth`         | `HARNESS_SUBAGENT_DEPTH`         | `2`                       | How deep subagents nest; `0` turns subagents off.                                 |
-| `inlineMediaCap`        | `HARNESS_INLINE_MEDIA_CAP`       | `4`                       | The most kept images and audio files from earlier turns sent with a request.      |
-| `keepMediaInline`       | `HARNESS_KEEP_MEDIA_INLINE`      | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.      |
-| `mediaDescriberAgent`   | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off.     |
-| `mediaDescriberModel`   | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.          |
-| `workspaceReadCap`      | `HARNESS_WORKSPACE_READ_CAP`     | `10000`                   | The most characters one workspace read returns (100 or more).                     |
-| `editMode`              | `HARNESS_EDIT_MODE`              | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.         |
-| `answerAfterEdit`       | `HARNESS_ANSWER_AFTER_EDIT`      | `true`                    | Whether the model replies right after an edit that made a branch.                 |
+| Setting                    | Env variable                         | Default                   | Meaning                                                                                             |
+| -------------------------- | ------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| `llamaServerUrl`           | `HARNESS_LLAMA_URL`                  | `http://127.0.0.1:8080`   | Address of llama-server.                                                                            |
+| `model`                    | `HARNESS_MODEL`                      | empty (not sent)          | Default model (router mode).                                                                        |
+| `reasoningEffort`          | `HARNESS_REASONING_EFFORT`           | empty (not sent)          | Default effort; `none` turns reasoning off.                                                         |
+| `port`                     | `HARNESS_PORT`                       | `4317`                    | Backend port.                                                                                       |
+| `loopLimit`                | `HARNESS_LOOP_LIMIT`                 | `20`                      | Most model calls per run.                                                                           |
+| `copyLimit`                | `HARNESS_COPY_LIMIT`                 | `20` (max 200)            | Most keys per copy/move call.                                                                       |
+| `skillFileMaxMib`          | `HARNESS_SKILL_FILE_MAX_MIB`         | `20` (1–1024)             | Most MiB in one file of a skill.                                                                    |
+| `skillMaxMib`              | `HARNESS_SKILL_MAX_MIB`              | `100` (1–4096)            | Most MiB in all the files of one skill.                                                             |
+| `skillMaxFiles`            | `HARNESS_SKILL_MAX_FILES`            | `500` (1–10000)           | Most files in one skill.                                                                            |
+| `trashRetentionDays`       | `HARNESS_TRASH_RETENTION_DAYS`       | `30`                      | Days in trash before purge at startup; `0` never.                                                   |
+| `embeddingModel`           | `HARNESS_EMBEDDING_MODEL`            | empty                     | Router model for embeddings; empty means keyword search only.                                       |
+| `autoRename`               | `HARNESS_AUTO_RENAME`                | `true`                    | Title a new session from its first message.                                                         |
+| `autoRenameSource`         | `HARNESS_AUTO_RENAME_SOURCE`         | `model`                   | `model` or `message`.                                                                               |
+| `titleModel`               | `HARNESS_TITLE_MODEL`                | empty                     | Model that writes titles; empty uses the session's model.                                           |
+| `titlePrompt`              | `HARNESS_TITLE_PROMPT`               | built-in text             | System prompt of the title call.                                                                    |
+| `systemPrompt`             | `HARNESS_SYSTEM_PROMPT`              | built-in text             | Global system prompt (see below).                                                                   |
+| `skillsInstruction`        | `HARNESS_SKILLS_INSTRUCTION`         | built-in text             | Wording before the skill list when it is auto-inserted; `{{skills_instruction}}`.                   |
+| `schemasInstruction`       | `HARNESS_SCHEMAS_INSTRUCTION`        | built-in text             | The same for the schema list; `{{schemas_instruction}}`.                                            |
+| `toolsInstruction`         | `HARNESS_TOOLS_INSTRUCTION`          | built-in text             | Wording for `{{tools_instruction}}`; empty when the list is.                                        |
+| `dataInstruction`          | `HARNESS_DATA_INSTRUCTION`           | built-in text             | Wording for `{{data_instruction}}`; empty when the list is.                                         |
+| `agentsInstruction`        | `HARNESS_AGENTS_INSTRUCTION`         | built-in text             | Wording for `{{agents_instruction}}`; empty when the list is.                                       |
+| `workspacesInstruction`    | `HARNESS_WORKSPACES_INSTRUCTION`     | built-in text             | Wording for `{{workspaces_instruction}}`; empty when the list is.                                   |
+| `filesInstruction`         | `HARNESS_FILES_INSTRUCTION`          | built-in text             | Wording for `{{files_instruction}}`; empty when the list is.                                        |
+| `defaultAgentId`           | `HARNESS_DEFAULT_AGENT_ID`           | empty                     | Global default agent.                                                                               |
+| `childReminders`           | `HARNESS_CHILD_REMINDERS`            | `2`                       | Reminders a subagent gets before its last text is taken as output.                                  |
+| `childPrompt`              | `HARNESS_CHILD_PROMPT`               | built-in text             | Line appended to a subagent's system message.                                                       |
+| `subagentMessageLabel`     | `HARNESS_SUBAGENT_MESSAGE_LABEL`     | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.                        |
+| `subagentDepth`            | `HARNESS_SUBAGENT_DEPTH`             | `2`                       | How deep subagents nest; `0` turns subagents off.                                                   |
+| `inlineMediaCap`           | `HARNESS_INLINE_MEDIA_CAP`           | `4`                       | The most kept images and audio files from earlier turns sent with a request.                        |
+| `keepMediaInline`          | `HARNESS_KEEP_MEDIA_INLINE`          | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.                        |
+| `mediaDescriberAgent`      | `HARNESS_MEDIA_DESCRIBER_AGENT`      | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off.                       |
+| `mediaDescriberModel`      | `HARNESS_MEDIA_DESCRIBER_MODEL`      | empty                     | The router model that runs it. Empty: off, so a new install writes none.                            |
+| `workspaceReadCap`         | `HARNESS_WORKSPACE_READ_CAP`         | `10000`                   | The most characters one workspace read returns (100 or more).                                       |
+| `editMode`                 | `HARNESS_EDIT_MODE`                  | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.                           |
+| `answerAfterEdit`          | `HARNESS_ANSWER_AFTER_EDIT`          | `true`                    | Whether the model replies right after an edit that made a branch.                                   |
+| `rolloverCarryPercent`     | `HARNESS_ROLLOVER_CARRY_PERCENT`     | `10`                      | Share of the context size copied into a session that continues a full one, in %.                    |
+| `contextFullAction`        | `HARNESS_CONTEXT_FULL_ACTION`        | `new_session`             | `new_session`: a session whose last call filled the context continues in a new one; `off`: nothing. |
+| `rolloverThresholdPercent` | `HARNESS_ROLLOVER_THRESHOLD_PERCENT` | `80`                      | Share of the context size the last call uses before the session continues, in %.                    |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.
@@ -593,8 +600,13 @@ The body is `content` (which may be empty when there are files),
    [Titles](#session-titles)).
 4. Append the user message to the transcript, with the references of its
    files. A message with no text does not get the session a title.
-5. `launch(...)` the run, and return `{ runId }` immediately with status 202.
-6. Start the title job in parallel if needed.
+5. With `contextFullAction` set to `new_session`, check whether the session is
+   already full (see [Session rollover](#session-rollover)). If it is, the
+   session is continued in a new one first, and the message goes there.
+6. `launch(...)` the run, and return `{ runId, sessionId }` immediately with
+   status 202. `sessionId` is the session the message went to: a new one after a
+   rollover, otherwise the same.
+7. Start the title job in parallel if needed.
 
 The HTTP request returns as soon as the run is started. All progress arrives on
 the event stream.
@@ -683,7 +695,10 @@ empty parts dropped and the rest joined by blank lines:
    uses `{{schemas}}` or `{{schemas_instruction}}`;
 6. the files instruction (says whether the session is in a project);
 7. for a subagent, its closing line (the agent's `childPrompt`, else the global
-   one).
+   one);
+8. in a session that continues another, a note that says so and names the tools
+   `sessions_search` and `sessions_read` (`earlierSessionNote`). It is not a
+   setting and not a placeholder.
 
 **Placeholders.** In prompts the user writes (parts 1 to 3), `{{skills}}`,
 `{{tools}}`, `{{schemas}}`, `{{data}}`, `{{agents}}`, `{{workspaces}}`, `{{files}}`,
@@ -940,6 +955,63 @@ project is also trashed requires the caller to say whether the project returns
 with all of its sessions or alone. Only items in the trash can be permanently
 deleted. Items past the retention period are purged at startup.
 
+A session that another session continues can be trashed only with `force`:
+without it the request is refused (409) with `needsForce` and `continuedBy`, the
+later sessions that would lose the history they can search. Purging keeps a
+trashed session while a session that continues it still exists
+(`keepContinued`), so a trashed session stays searchable and is only removed once
+its successors are gone.
+
+### Session rollover
+
+A long session can be continued in a new one instead of being compacted. The
+earlier session stays complete and can be searched by the new one.
+
+**What moves.** `rolloverSession` (`rollover.ts`) creates the new session with the
+same project, agent, model and effort, and:
+
+- copies the most recent messages that fit in `rolloverCarryPercent` of the
+  context size (default 10%), at least the latest step (`chooseCarry`; size is
+  estimated as characters divided by 4). Copies keep their time and model but
+  not their usage;
+- adds a first message with the role `carried` that holds the notice the model
+  reads, the current state of the session's files, schemas and data, and the
+  latest state each tool saved (see [core.md](core.md#messages)). When the last
+  step had reasoning, its text is added to the notice (up to 4,000 characters,
+  keeping the end), so the model does not have to think it through again;
+- hands the session's own workspaces to the new session.
+
+The earlier session keeps everything, becomes **read only** (`requireWritable`:
+messages, edits, branches and runs are refused with 409 and `continuedTo`) and is
+still read only when trashed. Only fork, rename, trash and restore work on it.
+Chains are possible: the new session can be continued in turn.
+
+**Ways to start it.**
+
+1. The user: `POST /api/sessions/:id/rollover` (409 while a run is active, or
+   when the session was continued already).
+2. After a step. The loop ends a run with `rolled_over` when the step's call used
+   at least `rolloverThresholdPercent` (default 80) of the context size (see
+   [core.md](core.md#the-agent-loop-runloop)). `RunManager` then calls
+   `continueInNewSession`: the session is continued, a run is started in the
+   new one that carries on (the steps already taken count against the loop
+   limit), and `session.continued` is published on the old session's stream. A
+   subagent, the last allowed step, and a step without usage never trigger it.
+3. Before a run, in `sendMessage` (`rollOverIfFull`), from the context size and
+   the last known use.
+
+Automatic rollover applies only while `contextFullAction` is `new_session`.
+
+**Context size.** It comes from llama-server (`/props`) for the model that will
+run, and is kept per model (`contextSizes`). When a lookup fails (for example the
+model is not loaded), the last known size is kept, so one error does not turn the
+feature off. With no known size, automatic rollover does nothing and a manual one
+carries only the latest step.
+
+**Search.** The messages of a continued session are indexed under the scope
+`transcript` (see [Search](#search)); the tools `sessions_search` and
+`sessions_read` read them (see [tools.md](tools.md#sessions)).
+
 ## Agents, skills, files, data
 
 These four stores follow the same pattern, and all are used both by HTTP routes
@@ -1068,6 +1140,12 @@ other models are deleted and everything is embedded again. With no embedding
 model set it does nothing. Models whose names contain `nomic-embed-text` get the
 `search_document: ` / `search_query: ` task prefixes they expect.
 
+**Transcripts.** Once a session has been continued, its messages are chunked into
+the scope `transcript` (owner: the session; key: the message id; sequence
+number: the place within the message). They are never part of `sessionSearch`.
+Only `sessions_search` queries them (`history.ts`), limited to the sessions the
+current one continues, directly or through a chain.
+
 **Querying.** `sessionSearch` restricts the search to the session's scopes
 (session, its project, global). It runs the FTS5 keyword query and, if an
 embedding model is set, a cosine-distance vector query (sqlite-vec). The two
@@ -1121,41 +1199,42 @@ request also lists the `issues`.
 
 ### Sessions and projects
 
-| Method and path                                                         | Purpose                                                                                                                                                                                    |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/sessions?projectId=`                                          | List sessions (a project's, or standalone).                                                                                                                                                |
-| `GET /api/sessions-page`                                                | One page of sessions for the Sessions page: `projectId`, `direction` (`asc`/`desc` by creation time), `page`, `pageSize` (10, 25, 50 or 100). Each item says whether a run is in progress. |
-| `GET /api/sessions-unread`, `GET /api/sessions-unread/list`             | How many sessions (and which) have an assistant reply the user has not seen: the rail's indicator and the tab dots.                                                                        |
-| `POST /api/sessions/:id/seen`                                           | Mark a session's replies as seen (sets the read mark; returns the session).                                                                                                                |
-| `GET /api/sessions-page/ids`                                            | The ids of every session not in the trash (a project's, or standalone) and whether each is running: what "select all" needs.                                                               |
-| `POST /api/sessions/trash`                                              | Trash several sessions (`{ ids }`). The ones that cannot be trashed (not found, already trashed, a run in progress) come back with the reason.                                             |
-| `POST /api/sessions`                                                    | Create (optionally in a project; applies the default agent).                                                                                                                               |
-| `GET /api/sessions/:id`                                                 | Session detail: session, project, the messages of the line shown (each with its sibling branches), `branching`, `forkedFrom`, subagent usage, and the live-run snapshot.                   |
-| `PATCH /api/sessions/:id`                                               | Rename, or change model, effort or agent.                                                                                                                                                  |
-| `POST /api/sessions/:id/trash`, `…/restore`, `DELETE /api/sessions/:id` | Trash, restore, permanently delete (trashed only).                                                                                                                                         |
-| `GET /api/sessions/:id/debug`                                           | Debug export.                                                                                                                                                                              |
-| `GET /api/trash`, `DELETE /api/trash`                                   | List the trash (projects, sessions, deleted branches); empty it.                                                                                                                           |
-| `PATCH /api/sessions/:id/messages/:messageId`                           | Edit a user message (`mode` `branch` or `in_place`); see [Branches](#branches).                                                                                                            |
-| `POST /api/sessions/:id/regenerate`, `…/branch`, `…/switch`             | Regenerate the last reply; end the line at a message; show another branch.                                                                                                                 |
-| `POST /api/sessions/:id/fork`                                           | Copy the line up to a message into a new session (201); body `{ messageId, title }`.                                                                                                       |
-| `DELETE /api/sessions/:id/branches/:messageId`                          | Move a branch to the trash.                                                                                                                                                                |
-| `POST /api/trash/branches/:messageId/restore`, `DELETE …/:messageId`    | Restore a deleted branch; delete it forever.                                                                                                                                               |
-| `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects. `color` is a name from `PROJECT_COLORS` (core) or `null`; any other value is a 400.                                                                   |
-| `POST /api/projects/:id/trash`, `…/restore`, `DELETE /api/projects/:id` | Trash, restore, permanently delete.                                                                                                                                                        |
+| Method and path                                                         | Purpose                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/sessions?projectId=`                                          | List sessions (a project's, or standalone).                                                                                                                                                                                                                           |
+| `GET /api/sessions-page`                                                | One page of sessions for the Sessions page: `projectId`, `direction` (`asc`/`desc` by creation time), `page`, `pageSize` (10, 25, 50 or 100). Each item says whether a run is in progress.                                                                            |
+| `GET /api/sessions-unread`, `GET /api/sessions-unread/list`             | How many sessions (and which) have an assistant reply the user has not seen: the rail's indicator and the tab dots.                                                                                                                                                   |
+| `POST /api/sessions/:id/seen`                                           | Mark a session's replies as seen (sets the read mark; returns the session).                                                                                                                                                                                           |
+| `GET /api/sessions-page/ids`                                            | The ids of every session not in the trash (a project's, or standalone) and whether each is running: what "select all" needs.                                                                                                                                          |
+| `POST /api/sessions/trash`                                              | Trash several sessions (`{ ids }`). The ones that cannot be trashed (not found, already trashed, a run in progress) come back with the reason.                                                                                                                        |
+| `POST /api/sessions`                                                    | Create (optionally in a project; applies the default agent).                                                                                                                                                                                                          |
+| `GET /api/sessions/:id`                                                 | Session detail: session, project, the messages of the line shown (each with its sibling branches), `branching`, `forkedFrom`, `continuedFrom` (`id`, `title`, `carried`, or null), `continuedTo` (`id`, `title`, or null), subagent usage, and the live-run snapshot. |
+| `PATCH /api/sessions/:id`                                               | Rename, or change model, effort or agent.                                                                                                                                                                                                                             |
+| `POST /api/sessions/:id/trash`, `…/restore`, `DELETE /api/sessions/:id` | Trash, restore, permanently delete (trashed only). Trash takes `{ force }`; without it a session that others continue is refused (409 with `needsForce` and `continuedBy`).                                                                                           |
+| `GET /api/sessions/:id/debug`                                           | Debug export.                                                                                                                                                                                                                                                         |
+| `GET /api/trash`, `DELETE /api/trash`                                   | List the trash (projects, sessions, deleted branches); empty it.                                                                                                                                                                                                      |
+| `PATCH /api/sessions/:id/messages/:messageId`                           | Edit a user message (`mode` `branch` or `in_place`); see [Branches](#branches).                                                                                                                                                                                       |
+| `POST /api/sessions/:id/regenerate`, `…/branch`, `…/switch`             | Regenerate the last reply; end the line at a message; show another branch.                                                                                                                                                                                            |
+| `POST /api/sessions/:id/rollover`                                       | Continue the session in a new one (201, the new session). 409 while a run is active or if it was continued already.                                                                                                                                                   |
+| `POST /api/sessions/:id/fork`                                           | Copy the line up to a message into a new session (201); body `{ messageId, title }`.                                                                                                                                                                                  |
+| `DELETE /api/sessions/:id/branches/:messageId`                          | Move a branch to the trash.                                                                                                                                                                                                                                           |
+| `POST /api/trash/branches/:messageId/restore`, `DELETE …/:messageId`    | Restore a deleted branch; delete it forever.                                                                                                                                                                                                                          |
+| `GET/POST /api/projects`, `GET/PATCH /api/projects/:id`                 | List, create, read, update projects. `color` is a name from `PROJECT_COLORS` (core) or `null`; any other value is a 400.                                                                                                                                              |
+| `POST /api/projects/:id/trash`, `…/restore`, `DELETE /api/projects/:id` | Trash, restore, permanently delete.                                                                                                                                                                                                                                   |
 
 ### Runs
 
-| Method and path                                              | Purpose                                                                                                           |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `POST /api/sessions/:id/messages`                            | Send a user message and start a run (202 with `{ runId }`). Body may carry `model`, `reasoningEffort`, `agentId`. |
-| `POST /api/sessions/:id/continue`                            | Continue the last message or take the next step.                                                                  |
-| `POST /api/runs/:id/cancel`                                  | Cancel a run (and its children).                                                                                  |
-| `POST /api/runs/:id/end-reasoning`                           | Ask the model to stop thinking and answer.                                                                        |
-| `POST /api/runs/:id/messages`                                | Send a message to a running subagent; it reads it at its next step (`{ text }`; 200 with `{ waiting }`).          |
-| `POST /api/runs/:id/approvals/:requestId`                    | Answer an approval: `choice`, optional `decisionComment`, optional `selection`.                                   |
-| `POST /api/runs/:id/approvals/:requestId/check`, `…/refresh` | Validate a selection; recompute a review.                                                                         |
-| `POST /api/runs/:id/inputs/:requestId`                       | Answer or skip a form.                                                                                            |
-| `GET /api/runs/active`                                       | Every run in progress in any session, with its agent and whether it waits for the user.                           |
+| Method and path                                              | Purpose                                                                                                                                                                           |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/sessions/:id/messages`                            | Send a user message and start a run (202 with `{ runId, sessionId }`; the id differs when the session was continued first). Body may carry `model`, `reasoningEffort`, `agentId`. |
+| `POST /api/sessions/:id/continue`                            | Continue the last message or take the next step.                                                                                                                                  |
+| `POST /api/runs/:id/cancel`                                  | Cancel a run (and its children).                                                                                                                                                  |
+| `POST /api/runs/:id/end-reasoning`                           | Ask the model to stop thinking and answer.                                                                                                                                        |
+| `POST /api/runs/:id/messages`                                | Send a message to a running subagent; it reads it at its next step (`{ text }`; 200 with `{ waiting }`).                                                                          |
+| `POST /api/runs/:id/approvals/:requestId`                    | Answer an approval: `choice`, optional `decisionComment`, optional `selection`.                                                                                                   |
+| `POST /api/runs/:id/approvals/:requestId/check`, `…/refresh` | Validate a selection; recompute a review.                                                                                                                                         |
+| `POST /api/runs/:id/inputs/:requestId`                       | Answer or skip a form.                                                                                                                                                            |
+| `GET /api/runs/active`                                       | Every run in progress in any session, with its agent and whether it waits for the user.                                                                                           |
 
 ### Streams
 
@@ -1211,7 +1290,9 @@ off. Agent responses include `newTools`.
    silence.
 
 The stream carries the session's events from all of its runs (top-level and
-child) and session events.
+child) and session events. When the session is continued in a new one, the stream
+gets `session.continued` (`sessionId` and `title` of the new session) and the
+run ends with `run.finished` and reason `rolled_over`.
 
 ### App stream: `GET /api/events`
 

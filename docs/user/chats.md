@@ -82,6 +82,20 @@ Fork asks where the copy should go.
 
 ![The fork dialog][fork-dialog]
 
+## When a chat gets long
+
+Every model can read only so much at once. The meter at the top of a chat shows how much of that room is used.
+
+When the room is nearly full, the chat **continues in a new chat**. The new chat starts with the latest messages and the current files and data, so the helper can go on. The helper can also look up anything older: the earlier chat stays complete and searchable. You are taken to the new chat by itself. If a helper was in the middle of a job, it carries on there.
+
+You can do this yourself at any time with **Continue in a new session** under the chat. It asks you to confirm.
+
+The new chat shows **Continued from** and the earlier title at the top, and a line where the carried messages end. The earlier chat now says it was continued, with a link to the new one. It is **read only**: you can read it, fork it, rename it and move it to the trash, but not send messages or edit.
+
+Choose how this works under **Settings**, **Agents**, **Limits**. See [Settings](settings.md#limits).
+
+Moving an earlier chat to the trash asks you to confirm. The helper in the new chat can search it, and loses that history when it is gone for good.
+
 ## Helpers working together
 
 A helper can hand a job to another helper. You will see this in the chat. See [Agents](agents.md).

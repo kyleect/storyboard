@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import { ModalsProvider } from "@mantine/modals";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -6,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { notifications } from "@mantine/notifications";
@@ -14,9 +16,25 @@ import { useDrafts } from "../../stores/drafts";
 import { Chat } from "./Chat";
 import type { RecordingMode } from "./components/VoiceButtons";
 
+const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
+
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ sessionId: "s1" }),
-  useNavigate: () => () => {},
+  useNavigate: () => navigate,
+  Link: ({
+    to,
+    params,
+    children,
+    ...rest
+  }: {
+    to: string;
+    params: Record<string, string>;
+    children?: React.ReactNode;
+  }) => (
+    <a href={to.replace("$sessionId", params.sessionId ?? "")} {...rest}>
+      {children}
+    </a>
+  ),
   useRouterState: ({
     select,
   }: {
@@ -88,12 +106,17 @@ const detail = {
     trashed_at: null,
     project_id: null,
     trashed_with_project: 0,
+    continued_from_id: null,
+    continued_from_title: null,
+    continued_carried: null,
     agent_id: null,
   },
   project: null,
   messages: [],
   branching: { points: [], editable: [], regenerate: null, continuations: [] },
   forkedFrom: null,
+  continuedFrom: null,
+  continuedTo: null,
   subagentUsage: null,
   lastEventId: 0,
   activeRun: null,
@@ -126,11 +149,16 @@ beforeEach(() => {
       ? uploaded("image", "cat.png")
       : uploaded("audio", file.name),
   );
-  send = vi.spyOn(api, "sendMessage").mockResolvedValue({ runId: "r1" });
+  send = vi
+    .spyOn(api, "sendMessage")
+    .mockResolvedValue({ runId: "r1", sessionId: "s1" });
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:x");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  navigate.mockClear();
+  vi.restoreAllMocks();
+});
 
 async function show() {
   render(
@@ -140,7 +168,9 @@ async function show() {
       }
     >
       <MantineProvider>
-        <Chat sessionId="s1" />
+        <ModalsProvider>
+          <Chat sessionId="s1" />
+        </ModalsProvider>
       </MantineProvider>
     </QueryClientProvider>,
   );
@@ -226,5 +256,151 @@ describe("the chat page", () => {
     expect(screen.queryByText("live")).toBeNull();
     expect(screen.queryByText("offline")).toBeNull();
     expect(screen.getByRole("radio", { name: "Files" })).toBeTruthy();
+  });
+});
+
+const stored = (id: string, message: unknown) => ({
+  id,
+  message,
+  model: null,
+  reasoningEffort: null,
+  agent: null,
+  usage: null,
+  runId: null,
+  parentCallId: null,
+  parentId: null,
+  branches: null,
+});
+
+const withMessages = [
+  stored("m1", { role: "user", content: "hello" }),
+  stored("m2", { role: "assistant", content: [{ type: "text", text: "hi" }] }),
+];
+
+describe("a session that continues another", () => {
+  const continuedFrom = {
+    id: "s0",
+    title: "Plot",
+    state: "live" as const,
+    carried: 2,
+  };
+
+  it("shows where it continues from, and a divider at the carried messages", async () => {
+    vi.spyOn(api, "getSession").mockResolvedValue({
+      ...detail,
+      continuedFrom,
+      messages: [
+        stored("c1", { role: "carried", content: "the notice", files: [] }),
+        ...withMessages,
+      ],
+    } as SessionDetail);
+    await show();
+    expect(
+      await screen.findByText("Continued from “Plot”. 2 messages carried over"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Plot" }).getAttribute("href"),
+    ).toBe("/sessions/s0");
+  });
+});
+
+describe("a session that was continued", () => {
+  const continuedTo = { id: "s2", title: "Test (2)", trashed: false };
+
+  it("is read only: a banner with a link replaces the composer", async () => {
+    vi.spyOn(api, "getSession").mockResolvedValue({
+      ...detail,
+      continuedTo,
+      messages: withMessages,
+    } as SessionDetail);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MantineProvider>
+          <ModalsProvider>
+            <Chat sessionId="s1" />
+          </ModalsProvider>
+        </MantineProvider>
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByText("This session was continued in a new one"),
+    ).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/Write a message/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Continue in a new session" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Open" }).getAttribute("href"),
+    ).toBe("/sessions/s2");
+  });
+});
+
+describe("continuing in a new session", () => {
+  it("asks first, then rolls the session over and opens the new one", async () => {
+    vi.spyOn(api, "getSession").mockResolvedValue({
+      ...detail,
+      messages: withMessages,
+    } as SessionDetail);
+    const rollover = vi
+      .spyOn(api, "rolloverSession")
+      .mockResolvedValue({ ...detail.session, id: "s2" });
+
+    await show();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue in a new session" }),
+    );
+    expect(rollover).not.toHaveBeenCalled();
+    expect(await screen.findByText(/becomes read only/)).toBeTruthy();
+
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Continue in a new session",
+      }),
+    );
+    await waitFor(() => expect(rollover).toHaveBeenCalledWith("s1"));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/sessions/$sessionId",
+        params: { sessionId: "s2" },
+      }),
+    );
+  });
+
+  it("is not offered for a session with no messages", async () => {
+    await show();
+    expect(
+      (
+        await screen.findByRole("button", {
+          name: "Continue in a new session",
+        })
+      ).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+});
+
+describe("sending a message to a session whose context is full", () => {
+  it("opens the new session the message went to", async () => {
+    send.mockResolvedValue({ runId: "r9", sessionId: "s2" });
+    const box = await show();
+
+    fireEvent.change(box, { target: { value: "carry on" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/sessions/$sessionId",
+        params: { sessionId: "s2" },
+      }),
+    );
+  });
+
+  it("stays in the session when the message went there", async () => {
+    const box = await show();
+
+    fireEvent.change(box, { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

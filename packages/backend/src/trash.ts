@@ -26,7 +26,7 @@ export function purgeExpiredTrash(
   const before = new Date(now.getTime() - days * DAY_MS).toISOString();
   return store.db.transaction(() => ({
     projects: store.purgeTrashedProjects(before),
-    sessions: store.purgeTrashedSessions(before),
+    sessions: store.purgeTrashedSessions(before, { keepContinued: true }),
     branches: store.purgeTrashedBranches(before),
   }))();
 }

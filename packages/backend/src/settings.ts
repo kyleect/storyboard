@@ -151,6 +151,19 @@ export const Settings = z.object({
    * edit in place never runs the model.
    */
   answerAfterEdit: z.boolean(),
+  /**
+   * How much of the model's context size the messages copied into a new
+   * session may take, in percent, when a session is continued in a new one
+   * because its context is full (session rollover design, D4, R3).
+   */
+  rolloverCarryPercent: z.number().int().min(1).max(99),
+  /**
+   * What happens when the model's last call used the share of the context
+   * size set by `rolloverThresholdPercent`: "new_session" continues in a new
+   * session, "off" does nothing (session rollover design, D1).
+   */
+  contextFullAction: z.enum(["off", "new_session"]),
+  rolloverThresholdPercent: z.number().int().min(1).max(99),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -259,6 +272,9 @@ Today is {{date}}. The time is {{time}}.
   mediaDescriberModel: "",
   editMode: "branch",
   answerAfterEdit: true,
+  rolloverCarryPercent: 10,
+  contextFullAction: "new_session",
+  rolloverThresholdPercent: 80,
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -297,6 +313,9 @@ const ENV: Record<keyof Settings, string> = {
   mediaDescriberModel: "HARNESS_MEDIA_DESCRIBER_MODEL",
   editMode: "HARNESS_EDIT_MODE",
   answerAfterEdit: "HARNESS_ANSWER_AFTER_EDIT",
+  rolloverCarryPercent: "HARNESS_ROLLOVER_CARRY_PERCENT",
+  contextFullAction: "HARNESS_CONTEXT_FULL_ACTION",
+  rolloverThresholdPercent: "HARNESS_ROLLOVER_THRESHOLD_PERCENT",
 };
 
 const NUMERIC = new Set<keyof Settings>([
@@ -311,6 +330,8 @@ const NUMERIC = new Set<keyof Settings>([
   "subagentDepth",
   "inlineMediaCap",
   "workspaceReadCap",
+  "rolloverCarryPercent",
+  "rolloverThresholdPercent",
 ]);
 
 const BOOLEAN = new Set<keyof Settings>([

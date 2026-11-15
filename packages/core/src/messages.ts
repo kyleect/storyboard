@@ -264,6 +264,27 @@ export const EditMessage = z.object({
   dataOps: z.array(DataOp).optional(),
 });
 
+/**
+ * The state a session carries over from the session it continues (session
+ * rollover design, D6). It is the first message of the new session. Like an
+ * edit message, the model reads `content` (a notice) as part of a user
+ * message, and session files, schemas and data are rebuilt from `files` and
+ * `dataOps`. The state is the current one: one change per file, and every
+ * version of a schema, because data may pin an older version.
+ */
+export const CarriedMessage = z.object({
+  role: z.literal("carried"),
+  content: z.string(),
+  files: z.array(FileOp),
+  dataOps: z.array(DataOp).optional(),
+  /**
+   * The latest state each tool saved, by tool name (tools design 6.8), so
+   * `latestToolState` finds it though the tool's own messages were not
+   * carried. Not sent to the model.
+   */
+  toolState: z.record(z.string(), z.unknown()).optional(),
+});
+
 /** Provider-neutral message. Model adapters translate to and from it. */
 export const Message = z.discriminatedUnion("role", [
   SystemMessage,
@@ -271,15 +292,20 @@ export const Message = z.discriminatedUnion("role", [
   AssistantMessage,
   ToolResultMessage,
   EditMessage,
+  CarriedMessage,
 ]);
 export type Message = z.infer<typeof Message>;
 export type UserMessage = z.infer<typeof UserMessage>;
 export type AssistantMessage = z.infer<typeof AssistantMessage>;
 export type ToolResultMessage = z.infer<typeof ToolResultMessage>;
 export type EditMessage = z.infer<typeof EditMessage>;
+export type CarriedMessage = z.infer<typeof CarriedMessage>;
 
-/** Messages as sent to a model: edit messages folded into user ones. */
-export type ModelMessage = Exclude<Message, EditMessage>;
+/**
+ * Messages as sent to a model: edit and carried messages folded into user
+ * ones.
+ */
+export type ModelMessage = Exclude<Message, EditMessage | CarriedMessage>;
 
 /** A tool the model may call. `inputSchema` is JSON Schema. */
 export const ToolDefinition = z.object({

@@ -893,7 +893,9 @@ describe("with llama-server's wire format", () => {
             n !== "subagent_handback" &&
             n !== "skill_load" &&
             // Offered only to a session with a workspace attached.
-            !n.startsWith("workspace"),
+            !n.startsWith("workspace") &&
+            // Offered only to a session that continues another.
+            !n.startsWith("sessions_"),
         ),
     );
     expect(first.tools[0]?.function.parameters).toEqual({

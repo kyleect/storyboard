@@ -105,6 +105,9 @@ const effective: SettingsShape = {
   subagentDepth: 1,
   editMode: "branch",
   answerAfterEdit: true,
+  rolloverCarryPercent: 10,
+  contextFullAction: "new_session",
+  rolloverThresholdPercent: 80,
 };
 
 const view: SettingsView = { effective, stored: {}, overriddenByEnv: {} };
@@ -330,6 +333,9 @@ describe("Settings forms", () => {
       loopLimit: 5,
       copyLimit: 50,
       workspaceReadCap: 20000,
+      rolloverCarryPercent: 10,
+      contextFullAction: "new_session",
+      rolloverThresholdPercent: 80,
       skillFileMaxMib: 20,
       skillMaxMib: 100,
       skillMaxFiles: 500,

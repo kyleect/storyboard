@@ -1,4 +1,12 @@
-import { Alert, Button, NumberInput, Stack, Textarea } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  NumberInput,
+  SegmentedControl,
+  Stack,
+  Text,
+  Textarea,
+} from "@mantine/core";
 import { COPY_LIMIT_MAX } from "@harness/core";
 import { type SettingsView } from "../../../api";
 import {
@@ -85,6 +93,14 @@ export function Limits({ view }: { view: SettingsView }) {
         : `A whole number, 1 to ${COPY_LIMIT_MAX}`,
     workspaceReadCap: (v) =>
       Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
+    rolloverCarryPercent: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= 99
+        ? null
+        : "A whole number, 1 to 99",
+    rolloverThresholdPercent: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= 99
+        ? null
+        : "A whole number, 1 to 99",
     skillFileMaxMib: (v) =>
       Number.isInteger(v) && v >= 1 && v <= 1024
         ? null
@@ -135,6 +151,47 @@ export function Limits({ view }: { view: SettingsView }) {
           min={100}
           disabled={!!env.workspaceReadCap}
           {...form.getInputProps("workspaceReadCap")}
+        />
+        <Stack gap={4}>
+          <Text size="sm" fw={500}>
+            When the context is full
+          </Text>
+          <SegmentedControl
+            data={[
+              { value: "new_session", label: "Continue in a new session" },
+              { value: "off", label: "Do nothing" },
+            ]}
+            disabled={!!env.contextFullAction}
+            {...form.getInputProps("contextFullAction")}
+          />
+          <Text size="xs" c="dimmed">
+            {envNote("contextFullAction") ??
+              "When the last model call reaches the share below, the session continues in a new one with the latest messages and the current files. The old session becomes read only. Needs a model whose context size is known."}
+          </Text>
+        </Stack>
+        <NumberInput
+          label="Context full at (%)"
+          description={
+            envNote("rolloverThresholdPercent") ??
+            "The share of the model's context that the last call used, 1 to 99, at which the session continues in a new one."
+          }
+          allowDecimal={false}
+          min={1}
+          max={99}
+          disabled={!!env.rolloverThresholdPercent}
+          {...form.getInputProps("rolloverThresholdPercent")}
+        />
+        <NumberInput
+          label="Carried over to a new session (%)"
+          description={
+            envNote("rolloverCarryPercent") ??
+            "When a session is continued in a new one because its context is full, the most recent messages that fit in this share of the model's context are copied over, 1 to 99."
+          }
+          allowDecimal={false}
+          min={1}
+          max={99}
+          disabled={!!env.rolloverCarryPercent}
+          {...form.getInputProps("rolloverCarryPercent")}
         />
         <NumberInput
           label="Skill file size (MiB)"

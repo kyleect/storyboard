@@ -65,6 +65,16 @@ export function useSessionEvents(
           });
           void navigate({ to: "/" });
           break;
+        case "session.continued":
+          void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+          void queryClient.invalidateQueries({
+            queryKey: sessionKeys.detail(sessionId),
+          });
+          void navigate({
+            to: "/sessions/$sessionId",
+            params: { sessionId: event.data.sessionId },
+          });
+          break;
         case "session.files_changed":
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),

@@ -16,6 +16,7 @@ type RunEvents =
   "run.started" | "run.finished" | "run.failed" | "run.interrupted";
 type SessionEvents =
   | "session.trashed"
+  | "session.continued"
   | "session.files_changed"
   | "session.renamed"
   | "session.agent_changed"
@@ -329,7 +330,13 @@ export const UserMessageAdded = event(
 export const RunFinished = event(
   "run.finished",
   z.object({
-    reason: z.enum(["stop", "iteration_limit", "cancelled", "handed_back"]),
+    reason: z.enum([
+      "stop",
+      "iteration_limit",
+      "cancelled",
+      "handed_back",
+      "rolled_over",
+    ]),
     usage: Usage.optional(),
   }),
 );
@@ -372,6 +379,15 @@ export type EventBody = z.infer<typeof EventBody>;
 
 /** The session was moved to the trash. */
 export const SessionTrashed = event("session.trashed", z.object({}));
+
+/**
+ * The session's work went on in a new session, because its context was full
+ * (session rollover design, D23). This session is now read only.
+ */
+export const SessionContinued = event(
+  "session.continued",
+  z.object({ sessionId: z.string(), title: z.string() }),
+);
 
 /**
  * The user changed session-scoped files in the app; the
@@ -435,6 +451,7 @@ export const SessionTranscriptChanged = event(
 
 export const SessionEventBody = z.discriminatedUnion("type", [
   SessionTrashed,
+  SessionContinued,
   SessionFilesChanged,
   SessionDataChanged,
   SessionRenamed,

@@ -32,6 +32,7 @@ import { AskUserResult, ToolPrompt, askState, showResult } from "./ToolPrompts";
 import { useState } from "react";
 import { AgentBadge } from "../../../components/AgentSelects";
 import { messageAnchor } from "../../../components/ErrorList";
+import { SessionHits, sessionHitsOf } from "./Continuation";
 
 export type DecisionComments = ReadonlyMap<
   string,
@@ -76,6 +77,11 @@ export function MessageView({
       return <AskUserResult message={message} />;
     }
 
+    const hits =
+      message.name === "sessions_search" && !message.isError
+        ? sessionHitsOf(message.data)
+        : undefined;
+
     return (
       <Paper p="sm">
         <Stack gap="sm">
@@ -92,7 +98,11 @@ export function MessageView({
               </Badge>
             )}
           </Group>
-          <Code block>{showResult(message.content)}</Code>
+          {hits ? (
+            <SessionHits hits={hits} />
+          ) : (
+            <Code block>{showResult(message.content)}</Code>
+          )}
           {message.media && message.media.length > 0 && (
             <MessageFiles files={message.media.map((m) => m.ref)} />
           )}
@@ -106,6 +116,17 @@ export function MessageView({
       <Paper p="sm" bg="var(--mantine-color-default-hover)">
         <Text size="xs" c="dimmed">
           Your edit to this session's files
+        </Text>
+        <Markdown size="sm">{message.content}</Markdown>
+      </Paper>
+    );
+  }
+
+  if (message.role === "carried") {
+    return (
+      <Paper p="sm" bg="var(--mantine-color-default-hover)">
+        <Text size="xs" c="dimmed">
+          Carried over from the earlier session
         </Text>
         <Markdown size="sm">{message.content}</Markdown>
       </Paper>

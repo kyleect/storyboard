@@ -28,6 +28,8 @@ describe("allTools", () => {
       "agent_view",
       "start_subagent",
       "subagent_handback",
+      "sessions_search",
+      "sessions_read",
       "skill_load",
       "schemas_list",
       "schema_view",
@@ -108,6 +110,7 @@ describe("allTools", () => {
       projects: ["projects_list", "project_view", "project_create"],
       agents: ["agents_list", "agent_view"],
       subagents: ["start_subagent", "subagent_handback"],
+      sessions: ["sessions_search", "sessions_read"],
       skills: ["skill_load"],
       web: ["web_search", "read_webpage", "read_wiki"],
       utilities: ["current_date", "current_time", "ask_user"],
@@ -170,8 +173,19 @@ describe("allTools", () => {
     const others = allTools.filter(
       (t) =>
         t.group !== "workspaces" &&
+        t.group !== "sessions" &&
         !["skill_load", "subagent_handback", "start_subagent"].includes(t.name),
     );
     for (const t of others) expect(t.available, t.name).toBeUndefined();
+  });
+
+  it("offers the session tools only to a session that continues another", () => {
+    const run = { hasSkills: false, isChild: false, canStartSubagent: false };
+    for (const t of allTools.filter((t) => t.group === "sessions")) {
+      expect(t.available?.(run), t.name).toBe(false);
+      expect(t.available?.({ ...run, hasEarlierSessions: true }), t.name).toBe(
+        true,
+      );
+    }
   });
 });

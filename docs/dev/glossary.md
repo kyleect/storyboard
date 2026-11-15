@@ -357,6 +357,18 @@ session's _tip_ (`tip_id`). Editing, regenerating or branching off adds a siblin
 or moves the tip instead of rewriting messages, and a branch can be switched to,
 deleted (to the Trash) and restored. See [backend.md](backend.md#branches).
 
+**Session rollover**
+Continuing a session in a new one when its context is full, instead of
+compacting it. The latest messages, a `carried` message with the current state of
+files, schemas and data, and the workspaces move over; the old session becomes
+read only and stays searchable by the new one. See
+[backend.md](backend.md#session-rollover).
+
+**Carried message**
+The first message of a continued session, with the role `carried`. It holds a
+notice for the model and the state the session had. See
+[core.md](core.md#messages).
+
 **Fork**
 Copies a session's line up to a message into a new session, with new ids. Files,
 data are shared with the source because they live in the project or

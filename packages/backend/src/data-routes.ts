@@ -86,7 +86,7 @@ interface HistoryEntry {
   description: string;
   value: unknown;
   deleted: boolean;
-  author: "user" | "model";
+  author: "user" | "model" | "carried";
   createdAt: string | null;
 }
 
@@ -254,7 +254,12 @@ export function registerDataRoutes(
       const createdAt = times.get(messageId) ?? null;
       for (const op of messageDataOps(message)) {
         if ((op.op === "data_put" || op.op === "data_delete") && op.id === id) {
-          const by = message.role === "edit" ? "user" : "model";
+          const by =
+            message.role === "edit"
+              ? "user"
+              : message.role === "carried"
+                ? "carried"
+                : "model";
           last =
             op.op === "data_put"
               ? {

@@ -3,7 +3,14 @@ import type { DebugMessage, DebugRun, SessionDebug } from "../../../api";
 import { eventSummary, shortId } from "./debug";
 
 export type LinearKind =
-  "system" | "tools" | "user" | "assistant" | "tool" | "edit" | "event";
+  | "system"
+  | "tools"
+  | "user"
+  | "assistant"
+  | "tool"
+  | "edit"
+  | "carried"
+  | "event";
 
 export const LINEAR_KINDS: readonly LinearKind[] = [
   "system",
@@ -12,6 +19,7 @@ export const LINEAR_KINDS: readonly LinearKind[] = [
   "assistant",
   "tool",
   "edit",
+  "carried",
   "event",
 ];
 
@@ -193,6 +201,21 @@ function messageItem(
         ...base,
         kind: "edit",
         title: "Edited by the user",
+        text: msg.content,
+        extras,
+      };
+    }
+    case "carried": {
+      const extras = present({
+        files: msg.files,
+        dataOps: msg.dataOps,
+        toolState: msg.toolState,
+      });
+
+      return {
+        ...base,
+        kind: "carried",
+        title: "Carried over from the earlier session",
         text: msg.content,
         extras,
       };

@@ -75,7 +75,7 @@ The groups, in display order, are defined by `TOOL_GROUPS` in core:
 | Projects (`projects`)               | `projects_list`, `project_view`, `project_create`                 |
 | Agents (`agents`)                   | `agents_list`, `agent_view`                                       |
 | Subagents (`subagents`)             | `start_subagent` (optional `files`), `subagent_handback`          |
-| Sessions (`sessions`)               | none yet                                                          |
+| Sessions (`sessions`)               | `sessions_search`, `sessions_read`                                |
 | Skills (`skills`)                   | `skill_load`                                                      |
 | Web (`web`)                         | `web_search`, `read_webpage`, `read_wiki`                         |
 | MCP (`mcp`)                         | `mcp_<server>_<tool>`, from [MCP servers](backend.md#mcp-servers) |
@@ -240,6 +240,18 @@ error result with the reason (`failed`, `cancelled`, `iteration_limit` or
 `no_output`) and the child's last text if it wrote any. See
 [backend.md](backend.md#subagents).
 
+### Sessions
+
+| Tool              | Approval | What it does                                                                                                                                        |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sessions_search` | never    | Searches the earlier sessions this one was continued from, by keywords and meaning. Returns excerpts with a `sessionId` and `messageId` each.       |
+| `sessions_read`   | never    | Reads the messages around one message (`sessionId`, `messageId`, `before`, `after`) as the conversation went: user messages, replies, tool results. |
+
+Both are offered only in a session that continues another, and the system message
+says so (see [backend.md](backend.md#the-system-message)). They reach only the
+sessions in the chain behind the current one, through `ToolContext.history`.
+See [backend.md](backend.md#session-rollover).
+
 ### Skills
 
 | Tool         | Approval | What it does                                                                                                                                                                                                                      |
@@ -298,6 +310,7 @@ run (see [backend.md](backend.md#which-tools-a-run-gets)):
   - The workspace tools need a workspace the session can use: its own, its
     project's or a global one (`hasWorkspaces`).
   - `subagent_handback` needs a child run (`isChild`).
+  - `sessions_search` and `sessions_read` need an earlier session this one continues (`hasEarlierSessions`).
   - `start_subagent` needs the subagent depth limit not to be reached
     (`canStartSubagent`).
 - If the session's agent has a tool grant, only the tools the grant allows

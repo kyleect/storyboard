@@ -58,6 +58,10 @@ const item = (
   project_id: null,
   trashed_with_project: 0,
   agent_id: null,
+  continued_from_id: null,
+  continued_from_title: null,
+  continued_carried: null,
+  continuedTo: null,
   usage: null,
   agents: [],
   running: false,
@@ -126,6 +130,30 @@ describe("the Sessions page: the table", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/3 sessions/)).toBeTruthy();
+  });
+
+  it("links a read only session to the one that continues it, and names where a session continues from", async () => {
+    vi.spyOn(api, "listSessionsPage").mockResolvedValue({
+      items: [
+        item(2, {
+          continued_from_id: "s1",
+          continued_from_title: "Session 1",
+        }),
+        item(1, {
+          continuedTo: { id: "s2", title: "Session 2", trashed: false },
+        }),
+      ],
+      total: 2,
+    });
+    renderPage();
+
+    await screen.findByText(/Read only\. Continued in/);
+    expect(
+      screen
+        .getAllByText("Session 2")
+        .map((e) => e.closest("a")?.getAttribute("href")),
+    ).toEqual(["/sessions/s2", "/sessions/s2"]);
+    expect(screen.getByText("Continued from Session 1")).toBeTruthy();
   });
 
   it("asks for newest first, page 1, 10 a page, for no project", async () => {

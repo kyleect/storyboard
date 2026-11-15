@@ -5,6 +5,7 @@ import {
   runLoop,
   type FileOp,
   type FileSearch,
+  type SessionHistory,
   type ApprovalAnswer,
   type ApprovalHooks,
   type ApprovalRequest,
@@ -51,6 +52,7 @@ import type { FileStore } from "./files-store.js";
 import { putBlob } from "./blobs.js";
 import { completePoints, isEditable, regenerableTurn } from "./branches.js";
 import { forkSession } from "./fork.js";
+import { chooseCarry, rolloverSession } from "./rollover.js";
 import {
   getDerived,
   indexedText,
@@ -105,10 +107,18 @@ export interface RunChoices {
   agentId?: string | null;
 }
 
+/** The system prompt part for a session that continues an earlier one. */
+export function earlierSessionNote(title: string): string {
+  const named = title.trim() === "" ? "an earlier session" : `"${title}"`;
+  return `This session continues ${named}, which ran out of room in its context. You were given its most recent messages and the current state of its files, schemas and data, but not the rest of what was said. When you need something from before, use sessions_search to find it and sessions_read to read around a result.`;
+}
+
 export class RunError extends Error {
   constructor(
     message: string,
     readonly statusCode: number,
+    /** Fields added to the error response, for a client that acts on them. */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "RunError";
@@ -238,6 +248,12 @@ export interface RunManagerOptions {
    * sent and the server may refuse it. Left out: not known for any model.
    */
   mediaSupport?: (model: string | null) => Promise<MediaSupport | undefined>;
+  /**
+   * The context size of the model, in tokens; undefined when it is not
+   * known. Asked when a run starts, for the check that continues a full
+   * session in a new one (session rollover design, D1, D2).
+   */
+  contextSize?: (model: string | null) => Promise<number | undefined>;
   /** Describes images and audio that tools save (files unification design, D43). */
   describer?: MediaDescriber;
   /** Workspaces. Left out: no run has any. */
@@ -310,6 +326,11 @@ export interface RunManagerOptions {
   index?: SearchIndex;
   /** The search tools' backend for a session. Left out: search fails. */
   search?: (session: SessionRow) => FileSearch;
+  /**
+   * The history tools' backend for a session that continues another (session
+   * rollover design, D17). Left out: the tools are not offered.
+   */
+  history?: (session: SessionRow) => SessionHistory;
   /** Where tool errors and failed runs are recorded. Default: over `store.db`. */
   errors?: ErrorStore;
   /** App-wide events (`errors.changed`). Default: a new one. */
@@ -354,6 +375,8 @@ export class RunManager {
   private readonly store: Store;
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly active = new Map<string, ActiveRun>();
+  /** The context size last found for each model ("" for the default). */
+  private readonly contextSizes = new Map<string, number>();
   /** Title calls in progress (auto-rename plan, step 3). */
   private readonly titleJobs = new Set<{
     controller: AbortController;
@@ -386,6 +409,25 @@ export class RunManager {
   }
 
   /** Records an error and tells every window (error reporting plan, P6). */
+  /**
+   * Asks for the model's context size and keeps it for the check before the
+   * next message. When the answer is missing (the model is not loaded just
+   * now, or llama-server cannot be reached) the size found before stays.
+   */
+  private async findContextSize(
+    model: string | null,
+  ): Promise<number | undefined> {
+    const ask = this.options.contextSize;
+    const key = model ?? "";
+    if (!ask) return undefined;
+    const size = await ask(model).catch(() => undefined);
+    if (size !== undefined && size > 0) {
+      this.contextSizes.set(key, size);
+      return size;
+    }
+    return this.contextSizes.get(key);
+  }
+
   private recordError(error: NewError) {
     this.errors.record(error, this.now());
     this.events.publish({
@@ -409,9 +451,11 @@ export class RunManager {
 
   /**
    * Moves a session to the trash and emits `session.trashed` (design Q3,
-   * Q7). Refused while a run is in progress in it (Q5).
+   * Q7). Refused while a run is in progress in it (Q5). Refused too while a
+   * later session continues it, unless `force`: purging it would take away
+   * the history those sessions can search (session rollover design, D19).
    */
-  trashSession(sessionId: string) {
+  trashSession(sessionId: string, options: { force?: boolean } = {}) {
     const session = this.store.getSession(sessionId);
     if (!session) throw new RunError("Session not found.", 404);
     if (session.trashed_at !== null) {
@@ -421,6 +465,16 @@ export class RunManager {
       throw new RunError(
         "A run is in progress in this session. Wait for it to end or cancel it.",
         409,
+      );
+    }
+    const later = this.store.chainAfter(sessionId);
+    if (later.length > 0 && !options.force) {
+      throw new RunError(
+        `Later sessions continue this one and can search its history: ${later
+          .map((s) => `"${s.title}"`)
+          .join(", ")}. They lose it when this session is deleted.`,
+        409,
+        { continuedBy: later, needsForce: true },
       );
     }
     const now = this.now();
@@ -447,7 +501,10 @@ export class RunManager {
    * that is not found, is already in the trash, or has a run in progress is
    * reported with the reason. Emits `session.trashed` for each one moved.
    */
-  trashSessions(ids: readonly string[]): {
+  trashSessions(
+    ids: readonly string[],
+    options: { force?: boolean } = {},
+  ): {
     trashed: string[];
     refused: { id: string; error: string }[];
   } {
@@ -455,7 +512,7 @@ export class RunManager {
     const refused: { id: string; error: string }[] = [];
     for (const id of new Set(ids)) {
       try {
-        this.trashSession(id);
+        this.trashSession(id, options);
         trashed.push(id);
       } catch (err) {
         if (!(err instanceof RunError)) throw err;
@@ -516,25 +573,56 @@ export class RunManager {
     content: string,
     choices: RunChoices = {},
     files: readonly string[] = [],
-  ): { runId: string } {
+  ): { runId: string; sessionId: string } {
     this.requireIdle(sessionId);
-    this.checkAgentChoice(sessionId, choices);
-    this.store.setSessionChoices(sessionId, choices);
+    this.requireWritable(sessionId);
+    // The last call filled the context: the session continues in a new one
+    // and the message goes there (session rollover design, D1).
+    const target = this.rollOverIfFull(sessionId);
+    this.checkAgentChoice(target, choices);
+    this.store.setSessionChoices(target, choices);
     // A message of files only has no text to title the session from.
-    const rename = this.wantsAutoRename(sessionId) && content.trim() !== "";
-    this.store.addMessage(
-      sessionId,
-      this.newId(),
-      {
-        role: "user",
-        content,
-        ...(files.length > 0 ? { files: [...files] } : {}),
-      },
-      this.now(),
-    );
-    const started = this.start(sessionId, null);
-    if (rename) this.autoRename(sessionId, content);
-    return started;
+    const rename = this.wantsAutoRename(target) && content.trim() !== "";
+    const userMessage: UserMessage = {
+      role: "user",
+      content,
+      ...(files.length > 0 ? { files: [...files] } : {}),
+    };
+    const messageId = this.newId();
+    this.store.addMessage(target, messageId, userMessage, this.now());
+    this.options.index?.indexMessage(target, messageId, userMessage);
+    const started = this.start(target, null);
+    if (rename) this.autoRename(target, content);
+    return { ...started, sessionId: target };
+  }
+
+  /**
+   * The session to send a message to: this one, or a new one that continues
+   * it when the model's last call used the threshold share of the context
+   * size. Uses the size found when the session last ran; none known, none
+   * rolled over. A session that cannot be rolled over stays as it is.
+   */
+  private rollOverIfFull(sessionId: string): string {
+    const settings = this.options.settings();
+    if (settings.contextFullAction !== "new_session") return sessionId;
+    const session = this.store.getSession(sessionId);
+    const size = this.contextSizes.get(session?.model || settings.model || "");
+    if (!size) return sessionId;
+    const last = this.store
+      .listMessages(sessionId, "top")
+      .reverse()
+      .find((m) => m.usage !== null);
+    if (!last?.usage) return sessionId;
+    const used = last.usage.promptTokens + last.usage.completionTokens;
+    if (used < Math.floor((size * settings.rolloverThresholdPercent) / 100)) {
+      return sessionId;
+    }
+    try {
+      return this.rollOver(sessionId, { contextSize: size }).id;
+    } catch (err) {
+      if (err instanceof RunError) return sessionId;
+      throw err;
+    }
   }
 
   /**
@@ -656,6 +744,7 @@ export class RunManager {
    */
   continueLast(sessionId: string, choices: RunChoices = {}): { runId: string } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const last = this.store.listMessages(sessionId, "top").at(-1);
     if (last?.message.role === "assistant") {
       if (last.message.content.some((b) => b.type === "tool_call")) {
@@ -754,6 +843,7 @@ export class RunManager {
     choices: RunChoices = {},
   ): { messageId: string; mode: "branch" | "in_place"; runId: string | null } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const { message: target } = this.onLine(sessionId, messageId);
     const original = target.message;
     if (original.role !== "user" || !isEditable(target)) {
@@ -767,6 +857,7 @@ export class RunManager {
     const edited = { ...original, content: edit.content };
     if (mode === "in_place") {
       this.store.replaceMessage(messageId, edited);
+      this.options.index?.indexMessage(sessionId, messageId, edited);
       this.publishTranscriptChanged(sessionId, "edit", messageId);
       return { messageId, mode, runId: null };
     }
@@ -778,6 +869,7 @@ export class RunManager {
       edited,
       this.now(),
     );
+    this.options.index?.indexMessage(sessionId, copyId, edited);
     this.moveTip(sessionId, copyId, "edit");
     if (!settings.answerAfterEdit)
       return { messageId: copyId, mode, runId: null };
@@ -793,6 +885,7 @@ export class RunManager {
    */
   regenerate(sessionId: string, choices: RunChoices = {}): { runId: string } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const turn = regenerableTurn(this.store.listMessages(sessionId, "top"));
     if (turn === null) {
       throw new RunError("There is no reply to regenerate.", 409);
@@ -816,6 +909,7 @@ export class RunManager {
     choices: RunChoices = {},
   ): { runId: string | null } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const { line, message } = this.onLine(sessionId, messageId);
     if (!completePoints(line).has(messageId)) {
       throw new RunError(
@@ -866,6 +960,57 @@ export class RunManager {
   }
 
   /**
+   * Continues the session in a new one (session rollover design): the new
+   * session holds the most recent messages that fit in the carry budget and
+   * the current state of the files, schemas and data, takes over the
+   * workspaces, and has this session as its predecessor. This session stays
+   * as it was, read only. The session must be idle. `contextSize` is the
+   * model's, when it is known; without it only the latest step is carried.
+   * Does not start a run.
+   */
+  rollOver(
+    sessionId: string,
+    options: { contextSize?: number | undefined } = {},
+  ): SessionRow {
+    this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
+    const line = this.store.listMessages(sessionId, "top");
+    if (chooseCarry(line, undefined) === null) {
+      throw new RunError("The session has nothing to carry over.", 409);
+    }
+    const newSessionId = this.newId();
+    const now = this.now();
+    this.store.db.transaction(() => {
+      rolloverSession(this.store, {
+        sourceId: sessionId,
+        newSessionId,
+        now,
+        newId: this.newId,
+        contextSize: options.contextSize,
+        carryPercent: this.options.settings().rolloverCarryPercent,
+      });
+      this.options.workspaces?.handOverSessionWorkspaces(
+        sessionId,
+        newSessionId,
+      );
+    })();
+    // Only the line shown stays searchable (D11); the new session's files go
+    // into the index.
+    this.options.index?.reconcileTranscript(sessionId);
+    this.options.index?.reindexSession(newSessionId);
+    const created = this.store.getSession(newSessionId);
+    if (!created) throw new RunError("Session not found.", 404);
+    this.publish({
+      runId: null,
+      sessionId,
+      time: this.now(),
+      type: "session.continued",
+      data: { sessionId: newSessionId, title: created.title },
+    });
+    return created;
+  }
+
+  /**
    * Shows another branch: `messageId` is a live message that follows a
    * message of the line shown (or is a first message), such as a sibling of a
    * message on it or a continuation of its tip. The line then ends where
@@ -873,6 +1018,7 @@ export class RunManager {
    */
   switchBranch(sessionId: string, messageId: string): { tipId: string } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const node = this.store.getNode(messageId);
     const tipId = this.store.getSession(sessionId)?.tip_id ?? null;
     if (!node || node.sessionId !== sessionId || node.anchorId !== null) {
@@ -900,6 +1046,7 @@ export class RunManager {
    */
   deleteBranch(sessionId: string, messageId: string): { tipId: string } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const node = this.store.getNode(messageId);
     if (!node || node.sessionId !== sessionId || node.anchorId !== null) {
       throw new RunError("Message not found.", 404);
@@ -943,6 +1090,7 @@ export class RunManager {
     if (this.store.getSession(node.sessionId)?.trashed_at != null) {
       throw new RunError("The session is in the trash.", 409);
     }
+    this.requireWritable(node.sessionId);
     this.store.restoreBranch(messageId);
     this.publishTranscriptChanged(node.sessionId, "restore_branch", messageId);
   }
@@ -1371,6 +1519,7 @@ export class RunManager {
    */
   editSessionFiles(sessionId: string, ops: FileOp[]): { messageId: string } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const messageId = this.newId();
     this.store.addMessage(
       sessionId,
@@ -1395,6 +1544,7 @@ export class RunManager {
    */
   editSessionData(sessionId: string, ops: DataOp[]): { messageId: string } {
     this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const messageId = this.newId();
     this.store.addMessage(
       sessionId,
@@ -1537,6 +1687,24 @@ export class RunManager {
     return offered.filter((t) => alwaysOn.has(t.name) || allowed.has(t.name));
   }
 
+  /**
+   * A session that another continues is read only (session rollover design,
+   * D9): the user can fork it, rename it and move it to the trash, nothing
+   * else.
+   */
+  private requireWritable(sessionId: string) {
+    const next = this.store.continuedTo(sessionId);
+    if (next) {
+      throw new RunError(
+        "This session was continued in another session.",
+        409,
+        {
+          continuedTo: { id: next.id, title: next.title },
+        },
+      );
+    }
+  }
+
   private requireIdle(sessionId: string) {
     if (this.shuttingDown)
       throw new RunError("The backend is shutting down.", 503);
@@ -1574,10 +1742,61 @@ export class RunManager {
   private start(
     sessionId: string,
     continuing: { messageId: string; message: AssistantMessage } | null,
+    stepsTaken = 0,
   ): { runId: string } {
     this.touchProject(sessionId);
-    const { runId } = this.launch(sessionId, continuing, null);
+    const { runId, finished } = this.launch(
+      sessionId,
+      continuing,
+      null,
+      stepsTaken,
+    );
+    void finished.then((result) => {
+      if (result?.reason === "rolled_over") {
+        this.continueInNewSession(
+          sessionId,
+          runId,
+          stepsTaken + (result.steps ?? 0),
+        );
+      }
+    });
     return { runId };
+  }
+
+  /**
+   * A run ended because the context is full: continues the session in a new
+   * one and starts the next step there, as `continueLast` does after a tool
+   * result. The steps taken count against the loop limit (design D3).
+   */
+  private continueInNewSession(
+    sessionId: string,
+    runId: string,
+    stepsTaken: number,
+  ) {
+    if (this.shuttingDown) return;
+    try {
+      const session = this.store.getSession(sessionId);
+      const size = this.contextSizes.get(
+        session?.model || this.options.settings().model || "",
+      );
+      const next = this.rollOver(sessionId, { contextSize: size });
+      this.start(next.id, null, stepsTaken);
+    } catch (err) {
+      try {
+        this.recordError({
+          sessionId,
+          runId,
+          source: "run",
+          kind: "run_failed",
+          message: `Could not continue in a new session: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      } catch {
+        // The database failed; nothing more can be recorded.
+      }
+    }
   }
 
   /**
@@ -1643,6 +1862,9 @@ export class RunManager {
         );
       case "cancelled":
         return gone("cancelled", "It was cancelled.");
+      case "rolled_over":
+        // Only a top-level run is given the hook.
+        return gone("failed", "It stopped unexpectedly.");
       case "failed":
         return gone("failed", result.error ?? "It failed.");
     }
@@ -1656,6 +1878,7 @@ export class RunManager {
     sessionId: string,
     continuing: { messageId: string; message: AssistantMessage } | null,
     child: (ChildStart & { agent: Agent }) | null,
+    stepsTaken = 0,
   ): { runId: string; finished: Promise<LoopResult | undefined> } {
     const settings = this.options.settings();
     const runId = this.newId();
@@ -1709,6 +1932,9 @@ export class RunManager {
           sessionId,
           session?.project_id ?? null,
         ).length ?? 0) > 0,
+      hasEarlierSessions:
+        this.options.history !== undefined &&
+        this.store.chainBefore(sessionId).length > 0,
       isChild: child !== null,
       canStartSubagent: depth < settings.subagentDepth,
     });
@@ -1867,6 +2093,13 @@ export class RunManager {
       list.trim() === ""
         ? undefined
         : [instruction, list].filter((t) => t.trim() !== "").join("\n\n");
+    // The note that this session continues an earlier one (session rollover
+    // design, D5), only when the run can use the tools it names.
+    const earlierNote =
+      session?.continued_from_id &&
+      tools.some((t) => t.name === "sessions_search")
+        ? earlierSessionNote(session.continued_from_title ?? "")
+        : undefined;
     // Global, project and agent prompts, then the skill list, then the files
     // instruction (system prompts design, decisions 1 and 2;
     // skills design 11). Empty ones are left out.
@@ -1876,6 +2109,7 @@ export class RunManager {
         placed ? undefined : introduced(skillsInstruction, skillsText),
         schemasPlaced ? undefined : introduced(schemasInstruction, schemasText),
         base,
+        earlierNote,
         childLine,
       ]
         .filter((p): p is string => p !== undefined && p.trim() !== "")
@@ -1944,6 +2178,10 @@ export class RunManager {
         anchorId,
       );
       this.store.linkRunMessage(runId, id);
+      // Subagent messages are not searched (session rollover design, D10).
+      if (anchorId === null) {
+        this.options.index?.indexMessage(sessionId, id, message);
+      }
       if (message.role === "tool" && message.files) {
         this.indexSessionOps(sessionId, message.files);
       }
@@ -2009,6 +2247,12 @@ export class RunManager {
         const support = await this.options
           .mediaSupport?.(generation.model)
           .catch(() => undefined);
+        // The context size, for ending the run when it is nearly full. Not
+        // for a subagent: its parent's session continues instead.
+        const contextSize =
+          child === null && settings.contextFullAction === "new_session"
+            ? await this.findContextSize(generation.model)
+            : undefined;
         // A session that starts or continues rescans the ticked parts of its
         // workspaces, so what changed while the app was closed is found. A
         // big folder cannot hold the run up for long.
@@ -2126,6 +2370,11 @@ export class RunManager {
           ...(this.options.search && session
             ? { searchFiles: this.options.search(session) }
             : {}),
+          ...(this.options.history &&
+          session &&
+          this.store.chainBefore(sessionId).length > 0
+            ? { history: this.options.history(session) }
+            : {}),
           ...(session
             ? {
                 projects: projectAccess({
@@ -2152,7 +2401,17 @@ export class RunManager {
             : {}),
           ...(workspaceAccess ? { workspaces: workspaceAccess } : {}),
           copyLimit: settings.copyLimit,
-          maxIterations: settings.loopLimit,
+          // Steps an earlier session of the chain took in this turn count.
+          maxIterations: Math.max(1, settings.loopLimit - stepsTaken),
+          ...(contextSize
+            ? {
+                rollover: {
+                  thresholdTokens: Math.floor(
+                    (contextSize * settings.rolloverThresholdPercent) / 100,
+                  ),
+                },
+              }
+            : {}),
           // The agent's own setting, then the tool's (agent tool approval
           // design, section 3). The agent is the one this run started with.
           // For a call with a subject (a workspace), a grant for that tool

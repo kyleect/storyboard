@@ -228,7 +228,9 @@ export interface SessionFiles {
 
 /** The changes a message carries, if any. */
 export function messageFileOps(message: Message): readonly FileOp[] {
-  if (message.role === "edit") return message.files;
+  if (message.role === "edit" || message.role === "carried") {
+    return message.files;
+  }
   if (message.role === "tool") return message.files ?? [];
   return [];
 }
@@ -268,8 +270,11 @@ export function replaySessionFiles(messages: readonly Message[]): SessionFiles {
 export interface SessionFileVersion {
   /** The message that made the change. */
   messageId: string;
-  /** "user" for an edit message, "model" for a tool result. */
-  by: "user" | "model";
+  /**
+   * "user" for an edit message, "model" for a tool result, "carried" for the
+   * state a rollover carried over.
+   */
+  by: "user" | "model" | "carried";
   op: Exclude<FileOp, { op: "folder" }>;
 }
 
@@ -284,7 +289,12 @@ export function sessionFileVersions(
       if (op.op !== "folder" && op.key === key) {
         out.push({
           messageId: id,
-          by: message.role === "edit" ? "user" : "model",
+          by:
+            message.role === "edit"
+              ? "user"
+              : message.role === "carried"
+                ? "carried"
+                : "model",
           op,
         });
       }
@@ -588,14 +598,14 @@ export function foldEdits(messages: readonly Message[]): ModelMessage[] {
     run = null;
   };
   for (const m of messages) {
-    if (m.role === "user" || m.role === "edit") {
+    if (m.role === "user" || m.role === "edit" || m.role === "carried") {
       run ??= { items: [], hasEdit: false };
       run.items.push(
         m.role === "user" && m.files
           ? { content: m.content, files: m.files }
           : { content: m.content },
       );
-      if (m.role === "edit") run.hasEdit = true;
+      if (m.role !== "user") run.hasEdit = true;
     } else {
       flush();
       out.push(m);

@@ -1727,3 +1727,80 @@ describe("runLoop as a subagent", () => {
     expect(seen.length).toBeGreaterThan(0);
   });
 });
+
+describe("rollover hook", () => {
+  const use = (promptTokens: number, completionTokens = 0): ScriptStep => ({
+    type: "usage",
+    usage: { promptTokens, completionTokens },
+  });
+  const stop: ScriptStep = { type: "finish", reason: "stop" };
+  const tools = [echo];
+  const handback = defineTool({
+    name: "subagent_handback",
+    description: "Hands back.",
+    input: z.object({ output: z.string() }),
+    approval: "never",
+    group: "utilities" as const,
+    execute: (input) => ({ data: {}, handback: input.output }),
+  });
+  const child = { reminders: 2, reminderText: "Hand back." };
+
+  it("ends with rolled_over after the tool results of the step that reached the threshold", async () => {
+    const { ctx, model, saved, events } = setup(
+      [
+        [call("c1", "echo", '{"text":"a"}'), use(700, 100), stop],
+        [{ type: "text", text: "never" }, stop],
+      ],
+      { tools, maxIterations: 5, rollover: { thresholdTokens: 800 } },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result).toMatchObject({ reason: "rolled_over", steps: 1 });
+    expect(model.requests).toHaveLength(1);
+    // The result of the call was saved before the run ended.
+    expect(saved.map((s) => s.message.role)).toEqual(["assistant", "tool"]);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      data: { reason: "rolled_over" },
+    });
+  });
+
+  it("uses the last call's tokens only, and not a call that reported none", async () => {
+    const { ctx, model } = setup(
+      [
+        [call("c1", "echo", '{"text":"a"}'), use(500, 100), stop],
+        [call("c2", "echo", '{"text":"b"}'), stop],
+        [{ type: "text", text: "done" }, use(300), stop],
+      ],
+      { tools, maxIterations: 5, rollover: { thresholdTokens: 800 } },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result.reason).toBe("stop");
+    expect(model.requests).toHaveLength(3);
+  });
+
+  it("is not given to a subagent's run", async () => {
+    const { ctx, model } = setup(
+      [
+        [call("c1", "echo", '{"text":"a"}'), use(900), stop],
+        [call("c2", "subagent_handback", '{"output":"x"}'), stop],
+      ],
+      {
+        tools: [handback, echo],
+        child,
+        maxIterations: 5,
+        rollover: { thresholdTokens: 800 },
+      },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result.reason).toBe("handed_back");
+  });
+
+  it("does not end the run on the last step it may take", async () => {
+    const { ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}'), use(900), stop]],
+      { tools, maxIterations: 1, rollover: { thresholdTokens: 800 } },
+    );
+    const result = await runLoop(model, request, ctx);
+    expect(result.reason).toBe("iteration_limit");
+  });
+});

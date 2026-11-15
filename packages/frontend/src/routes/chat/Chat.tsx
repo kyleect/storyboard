@@ -15,7 +15,7 @@ import { useSession } from "../../hooks/useSessions";
 import { useModels } from "../../hooks/useModels";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   mediaSupport,
@@ -57,6 +57,12 @@ import {
   openForkDialog,
   useBranchActions,
 } from "./components/Branching";
+import {
+  CarriedDivider,
+  ContinuedFromLine,
+  ContinuedToBanner,
+} from "./components/Continuation";
+import { confirmAction } from "../../lib/confirm";
 import { ModelPicker } from "../../components/ModelPicker";
 import { effortLabel, ReasoningPicker } from "../../components/ReasoningPicker";
 import { DebugPanel } from "./components/DebugPanel";
@@ -182,6 +188,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
     });
   const queryClient = useQueryClient();
   const actions = useSessionActions();
+  const navigate = useNavigate();
   const [restoring, setRestoring] = useState(false);
   const session = detail.data?.session;
   const [editing, setEditing] = useState<string | null>(null);
@@ -211,15 +218,37 @@ export function Chat({ sessionId }: { sessionId: string }) {
   const send = useMutation({
     mutationFn: (message: { content: string; files: string[] }) =>
       api.sendMessage(sessionId, message.content, choices, message.files),
-    onSuccess: () => {
+    onSuccess: (started) => {
       setDraft("");
       files.clear();
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.detail(sessionId),
       });
 
+      if (started.sessionId !== sessionId) {
+        void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+        void navigate({
+          to: "/sessions/$sessionId",
+          params: { sessionId: started.sessionId },
+        });
+      }
+
       if (session?.project_id)
         void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+    },
+    onError,
+  });
+  const rollover = useMutation({
+    mutationFn: () => api.rolloverSession(sessionId),
+    onSuccess: async (next) => {
+      await queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+      await queryClient.invalidateQueries({
+        queryKey: sessionKeys.detail(sessionId),
+      });
+      await navigate({
+        to: "/sessions/$sessionId",
+        params: { sessionId: next.id },
+      });
     },
     onError,
   });
@@ -405,8 +434,10 @@ export function Chat({ sessionId }: { sessionId: string }) {
   }
 
   const trashed = detail.data.session.trashed_at !== null;
+  const continuedTo = detail.data.continuedTo;
+  const locked = trashed || continuedTo !== null;
   const busy =
-    trashed ||
+    locked ||
     branch.pending ||
     !!live ||
     send.isPending ||
@@ -513,9 +544,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
     latestUsage(detail.data.messages.filter((m) => !m.parentCallId));
   const filesReadOnly = trashed
     ? "The session is in the trash, so these can be read but not changed."
-    : live
-      ? "A run is in progress; changes are possible when it ends."
-      : undefined;
+    : continuedTo
+      ? "The session was continued in a new one, so these can be read but not changed."
+      : live
+        ? "A run is in progress; changes are possible when it ends."
+        : undefined;
 
   return (
     <SessionFilesContext.Provider
@@ -529,6 +562,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
           subagentUsage={detail.data.subagentUsage}
           connected={connected}
         />
+        {detail.data.continuedFrom && (
+          <ContinuedFromLine from={detail.data.continuedFrom} />
+        )}
         {trashed && (
           <Alert color="yellow" title="This session is in the trash">
             <Group justify="space-between">
@@ -617,6 +653,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
               {shown.length === 0 && <Text c="dimmed">No messages yet.</Text>}
               {shown.map((m) => (
                 <div key={m.id} id={messageAnchor(m.id)}>
+                  {m.message.role === "carried" && (
+                    <CarriedDivider from={detail.data.continuedFrom} />
+                  )}
                   {m.branches && (
                     <BranchSwitcher
                       branches={m.branches}
@@ -691,7 +730,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
           />
         )}
 
-        {tab === "chat" && (
+        {tab === "chat" && continuedTo && (
+          <ContinuedToBanner to={continuedTo} />
+        )}
+
+        {tab === "chat" && !continuedTo && (
           <Group gap="xs" justify="space-between" align="flex-start">
             <Group gap="xs" align="flex-start">
               <ModelPicker
@@ -704,7 +747,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
                     ? `Default (${defaults.model})`
                     : "Default (none set; the server decides)"
                 }
-                disabled={trashed || setChoices.isPending}
+                disabled={locked || setChoices.isPending}
               />
               <ReasoningPicker
                 model={levelsModel}
@@ -717,13 +760,13 @@ export function Chat({ sessionId }: { sessionId: string }) {
                     ? `Reasoning: default (${effortLabel(defaults.reasoningEffort)})`
                     : "Reasoning: default (server decides)"
                 }
-                disabled={trashed || setChoices.isPending}
+                disabled={locked || setChoices.isPending}
               />
               <AgentPicker
                 sessionId={sessionId}
                 value={detail.data.session.agent_id}
                 onChange={(agentId) => setChoices.mutate({ agentId })}
-                disabled={trashed || setChoices.isPending}
+                disabled={locked || setChoices.isPending}
               />
             </Group>
             {live ? (
@@ -766,13 +809,35 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 </Button>
               </Group>
             ) : (
-              <Button
-                variant="light"
-                disabled={busy || last?.message.role !== "assistant"}
-                onClick={() => cont.mutate()}
-              >
-                Continue
-              </Button>
+              <Group gap="xs">
+                <Button
+                  variant="default"
+                  disabled={busy || shown.length === 0 || rollover.isPending}
+                  onClick={() =>
+                    confirmAction({
+                      title: "Continue in a new session?",
+                      message: (
+                        <>
+                          The latest messages and the current files and data
+                          move to a new session. This session becomes read only.
+                        </>
+                      ),
+                      confirm: "Continue in a new session",
+                      cancel: "Cancel",
+                      onConfirm: () => rollover.mutate(),
+                    })
+                  }
+                >
+                  Continue in a new session
+                </Button>
+                <Button
+                  variant="light"
+                  disabled={busy || last?.message.role !== "assistant"}
+                  onClick={() => cont.mutate()}
+                >
+                  Continue
+                </Button>
+              </Group>
             )}
           </Group>
         )}
@@ -812,18 +877,18 @@ export function Chat({ sessionId }: { sessionId: string }) {
           />
         )}
 
-        {tab === "chat" && (
+        {tab === "chat" && !continuedTo && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
               submit();
             }}
             onDragOver={(e) => {
-              if (!trashed && e.dataTransfer.types.includes("Files"))
+              if (!locked && e.dataTransfer.types.includes("Files"))
                 e.preventDefault();
             }}
             onDrop={(e) => {
-              if (trashed || e.dataTransfer.files.length === 0) return;
+              if (locked || e.dataTransfer.files.length === 0) return;
 
               e.preventDefault();
               void files.add(Array.from(e.dataTransfer.files));
@@ -847,7 +912,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 minRows={2}
                 maxRows={8}
                 placeholder="Write a message (Ctrl+Enter to send)"
-                disabled={trashed}
+                disabled={locked}
                 value={draft}
                 onChange={(e) => setDraft(e.currentTarget.value)}
                 onKeyDown={(e) => {
@@ -869,11 +934,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
               />
               <AttachButton
                 onFiles={(picked) => void files.add(picked)}
-                disabled={trashed}
+                disabled={locked}
               />
               <VoiceButtons
                 onRecorded={(file, mode) => void recorded(file, mode)}
-                disabled={trashed || support?.audio === false}
+                disabled={locked || support?.audio === false}
                 sendDisabled={busy}
                 {...(support?.audio === false
                   ? { title: "The model in use cannot hear audio." }

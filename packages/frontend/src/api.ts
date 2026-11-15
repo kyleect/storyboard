@@ -142,11 +142,28 @@ export interface Session {
   /** 1 when it went to the trash because its project did. */
   trashed_with_project: number;
   agent_id: string | null;
+  continued_from_id: string | null;
+  continued_from_title: string | null;
+  continued_carried: number | null;
+}
+
+export interface ContinuedTo {
+  id: string;
+  title: string;
+  trashed: boolean;
+}
+
+export interface ContinuedFrom {
+  id: string;
+  title: string;
+  state: "live" | "trashed" | "gone";
+  carried: number;
 }
 
 export interface SessionListItem extends Session {
   usage: Usage | null;
   unread: boolean;
+  continuedTo: ContinuedTo | null;
 }
 
 export interface SessionTableItem extends SessionListItem {
@@ -246,6 +263,8 @@ export interface SessionDetail {
   messages: StoredMessage[];
   branching: Branching;
   forkedFrom: ForkedFrom | null;
+  continuedFrom: ContinuedFrom | null;
+  continuedTo: ContinuedTo | null;
   subagentUsage: Usage | null;
   lastEventId: number;
   activeRun: ActiveRunSnapshot | null;
@@ -361,6 +380,9 @@ export interface Settings {
   mediaDescriberModel: string;
   editMode: "branch" | "in_place";
   answerAfterEdit: boolean;
+  rolloverCarryPercent: number;
+  contextFullAction: "off" | "new_session";
+  rolloverThresholdPercent: number;
 }
 
 export type DerivedState =
@@ -536,7 +558,7 @@ export interface FileVersion {
   value: string;
   blob?: BlobRef;
   deleted: boolean;
-  by: "user" | "model";
+  by: "user" | "model" | "carried";
   sessionId: string | null;
   runId: string | null;
   createdAt: string;
@@ -722,7 +744,7 @@ export interface DataVersion {
   description: string;
   value: unknown;
   deleted: boolean;
-  author: "user" | "model";
+  author: "user" | "model" | "carried";
   createdAt: string | null;
 }
 
@@ -971,8 +993,14 @@ export const api = {
     request<SessionDetail>("GET", `/api/sessions/${id}`),
   renameSession: (id: string, title: string) =>
     request<Session>("PATCH", `/api/sessions/${id}`, { title }),
-  trashSession: (id: string) =>
-    request<Session>("POST", `/api/sessions/${id}/trash`),
+  trashSession: (id: string, force = false) =>
+    request<Session>(
+      "POST",
+      `/api/sessions/${id}/trash`,
+      force ? { force } : undefined,
+    ),
+  rolloverSession: (id: string) =>
+    request<Session>("POST", `/api/sessions/${id}/rollover`),
   markSessionSeen: (id: string) =>
     request<Session>("POST", `/api/sessions/${id}/seen`),
   unreadSessionCount: () =>
@@ -1023,11 +1051,15 @@ export const api = {
     choices: Choices,
     files: readonly string[] = [],
   ) =>
-    request<{ runId: string }>("POST", `/api/sessions/${id}/messages`, {
-      content,
-      ...(files.length > 0 ? { files } : {}),
-      ...choices,
-    }),
+    request<{ runId: string; sessionId: string }>(
+      "POST",
+      `/api/sessions/${id}/messages`,
+      {
+        content,
+        ...(files.length > 0 ? { files } : {}),
+        ...choices,
+      },
+    ),
   editMessage: (
     id: string,
     messageId: string,

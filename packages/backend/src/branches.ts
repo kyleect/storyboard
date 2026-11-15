@@ -38,7 +38,7 @@ export function isEditable(m: StoredMessage): boolean {
 
 /**
  * The messages a branch or a fork may start at (PQ1): a request that ends
- * there is valid. A user message, an edit message and an assistant message
+ * there is valid. A user message, an edit or carried message and an assistant message
  * without tool calls are; a message with tool calls is not, and neither is a
  * tool result until every call of its group has a result.
  */
@@ -50,6 +50,7 @@ export function completePoints(line: readonly StoredMessage[]): Set<string> {
     switch (message.role) {
       case "user":
       case "edit":
+      case "carried":
         if (open.size === 0) points.add(id);
         break;
       case "assistant": {

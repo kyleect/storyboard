@@ -33,3 +33,27 @@ export function activeMessageJson(db: Database, sessionId: string): string[] {
       .all({ session: sessionId }) as { message: string }[]
   ).map((r) => r.message);
 }
+
+/**
+ * The id and stored JSON of the top-level messages of the line the session
+ * shows, in order: the line only, with no subagent messages. A session with
+ * no tip reads as all its top-level messages, as `activeMessageJson` does.
+ */
+export function activeLine(
+  db: Database,
+  sessionId: string,
+): { id: string; message: string }[] {
+  return db
+    .prepare(
+      `WITH RECURSIVE line(id, parent_id) AS (
+         SELECT t.id, t.parent_id FROM messages t
+           WHERE t.id = (SELECT tip_id FROM sessions WHERE id = @session)
+         UNION ALL
+         SELECT p.id, p.parent_id FROM messages p JOIN line ON p.id = line.parent_id)
+       SELECT m.id, m.message FROM messages m
+       WHERE m.session_id = @session AND m.anchor_id IS NULL
+         AND (m.id IN (SELECT id FROM line) OR NOT EXISTS (SELECT 1 FROM line))
+       ORDER BY m.seq`,
+    )
+    .all({ session: sessionId }) as { id: string; message: string }[];
+}

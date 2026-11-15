@@ -42,13 +42,14 @@ packages/core/src
 `messages.ts` defines the provider-neutral transcript format. Model adapters
 translate to and from it.
 
-| Role        | Shape                          | Meaning                                                                                                                                                                                                           |
-| ----------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system`    | `{ content }`                  | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                                    |
-| `user`      | `{ content, files?, source? }` | What the user typed, with references to any images or audio sent with it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
-| `assistant` | `{ content: ContentBlock[] }`  | What the model produced.                                                                                                                                                                                          |
-| `tool`      | see below                      | The outcome of one tool call.                                                                                                                                                                                     |
-| `edit`      | `{ content, files, dataOps? }` | The user edited session files, schemas or data.                                                                                                                                                                   |
+| Role        | Shape                                      | Meaning                                                                                                                                                                                                           |
+| ----------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system`    | `{ content }`                              | System prompt. Added per request by the backend; not stored in the transcript.                                                                                                                                    |
+| `user`      | `{ content, files?, source? }`             | What the user typed, with references to any images or audio sent with it, or a task, reminder or user message given to a subagent. `source` (`task`, `reminder`, `user`) says which; it is not sent to the model. |
+| `assistant` | `{ content: ContentBlock[] }`              | What the model produced.                                                                                                                                                                                          |
+| `tool`      | see below                                  | The outcome of one tool call.                                                                                                                                                                                     |
+| `edit`      | `{ content, files, dataOps? }`             | The user edited session files, schemas or data.                                                                                                                                                                   |
+| `carried`   | `{ content, files, dataOps?, toolState? }` | The first message of a session that continues another: a notice, the state of files, schemas and data, and the tools' saved state.                                                                                |
 
 **Content blocks** of an assistant message:
 
@@ -72,8 +73,11 @@ translate to and from it.
 | `decisionComment` | yes, indirectly    | The comment the user typed on the approval prompt (a decision comment).  |
 | `prompt`          | no                 | The form the tool showed and how it was answered.                        |
 
-`ModelMessage` is `Message` without `edit`. Before a request is sent, edit
-messages are converted to user text (see below).
+`ModelMessage` is `Message` without `edit` and `carried`. Before a request is
+sent, edit and carried messages are converted to user text (see below). A
+`carried` message is written only by a rollover. Session state is rebuilt from
+its `files` and `dataOps` as from an edit, and `latestToolState` reads its
+`toolState`, so a tool finds its state although its own messages stayed behind.
 
 **Files.** A user message can carry `files`: references to images and audio
 (`session://cat.png`, `project://…`, `global://…`). The message stores only the
@@ -139,7 +143,7 @@ Session events have `runId: null`.
 | Group   | Event                              | Data                                                                                                               |
 | ------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Run     | `run.started`                      | `kind`, `model?`, `reasoningEffort?`, `agent?`, `parentRunId?`, `parentCallId?`                                    |
-|         | `run.finished`                     | `reason`: `stop`, `iteration_limit`, `cancelled`, `handed_back`; `usage?`                                          |
+|         | `run.finished`                     | `reason`: `stop`, `iteration_limit`, `cancelled`, `handed_back`, `rolled_over`; `usage?`                           |
 |         | `run.failed`                       | `error`                                                                                                            |
 |         | `run.interrupted`                  | (empty) The backend stopped while the run was active.                                                              |
 | Step    | `step.started`, `step.finished`    | `index`                                                                                                            |
@@ -178,6 +182,7 @@ Rules that make the stream reliable:
 | Event                        | Data                                                                      | Emitted when                                                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `session.trashed`            | (empty)                                                                   | The session was moved to the trash.                                                                             |
+| `session.continued`          | `sessionId`, `title`                                                      | The session was continued in a new one; the data names the new session.                                         |
 | `session.files_changed`      | `messageId`                                                               | The user edited session files (an edit message was added).                                                      |
 | `session.data_changed`       | `messageId`                                                               | The user edited session schemas or data.                                                                        |
 | `session.transcript_changed` | `reason` (`edit`, `move`, `delete_branch`, `restore_branch`), `messageId` | The shown line of the transcript changed: an in-place edit, the tip moved, or a branch was deleted or restored. |
@@ -337,6 +342,7 @@ for index = 0, 1, 2, …
     if a call failed the run → end: failed
     if a call handed back    → end: handed_back
     if the signal aborted    → end: cancelled
+    if ctx.rollover and the step used enough of the context → end: rolled_over
 emit run.finished   (or run.failed)
 ```
 
@@ -354,6 +360,13 @@ usage?)` is called with each assistant message just before its
   `tool.result` event. This ordering is why a client that receives an event can
   rely on the message being stored.
 - **Usage** is summed across all model calls and reported in `run.finished`.
+- **Rolling over.** With `ctx.rollover`, a top-level run ends with `rolled_over`
+  after a step whose call used `promptTokens + completionTokens` of at least
+  `thresholdTokens`, once that step's tool results are stored. Not on the last
+  allowed step, not for a subagent and not when the step reported no usage. The
+  result's `steps` says how many steps ran, so the next run can count them
+  against `maxIterations`. The loop only ends; the backend starts the new
+  session.
 - **Continuing.** With `ctx.continueMessage`, the first step extends an existing
   assistant message instead of starting a new one.
 
@@ -440,6 +453,7 @@ the transcript. Without the hook, nothing is taken.
 | `projects`, `agents`, `subagents`                                      | Access for the project, agent and subagent tools.                                                      |
 | `skills`, `copyLimit`                                                  | The skills in scope; the maximum keys per copy or move call.                                           |
 | `child`                                                                | Present for a subagent's run.                                                                          |
+| `rollover`                                                             | `{ thresholdTokens }`. End the run with `rolled_over` after a step that used this many tokens.         |
 | `takeUserMessages`                                                     | Takes the messages the user sent to the run (see above).                                               |
 | `sessionMessages`                                                      | A function returning **all** of the session's messages, used to rebuild session-scoped state.          |
 | `parentRunId`, `parentCallId`, `agent`, `continueMessage`, `messageId` | Run identity and continuation.                                                                         |
@@ -496,23 +510,24 @@ failed.
 
 What a tool's `execute` receives:
 
-| Field                                    | Description                                                                               |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `signal`, `sessionId`, `runId`, `callId` | Identity and cancellation.                                                                |
-| `update(partial)`                        | Emits a `tool.update` event.                                                              |
-| `state`                                  | The latest state this tool saved in the transcript.                                       |
-| `projectId`, `projectName`               | The session's project.                                                                    |
-| `files`                                  | `FileAccess`: files across scopes.                                                        |
-| `data`                                   | `DataAccess`: schemas and data across scopes.                                             |
-| `projects`                               | `ProjectAccess`: list, current, create, push.                                             |
-| `agents`                                 | `AgentAccess`: list agents, current agent.                                                |
-| `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                                        |
-| `skills`                                 | The skills in scope with their bodies.                                                    |
-| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, `search`, write, edit, move, delete and folders. |
-| `copyLimit`                              | Maximum keys per copy or move call.                                                       |
-| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).           |
-| `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                           |
-| `approval`                               | For a tool with `review`: the review the user answered and the chosen selection.          |
+| Field                                    | Description                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `signal`, `sessionId`, `runId`, `callId` | Identity and cancellation.                                                                     |
+| `update(partial)`                        | Emits a `tool.update` event.                                                                   |
+| `state`                                  | The latest state this tool saved in the transcript.                                            |
+| `projectId`, `projectName`               | The session's project.                                                                         |
+| `files`                                  | `FileAccess`: files across scopes.                                                             |
+| `data`                                   | `DataAccess`: schemas and data across scopes.                                                  |
+| `projects`                               | `ProjectAccess`: list, current, create, push.                                                  |
+| `agents`                                 | `AgentAccess`: list agents, current agent.                                                     |
+| `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                                             |
+| `skills`                                 | The skills in scope with their bodies.                                                         |
+| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, `search`, write, edit, move, delete and folders.      |
+| `copyLimit`                              | Maximum keys per copy or move call.                                                            |
+| `history`                                | `SessionHistory`: search and read the sessions this one continues. Absent when there are none. |
+| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).                |
+| `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                                |
+| `approval`                               | For a tool with `review`: the review the user answered and the chosen selection.               |
 
 `Tool.approvalSubject(input, ctx)` lets a tool name what a call is about
 (`{ kind: "workspace", id, label }`). The loop asks it before `needsApproval`, puts
