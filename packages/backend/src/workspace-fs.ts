@@ -281,6 +281,12 @@ export interface WorkspaceFsOptions {
   /** The most characters one read returns. */
   readCap: () => number;
   /**
+   * Which paths of a workspace the session may see: not ignored by its
+   * .gitignore files and not hidden. Called for each operation, so a change
+   * shows at once. Left out: every path.
+   */
+  visibility?: (w: WorkspaceRow) => (rel: string) => boolean;
+  /**
    * What the agent has read, by `<id>/<path>`: a write or edit is refused when
    * the file changed since, or was not read (D32). Kept across the runs of a
    * session.
@@ -309,6 +315,29 @@ export interface WorkspaceFsOptions {
     /** How many files of a workspace are searchable. */
     files(id: string): number;
   };
+}
+
+/** Whether anything inside a folder is not shown. */
+function hasUnshown(
+  abs: string,
+  rel: string,
+  shown: (rel: string) => boolean,
+): boolean {
+  let names: string[];
+  try {
+    names = readdirSync(abs);
+  } catch {
+    return false;
+  }
+  for (const name of names) {
+    const child = rel === "" ? name : `${rel}/${name}`;
+    if (!shown(child)) return true;
+    const p = join(abs, name);
+    if (lstatSync(p).isDirectory() && hasUnshown(p, child, shown)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const info = (w: WorkspaceRow): WorkspaceInfo => ({
@@ -343,6 +372,29 @@ export function createWorkspaceAccess(
         `The workspace "${w.name}" is read-only here.`,
       );
     }
+  };
+  const shownIn = (w: WorkspaceRow) => options.visibility?.(w) ?? (() => true);
+  /**
+   * A path that is ignored or hidden does not exist for the helper (a path
+   * the user approved outside the folder is not the workspace's to hide).
+   */
+  const assertShown = (
+    w: WorkspaceRow,
+    path: string,
+    o: WorkspaceOptions | undefined,
+    existing: boolean,
+    what = "file",
+  ) => {
+    if (opts(o)) return;
+    const rel = path.replace(/^\/+|\/+$/g, "");
+    if (rel === "" || rel.split("/").includes("..")) return;
+    if (shownIn(w)(rel)) return;
+    throw new WorkspaceError(
+      existing ? "not_found" : "invalid",
+      existing
+        ? `There is no ${what} "${path}".`
+        : `"${path}" is not available in this workspace.`,
+    );
   };
   const key = (id: string, path: string) => `${id}/${path}`;
   const record = (id: string, path: string, s: Stats) =>
@@ -415,9 +467,11 @@ export function createWorkspaceAccess(
     listDir: async (id, path, o) => {
       const w = find(id);
       const root = resolveIn(w.path, path, opts(o));
+      assertShown(w, path, o, true, "folder");
       if (!existsSync(root) || !statSync(root).isDirectory()) {
         throw new WorkspaceError("not_found", `There is no folder "${path}".`);
       }
+      const shown = shownIn(w);
       const out: WorkspaceEntry[] = [];
       const walk = (dirAbs: string, dirRel: string) => {
         const names = readdirSync(dirAbs).sort();
@@ -425,6 +479,7 @@ export function createWorkspaceAccess(
           if (out.length >= LIST_LIMIT) return;
           const abs = join(dirAbs, name);
           const rel = dirRel === "" ? name : `${dirRel}/${name}`;
+          if (!opts(o) && !shown(rel)) continue;
           const entry = fileOf(rel, name, abs);
           if (!entry) continue;
           out.push(entry);
@@ -451,6 +506,7 @@ export function createWorkspaceAccess(
         );
       }
       const abs = resolveIn(w.path, path, opts(o));
+      assertShown(w, path, o, true);
       if (!existsSync(abs)) {
         throw new WorkspaceError("not_found", `There is no file "${path}".`);
       }
@@ -496,6 +552,7 @@ export function createWorkspaceAccess(
       if (path === "") throw new WorkspaceError("invalid", "Name a file.");
       const abs = resolveIn(w.path, path, opts(o));
       const exists = existsSync(abs);
+      assertShown(w, path, o, exists);
       if (exists) {
         if (statSync(abs).isDirectory()) {
           throw new WorkspaceError("invalid", `"${path}" is a folder.`);
@@ -518,6 +575,7 @@ export function createWorkspaceAccess(
         throw new WorkspaceError("invalid", "The text to replace is empty.");
       }
       const abs = resolveIn(w.path, path, opts(o));
+      assertShown(w, path, o, true);
       if (!existsSync(abs) || statSync(abs).isDirectory()) {
         throw new WorkspaceError("not_found", `There is no file "${path}".`);
       }
@@ -553,6 +611,8 @@ export function createWorkspaceAccess(
       }
       const a = resolveIn(w.path, from, opts(o));
       const b = resolveIn(w.path, to, opts(o));
+      assertShown(w, from, o, true);
+      assertShown(w, to, o, false);
       if (!existsSync(a)) {
         throw new WorkspaceError("not_found", `There is no file "${from}".`);
       }
@@ -576,6 +636,7 @@ export function createWorkspaceAccess(
       writable(w);
       if (path === "") throw new WorkspaceError("invalid", "Name a file.");
       const abs = resolveIn(w.path, path, opts(o));
+      assertShown(w, path, o, true);
       if (!existsSync(abs) && !lstatExists(abs)) {
         throw new WorkspaceError("not_found", `There is no file "${path}".`);
       }
@@ -594,6 +655,7 @@ export function createWorkspaceAccess(
       writable(w);
       if (path === "") throw new WorkspaceError("invalid", "Name a folder.");
       const abs = resolveIn(w.path, path, opts(o));
+      assertShown(w, path, o, existsSync(abs), "folder");
       if (existsSync(abs)) {
         if (statSync(abs).isDirectory()) return false;
         throw new WorkspaceError("exists", `"${path}" is a file.`);
@@ -614,6 +676,8 @@ export function createWorkspaceAccess(
       }
       const a = resolveIn(w.path, from, opts(o));
       const b = resolveIn(w.path, to, opts(o));
+      assertShown(w, from, o, true, "folder");
+      assertShown(w, to, o, false);
       if (!existsSync(a) || !statSync(a).isDirectory()) {
         throw new WorkspaceError("not_found", `There is no folder "${from}".`);
       }
@@ -652,10 +716,16 @@ export function createWorkspaceAccess(
         ...(signal ? { signal } : {}),
       });
       const byId = new Map(attached.map((w) => [w.id, w]));
+      const shown = new Map<string, (rel: string) => boolean>();
+      const isShown = (w: WorkspaceRow, rel: string) => {
+        let f = shown.get(w.id);
+        if (!f) shown.set(w.id, (f = shownIn(w)));
+        return f(rel);
+      };
       return {
         hits: found.hits.flatMap((h) => {
           const w = byId.get(h.workspaceId);
-          return w
+          return w && isShown(w, h.path)
             ? [
                 {
                   workspace: info(w),
@@ -682,8 +752,18 @@ export function createWorkspaceAccess(
         );
       }
       const abs = resolveIn(w.path, path, opts(o));
+      assertShown(w, path, o, true, "folder");
       if (!existsSync(abs) || !statSync(abs).isDirectory()) {
         throw new WorkspaceError("not_found", `There is no folder "${path}".`);
+      }
+      if (
+        !opts(o) &&
+        hasUnshown(abs, path.replace(/^\/+|\/+$/g, ""), shownIn(w))
+      ) {
+        throw new WorkspaceError(
+          "invalid",
+          `"${path}" holds files that are not available in this workspace, so it cannot be deleted.`,
+        );
       }
       const files = countFiles(abs);
       if (!o?.recursive && readdirSync(abs).length > 0) {

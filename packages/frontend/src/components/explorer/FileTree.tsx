@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Checkbox,
   Menu,
   ScrollArea,
   Text,
@@ -41,6 +42,7 @@ import {
   type TreeNode,
 } from "../../lib/files-explorer";
 import { ACCEPT } from "../../lib/attachments";
+import { visibleState } from "../../lib/workspace-source";
 import { branchValues } from "../../lib/explorer";
 import { nameError } from "./FileViews";
 
@@ -129,6 +131,14 @@ function HeaderAction({
 const folderOf = (ref: NodeRef): string =>
   ref.kind === "file" ? dirName(ref.path) : ref.path;
 
+/** What a root marks on its nodes (see `ExplorerMarks`). */
+export interface NodeMarks {
+  ignored: ReadonlySet<string>;
+  hidden: readonly string[];
+  hiddenAbove: readonly string[];
+  who: string;
+}
+
 export interface NodeAction {
   label: string;
   onClick: () => void;
@@ -142,6 +152,8 @@ export interface FileTreeProps {
   pageRoot: RootId;
   /** The nodes above a root that is not at the top, outermost first. */
   parentsOf?: Readonly<Record<RootId, string[]>> | undefined;
+  marks?: Readonly<Record<RootId, NodeMarks>> | undefined;
+  onToggleVisible?: ((ref: NodeRef, visible: boolean) => void) | undefined;
   initialExpanded: Record<string, boolean>;
   onExpandedChange: (state: Record<string, boolean>) => void;
   activeValue: string | null;
@@ -369,6 +381,21 @@ export function FileTree(props: FileTreeProps) {
             }
 
             const isFolder = ref.kind === "folder" || ref.kind === "root";
+            const mark = props.marks?.[ref.root];
+            const ignored =
+              mark !== undefined &&
+              ref.kind !== "root" &&
+              mark.ignored.has(ref.path);
+            const visibility =
+              mark &&
+              (ref.kind === "root" ||
+                ref.kind === "file" ||
+                ref.kind === "folder")
+                ? {
+                    ...visibleState(mark.hidden, mark.hiddenAbove, ref.path),
+                    who: mark.who,
+                  }
+                : undefined;
             const isRenaming = renaming?.value === node.value;
             const deleted = row?.deleted ?? false;
 
@@ -424,11 +451,41 @@ export function FileTree(props: FileTreeProps) {
                     truncate
                     fw={ref.kind === "root" ? 600 : undefined}
                     td={deleted ? "line-through" : undefined}
+                    {...(ignored ? { c: "dimmed", fs: "italic" } : {})}
                     flex={1}
                     miw={0}
                   >
                     {node.label}
                   </Text>
+                )}
+                {ignored && (
+                  <Text size="xs" c="dimmed">
+                    ignored
+                  </Text>
+                )}
+                {visibility && (
+                  <Tooltip
+                    label={
+                      visibility.locked
+                        ? `Hidden from ${visibility.who} by a broader scope`
+                        : `Visible to ${visibility.who}`
+                    }
+                    openDelay={400}
+                  >
+                    <Checkbox
+                      size="xs"
+                      aria-label={`Visible to ${visibility.who}: ${node.label}`}
+                      checked={visibility.state === "all"}
+                      indeterminate={visibility.state === "some"}
+                      disabled={visibility.locked}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onChange={() =>
+                        !visibility.locked &&
+                        props.onToggleVisible?.(ref, visibility.state !== "all")
+                      }
+                    />
+                  </Tooltip>
                 )}
               </TreeRow>
             );

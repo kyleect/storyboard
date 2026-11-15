@@ -25,6 +25,7 @@ import {
   type WorkspaceInput,
 } from "../../api";
 import { workspaceKeys } from "../../queries";
+import { SCOPE_WORDS } from "../../lib/workspace-source";
 
 function FolderPicker({
   opened,
@@ -99,12 +100,6 @@ function FolderPicker({
   );
 }
 
-export const SCOPE_WORDS: Record<FileScope["scope"], string> = {
-  session: "this session",
-  project: "every session in this project",
-  global: "every session",
-};
-
 function WorkspaceForm({
   workspace,
   scope,
@@ -120,6 +115,7 @@ function WorkspaceForm({
     name: workspace?.name ?? "",
     path: workspace?.path ?? "",
     writable: workspace?.writable ?? false,
+    respectGitignore: workspace?.respectGitignore ?? true,
   });
   const [picking, setPicking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -180,6 +176,14 @@ function WorkspaceForm({
           description="Agents can create, change, move and delete files here, each change asking for your approval. Off: read-only."
           checked={v.writable}
           onChange={(e) => setV({ ...v, writable: e.currentTarget.checked })}
+        />
+        <Switch
+          label="Respect .gitignore"
+          description="Files that its .gitignore files ignore, and the .git folder, are not searched and are not shown to helpers. Turn it off to treat them like any other file."
+          checked={v.respectGitignore ?? true}
+          onChange={(e) =>
+            setV({ ...v, respectGitignore: e.currentTarget.checked })
+          }
         />
         {problem && <Alert color="red">{problem}</Alert>}
         <Group gap="xs">
@@ -257,14 +261,16 @@ function TemporaryForm({
 function TreeFolder({
   workspaceId,
   path,
+  scope,
 }: {
   workspaceId: string;
   path: string;
+  scope: FileScope;
 }) {
   const queryClient = useQueryClient();
   const tree = useQuery({
-    queryKey: workspaceKeys.tree(workspaceId, path),
-    queryFn: () => api.getWorkspaceTree(workspaceId, path),
+    queryKey: workspaceKeys.tree(workspaceId, path, scope),
+    queryFn: () => api.getWorkspaceTree(workspaceId, path, scope),
   });
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const toggle = useMutation({
@@ -293,13 +299,26 @@ function TreeFolder({
         <Checkbox
           size="xs"
           label={e.kind === "folder" ? `${e.name}/` : e.name}
-          checked={e.state === "all"}
-          indeterminate={e.state === "some"}
-          disabled={toggle.isPending}
+          // Not visible here, or ignored: not searched, and not tickable.
+          checked={e.state === "all" && e.hidden !== "all" && !e.ignored}
+          indeterminate={e.state === "some" && e.hidden !== "all"}
+          disabled={
+            toggle.isPending || e.hidden === "all" || e.ignored === true
+          }
           onChange={() =>
             toggle.mutate({ path: e.path, on: e.state !== "all" })
           }
         />
+        {e.ignored && (
+          <Text size="xs" c="dimmed">
+            ignored
+          </Text>
+        )}
+        {e.hidden === "all" && (
+          <Text size="xs" c="dimmed">
+            hidden here
+          </Text>
+        )}
         {e.kind === "folder" && (
           <Button
             size="compact-xs"
@@ -313,7 +332,7 @@ function TreeFolder({
       </Group>
       {e.kind === "folder" && open[e.path] && (
         <Stack gap={2} ml="md" mt={2}>
-          <TreeFolder workspaceId={workspaceId} path={e.path} />
+          <TreeFolder workspaceId={workspaceId} path={e.path} scope={scope} />
         </Stack>
       )}
     </div>
@@ -322,7 +341,13 @@ function TreeFolder({
   return <Stack gap={2}>{tree.data.entries.map(row)}</Stack>;
 }
 
-function SearchedParts({ workspace }: { workspace: Workspace }) {
+function SearchedParts({
+  workspace,
+  scope,
+}: {
+  workspace: Workspace;
+  scope: FileScope;
+}) {
   const queryClient = useQueryClient();
   const [shown, setShown] = useState(false);
   const index = useQuery({
@@ -377,7 +402,7 @@ function SearchedParts({ workspace }: { workspace: Workspace }) {
             disabled={all.isPending}
             onChange={(e) => all.mutate(e.currentTarget.checked)}
           />
-          <TreeFolder workspaceId={workspace.id} path="" />
+          <TreeFolder workspaceId={workspace.id} path="" scope={scope} />
           {status && (
             <Group gap="xs">
               <Text size="xs" c="dimmed">
@@ -476,9 +501,12 @@ function Listing({ workspace }: { workspace: Workspace }) {
 /** A workspace's own tab in the Files tree: its settings, what is searched and what is always allowed. */
 export function WorkspaceSettings({
   workspace,
+  scope,
   onClose,
 }: {
   workspace: Workspace;
+  /** The page the tab is in: what it hides is not searched there. */
+  scope: FileScope;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -497,7 +525,7 @@ export function WorkspaceSettings({
           }
           onCancel={onClose}
         />
-        <SearchedParts workspace={workspace} />
+        <SearchedParts workspace={workspace} scope={scope} />
         <Grants workspaceId={workspace.id} />
       </Stack>
     </ScrollArea>

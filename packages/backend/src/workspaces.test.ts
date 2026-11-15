@@ -1273,3 +1273,203 @@ describe("workspace tools in a run", () => {
     expect(system).toBe("AB");
   });
 });
+
+describe("workspaces and .gitignore, and what a scope hides", () => {
+  const P1 = { scope: "project", id: "p1" } as const;
+  const S1 = { scope: "session", id: "s1" } as const;
+
+  async function two() {
+    const c = await setup();
+    c.store.createProject({ id: "p1", name: "P", description: "", now: "t" });
+    c.store.createSession("s1", "T", "t", "p1");
+    c.store.createSession("s2", "T", "t", "p1");
+    c.store.createSession("s3", "T", "t", null);
+    const dir = folder({
+      ".gitignore": "build/\n",
+      "a.md": "A",
+      "build/out.js": "O",
+      "notes/n.md": "N",
+      "notes/m.md": "M",
+    });
+    const w = c.workspaces.create(GLOBAL, {
+      name: "Book",
+      path: dir,
+      writable: true,
+    });
+
+    return { c, dir, w };
+  }
+
+  const listed = async (c: Ctx, session: string, project: string | null) =>
+    (
+      await c.runs
+        .workspaceAccessFor(session, project)
+        ?.listDir(c.workspaces.forSession(session, project)[0]?.id ?? "", "", {
+          recursive: true,
+        })
+    )?.map((e) => e.path);
+
+  it("respects .gitignore by default, and can be turned off", async () => {
+    const { c, w } = await two();
+
+    expect(w.respectGitignore).toBe(true);
+    expect(await listed(c, "s1", "p1")).toEqual([
+      ".gitignore",
+      "a.md",
+      "notes",
+      "notes/m.md",
+      "notes/n.md",
+    ]);
+    const off = c.workspaces.update(w.id, {
+      name: "Book",
+      path: w.path,
+      writable: true,
+      respectGitignore: false,
+    });
+
+    expect(off.respectGitignore).toBe(false);
+    expect(await listed(c, "s1", "p1")).toContain("build/out.js");
+    // Saving without the setting keeps it.
+    expect(
+      c.workspaces.update(w.id, { name: "Book", path: w.path, writable: true })
+        .respectGitignore,
+    ).toBe(false);
+  });
+
+  it("hides a path for one session, and what a project or the global scope hides for all it covers", async () => {
+    const { c, w } = await two();
+
+    c.workspaces.setHidden(w.id, S1, ["notes/n.md"]);
+    expect(await listed(c, "s1", "p1")).not.toContain("notes/n.md");
+    expect(await listed(c, "s2", "p1")).toContain("notes/n.md");
+    c.workspaces.setHidden(w.id, P1, ["notes"]);
+    expect(await listed(c, "s2", "p1")).not.toContain("notes/m.md");
+    // A standalone session is not in the project.
+    expect(await listed(c, "s3", null)).toContain("notes/m.md");
+    c.workspaces.setHidden(w.id, GLOBAL, ["a.md"]);
+    expect(await listed(c, "s3", null)).not.toContain("a.md");
+    expect(c.workspaces.hiddenForSession(w.id, "s1", "p1")).toEqual([
+      "a.md",
+      "notes",
+      "notes/n.md",
+    ]);
+  });
+
+  it("a fork hides what the session hid; a purge removes what a scope hid", async () => {
+    const { c, w } = await two();
+
+    c.workspaces.setHidden(w.id, S1, ["a.md"]);
+    c.workspaces.copySessionWorkspaces("s1", "s2");
+    expect(c.workspaces.hiddenAt(w.id, { scope: "session", id: "s2" })).toEqual(
+      ["a.md"],
+    );
+    c.store.purgeSession("s1");
+    expect(c.workspaces.hiddenAt(w.id, S1)).toEqual([]);
+    c.workspaces.setHidden(w.id, P1, ["notes"]);
+    c.store.purgeProject("p1");
+    expect(c.workspaces.hiddenAt(w.id, P1)).toEqual([]);
+  });
+
+  it("the files route marks ignored files and gives what a scope hides", async () => {
+    const { c, w } = await two();
+
+    c.workspaces.setHidden(w.id, GLOBAL, ["a.md"]);
+    c.workspaces.setHidden(w.id, S1, ["notes/n.md"]);
+    const all = await api(
+      c.app,
+      "GET",
+      `/api/workspaces/${w.id}/files?scope=session&scopeId=s1`,
+    );
+    const body = all.body as {
+      entries: { path: string; ignored?: boolean }[];
+      hidden: string[];
+      hiddenAbove: string[];
+    };
+
+    expect(body.entries.find((e) => e.path === "build/out.js")?.ignored).toBe(
+      true,
+    );
+    expect(
+      body.entries.find((e) => e.path === "a.md")?.ignored,
+    ).toBeUndefined();
+    expect(body.hidden).toEqual(["notes/n.md"]);
+    expect(body.hiddenAbove).toEqual(["a.md"]);
+    // Without a scope it is the plain listing.
+    const plain = await api(c.app, "GET", `/api/workspaces/${w.id}/files`);
+
+    expect(plain.body).not.toHaveProperty("hidden");
+  });
+
+  it("toggles visibility in a scope, splitting a hidden folder for one file", async () => {
+    const { c, w } = await two();
+    const toggle = (path: string, visible: boolean) =>
+      api(c.app, "POST", `/api/workspaces/${w.id}/visibility/toggle`, {
+        scope: "session",
+        scopeId: "s1",
+        path,
+        visible,
+      });
+
+    expect((await toggle("notes", false)).body).toMatchObject({
+      hidden: ["notes"],
+    });
+    expect((await toggle("notes/n.md", true)).body).toMatchObject({
+      hidden: ["notes/m.md"],
+    });
+    expect((await toggle("notes/m.md", true)).body).toMatchObject({
+      hidden: [],
+    });
+    expect(c.workspaces.hiddenAt(w.id, S1)).toEqual([]);
+  });
+
+  it("refuses a scope that cannot see the workspace", async () => {
+    const { c } = await two();
+    const owned = c.workspaces.create(P1, {
+      name: "Mine",
+      path: folder({ "x.md": "x" }),
+      writable: false,
+    });
+    const toggle = (scope: object) =>
+      api(c.app, "POST", `/api/workspaces/${owned.id}/visibility/toggle`, {
+        ...scope,
+        path: "x.md",
+        visible: false,
+      });
+
+    expect((await toggle({ scope: "global" })).status).toBe(400);
+    expect((await toggle({ scope: "session", scopeId: "s3" })).status).toBe(
+      400,
+    );
+    expect((await toggle({ scope: "session", scopeId: "s1" })).status).toBe(
+      200,
+    );
+    expect((await toggle({ scope: "project", scopeId: "p1" })).status).toBe(
+      200,
+    );
+    expect((await toggle({ scope: "project", scopeId: "nope" })).status).toBe(
+      404,
+    );
+  });
+
+  it("the tree route gives the ignored mark and what is hidden, for the search ticks", async () => {
+    const { c, w } = await two();
+
+    c.workspaces.setHidden(w.id, GLOBAL, ["notes"]);
+    const tree = await api(
+      c.app,
+      "GET",
+      `/api/workspaces/${w.id}/tree?scope=session&scopeId=s1`,
+    );
+    const entries = (
+      tree.body as {
+        entries: { path: string; hidden: string; ignored?: boolean }[];
+      }
+    ).entries;
+
+    expect(entries.find((e) => e.path === "build")).toMatchObject({
+      ignored: true,
+      hidden: "none",
+    });
+    expect(entries.find((e) => e.path === "notes")?.hidden).toBe("all");
+  });
+});

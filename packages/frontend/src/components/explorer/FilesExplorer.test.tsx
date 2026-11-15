@@ -136,6 +136,8 @@ function mockApi() {
     entries: WORKSPACE_ENTRIES[id] ?? [],
     truncated: false,
     unavailable: false,
+    hidden: HIDDEN[id] ?? [],
+    hiddenAbove: HIDDEN_ABOVE[id] ?? [],
   }));
   vi.spyOn(api, "previewWorkspaceFile").mockImplementation(async (_id, path) =>
     path.endsWith(".png")
@@ -160,6 +162,7 @@ const workspace = (over: Partial<Workspace> = {}): Workspace => ({
   scope: "global",
   ownerId: null,
   temporary: false,
+  respectGitignore: true,
   createdAt: at,
   updatedAt: at,
   deleted: false,
@@ -168,10 +171,14 @@ const workspace = (over: Partial<Workspace> = {}): Workspace => ({
 });
 let WORKSPACES: Record<string, Workspace[]> = {};
 let WORKSPACE_ENTRIES: Record<string, WorkspaceFileEntry[]> = {};
+let HIDDEN: Record<string, string[]> = {};
+let HIDDEN_ABOVE: Record<string, string[]> = {};
 
 beforeEach(() => {
   WORKSPACES = {};
   WORKSPACE_ENTRIES = {};
+  HIDDEN = {};
+  HIDDEN_ABOVE = {};
 });
 
 describe("ValueView of a binary file", () => {
@@ -1168,7 +1175,12 @@ describe("the Workspaces folder", () => {
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith(
         { scope: "project", id: "p1" },
-        { name: "Notes", path: "/Users/me/Notes", writable: false },
+        {
+          name: "Notes",
+          path: "/Users/me/Notes",
+          writable: false,
+          respectGitignore: true,
+        },
       ),
     );
   });
@@ -1238,5 +1250,104 @@ describe("the Workspaces folder", () => {
     fireEvent.click(await screen.findByText("Restore"));
     await waitFor(() => expect(restore).toHaveBeenCalledWith("w9"));
     expect(vi.mocked(api.listWorkspaceFiles)).not.toHaveBeenCalledWith("w9");
+  });
+});
+
+describe("ignored files and what a scope sees, in the Workspaces folder", () => {
+  beforeEach(mockApi);
+
+  const book = workspace({ id: "w1", name: "Book" });
+  const entries: WorkspaceFileEntry[] = [
+    { path: "build", kind: "folder", ignored: true },
+    { path: "build/out.js", kind: "file", ignored: true },
+    { path: "notes", kind: "folder" },
+    { path: "notes/a.md", kind: "file", mediaType: "text/markdown" },
+    { path: "notes/b.md", kind: "file", mediaType: "text/markdown" },
+  ];
+
+  async function open(
+    page: FileScope = session,
+    projectId: string | null = null,
+  ) {
+    WORKSPACES = { global: [book] };
+    WORKSPACE_ENTRIES = { w1: entries };
+    show(<FilesExplorer page={page} projectId={projectId} />);
+    fireEvent.click(await screen.findByText("Book"));
+    await screen.findByText("notes");
+    fireEvent.click(screen.getByText("notes"));
+    await screen.findByText("a.md");
+  }
+
+  const box = (name: string, who = "this session") =>
+    screen.getByLabelText(`Visible to ${who}: ${name}`) as HTMLInputElement;
+
+  it("shows an ignored file dimmed and marked, and still opens it", async () => {
+    await open();
+    expect(screen.getAllByText("ignored")).toHaveLength(1);
+    fireEvent.click(screen.getByText("build"));
+    expect(await screen.findAllByText("ignored")).toHaveLength(2);
+    fireEvent.click(await screen.findByText("out.js"));
+    await waitFor(() =>
+      expect(vi.mocked(api.previewWorkspaceFile)).toHaveBeenCalledWith(
+        "w1",
+        "build/out.js",
+      ),
+    );
+  });
+
+  it("asks for the page's scope, and has a checkbox on the workspace and on each node, ticked when visible", async () => {
+    await open();
+    expect(vi.mocked(api.listWorkspaceFiles)).toHaveBeenCalledWith(
+      "w1",
+      session,
+    );
+    expect(box("Book").checked).toBe(true);
+    expect(box("notes").checked).toBe(true);
+    expect(box("a.md").checked).toBe(true);
+  });
+
+  it("hides and shows a file in the page's scope", async () => {
+    const toggle = vi
+      .spyOn(api, "toggleWorkspaceVisibility")
+      .mockResolvedValue({ hidden: [], hiddenAbove: [] });
+
+    await open();
+    fireEvent.click(box("a.md"));
+    await waitFor(() =>
+      expect(toggle).toHaveBeenCalledWith("w1", session, "notes/a.md", false),
+    );
+  });
+
+  it("shows a hidden file unticked, and a folder with some hidden as partly ticked", async () => {
+    HIDDEN = { w1: ["notes/a.md"] };
+    await open();
+    expect(box("a.md").checked).toBe(false);
+    expect(box("b.md").checked).toBe(true);
+    expect(box("notes").indeterminate).toBe(true);
+    expect(box("Book").indeterminate).toBe(true);
+  });
+
+  it("cannot show what a broader scope hides", async () => {
+    HIDDEN_ABOVE = { w1: ["notes"] };
+    const toggle = vi.spyOn(api, "toggleWorkspaceVisibility");
+
+    await open();
+    expect(box("notes").checked).toBe(false);
+    expect(box("notes").disabled).toBe(true);
+    expect(box("a.md").disabled).toBe(true);
+    fireEvent.click(box("a.md"));
+    expect(toggle).not.toHaveBeenCalled();
+  });
+
+  it("names the project, or every session, on the other pages", async () => {
+    await open(project);
+    expect(box("a.md", "every session in this project")).toBeTruthy();
+  });
+
+  it("puts no checkbox on a file of the page's own files", async () => {
+    WORKSPACES = {};
+    show(<FilesExplorer page={session} projectId="p1" />);
+    await screen.findByText("plan.txt");
+    expect(screen.queryByLabelText(/Visible to/)).toBeNull();
   });
 });

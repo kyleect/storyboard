@@ -744,6 +744,18 @@ status and _Rescan_) and _Always allowed_ (the grants of this workspace, with
 _Remove_). A saved `workspaces` tab of the old rail is carried over to Files
 (`LEGACY_KINDS`).
 
+Ignored and hidden paths: a source can give `marks` (`ExplorerMarks`): the ignored
+paths, what the page's scope hides, what the broader scopes hide, and a `toggle`.
+`SourceExplorer` loads them for each root and `FileTree` draws an ignored node
+dimmed with "ignored", and a checkbox on every node of a workspace ("Visible to
+this session", "every session in this project" or "every session"): ticked when
+visible, partly ticked when something inside is hidden, unticked when hidden, and
+disabled when a broader scope hides it (`visibleState`). The listing is asked for
+with the page's scope (`?scope=`), so the same workspace is read again for each
+page and its cache keys include the scope. The workspace tab's form has _Respect
+.gitignore_, and in _Searched parts_ an ignored entry, or one the page's scope
+hides, shows unticked and disabled; the stored tick is not changed.
+
 The approval dialog names the workspace for such a call, and its _Allow for this
 session_ and _Always allow this tool_ buttons say they cover that workspace. A
 workspace image or audio file a tool read is fetched with the token and shown in

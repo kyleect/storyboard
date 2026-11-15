@@ -47,6 +47,28 @@ Right-click the workspace and choose **Settings**. You can change the name, the 
 
 - **Always allowed**. The tools you chose to always allow in this workspace. Press **Remove** to be asked again.
 
+## Files that .gitignore ignores
+
+If your folder is a git project, helpers do not see the files its `.gitignore` files ignore. Those files are not searched. They do not show up when a helper lists the folder, searches, or reads. If a helper asks for one by name, the answer is that it does not exist. The `.git` folder is never shown.
+
+In **Files**, ignored files are still there. They are dimmed and marked **ignored**, and you can open and read them.
+
+To turn this off for a workspace, open its **Settings** and switch off **Respect .gitignore**.
+
+## Choose what each place can see
+
+Every file and folder of a workspace has a checkbox. It means "visible to" the place you are looking from:
+
+- In a chat's Files: visible to this chat.
+- In a project's Files: visible to every chat in the project.
+- In Global Files: visible to every chat.
+
+Untick a file to hide it. Helpers in that place do not see it, search it, or read it. A hidden folder hides everything inside it. Everything is visible until you change it, and new files are visible.
+
+A place can hide more than the one above it, but it cannot show what the one above hides. That checkbox is greyed out. For example, a file hidden in Global Files cannot be shown again from a chat.
+
+A hidden file is not searched in that place, even if it is ticked in **Searched parts**. It shows there as unticked and cannot be ticked.
+
 ## Choose what helpers can search
 
 In **Settings**, open **Searched parts**. You can tick the whole folder or only some folders and files. Helpers search only what you tick.

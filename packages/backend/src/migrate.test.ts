@@ -592,6 +592,7 @@ describe("loadMigrations", () => {
       "skill_versions",
       "skills",
       "tool_subject_grants",
+      "workspace_hidden",
       "workspace_index_files",
       "workspaces",
     ]);
@@ -850,7 +851,12 @@ describe("migration 0038 (workspaces at a scope)", () => {
     attach("sessRo", "session", "s2", 1);
     make("wsRo", 0);
     attach("wsRo", "project", "p1");
-    expect(migrate(db, all)).toEqual([38]);
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 38),
+      ),
+    ).toEqual([38]);
     expect(row("proj")).toEqual({
       project_id: "p1",
       session_id: null,
@@ -940,5 +946,36 @@ describe("migration 0038 (workspaces at a scope)", () => {
     expect(() => insert("f", null, null, "scratch")).toThrow(/UNIQUE/);
     expect(() => insert("g", "p1", "s1", "other")).toThrow(/CHECK/);
     expect(() => insert("h", null, null, "temp", 1)).toThrow(/CHECK/);
+  });
+});
+
+describe("migration 0039 (workspaces and .gitignore)", () => {
+  it("makes every workspace respect .gitignore and adds the hidden paths", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+
+    migrate(
+      db,
+      all.filter((m) => m.version <= 38),
+    );
+    db.prepare(
+      `INSERT INTO workspaces (id, name, path, writable, created_at, updated_at)
+       VALUES ('w1', 'Book', '/x', 0, 't', 't')`,
+    ).run();
+    expect(migrate(db, all)).toEqual([39]);
+    expect(
+      db.prepare("SELECT respect_gitignore AS r FROM workspaces").get(),
+    ).toEqual({ r: 1 });
+    db.prepare(
+      "INSERT INTO workspace_hidden (workspace_id, scope_kind, scope_id, path) VALUES ('w1', 'global', '', 'a.md')",
+    ).run();
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO workspace_hidden (workspace_id, scope_kind, scope_id, path) VALUES ('w1', 'agent', 'x', 'a.md')",
+        )
+        .run(),
+    ).toThrow();
   });
 });

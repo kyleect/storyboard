@@ -164,6 +164,11 @@ Reading and listing never ask. Every tool that changes something asks, and asks
 per workspace: the prompt names it, and _Allow for this session_ and _Always
 allow this tool_ cover that tool in that workspace only.
 
+A path the workspace's `.gitignore` files ignore, or a scope hides from the
+session, does not exist for these tools (see [backend.md](backend.md#ignored-and-hidden-paths)):
+it is not listed or searched, a read says there is no such file, and a write
+into it is refused.
+
 | Tool                                                                              | Approval | What it does                                                                                                                                                                                                                                           |
 | --------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `workspaces_list`                                                                 | never    | The workspaces the session has: id, name, whether it can be changed, and its reference.                                                                                                                                                                |

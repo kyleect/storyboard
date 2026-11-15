@@ -46,12 +46,16 @@ export interface WorkspaceRow {
   deleted: boolean;
   /** What is searched: paths inside the folder; "" is all of it (D45, D53). */
   ticks: string[];
+  /** Files its .gitignore files ignore are not scanned or shown. */
+  respectGitignore: boolean;
 }
 
 export interface WorkspaceContent {
   name: string;
   path: string;
   writable: boolean;
+  /** Left out: on for a new workspace, as it was for a saved one. */
+  respectGitignore?: boolean | undefined;
 }
 
 interface Row {
@@ -66,6 +70,7 @@ interface Row {
   updated_at: string;
   deleted_at: string | null;
   index_ticks: string;
+  respect_gitignore: number;
 }
 
 const toRow = (r: Row): WorkspaceRow => ({
@@ -85,10 +90,11 @@ const toRow = (r: Row): WorkspaceRow => ({
   updatedAt: r.updated_at,
   deleted: r.deleted_at !== null,
   ticks: JSON.parse(r.index_ticks) as string[],
+  respectGitignore: r.respect_gitignore === 1,
 });
 
 const COLUMNS =
-  "id, name, path, writable, project_id, session_id, temporary, created_at, updated_at, deleted_at, index_ticks";
+  "id, name, path, writable, project_id, session_id, temporary, created_at, updated_at, deleted_at, index_ticks, respect_gitignore";
 
 /** The SQL that selects the rows one owner defines. */
 const OWNED: Record<WorkspaceScope, string> = {
@@ -212,8 +218,8 @@ export class WorkspaceStore {
     this.db
       .prepare(
         `INSERT INTO workspaces
-           (id, profile_id, project_id, session_id, name, path, writable, temporary, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, profile_id, project_id, session_id, name, path, writable, temporary, created_at, updated_at, respect_gitignore)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -226,6 +232,7 @@ export class WorkspaceStore {
         temporary ? 1 : 0,
         now,
         now,
+        content.respectGitignore === false ? 0 : 1,
       );
     return this.require(id);
   }
@@ -235,7 +242,14 @@ export class WorkspaceStore {
     const path = this.checkFolder(content.path);
     return this.insert(
       owner,
-      { name, path, writable: content.writable },
+      {
+        name,
+        path,
+        writable: content.writable,
+        ...(content.respectGitignore !== undefined
+          ? { respectGitignore: content.respectGitignore }
+          : {}),
+      },
       false,
       this.newId(),
     );
@@ -289,10 +303,17 @@ export class WorkspaceStore {
       : this.checkFolder(content.path);
     this.db
       .prepare(
-        `UPDATE workspaces SET name = ?, path = ?, writable = ?, updated_at = ?
+        `UPDATE workspaces SET name = ?, path = ?, writable = ?, respect_gitignore = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, path, content.writable ? 1 : 0, this.now(), id);
+      .run(
+        name,
+        path,
+        content.writable ? 1 : 0,
+        (content.respectGitignore ?? existing.respectGitignore) ? 1 : 0,
+        this.now(),
+        id,
+      );
     return this.require(id);
   }
 
@@ -378,8 +399,8 @@ export class WorkspaceStore {
       this.db
         .prepare(
           `INSERT INTO workspaces
-             (id, profile_id, project_id, session_id, name, path, writable, temporary, created_at, updated_at, index_ticks)
-           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, profile_id, project_id, session_id, name, path, writable, temporary, created_at, updated_at, index_ticks, respect_gitignore)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -392,7 +413,15 @@ export class WorkspaceStore {
           now,
           now,
           JSON.stringify(w.ticks),
+          w.respectGitignore ? 1 : 0,
         );
+      this.db
+        .prepare(
+          `INSERT INTO workspace_hidden (workspace_id, scope_kind, scope_id, path)
+           SELECT ?, scope_kind, ?, path FROM workspace_hidden
+           WHERE workspace_id = ? AND scope_kind = 'session' AND scope_id = ?`,
+        )
+        .run(id, toSessionId, w.id, fromSessionId);
       this.db
         .prepare(
           `INSERT OR IGNORE INTO session_subject_approvals
@@ -403,6 +432,16 @@ export class WorkspaceStore {
         )
         .run(toSessionId, id, fromSessionId, w.id);
     }
+    // What the session hid in workspaces it does not own (global and its
+    // project's) is hidden for the fork too.
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO workspace_hidden (workspace_id, scope_kind, scope_id, path)
+         SELECT h.workspace_id, 'session', ?, h.path FROM workspace_hidden h
+         JOIN workspaces w ON w.id = h.workspace_id
+         WHERE h.scope_kind = 'session' AND h.scope_id = ? AND w.session_id IS NULL`,
+      )
+      .run(toSessionId, fromSessionId);
   }
 
   /**
@@ -423,6 +462,64 @@ export class WorkspaceStore {
         )
         .all(activeProfile(this.db), sessionId, projectId ?? "") as Row[]
     ).map(toRow);
+  }
+
+  // ---- What a scope hides ---------------------------------------------------
+
+  /** The paths one scope hides in a workspace. */
+  hiddenAt(id: string, scope: WorkspaceOwner): string[] {
+    return this.hiddenIn(id, [scope]);
+  }
+
+  /** The paths hidden by any of these scopes. */
+  hiddenIn(id: string, scopes: readonly WorkspaceOwner[]): string[] {
+    const out = new Set<string>();
+    for (const s of scopes) {
+      const rows = this.db
+        .prepare(
+          "SELECT path FROM workspace_hidden WHERE workspace_id = ? AND scope_kind = ? AND scope_id = ?",
+        )
+        .all(id, s.scope, s.scope === "global" ? "" : s.id) as {
+        path: string;
+      }[];
+      for (const r of rows) out.add(r.path);
+    }
+    return [...out].sort();
+  }
+
+  /** Replaces what one scope hides in a workspace. */
+  setHidden(id: string, scope: WorkspaceOwner, paths: readonly string[]) {
+    const scopeId = scope.scope === "global" ? "" : scope.id;
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "DELETE FROM workspace_hidden WHERE workspace_id = ? AND scope_kind = ? AND scope_id = ?",
+        )
+        .run(id, scope.scope, scopeId);
+      for (const path of paths) {
+        this.db
+          .prepare(
+            "INSERT INTO workspace_hidden (workspace_id, scope_kind, scope_id, path) VALUES (?, ?, ?, ?)",
+          )
+          .run(id, scope.scope, scopeId, path);
+      }
+    })();
+  }
+
+  /**
+   * What a session does not see of a workspace: what it hid itself and what
+   * its project and the global scope hid.
+   */
+  hiddenForSession(
+    id: string,
+    sessionId: string,
+    projectId: string | null,
+  ): string[] {
+    return this.hiddenIn(id, [
+      { scope: "global" },
+      ...(projectId ? [{ scope: "project" as const, id: projectId }] : []),
+      { scope: "session", id: sessionId },
+    ]);
   }
 
   // ---- Approvals per subject (D27, D39) -----------------------------------
@@ -529,6 +626,7 @@ function dropWorkspaces(db: Database, ids: readonly string[]): string[] {
     db.prepare("DELETE FROM workspace_index_files WHERE workspace_id = ?").run(
       id,
     );
+    db.prepare("DELETE FROM workspace_hidden WHERE workspace_id = ?").run(id);
     db.prepare(
       "DELETE FROM chunks WHERE scope = 'workspace' AND owner_id = ?",
     ).run(id);
@@ -565,6 +663,11 @@ export function purgeWorkspacesOf(
       )
       .all(ownerId) as { id: string }[]
   ).map((r) => r.id);
+  // What this project or session hid in other workspaces goes with it.
+  db.prepare(
+    "DELETE FROM workspace_hidden WHERE scope_kind = ? AND scope_id = ?",
+  ).run(kind, ownerId);
+
   return { ids, folders: dropWorkspaces(db, ids) };
 }
 

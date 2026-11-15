@@ -78,6 +78,54 @@ async function until(check: () => boolean, ms = 8000) {
   throw new Error("Timed out waiting for the index.");
 }
 
+describe("ignored files", () => {
+  it("does not scan what .gitignore ignores, and scans it again when ignoring is off", async () => {
+    const { put, tick, keys, store, w, indexer } = setup();
+    put(".gitignore", "build/\n*.log\n");
+    put("a.md", "alpha");
+    put("build/b.md", "bravo");
+    put("run.log", "charlie");
+    put("sub/.gitignore", "c.md\n");
+    put("sub/c.md", "delta");
+    put("sub/d.md", "echo");
+    await tick("");
+    expect(keys()).toEqual([
+      ".gitignore",
+      "a.md",
+      "sub/.gitignore",
+      "sub/d.md",
+    ]);
+    store.update(w.id, {
+      name: w.name,
+      path: w.path,
+      writable: true,
+      respectGitignore: false,
+    });
+    await indexer.refresh(w.id);
+    expect(keys()).toEqual([
+      ".gitignore",
+      "a.md",
+      "build/b.md",
+      "run.log",
+      "sub/.gitignore",
+      "sub/c.md",
+      "sub/d.md",
+    ]);
+  });
+
+  it("does not scan an ignored file that is ticked itself, or the inside of .git", async () => {
+    const { put, tick, keys } = setup();
+    put(".gitignore", "secret.md\n");
+    put("secret.md", "alpha");
+    put(".git/config", "bravo");
+    put("a.md", "charlie");
+    await tick("secret.md", "a.md");
+    expect(keys()).toEqual(["a.md"]);
+    await tick("");
+    expect(keys()).toEqual([".gitignore", "a.md"]);
+  });
+});
+
 describe("ticking", () => {
   it("indexes nothing until something is ticked", async () => {
     const { put, indexer, w, keys } = setup();
