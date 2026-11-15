@@ -430,6 +430,24 @@ answered, and both are re-created after a page reload from the snapshot.
 Both are sent with the id of the **run that asked**, so a subagent's question is
 answered against the child run.
 
+### Continued sessions
+
+`routes/chat/components/Continuation.tsx` holds the pieces for a session that was
+continued (see [backend.md](backend.md#session-rollover)). `ContinuedFromLine` names
+the earlier session at the top of the new one, `CarriedDivider` marks where the
+carried messages end, and `ContinuedToBanner` replaces the composer in the earlier
+session, which is read only (`continuedTo` in the detail). `SessionHits` shows the
+results of `sessions_search` in a tool call. The _Continue in a new session_ button
+asks first and calls `POST /api/sessions/:id/rollover`.
+
+`useSessionEvents` handles `session.continued` by refreshing the lists and
+opening the new session. The send response carries a `sessionId` that can
+differ from the one sent to (a rollover before the run), and the chat follows it.
+Lists show "Read only. Continued in …" (the Sessions page) or a "Read only" mark
+(the workbench tree). Trashing a continued session asks the server first; a 409
+with `needsForce` opens a confirmation that names `continuedBy`, then repeats the
+request with `force`.
+
 ## The Files view
 
 `FilesExplorer.tsx` is the Files tab of a session and of the global and project

@@ -87,6 +87,11 @@ Caps that keep things from running away.
 - **Copy limit.** The most files one copy or move can name.
 - **Workspace read size.** The most text of one folder file a helper reads at once.
 - **Skill limits.** How big a skill, and how many files in it, can be.
+- **When the context is full.** **Continue in a new session** (the default) or **Do nothing**. See [Chats](chats.md#when-a-chat-gets-long).
+- **Context full at (%).** How much of the model's room one call must use before the chat continues in a new one. The default is 80.
+- **Carried over to a new session (%).** How much of the model's room the copied messages may take in the new chat. The default is 10. The latest step is always copied.
+
+This needs a model whose context size is known. With a model that is not loaded or does not say, a chat is not continued by itself. You can still use the button.
 
 ## Tools
 
