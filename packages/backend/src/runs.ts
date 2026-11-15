@@ -411,21 +411,21 @@ export class RunManager {
   /** Records an error and tells every window (error reporting plan, P6). */
   /**
    * Asks for the model's context size and keeps it for the check before the
-   * next message. A size that is not known removes the one kept.
+   * next message. When the answer is missing (the model is not loaded just
+   * now, or llama-server cannot be reached) the size found before stays.
    */
   private async findContextSize(
     model: string | null,
   ): Promise<number | undefined> {
     const ask = this.options.contextSize;
-    if (!ask) return undefined;
     const key = model ?? "";
+    if (!ask) return undefined;
     const size = await ask(model).catch(() => undefined);
     if (size !== undefined && size > 0) {
       this.contextSizes.set(key, size);
       return size;
     }
-    this.contextSizes.delete(key);
-    return undefined;
+    return this.contextSizes.get(key);
   }
 
   private recordError(error: NewError) {

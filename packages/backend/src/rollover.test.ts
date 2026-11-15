@@ -321,7 +321,7 @@ async function setup(
   options: {
     settings?: Record<string, unknown>;
     tempRoot?: boolean;
-    contextSize?: number;
+    contextSize?: number | (() => Promise<number | undefined>);
   } = {},
 ) {
   const t = tempDatabase();
@@ -354,7 +354,12 @@ async function setup(
     tools: allTools,
     systemPrompt: () => "BASE",
     ...(options.contextSize
-      ? { contextSize: () => Promise.resolve(options.contextSize) }
+      ? {
+          contextSize:
+            typeof options.contextSize === "function"
+              ? options.contextSize
+              : () => Promise.resolve(options.contextSize as number),
+        }
       : {}),
     history: (session) =>
       sessionHistory({ ...engine, store, sessionId: session.id }),
@@ -1523,5 +1528,96 @@ describe("rolling over by itself", () => {
     await post(c, id, "one");
     const second = await post(c, id, "two");
     expect(second.sessionId).toBe(id);
+  });
+});
+
+describe("when the context size cannot be read", () => {
+  const settledRuns = async (c: Ctx) => {
+    await expect
+      .poll(
+        () =>
+          (
+            c.t.db
+              .prepare(
+                "SELECT count(*) AS n FROM runs WHERE status = 'running'",
+              )
+              .get() as { n: number }
+          ).n,
+      )
+      .toBe(0);
+    await new Promise((r) => setTimeout(r, 50));
+  };
+
+  it.each([
+    ["is not reported", () => Promise.resolve(undefined)],
+    ["fails", () => Promise.reject(new Error("down"))],
+  ])("uses the size found before when a lookup %s", async (_name, fail) => {
+    let calls = 0;
+    const c = await setup(
+      [
+        [...say("First."), used(100)],
+        [callStep("1", "current_date"), used(900)],
+        [...say("Carried on."), used(100)],
+      ],
+      {
+        contextSize: () => (calls++ === 0 ? Promise.resolve(1000) : fail()),
+      },
+    );
+    const id = (await api(c.app, "POST", "/api/sessions", {})).body.id;
+    c.watch(id);
+    await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "one",
+    });
+    await settledRuns(c);
+    expect(calls).toBe(1);
+    await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "two",
+    });
+    await settledRuns(c);
+    // The second run could not read the size and used the first one: its
+    // step at 900 of 1000 ended the run and went on in a new session.
+    expect(calls).toBeGreaterThan(1);
+    const next = c.store.continuedTo(id);
+    expect(next).toBeDefined();
+    expect(c.model.requests).toHaveLength(3);
+  });
+
+  it("has no size to use when it was never read", async () => {
+    const c = await setup(
+      [[callStep("1", "current_date"), used(900)], say("Done.")],
+      { contextSize: () => Promise.resolve(undefined) },
+    );
+    const id = (await api(c.app, "POST", "/api/sessions", {})).body.id;
+    c.watch(id);
+    await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "go",
+    });
+    await settledRuns(c);
+    expect(c.store.continuedTo(id)).toBeUndefined();
+  });
+
+  it("rolls over before the next message with the size found before", async () => {
+    let calls = 0;
+    const c = await setup(
+      [
+        [...say("A long answer."), used(950)],
+        [...say("Carrying on."), used(100)],
+      ],
+      {
+        contextSize: () =>
+          calls++ === 0 ? Promise.resolve(1000) : Promise.resolve(undefined),
+      },
+    );
+    const id = (await api(c.app, "POST", "/api/sessions", {})).body.id;
+    c.watch(id);
+    await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "first",
+    });
+    await settledRuns(c);
+    const sent = await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "second",
+    });
+    await settledRuns(c);
+    expect(sent.body.sessionId).not.toBe(id);
   });
 });
