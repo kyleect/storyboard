@@ -1,6 +1,7 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -25,7 +26,11 @@ import { readSettings, writeSettings } from "./settings.js";
 import { Store } from "./store.js";
 import { clearBuiltinAgents, grant, tempDatabase } from "./test-helpers.js";
 import { setToolAsks } from "./tool-settings.js";
-import { WorkspaceStore, WorkspaceStoreError } from "./workspaces-store.js";
+import {
+  WorkspaceStore,
+  WorkspaceStoreError,
+  type WorkspaceOwner,
+} from "./workspaces-store.js";
 
 /*
  * Workspaces (files unification design): the store, the routes, and real runs
@@ -60,7 +65,9 @@ async function setup(scripts: ScriptStep[][] = [], settings = {}) {
   const store = new Store(t.db);
   const files = new FileStore(t.db);
   const agents = new AgentStore(t.db);
-  const workspaces = new WorkspaceStore(t.db);
+  const tempRoot = mkdtempSync(join(tmpdir(), "harness-wstemp-"));
+  cleanups.push(() => rmSync(tempRoot, { recursive: true, force: true }));
+  const workspaces = new WorkspaceStore(t.db, undefined, undefined, tempRoot);
   const model = new ScriptedModel(scripts);
   const runs = new RunManager({
     store,
@@ -85,9 +92,11 @@ async function setup(scripts: ScriptStep[][] = [], settings = {}) {
   });
   await app.ready();
   cleanups.push(t.cleanup, () => app.close());
-  return { t, store, runs, app, model, workspaces, scripts, agents };
+  return { t, store, runs, app, model, workspaces, scripts, agents, tempRoot };
 }
 type Ctx = Awaited<ReturnType<typeof setup>>;
+
+const GLOBAL = { scope: "global" } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -191,11 +200,15 @@ describe("WorkspaceStore", () => {
   it("creates a workspace with a full, existing folder and a unique name", async () => {
     const c = await setup();
     const dir = folder();
-    const w = c.workspaces.create({ name: "Book", path: dir, writable: false });
+    const w = c.workspaces.create(GLOBAL, {
+      name: "Book",
+      path: dir,
+      writable: false,
+    });
     expect(w).toMatchObject({ name: "Book", path: dir, writable: false });
-    const bad = (content: Parameters<WorkspaceStore["create"]>[0]) => {
+    const bad = (content: Parameters<WorkspaceStore["create"]>[1]) => {
       try {
-        c.workspaces.create(content);
+        c.workspaces.create(GLOBAL, content);
       } catch (err) {
         expect(err).toBeInstanceOf(WorkspaceStoreError);
         return (err as WorkspaceStoreError).message;
@@ -217,59 +230,95 @@ describe("WorkspaceStore", () => {
     );
   });
 
-  it("a project's and a session's attachments add up; read-only wins (D26)", async () => {
+  it("a session sees its own, its project's and the global workspaces, and no others (Q1 A)", async () => {
     const c = await setup();
-    const dir = folder();
-    const rw = c.workspaces.create({ name: "RW", path: dir, writable: true });
-    const ro = c.workspaces.create({
-      name: "RO",
+    c.store.createProject({ id: "p1", name: "P", description: "", now: "t" });
+    c.store.createProject({ id: "p2", name: "Q", description: "", now: "t" });
+    c.store.createSession("s1", "T", "t", "p1");
+    c.store.createSession("s2", "T", "t", "p2");
+    const make = (name: string, owner: WorkspaceOwner) =>
+      c.workspaces.create(owner, { name, path: folder(), writable: true });
+    make("Global", GLOBAL);
+    make("OfP1", { scope: "project", id: "p1" });
+    make("OfP2", { scope: "project", id: "p2" });
+    make("OfS1", { scope: "session", id: "s1" });
+    make("OfS2", { scope: "session", id: "s2" });
+    const names = (session: string, project: string | null) =>
+      c.workspaces.forSession(session, project).map((w) => w.name);
+    expect(names("s1", "p1")).toEqual(["Global", "OfP1", "OfS1"]);
+    expect(names("s2", "p2")).toEqual(["Global", "OfP2", "OfS2"]);
+    // A standalone session has no project's.
+    expect(names("s3", null)).toEqual(["Global"]);
+    expect(
+      c.workspaces
+        .forSession("s1", "p1")
+        .map((w) => [w.name, w.scope, w.ownerId]),
+    ).toEqual([
+      ["Global", "global", null],
+      ["OfP1", "project", "p1"],
+      ["OfS1", "session", "s1"],
+    ]);
+  });
+
+  it("a name is unique within one owner, not across owners (Q3 A)", async () => {
+    const c = await setup();
+    c.store.createProject({ id: "p1", name: "P", description: "", now: "t" });
+    c.store.createSession("s1", "T", "t", "p1");
+    c.store.createSession("s2", "T", "t", "p1");
+    const make = (owner: WorkspaceOwner) =>
+      c.workspaces.create(owner, {
+        name: "scratch",
+        path: folder(),
+        writable: true,
+      });
+    make(GLOBAL);
+    make({ scope: "project", id: "p1" });
+    make({ scope: "session", id: "s1" });
+    make({ scope: "session", id: "s2" });
+    expect(() => make({ scope: "session", id: "s1" })).toThrow(
+      /already exists/,
+    );
+    expect(() => make(GLOBAL)).toThrow(/already exists/);
+    expect(c.workspaces.forSession("s1", "p1").map((w) => w.scope)).toEqual([
+      "session",
+      "project",
+      "global",
+    ]);
+  });
+
+  it("lists only what an owner defines, and the trash apart", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    const g = c.workspaces.create(GLOBAL, {
+      name: "G",
       path: folder(),
       writable: false,
     });
-    const both = c.workspaces.create({
-      name: "Both",
-      path: folder(),
-      writable: true,
-    });
-    c.store.createProject({ id: "p1", name: "P", description: "", now: "t" });
-    c.store.createSession("s1", "T", "t", "p1");
-    c.workspaces.attach("project", "p1", rw.id, false);
-    c.workspaces.attach("project", "p1", both.id, true);
-    c.workspaces.attach("session", "s1", ro.id, false);
-    // A session cannot make a workspace the project holds read-only writable.
-    c.workspaces.attach("session", "s1", both.id, false);
-    const effective = Object.fromEntries(
-      c.workspaces
-        .forSession("s1", "p1")
-        .map((w) => [w.name, w.effectiveWritable]),
+    c.workspaces.create(
+      { scope: "session", id: "s1" },
+      { name: "S", path: folder(), writable: false },
     );
-    // A workspace that is not writable is never writable (RO), and a
-    // read-only attachment of the project holds for the session (Both).
-    expect(effective).toEqual({ Both: false, RO: false, RW: true });
-    // A session of another project, or none, sees none of them.
-    expect(c.workspaces.forSession("s2", null)).toEqual([]);
-    // A session's own attachment can make it stricter.
-    c.workspaces.attach("session", "s1", rw.id, true);
+    expect(c.workspaces.list(GLOBAL).map((w) => w.name)).toEqual(["G"]);
     expect(
-      c.workspaces.forSession("s1", "p1").find((w) => w.name === "RW")
-        ?.effectiveWritable,
-    ).toBe(false);
+      c.workspaces.list({ scope: "session", id: "s1" }).map((w) => w.name),
+    ).toEqual(["S"]);
+    c.workspaces.trash(g.id);
+    expect(c.workspaces.list(GLOBAL)).toEqual([]);
+    expect(c.workspaces.list(GLOBAL, true).map((w) => w.name)).toEqual(["G"]);
   });
 
-  it("the trash hides a workspace and keeps its attachments; restore brings it back (D46)", async () => {
+  it("the trash hides a workspace; restore brings it back (D46)", async () => {
     const c = await setup();
     const dir = folder({ "a.md": "A" });
-    const w = c.workspaces.create({ name: "Book", path: dir, writable: true });
-    c.workspaces.attach("session", "s1", w.id, false);
+    c.store.createSession("s1", "T", "t", null);
+    const w = c.workspaces.create(
+      { scope: "session", id: "s1" },
+      { name: "Book", path: dir, writable: true },
+    );
     c.workspaces.trash(w.id);
-    expect(c.workspaces.list().map((x) => x.name)).toEqual([]);
-    expect(c.workspaces.list(true).map((x) => x.name)).toEqual(["Book"]);
     expect(c.workspaces.forSession("s1", null)).toEqual([]);
     // The folder and its files are untouched.
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("A");
-    expect(() => c.workspaces.attach("session", "s2", w.id, false)).toThrow(
-      /trash/,
-    );
     expect(() =>
       c.workspaces.update(w.id, { name: "X", path: dir, writable: true }),
     ).toThrow(/trash/);
@@ -281,177 +330,416 @@ describe("WorkspaceStore", () => {
 
   it("a name in the trash is still taken", async () => {
     const c = await setup();
-    const w = c.workspaces.create({
+    const w = c.workspaces.create(GLOBAL, {
       name: "Book",
       path: folder(),
       writable: false,
     });
     c.workspaces.trash(w.id);
     expect(() =>
-      c.workspaces.create({ name: "Book", path: folder(), writable: false }),
+      c.workspaces.create(GLOBAL, {
+        name: "Book",
+        path: folder(),
+        writable: false,
+      }),
     ).toThrow(/trash/);
   });
 
-  it("purging a session or project drops its attachments and approvals", async () => {
+  it("purging a session or project deletes its workspaces and approvals, never a folder the user chose", async () => {
     const c = await setup();
-    const w = c.workspaces.create({
-      name: "Book",
-      path: folder(),
-      writable: true,
-    });
     c.store.createProject({ id: "p1", name: "P", description: "", now: "t" });
     c.store.createSession("s1", "T", "t", "p1");
-    c.workspaces.attach("session", "s1", w.id, false);
-    c.workspaces.attach("project", "p1", w.id, false);
+    const dir = folder({ "keep.md": "K" });
+    const own = c.workspaces.create(
+      { scope: "session", id: "s1" },
+      { name: "Own", path: dir, writable: true },
+    );
+    const proj = c.workspaces.create(
+      { scope: "project", id: "p1" },
+      { name: "Proj", path: dir, writable: true },
+    );
+    const glob = c.workspaces.create(GLOBAL, {
+      name: "Glob",
+      path: dir,
+      writable: true,
+    });
+    c.workspaces.grantSubject("workspace_write", "workspace", own.id);
     c.workspaces.allowSubjectForSession(
       "s1",
       "workspace_write",
       "workspace",
-      w.id,
+      glob.id,
     );
+    const purged: string[] = [];
+    c.store.onWorkspacesPurged = (ids) => purged.push(...ids);
     c.store.purgeSession("s1");
-    expect(c.workspaces.attachments("session", "s1")).toEqual([]);
+    expect(c.workspaces.get(own.id)).toBeUndefined();
+    expect(
+      c.workspaces.isSubjectGranted("workspace_write", "workspace", own.id),
+    ).toBe(false);
     expect(
       c.workspaces.isSubjectAllowedForSession(
         "s1",
         "workspace_write",
         "workspace",
-        w.id,
+        glob.id,
       ),
     ).toBe(false);
-    expect(c.workspaces.attachments("project", "p1")).toHaveLength(1);
+    expect(c.workspaces.get(proj.id)).toBeDefined();
+    expect(purged).toEqual([own.id]);
     c.store.purgeProject("p1");
-    expect(c.workspaces.attachments("project", "p1")).toEqual([]);
-    // The workspace itself stays.
-    expect(c.workspaces.get(w.id)).toBeDefined();
+    expect(c.workspaces.get(proj.id)).toBeUndefined();
+    expect(purged).toEqual([own.id, proj.id]);
+    // The global one and the user's folder stay.
+    expect(c.workspaces.get(glob.id)).toBeDefined();
+    expect(readFileSync(join(dir, "keep.md"), "utf8")).toBe("K");
+  });
+
+  it("purging also drops what was indexed for the workspace", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    const w = c.workspaces.create(
+      { scope: "session", id: "s1" },
+      { name: "Book", path: folder(), writable: false },
+    );
+    c.t.db
+      .prepare(
+        "INSERT INTO workspace_index_files (workspace_id, path, mtime_ms, size) VALUES (?, 'a.md', 1, 1)",
+      )
+      .run(w.id);
+    c.t.db
+      .prepare(
+        `INSERT INTO chunks (profile_id, scope, owner_id, key, seq, text)
+         VALUES ('default', 'workspace', ?, 'a.md', 0, 'lighthouse')`,
+      )
+      .run(w.id);
+    c.store.purgeSession("s1");
+    expect(
+      c.t.db.prepare("SELECT count(*) AS n FROM workspace_index_files").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      c.t.db
+        .prepare("SELECT count(*) AS n FROM chunks WHERE scope = 'workspace'")
+        .get(),
+    ).toEqual({ n: 0 });
+  });
+});
+
+describe("temporary workspaces", () => {
+  it("makes an empty folder in the temp root, owned by the session, writable (Q4 A, Q6 A)", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    const w = c.workspaces.createTemporary("s1", "Scratch");
+    expect(w).toMatchObject({
+      name: "Scratch",
+      scope: "session",
+      ownerId: "s1",
+      temporary: true,
+      writable: true,
+    });
+    expect(w.path).toBe(join(c.tempRoot, w.id));
+    expect(existsSync(w.path)).toBe(true);
+    expect(readdirSync(w.path)).toEqual([]);
+    expect(c.workspaces.forSession("s1", null).map((x) => x.id)).toEqual([
+      w.id,
+    ]);
+    expect(c.workspaces.forSession("s2", null)).toEqual([]);
+  });
+
+  it("needs a name that is free in the session, and cannot be made without a temp root", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    c.workspaces.createTemporary("s1", "Scratch");
+    expect(() => c.workspaces.createTemporary("s1", "Scratch")).toThrow(
+      /already exists/,
+    );
+    expect(() => c.workspaces.createTemporary("s1", " ")).toThrow(/name/);
+    const bare = new WorkspaceStore(c.t.db);
+    expect(() => bare.createTemporary("s1", "Other")).toThrow(/not available/);
+  });
+
+  it("can be renamed or made read-only, but its folder cannot be moved", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    const w = c.workspaces.createTemporary("s1", "Scratch");
+    const elsewhere = folder();
+    const saved = c.workspaces.update(w.id, {
+      name: "Drafts",
+      path: elsewhere,
+      writable: false,
+    });
+    expect(saved).toMatchObject({
+      name: "Drafts",
+      writable: false,
+      path: w.path,
+    });
+  });
+
+  it("deleting it removes the folder and its rows; one on a chosen folder cannot be deleted this way", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    const w = c.workspaces.createTemporary("s1", "Scratch");
+    writeFileSync(join(w.path, "a.md"), "A");
+    c.workspaces.grantSubject("workspace_write", "workspace", w.id);
+    c.workspaces.destroyTemporary(w.id);
+    expect(existsSync(w.path)).toBe(false);
+    expect(c.workspaces.get(w.id)).toBeUndefined();
+    expect(
+      c.workspaces.isSubjectGranted("workspace_write", "workspace", w.id),
+    ).toBe(false);
+    const real = c.workspaces.create(
+      { scope: "session", id: "s1" },
+      { name: "Real", path: folder(), writable: true },
+    );
+    expect(() => c.workspaces.destroyTemporary(real.id)).toThrow(/temporary/);
+  });
+
+  it("is kept while the session is in the trash and deleted with the session when it is purged (Q4 A)", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    const w = c.workspaces.createTemporary("s1", "Scratch");
+    writeFileSync(join(w.path, "a.md"), "A");
+    c.store.setSessionTrashed("s1", "t");
+    expect(existsSync(join(w.path, "a.md"))).toBe(true);
+    c.store.purgeSession("s1");
+    expect(existsSync(w.path)).toBe(false);
+    expect(c.workspaces.get(w.id)).toBeUndefined();
+  });
+
+  it("a fork shares a chosen folder and gets a copy of a temporary one (Q7 A)", async () => {
+    const c = await setup();
+    c.store.createSession("s1", "T", "t", null);
+    c.store.createSession("s2", "T", "t", null);
+    const dir = folder({ "x.md": "X" });
+    const real = c.workspaces.create(
+      { scope: "session", id: "s1" },
+      { name: "Real", path: dir, writable: true },
+    );
+    const temp = c.workspaces.createTemporary("s1", "Scratch");
+    writeFileSync(join(temp.path, "note.md"), "N");
+    c.workspaces.setTicks(real.id, [""]);
+    c.workspaces.allowSubjectForSession(
+      "s1",
+      "workspace_write",
+      "workspace",
+      temp.id,
+    );
+    c.workspaces.copySessionWorkspaces("s1", "s2");
+    const copied = c.workspaces.forSession("s2", null);
+    expect(copied.map((w) => [w.name, w.temporary])).toEqual([
+      ["Real", false],
+      ["Scratch", true],
+    ]);
+    const [copiedReal, copiedTemp] = copied;
+    if (!copiedReal || !copiedTemp) throw new Error("Expected two workspaces.");
+    expect(copiedReal.path).toBe(dir);
+    expect(copiedReal.id).not.toBe(real.id);
+    expect(copiedReal.ticks).toEqual([""]);
+    expect(copiedTemp.path).not.toBe(temp.path);
+    expect(readFileSync(join(copiedTemp.path, "note.md"), "utf8")).toBe("N");
+    expect(
+      c.workspaces.isSubjectAllowedForSession(
+        "s2",
+        "workspace_write",
+        "workspace",
+        copiedTemp.id,
+      ),
+    ).toBe(true);
+    // Purging one session never removes the other's files.
+    c.store.purgeSession("s1");
+    expect(existsSync(join(copiedTemp.path, "note.md"))).toBe(true);
+    expect(readFileSync(join(dir, "x.md"), "utf8")).toBe("X");
   });
 });
 
 describe("workspace routes", () => {
-  it("creates, saves, trashes and restores", async () => {
+  it("creates, saves, trashes and restores at each scope", async () => {
     const c = await setup();
-    const dir = folder();
-    const made = await api(c.app, "POST", "/api/workspaces", {
-      name: "Book",
-      path: dir,
-      writable: true,
-    });
-    expect(made.status).toBe(201);
-    const id = made.body.id as string;
-    expect(
-      (await api(c.app, "GET", "/api/workspaces")).body.map(
-        (w: Json) => w.name,
-      ),
-    ).toEqual(["Book"]);
-    const saved = await api(c.app, "PUT", `/api/workspaces/${id}`, {
-      name: "Novel",
-      path: dir,
-      writable: false,
-    });
-    expect(saved.body).toMatchObject({ name: "Novel", writable: false });
-    expect((await api(c.app, "DELETE", `/api/workspaces/${id}`)).status).toBe(
-      200,
-    );
-    expect((await api(c.app, "GET", "/api/workspaces")).body).toEqual([]);
-    expect(
-      (await api(c.app, "GET", "/api/workspaces?deleted=true")).body,
-    ).toHaveLength(1);
-    await api(c.app, "POST", `/api/workspaces/${id}/restore`);
-    expect((await api(c.app, "GET", "/api/workspaces")).body).toHaveLength(1);
+    const project = (
+      await api(c.app, "POST", "/api/projects", { name: "P", description: "" })
+    ).body.id as string;
+    const session = await newSession(c, project);
+    for (const base of [
+      "/api/global/workspaces",
+      `/api/projects/${project}/workspaces`,
+      `/api/sessions/${session}/workspaces`,
+    ]) {
+      const dir = folder();
+      const made = await api(c.app, "POST", base, {
+        name: "Book",
+        path: dir,
+        writable: true,
+      });
+      expect(made.status).toBe(201);
+      const id = made.body.id as string;
+      expect(
+        (await api(c.app, "GET", base)).body.map((w: Json) => w.name),
+      ).toEqual(["Book"]);
+      expect((await api(c.app, "GET", `/api/workspaces/${id}`)).body.id).toBe(
+        id,
+      );
+      const saved = await api(c.app, "PUT", `/api/workspaces/${id}`, {
+        name: "Novel",
+        path: dir,
+        writable: false,
+      });
+      expect(saved.body).toMatchObject({ name: "Novel", writable: false });
+      expect((await api(c.app, "DELETE", `/api/workspaces/${id}`)).status).toBe(
+        200,
+      );
+      expect((await api(c.app, "GET", base)).body).toEqual([]);
+      expect(
+        (await api(c.app, "GET", `${base}?deleted=true`)).body,
+      ).toHaveLength(1);
+      await api(c.app, "POST", `/api/workspaces/${id}/restore`);
+      expect((await api(c.app, "GET", base)).body).toHaveLength(1);
+    }
   });
 
-  it("answers 400 for a missing folder and 409 for a taken name", async () => {
+  it("answers 400 for a missing folder, 409 for a taken name and 404 for an unknown owner", async () => {
     const c = await setup();
     const dir = folder();
-    const bad = await api(c.app, "POST", "/api/workspaces", {
+    const url = "/api/global/workspaces";
+    const bad = await api(c.app, "POST", url, {
       name: "A",
       path: join(dir, "nope"),
       writable: false,
     });
     expect(bad.status).toBe(400);
-    await api(c.app, "POST", "/api/workspaces", {
-      name: "A",
-      path: dir,
-      writable: false,
-    });
-    const dup = await api(c.app, "POST", "/api/workspaces", {
+    await api(c.app, "POST", url, { name: "A", path: dir, writable: false });
+    const dup = await api(c.app, "POST", url, {
       name: "A",
       path: dir,
       writable: false,
     });
     expect(dup.status).toBe(409);
+    for (const base of ["/api/sessions/nope", "/api/projects/nope"]) {
+      expect(
+        (
+          await api(c.app, "POST", `${base}/workspaces`, {
+            name: "A",
+            path: dir,
+            writable: false,
+          })
+        ).status,
+      ).toBe(404);
+      expect((await api(c.app, "GET", `${base}/workspaces`)).status).toBe(404);
+    }
   });
 
-  it("attaches to a project and a session, and a session shows the project's", async () => {
+  it("a session's tools see its own, its project's and the global workspaces", async () => {
     const c = await setup();
-    const w = c.workspaces.create({
-      name: "Book",
-      path: folder(),
-      writable: true,
-    });
-    const other = c.workspaces.create({
-      name: "Refs",
-      path: folder(),
-      writable: false,
-    });
     const project = (
       await api(c.app, "POST", "/api/projects", { name: "P", description: "" })
     ).body.id as string;
+    const other = (
+      await api(c.app, "POST", "/api/projects", { name: "Q", description: "" })
+    ).body.id as string;
     const session = await newSession(c, project);
+    const make = (base: string, name: string) =>
+      api(c.app, "POST", base, { name, path: folder(), writable: true });
+    await make("/api/global/workspaces", "Global");
+    await make(`/api/projects/${project}/workspaces`, "Mine");
+    await make(`/api/projects/${other}/workspaces`, "Theirs");
+    await make(`/api/sessions/${session}/workspaces`, "Own");
+    c.scripts.push([call("1", "workspaces_list")], done);
+    await go(c, session);
+    const listed = results(c, session)[0]?.data.workspaces as Json[];
+    expect(listed.map((w) => w.name).sort()).toEqual(["Global", "Mine", "Own"]);
+  });
+
+  it("makes and deletes a temporary workspace", async () => {
+    const c = await setup();
+    const session = await newSession(c);
+    const made = await api(
+      c.app,
+      "POST",
+      `/api/sessions/${session}/workspaces/temporary`,
+      { name: "Scratch" },
+    );
+    expect(made.status).toBe(201);
+    expect(made.body).toMatchObject({
+      temporary: true,
+      scope: "session",
+      writable: true,
+    });
+    const path = made.body.path as string;
+    expect(existsSync(path)).toBe(true);
+    const gone = await api(c.app, "DELETE", `/api/workspaces/${made.body.id}`);
+    expect(gone.status).toBe(200);
+    expect(existsSync(path)).toBe(false);
     expect(
       (
-        await api(c.app, "PUT", `/api/projects/${project}/workspaces/${w.id}`, {
-          readOnly: true,
+        await api(
+          c.app,
+          "GET",
+          `/api/sessions/${session}/workspaces?deleted=true`,
+        )
+      ).body,
+    ).toEqual([]);
+    expect(
+      (
+        await api(c.app, "POST", "/api/sessions/nope/workspaces/temporary", {
+          name: "X",
         })
       ).status,
-    ).toBe(200);
-    await api(c.app, "PUT", `/api/sessions/${session}/workspaces/${other.id}`, {
-      readOnly: false,
+    ).toBe(404);
+  });
+
+  it("shows a file for the Files tree: text, media and binary; refuses a path outside", async () => {
+    const c = await setup();
+    const dir = folder({
+      "a.md": "# Title\n",
+      "pic.png": PNG,
+      "blob.bin": Buffer.from([0, 1, 2, 3]),
     });
-    const seen = (
-      await api(c.app, "GET", `/api/sessions/${session}/workspaces`)
-    ).body as Json[];
+    const w = c.workspaces.create(GLOBAL, {
+      name: "Book",
+      path: dir,
+      writable: false,
+    });
+    const file = (path: string) =>
+      api(
+        c.app,
+        "GET",
+        `/api/workspaces/${w.id}/file?path=${encodeURIComponent(path)}`,
+      );
+    expect((await file("a.md")).body).toMatchObject({
+      kind: "text",
+      mediaType: "text/markdown",
+      text: "# Title\n",
+      truncated: false,
+    });
+    expect((await file("pic.png")).body).toMatchObject({
+      kind: "media",
+      mediaType: "image/png",
+    });
+    expect((await file("blob.bin")).body).toMatchObject({ kind: "binary" });
+    const all = await api(c.app, "GET", `/api/workspaces/${w.id}/files`);
+    expect(all.body).toMatchObject({ truncated: false, unavailable: false });
     expect(
-      seen.map((a) => [
-        a.workspace.name,
-        a.from,
-        a.readOnly,
-        a.effectiveWritable,
-      ]),
-    ).toEqual([
-      ["Book", "project", true, false],
-      ["Refs", "session", false, false],
-    ]);
-    expect(
-      (await api(c.app, "GET", `/api/projects/${project}/workspaces`)).body,
-    ).toHaveLength(1);
-    expect(
-      (
-        await api(
-          c.app,
-          "DELETE",
-          `/api/sessions/${session}/workspaces/${other.id}`,
-        )
-      ).status,
-    ).toBe(200);
-    // Detaching what is not attached is a 404, and so is an unknown owner.
-    expect(
-      (
-        await api(
-          c.app,
-          "DELETE",
-          `/api/sessions/${session}/workspaces/${other.id}`,
-        )
-      ).status,
-    ).toBe(404);
-    expect(
-      (await api(c.app, "GET", "/api/sessions/nope/workspaces")).status,
-    ).toBe(404);
+      (all.body as { entries: { path: string }[] }).entries.map((e) => e.path),
+    ).toEqual(["a.md", "blob.bin", "pic.png"]);
+    expect((await file("../x")).status).toBe(400);
+    expect((await file("missing.md")).status).toBe(404);
+    const raw = await c.app.inject({
+      method: "GET",
+      url: `/api/workspaces/${w.id}/file/raw?path=pic.png`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(raw.statusCode).toBe(200);
+    expect(raw.headers["content-type"]).toBe("image/png");
+    const notMedia = await c.app.inject({
+      method: "GET",
+      url: `/api/workspaces/${w.id}/file/raw?path=a.md`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(notMedia.statusCode).toBe(404);
   });
 
   it("lists and revokes grants", async () => {
     const c = await setup();
-    const w = c.workspaces.create({
+    const w = c.workspaces.create(GLOBAL, {
       name: "Book",
       path: folder(),
       writable: true,
@@ -507,9 +795,12 @@ describe("workspace tools in a run", () => {
   ) {
     const c = await setup(scripts, settings);
     const dir = folder(files);
-    const w = c.workspaces.create({ name: "Book", path: dir, writable });
+    const w = c.workspaces.create(GLOBAL, {
+      name: "Book",
+      path: dir,
+      writable,
+    });
     const id = await newSession(c);
-    c.workspaces.attach("session", id, w.id, false);
     return { c, dir, w, id, ref: (p: string) => `workspace://${w.id}/${p}` };
   }
 
@@ -520,13 +811,12 @@ describe("workspace tools in a run", () => {
     expect(toolNames(c.model.requests[0] as ChatRequest)).not.toContain(
       "workspace_read",
     );
-    const w = c.workspaces.create({
+    c.workspaces.create(GLOBAL, {
       name: "Book",
       path: folder(),
       writable: false,
     });
     const some = await newSession(c);
-    c.workspaces.attach("session", some, w.id, false);
     await go(c, some);
     expect(toolNames(c.model.requests[1] as ChatRequest)).toEqual(
       expect.arrayContaining([
@@ -686,12 +976,14 @@ describe("workspace tools in a run", () => {
     expect(existsSync(join(dir, "a.md"))).toBe(false);
   });
 
-  it("a read-only attachment makes a writable workspace read-only here", async () => {
+  it("a read-only workspace refuses a write, whoever owns it", async () => {
     const c = await setup();
     const dir = folder();
-    const w = c.workspaces.create({ name: "Book", path: dir, writable: true });
     const id = await newSession(c);
-    c.workspaces.attach("session", id, w.id, true);
+    const w = c.workspaces.create(
+      { scope: "session", id },
+      { name: "Book", path: dir, writable: false },
+    );
     c.scripts.push(
       [
         call("1", "workspace_write", {
@@ -703,6 +995,7 @@ describe("workspace tools in a run", () => {
     );
     await go(c, id);
     expect(results(c, id)[0]?.data.error).toMatch(/read-only/);
+    expect(existsSync(join(dir, "a.md"))).toBe(false);
   });
 
   it("every changing tool works: edit, move, delete and the folder tools", async () => {
@@ -843,12 +1136,11 @@ describe("workspace tools in a run", () => {
 
     it("Allow for this session covers that tool in that workspace only", async () => {
       const { c, id, ref } = await withWorkspace({}, true);
-      const other = c.workspaces.create({
+      const other = c.workspaces.create(GLOBAL, {
         name: "Other",
         path: folder(),
         writable: true,
       });
-      c.workspaces.attach("session", id, other.id, false);
       c.scripts.push(
         [
           write(ref, "a"),
@@ -875,7 +1167,6 @@ describe("workspace tools in a run", () => {
       ]);
       // The global setting for the tool is untouched.
       const again = await newSession(c);
-      c.workspaces.attach("session", again, w.id, false);
       c.scripts.push([write(ref, "c")], done);
       const second = await go(c, again);
       expect(second.asked).toEqual([]);
@@ -900,12 +1191,11 @@ describe("workspace tools in a run", () => {
 
     it("a grant for one workspace does not cover another", async () => {
       const { c, id, ref } = await withWorkspace({}, true);
-      const other = c.workspaces.create({
+      const other = c.workspaces.create(GLOBAL, {
         name: "Other",
         path: folder(),
         writable: true,
       });
-      c.workspaces.attach("session", id, other.id, false);
       c.scripts.push(
         [
           write(ref, "a"),
@@ -969,7 +1259,7 @@ describe("workspace tools in a run", () => {
       (m) => m.role === "system",
     )?.content as string;
     expect(system).toBe(
-      `Folders:\n- Book: workspace://${w.id}/ (can be changed)`,
+      `Folders:\n- Book: workspace://${w.id}/ (global, can be changed)`,
     );
   });
 

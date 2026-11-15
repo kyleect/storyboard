@@ -19,11 +19,13 @@ import {
 import {
   classify,
   createWorkspaceAccess,
+  previewFile,
   resolveIn,
+  walkWorkspace,
   workspaceMediaSource,
   type ReadRecord,
 } from "./workspace-fs.js";
-import type { AttachedWorkspace } from "./workspaces-store.js";
+import type { WorkspaceRow } from "./workspaces-store.js";
 
 /* The disk layer of workspaces: safe paths, reads, writes and folders. */
 
@@ -44,12 +46,14 @@ afterEach(() => {
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
 function setup(over: { writable?: boolean; cap?: number } = {}) {
-  const ws: AttachedWorkspace = {
+  const ws: WorkspaceRow = {
     id: "w1",
     name: "Notes",
     path: root,
     writable: over.writable ?? true,
-    effectiveWritable: over.writable ?? true,
+    scope: "global",
+    ownerId: null,
+    temporary: false,
     createdAt: "t",
     updatedAt: "t",
     deleted: false,
@@ -436,5 +440,62 @@ describe("classify and media source", () => {
     // A file with an image name that is not an image has no bytes to give.
     writeFileSync(join(root, "fake.png"), "words");
     expect(source("w1", "fake.png")?.bytes()).toBeUndefined();
+  });
+});
+
+describe("walkWorkspace", () => {
+  it("lists everything, shallowest first, and does not follow a link to a folder", () => {
+    mkdirSync(join(root, "a", "b"), { recursive: true });
+    writeFileSync(join(root, "top.md"), "x");
+    writeFileSync(join(root, "a", "b", "deep.txt"), "x");
+    writeFileSync(join(root, "a", "mid.txt"), "x");
+    symlinkSync(join(root, "a"), join(root, "link"));
+    const walk = walkWorkspace(root);
+    expect(walk.truncated).toBe(false);
+    expect(walk.entries.map((e) => e.path)).toEqual([
+      "a",
+      "link",
+      "top.md",
+      "a/b",
+      "a/mid.txt",
+      "a/b/deep.txt",
+    ]);
+  });
+});
+
+describe("previewFile", () => {
+  it("shows text, media and binary, and refuses a path outside or a folder", () => {
+    writeFileSync(join(root, "a.md"), "# Hi\n");
+    writeFileSync(join(root, "p.png"), PNG);
+    writeFileSync(join(root, "b.bin"), Buffer.from([0, 1, 2]));
+    mkdirSync(join(root, "dir"));
+    expect(previewFile(root, "a.md")).toEqual({
+      kind: "text",
+      mediaType: "text/markdown",
+      text: "# Hi\n",
+      size: 5,
+      truncated: false,
+    });
+    expect(previewFile(root, "p.png")).toMatchObject({
+      kind: "media",
+      mediaType: "image/png",
+    });
+    expect(previewFile(root, "b.bin")).toEqual({ kind: "binary", size: 3 });
+    expect(() => previewFile(root, "../x")).toThrow(/outside/);
+    expect(() => previewFile(root, "nope.md")).toThrow(/no file/);
+    expect(() => previewFile(root, "dir")).toThrow(/not a file/);
+  });
+
+  it("cuts a long file without leaving half a character", () => {
+    // One ASCII byte, then two-byte characters: the 2 MiB cut falls inside one.
+    const text = "a" + "é".repeat(1_100_000);
+    writeFileSync(join(root, "long.txt"), text);
+    const shown = previewFile(root, "long.txt");
+    if (shown.kind !== "text") throw new Error("Expected text.");
+    expect(shown.truncated).toBe(true);
+    expect(shown.size).toBe(Buffer.byteLength(text));
+    expect(shown.text).not.toContain("\uFFFD");
+    expect(shown.text.startsWith("aéé")).toBe(true);
+    expect(Buffer.byteLength(shown.text)).toBeLessThanOrEqual(2 * 1024 * 1024);
   });
 });

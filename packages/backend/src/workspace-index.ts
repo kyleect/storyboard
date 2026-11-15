@@ -105,7 +105,7 @@ export class WorkspaceIndexer {
    */
   async start(): Promise<void> {
     this.stopped = false;
-    for (const w of this.options.store.list()) {
+    for (const w of this.options.store.listAll()) {
       if (w.ticks.length > 0) await this.refresh(w.id);
     }
   }

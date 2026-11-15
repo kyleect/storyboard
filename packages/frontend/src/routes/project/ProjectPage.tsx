@@ -9,7 +9,6 @@ import { showError } from "../../lib/notify";
 import { useProjectActions } from "../../hooks/useProjectActions";
 import { useProject, useSaveProject } from "../../hooks/useProjects";
 import { DefaultAgentSelect } from "../../components/AgentSelects";
-import { AttachedWorkspaces } from "../../components/AttachedWorkspaces";
 
 export function ProjectPage({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
@@ -120,12 +119,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           initial={project.data.system_prompt}
           disabled={trashed}
           onSave={(systemPrompt) => save({ systemPrompt })}
-        />
-
-        <AttachedWorkspaces
-          owner="projects"
-          id={projectId}
-          disabled={trashed}
         />
       </Stack>
 

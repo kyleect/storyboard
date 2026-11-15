@@ -37,7 +37,6 @@ const ROUTES = [
   "/data",
   "/agents",
   "/skills",
-  "/workspaces",
   "/errors",
   "/settings",
 ];
@@ -130,7 +129,13 @@ describe("the Agents and Skills pages", () => {
 
 describe("carryOver", () => {
   const saved = (
-    kind: "project-agents" | "project-skills" | "agents" | "chat",
+    kind:
+      | "project-agents"
+      | "project-skills"
+      | "workspaces"
+      | "files"
+      | "agents"
+      | "chat",
     root: string,
     key: string,
   ) => ({ kind, root, key, transient: false });
@@ -156,6 +161,19 @@ describe("carryOver", () => {
     expect(view.active).toBe("skills|project|p1");
     expect(view.width).toBe(300);
     expect(view.expanded).toEqual({ a: true });
+  });
+
+  it("turns the old Workspaces page into the global Files, which has them now", () => {
+    const view = carryOver({
+      tabs: [saved("workspaces", "global", ""), saved("files", "global", "")],
+      active: "workspaces|global|",
+      expanded: {},
+      width: 280,
+      showDeleted: false,
+    });
+
+    expect(view.tabs.map(tabId)).toEqual(["files|global|"]);
+    expect(view.active).toBe("files|global|");
   });
 
   it("keeps one tab when the old and the new kind were both open", () => {

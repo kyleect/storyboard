@@ -36,7 +36,10 @@ function setup(
     debounceMs: 20,
     ...options,
   });
-  const w = store.create({ name: "Book", path: folder.dir, writable: true });
+  const w = store.create(
+    { scope: "global" },
+    { name: "Book", path: folder.dir, writable: true },
+  );
   cleanups.push(() => indexer.stop(), folder.cleanup, t.cleanup);
   const dir = folder.dir;
   const put = (rel: string, text: string | Buffer) => {
@@ -255,11 +258,14 @@ describe("rescans", () => {
     const other = tempDir();
     cleanups.push(other.cleanup);
     writeFileSync(join(other.dir, "z.md"), "zulu");
-    const w2 = store.create({
-      name: "Other",
-      path: other.dir,
-      writable: false,
-    });
+    const w2 = store.create(
+      { scope: "global" },
+      {
+        name: "Other",
+        path: other.dir,
+        writable: false,
+      },
+    );
     await indexer.start();
     expect(keys()).toEqual(["a.md"]);
     expect(index.db).toBe(t.db);

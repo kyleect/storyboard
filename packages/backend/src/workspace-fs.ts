@@ -1,9 +1,12 @@
 import {
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -23,7 +26,7 @@ import {
   type WorkspaceRead,
 } from "@harness/core";
 import { detectMedia, MAX_UPLOAD_BYTES } from "./media-detect.js";
-import type { AttachedWorkspace } from "./workspaces-store.js";
+import type { WorkspaceRow } from "./workspaces-store.js";
 
 /*
  * The disk work of workspaces (files unification design, D28 to D32, D47,
@@ -161,6 +164,112 @@ export function classify(
   };
 }
 
+/** The most of a file the Files tree reads to show it. */
+const PREVIEW_BYTES = 2 * 1024 * 1024;
+
+/** What the Files tree shows of one file in a workspace. */
+export type WorkspacePreview =
+  | {
+      kind: "text";
+      mediaType: string;
+      text: string;
+      size: number;
+      /** The file is longer than what is shown. */
+      truncated: boolean;
+    }
+  | { kind: "media"; mediaType: string; size: number }
+  | { kind: "binary"; size: number };
+
+/** Drops a character that a cut left half of, at the end of UTF-8 text. */
+function cutAtCharacter(data: Buffer): Buffer {
+  const stop = Math.max(0, data.length - 4);
+  let i = data.length - 1;
+  while (i > stop && ((data[i] ?? 0) & 0xc0) === 0x80) i--;
+  const lead = data[i] ?? 0;
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  return data.length - i < need ? data.subarray(0, i) : data;
+}
+
+/**
+ * Reads the start of a file for the Files tree. The path is checked like any
+ * other and may not leave the folder. Throws `WorkspaceError` for a path that
+ * is outside, missing or not a file.
+ */
+export function previewFile(root: string, rel: string): WorkspacePreview {
+  const abs = resolveIn(root, rel);
+  let s: Stats;
+  try {
+    s = statSync(abs);
+  } catch {
+    throw new WorkspaceError("not_found", `There is no file "${rel}".`);
+  }
+  if (!s.isFile()) {
+    throw new WorkspaceError("invalid", `"${rel}" is not a file.`);
+  }
+  const length = Math.min(s.size, PREVIEW_BYTES);
+  const fd = openSync(abs, "r");
+  let data: Buffer;
+  try {
+    data = Buffer.alloc(length);
+    readSync(fd, data, 0, length, 0);
+  } finally {
+    closeSync(fd);
+  }
+  const truncated = s.size > length;
+  if (truncated) data = cutAtCharacter(data);
+  const found = classify(rel.split("/").at(-1) ?? rel, data);
+  if (found.kind === "media") {
+    return { kind: "media", mediaType: found.mediaType, size: s.size };
+  }
+  if (found.kind === "binary") return { kind: "binary", size: s.size };
+  return {
+    kind: "text",
+    mediaType: found.mediaType,
+    text: data.toString("utf8"),
+    size: s.size,
+    truncated,
+  };
+}
+
+export interface WorkspaceWalk {
+  entries: WorkspaceEntry[];
+  /** More than `LIST_LIMIT` entries: the deepest ones are left out. */
+  truncated: boolean;
+}
+
+/**
+ * Every file and folder of a workspace, shallowest first, up to `LIST_LIMIT`.
+ * For the Files tree. A link to a folder is shown but not followed.
+ */
+export function walkWorkspace(root: string): WorkspaceWalk {
+  const entries: WorkspaceEntry[] = [];
+  let queue: { abs: string; rel: string }[] = [{ abs: root, rel: "" }];
+  while (queue.length > 0) {
+    const next: { abs: string; rel: string }[] = [];
+    for (const dir of queue) {
+      let names: string[];
+      try {
+        names = readdirSync(dir.abs).sort();
+      } catch {
+        continue; // not readable
+      }
+      for (const name of names) {
+        if (entries.length >= LIST_LIMIT) return { entries, truncated: true };
+        const abs = join(dir.abs, name);
+        const rel = dir.rel === "" ? name : `${dir.rel}/${name}`;
+        const entry = fileOf(rel, name, abs);
+        if (!entry) continue;
+        entries.push(entry);
+        if (entry.kind === "folder" && !lstatSync(abs).isSymbolicLink()) {
+          next.push({ abs, rel });
+        }
+      }
+    }
+    queue = next;
+  }
+  return { entries, truncated: false };
+}
+
 export interface ReadRecord {
   mtimeMs: number;
   size: number;
@@ -168,7 +277,7 @@ export interface ReadRecord {
 
 export interface WorkspaceFsOptions {
   /** The workspaces the session can use now. */
-  attached: () => AttachedWorkspace[];
+  attached: () => WorkspaceRow[];
   /** The most characters one read returns. */
   readCap: () => number;
   /**
@@ -202,16 +311,16 @@ export interface WorkspaceFsOptions {
   };
 }
 
-const info = (w: AttachedWorkspace): WorkspaceInfo => ({
+const info = (w: WorkspaceRow): WorkspaceInfo => ({
   id: w.id,
   name: w.name,
-  writable: w.effectiveWritable,
+  writable: w.writable,
 });
 
 export function createWorkspaceAccess(
   options: WorkspaceFsOptions,
 ): WorkspaceAccess {
-  const find = (id: string): AttachedWorkspace => {
+  const find = (id: string): WorkspaceRow => {
     const w = options.attached().find((x) => x.id === id);
     if (!w) {
       throw new WorkspaceError(
@@ -227,8 +336,8 @@ export function createWorkspaceAccess(
     }
     return w;
   };
-  const writable = (w: AttachedWorkspace) => {
-    if (!w.effectiveWritable) {
+  const writable = (w: WorkspaceRow) => {
+    if (!w.writable) {
       throw new WorkspaceError(
         "read_only",
         `The workspace "${w.name}" is read-only here.`,
@@ -620,7 +729,7 @@ function countFiles(dir: string): number {
  * image or audio file within the size cap.
  */
 export function workspaceMediaSource(
-  attached: () => AttachedWorkspace[],
+  attached: () => WorkspaceRow[],
 ): (
   id: string,
   path: string,

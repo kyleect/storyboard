@@ -27,7 +27,6 @@ vi.mock("../sessions/Sessions", () => ({
   ),
 }));
 vi.mock("../agents/Agents", () => ({ DefaultAgentSelect: () => null }));
-vi.mock("../workspaces/Workspaces", () => ({ AttachedWorkspaces: () => null }));
 
 const project = {
   id: "p1",

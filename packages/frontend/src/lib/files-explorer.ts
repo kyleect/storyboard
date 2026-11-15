@@ -190,7 +190,7 @@ export function buildTree(
   return { data, info };
 }
 
-export type TabState = ExplorerTab<"file" | "preview">;
+export type TabState = ExplorerTab<"file" | "preview" | "workspace">;
 
 export type TabsState = TabsOf<TabState>;
 
@@ -199,6 +199,62 @@ export const openTab = (
   tab: Omit<TabState, "transient">,
   permanent: boolean,
 ): TabsState => openTabIn(state, tab, permanent, (k) => k === "file");
+
+export interface NodeGroup {
+  id: string;
+  label: string;
+}
+
+/**
+ * Puts the roots that belong to a group under a "Workspaces" folder, one folder
+ * per group, whether or not a group has any. The other roots stay at the top.
+ */
+export function nestGroups(
+  tree: { data: TreeNode[]; info: Map<string, NodeInfo> },
+  roots: readonly {
+    id: RootId;
+    group?: string | undefined;
+    deleted?: boolean | undefined;
+  }[],
+  groups: readonly NodeGroup[],
+  top: { id: RootId; label: string; groupId: (id: string) => RootId },
+): { data: TreeNode[]; info: Map<string, NodeInfo> } {
+  const info = new Map(tree.info);
+  const grouped = new Set(roots.filter((r) => r.group).map((r) => r.id));
+  const own = (r: RootId) => nodeValue({ root: r, kind: "root", path: "" });
+  const loose = tree.data.filter(
+    (n) => ![...grouped].some((id) => own(id) === n.value),
+  );
+  const folders = groups.map((g): TreeNode => {
+    const value = own(top.groupId(g.id));
+
+    info.set(value, { name: g.label, deleted: false });
+
+    return {
+      label: g.label,
+      value,
+      children: tree.data.filter((n) =>
+        roots.some((r) => r.group === g.id && own(r.id) === n.value),
+      ),
+    };
+  });
+
+  for (const r of roots) {
+    const node = info.get(own(r.id));
+
+    if (r.deleted && node) info.set(own(r.id), { ...node, deleted: true });
+  }
+
+  info.set(own(top.id), { name: top.label, deleted: false });
+
+  return {
+    data: [
+      ...loose,
+      { label: top.label, value: own(top.id), children: folders },
+    ],
+    info,
+  };
+}
 
 export function renameFolderInTabs(
   state: TabsState,
@@ -218,7 +274,7 @@ export function renameFolderInTabs(
 
 export type SavedView = SavedViewOf<TabState>;
 
-export const FILE_TAB_KINDS = ["file", "preview"] as const;
+export const FILE_TAB_KINDS = ["file", "preview", "workspace"] as const;
 
 export const loadView = (page: FileScope): SavedView =>
   loadViewIn("files", page, FILE_TAB_KINDS);

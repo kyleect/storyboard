@@ -3,7 +3,6 @@ import utils from "../../../styles/utilities.module.css";
 import {
   IconAlertTriangle,
   IconBolt,
-  IconBox,
   IconDatabase,
   IconFiles,
   IconMessages,
@@ -33,7 +32,6 @@ const PAGES: Item[] = [
     label: "Structured data",
     icon: <IconDatabase size={22} />,
   },
-  { kind: "workspaces", label: "Workspaces", icon: <IconBox size={22} /> },
   {
     kind: "errors",
     label: "Errors",

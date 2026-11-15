@@ -24,7 +24,7 @@ You can:
 - Choose a **Default agent**. New chats in this project start with that helper.
 - Write a **Description**.
 - Write a **System prompt**. These are standing instructions. Every chat in the project follows them.
-- Attach a [workspace](workspaces.md).
+- Add a [workspace](workspaces.md) in **Files**.
 - See all the project's chats in a table.
 
 Remember to press the save button under a box after you change it.

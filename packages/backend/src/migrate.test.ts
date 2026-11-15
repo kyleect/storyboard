@@ -592,7 +592,6 @@ describe("loadMigrations", () => {
       "skill_versions",
       "skills",
       "tool_subject_grants",
-      "workspace_attachments",
       "workspace_index_files",
       "workspaces",
     ]);
@@ -798,5 +797,148 @@ describe("migration 0032 (session seen marker)", () => {
       { id: "a", seen_tip_id: "m1" },
       { id: "b", seen_tip_id: null },
     ]);
+  });
+});
+
+describe("migration 0038 (workspaces at a scope)", () => {
+  const NOW = "2026-11-14T00:00:00.000Z";
+
+  function before() {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 37),
+    );
+    db.exec(`
+      INSERT INTO projects (id, name, created_at, last_used_at) VALUES ('p1', 'P', '${NOW}', '${NOW}');
+      INSERT INTO sessions (id, title, created_at, project_id)
+        VALUES ('s1', 'S1', '${NOW}', 'p1'), ('s2', 'S2', '${NOW}', NULL);
+    `);
+    const make = (id: string, writable: number) =>
+      db
+        .prepare(
+          `INSERT INTO workspaces (id, name, path, writable, created_at, updated_at)
+           VALUES (?, ?, '/x', ?, '${NOW}', '${NOW}')`,
+        )
+        .run(id, id, writable);
+    const attach = (id: string, kind: string, owner: string, readOnly = 0) =>
+      db
+        .prepare(
+          `INSERT INTO workspace_attachments (workspace_id, owner_kind, owner_id, read_only, created_at)
+           VALUES (?, ?, ?, ?, '${NOW}')`,
+        )
+        .run(id, kind, owner, readOnly);
+    return { all, make, attach };
+  }
+
+  const row = (id: string) =>
+    db
+      .prepare(
+        "SELECT project_id, session_id, writable, temporary FROM workspaces WHERE id = ?",
+      )
+      .get(id);
+
+  it("gives a workspace attached to one owner to that owner, writable only if it was writable there", () => {
+    const { all, make, attach } = before();
+    make("proj", 1);
+    attach("proj", "project", "p1");
+    make("sess", 1);
+    attach("sess", "session", "s1");
+    make("sessRo", 1);
+    attach("sessRo", "session", "s2", 1);
+    make("wsRo", 0);
+    attach("wsRo", "project", "p1");
+    expect(migrate(db, all)).toEqual([38]);
+    expect(row("proj")).toEqual({
+      project_id: "p1",
+      session_id: null,
+      writable: 1,
+      temporary: 0,
+    });
+    expect(row("sess")).toEqual({
+      project_id: null,
+      session_id: "s1",
+      writable: 1,
+      temporary: 0,
+    });
+    // A read-only attachment, or a read-only workspace, stays read-only.
+    expect(row("sessRo")).toMatchObject({ session_id: "s2", writable: 0 });
+    expect(row("wsRo")).toMatchObject({ project_id: "p1", writable: 0 });
+  });
+
+  it("makes a workspace attached to several owners, or to none, global and read-only (Q2 A)", () => {
+    const { all, make, attach } = before();
+    make("many", 1);
+    attach("many", "project", "p1");
+    attach("many", "session", "s2");
+    make("none", 1);
+    migrate(db, all);
+    for (const id of ["many", "none"]) {
+      expect(row(id), id).toEqual({
+        project_id: null,
+        session_id: null,
+        writable: 0,
+        temporary: 0,
+      });
+    }
+  });
+
+  it("ignores an attachment whose owner no longer exists", () => {
+    const { all, make, attach } = before();
+    make("gone", 1);
+    attach("gone", "project", "p-purged");
+    make("one", 1);
+    attach("one", "project", "p1");
+    attach("one", "session", "s-purged");
+    migrate(db, all);
+    expect(row("gone")).toMatchObject({ project_id: null, writable: 0 });
+    expect(row("one")).toMatchObject({ project_id: "p1", writable: 1 });
+  });
+
+  it("keeps ids, trash state, ticks, indexed files and the old attachments table is gone", () => {
+    const { all, make, attach } = before();
+    make("w1", 1);
+    attach("w1", "project", "p1");
+    db.exec(`
+      UPDATE workspaces SET deleted_at = '${NOW}', index_ticks = '["a.md"]' WHERE id = 'w1';
+      INSERT INTO workspace_index_files (workspace_id, path, mtime_ms, size) VALUES ('w1', 'a.md', 1, 1);
+    `);
+    migrate(db, all);
+    expect(
+      db.prepare("SELECT id, deleted_at, index_ticks FROM workspaces").all(),
+    ).toEqual([{ id: "w1", deleted_at: NOW, index_ticks: '["a.md"]' }]);
+    expect(
+      db.prepare("SELECT workspace_id FROM workspace_index_files").all(),
+    ).toEqual([{ workspace_id: "w1" }]);
+    expect(tables()).not.toContain("workspace_attachments");
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("lets two owners use one name, but not one owner twice, and a temporary one needs a session", () => {
+    const { all } = before();
+    migrate(db, all);
+    const insert = (
+      id: string,
+      project: string | null,
+      session: string | null,
+      name: string,
+      temporary = 0,
+    ) =>
+      db
+        .prepare(
+          `INSERT INTO workspaces (id, project_id, session_id, name, path, temporary, created_at, updated_at)
+           VALUES (?, ?, ?, ?, '/x', ?, '${NOW}', '${NOW}')`,
+        )
+        .run(id, project, session, name, temporary);
+    insert("a", null, null, "scratch");
+    insert("b", "p1", null, "scratch");
+    insert("c", null, "s1", "scratch");
+    insert("d", null, "s2", "scratch");
+    expect(() => insert("e", null, "s1", "scratch")).toThrow(/UNIQUE/);
+    expect(() => insert("f", null, null, "scratch")).toThrow(/UNIQUE/);
+    expect(() => insert("g", "p1", "s1", "other")).toThrow(/CHECK/);
+    expect(() => insert("h", null, null, "temp", 1)).toThrow(/CHECK/);
   });
 });

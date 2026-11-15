@@ -91,7 +91,12 @@ describe("migration 0037", () => {
         VALUES ('workspace_write', 'workspace', 'w1', '${NOW}');
     `);
 
-    expect(migrate(db, all)).toEqual([37]);
+    expect(
+      migrate(
+        db,
+        all.filter((m) => m.version <= 37),
+      ),
+    ).toEqual([37]);
 
     const ids = (table: string) =>
       db.prepare(`SELECT DISTINCT profile_id FROM ${table}`).all();
@@ -409,26 +414,34 @@ describe("isolation between profiles", () => {
     const folder = join(dir.dir, "notes");
     mkdirSync(folder);
     const workspaces = new WorkspaceStore(db);
-    const w = workspaces.create({
-      name: "Notes",
-      path: folder,
-      writable: true,
-    });
+    const w = workspaces.create(
+      { scope: "global" },
+      {
+        name: "Notes",
+        path: folder,
+        writable: true,
+      },
+    );
     workspaces.grantSubject("workspace_write", "workspace", w.id);
 
     to(b.id);
-    expect(workspaces.list()).toEqual([]);
+    expect(workspaces.list({ scope: "global" })).toEqual([]);
     expect(workspaces.get(w.id)).toBeUndefined();
     expect(
       workspaces.isSubjectGranted("workspace_write", "workspace", w.id),
     ).toBe(false);
     expect(workspaces.grantsFor("workspace")).toEqual([]);
     expect(
-      workspaces.create({ name: "Notes", path: folder, writable: false }).id,
+      workspaces.create(
+        { scope: "global" },
+        { name: "Notes", path: folder, writable: false },
+      ).id,
     ).not.toBe(w.id);
 
     to(a.id);
-    expect(workspaces.list().map((x) => x.id)).toEqual([w.id]);
+    expect(workspaces.list({ scope: "global" }).map((x) => x.id)).toEqual([
+      w.id,
+    ]);
     expect(
       workspaces.isSubjectGranted("workspace_write", "workspace", w.id),
     ).toBe(true);

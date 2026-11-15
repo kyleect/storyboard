@@ -57,7 +57,6 @@ vi.mock("../../data/StructuredDataPages", () => ({
   GlobalStructuredDataPage: () => null,
   ProjectStructuredDataPage: () => null,
 }));
-vi.mock("../../workspaces/Workspaces", () => ({ WorkspacesPage: () => null }));
 vi.mock("../../errors/Errors", () => ({
   ErrorsPage: () => <div>errors page</div>,
 }));

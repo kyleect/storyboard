@@ -1,4 +1,8 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
+import {
+  purgeWorkspacesOf,
+  removeWorkspaceFolders,
+} from "./workspaces-store.js";
 import { sweepBlobs } from "./blobs.js";
 import { messagePreview } from "./branches.js";
 import { activeProfile } from "./profiles.js";
@@ -550,6 +554,7 @@ export class Store {
    * session's runs or messages, must be added here.
    */
   purgeSession(id: string) {
+    let gone: { ids: string[]; folders: string[] } = { ids: [], folders: [] };
     this.db.transaction(() => {
       // Project and global file versions it made are kept, unlinked.
       this.db
@@ -586,15 +591,30 @@ export class Store {
       this.db
         .prepare("DELETE FROM session_subject_approvals WHERE session_id = ?")
         .run(id);
-      this.db
-        .prepare(
-          "DELETE FROM workspace_attachments WHERE owner_kind = 'session' AND owner_id = ?",
-        )
-        .run(id);
+      // Its workspaces (workspaces in files design, Q4 A): the folders the
+      // app made for it go; a folder the user chose is never touched.
+      gone = purgeWorkspacesOf(this.db, "session", id);
       this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
       // Frees the bytes of the session's own files (Q10).
       sweepBlobs(this.db);
     })();
+    this.finishWorkspacePurge(gone);
+  }
+
+  /**
+   * Called with the ids of the workspaces a purge deleted, so the search index
+   * can let go of their folders.
+   */
+  onWorkspacesPurged: ((ids: readonly string[]) => void) | undefined;
+
+  /**
+   * Once the transaction is through: removes the temporary folders and tells
+   * the index. A purge inside a larger transaction does this too; the rest of
+   * that transaction deletes only rows.
+   */
+  private finishWorkspacePurge(gone: { ids: string[]; folders: string[] }) {
+    removeWorkspaceFolders(gone.folders);
+    if (gone.ids.length > 0) this.onWorkspacesPurged?.(gone.ids);
   }
 
   /**
@@ -776,6 +796,7 @@ export class Store {
 
   /** Permanently deletes a project and all its sessions. */
   purgeProject(id: string) {
+    let gone: { ids: string[]; folders: string[] } = { ids: [], folders: [] };
     this.db.transaction(() => {
       const ids = this.db
         .prepare("SELECT id FROM sessions WHERE project_id = ?")
@@ -847,13 +868,11 @@ export class Store {
         .prepare("UPDATE projects SET default_agent_id = NULL WHERE id = ?")
         .run(id);
       this.db.prepare("DELETE FROM agents WHERE project_id = ?").run(id);
-      this.db
-        .prepare(
-          "DELETE FROM workspace_attachments WHERE owner_kind = 'project' AND owner_id = ?",
-        )
-        .run(id);
+      // Its workspaces; the folders stay where they are.
+      gone = purgeWorkspacesOf(this.db, "project", id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
     })();
+    this.finishWorkspacePurge(gone);
   }
 
   /**

@@ -299,12 +299,16 @@ describe("tool, model and error keys", () => {
     );
   });
 
-  it("workspaces: one prefix reaches lists, attachments, grants and files", async () => {
+  it("workspaces: one prefix reaches lists, grants, files and a workspace's contents", async () => {
     const keys: Keys = {
-      list: workspaceKeys.list(false),
-      trash: workspaceKeys.list(true),
-      projectAttached: workspaceKeys.attached("projects", "p1"),
-      sessionAttached: workspaceKeys.attached("sessions", "s1"),
+      list: workspaceKeys.list({ scope: "global" }, false),
+      trash: workspaceKeys.list({ scope: "global" }, true),
+      sessionList: workspaceKeys.list({ scope: "session", id: "s1" }, false),
+      one: workspaceKeys.one("w1"),
+      listing: workspaceKeys.listing("w1"),
+      folders: workspaceKeys.folders("w1"),
+      detail: workspaceKeys.detail("w1", "a.md"),
+      otherListing: workspaceKeys.listing("w2"),
       grants: workspaceKeys.grants(),
       dirs: workspaceKeys.dirs("/a"),
       tree: workspaceKeys.tree("w1", "notes"),
@@ -314,13 +318,15 @@ describe("tool, model and error keys", () => {
       agents: agentKeys.all,
     };
 
-    expect(await reach(workspaceKeys.lists(), keys)).toEqual(["list", "trash"]);
-    expect(await reach(workspaceKeys.attached("sessions", "s1"), keys)).toEqual(
-      ["sessionAttached"],
-    );
-    expect(await reach(workspaceKeys.attachedAll(), keys)).toEqual([
-      "projectAttached",
-      "sessionAttached",
+    expect(await reach(workspaceKeys.lists(), keys)).toEqual([
+      "list",
+      "sessionList",
+      "trash",
+    ]);
+    expect(await reach(workspaceKeys.contents("w1"), keys)).toEqual([
+      "detail",
+      "folders",
+      "listing",
     ]);
     expect(await reach(workspaceKeys.trees("w1"), keys)).toEqual(["tree"]);
     expect(await reach(workspaceKeys.index("w1"), keys)).toEqual(["index"]);

@@ -5,34 +5,43 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppEvents } from "./app-events.js";
 import type { Store } from "./store.js";
-import { resolveIn } from "./workspace-fs.js";
+import {
+  previewFile,
+  resolveIn,
+  walkWorkspace,
+  workspaceMediaSource,
+} from "./workspace-fs.js";
 import type { WorkspaceIndexer } from "./workspace-index.js";
 import { normalizeTicks, tickState, toggleTick } from "./workspace-ticks.js";
 import {
   WorkspaceStoreError,
-  type OwnerKind,
+  type WorkspaceOwner,
   type WorkspaceStore,
 } from "./workspaces-store.js";
+import { WorkspaceError } from "@harness/core";
 
 /*
- * Routes for workspaces (files unification design, D22 to D26, D46):
+ * Routes for workspaces (files unification design, D22 to D26, D46;
+ * workspaces in files design, Q1 to Q12). A workspace is defined at a scope,
+ * like files:
  *
- *   GET    /api/workspaces                       ?deleted=true: the trash
- *   POST   /api/workspaces                       { name, path, writable }
- *   PUT    /api/workspaces/:id
- *   DELETE /api/workspaces/:id                   to the trash; the folder stays
+ *   GET    /api/{global|projects/:id|sessions/:id}/workspaces   ?deleted=true: the trash
+ *   POST   /api/{global|projects/:id|sessions/:id}/workspaces   { name, path, writable }
+ *   POST   /api/sessions/:id/workspaces/temporary               { name }: a folder the app makes
+ *   GET    /api/workspaces/:id
+ *   PUT    /api/workspaces/:id                                  { name, path, writable }
+ *   DELETE /api/workspaces/:id                                  to the trash; a temporary one and its folder are deleted
  *   POST   /api/workspaces/:id/restore
- *   GET    /api/projects/:id/workspaces          what the project has attached
- *   GET    /api/sessions/:id/workspaces          its own and its project's
- *   PUT    /api/{projects|sessions}/:id/workspaces/:workspaceId   { readOnly }
- *   DELETE /api/{projects|sessions}/:id/workspaces/:workspaceId
- *   GET    /api/workspace-grants                 "Always allow" per tool
- *   DELETE /api/workspace-grants                 { tool, workspaceId }
- *   GET    /api/fs/dirs?path=                    folders, for the folder picker
- *   GET    /api/workspaces/:id/tree?path=        one folder of the tree, with what is searched
- *   GET    /api/workspaces/:id/index             the ticks and the index's status
- *   PUT    /api/workspaces/:id/ticks             { ticks }: what is searched
- *   POST   /api/workspaces/:id/ticks/toggle      { path, on }
+ *   GET    /api/workspace-grants                                "Always allow" per tool
+ *   DELETE /api/workspace-grants                                { tool, workspaceId }
+ *   GET    /api/fs/dirs?path=                                   folders, for the folder picker
+ *   GET    /api/workspaces/:id/tree?path=                       one folder of the tree, with what is searched
+ *   GET    /api/workspaces/:id/files                            every file and folder, shallowest first (capped), for the Files tree
+ *   GET    /api/workspaces/:id/file?path=                       the start of a file, for the Files tree
+ *   GET    /api/workspaces/:id/file/raw?path=                   the bytes of an image or audio file
+ *   GET    /api/workspaces/:id/index                            the ticks and the index's status
+ *   PUT    /api/workspaces/:id/ticks                            { ticks }: what is searched
+ *   POST   /api/workspaces/:id/ticks/toggle                     { path, on }
  *   POST   /api/workspaces/:id/rescan
  *
  * Every change is announced on the app-wide stream as `workspaces.changed`.
@@ -44,9 +53,9 @@ const Content = z.object({
   writable: z.boolean(),
 });
 const IdParams = z.object({ id: z.string() });
-const AttachParams = z.object({ id: z.string(), workspaceId: z.string() });
 const ListQuery = z.object({ deleted: z.enum(["true", "false"]).optional() });
-const AttachBody = z.object({ readOnly: z.boolean().default(false) });
+const TempBody = z.object({ name: z.string() });
+const FileQuery = z.object({ path: z.string() });
 const GrantBody = z.object({ tool: z.string(), workspaceId: z.string() });
 const DirsQuery = z.object({ path: z.string().optional() });
 const TreeQuery = z.object({ path: z.string().default("") });
@@ -66,14 +75,61 @@ export function registerWorkspaceRoutes(
   const announce = () =>
     events.publish({ type: "workspaces.changed", data: {} });
 
-  app.get("/api/workspaces", async (req) =>
-    workspaces.list(ListQuery.parse(req.query).deleted === "true"),
-  );
+  /** The owner must exist. */
+  const checkOwner = (owner: WorkspaceOwner) => {
+    if (owner.scope === "project") {
+      if (!store.getProject(owner.id)) {
+        throw new WorkspaceStoreError("Project not found.", 404);
+      }
+    } else if (owner.scope === "session") {
+      if (!store.getSession(owner.id)) {
+        throw new WorkspaceStoreError("Session not found.", 404);
+      }
+    }
+    return owner;
+  };
 
-  app.post("/api/workspaces", async (req, reply) => {
-    const row = workspaces.create(Content.parse(req.body));
+  const scopes: [string, (req: { params: unknown }) => WorkspaceOwner][] = [
+    ["/api/global/workspaces", () => ({ scope: "global" })],
+    [
+      "/api/projects/:id/workspaces",
+      (req) => ({ scope: "project", id: IdParams.parse(req.params).id }),
+    ],
+    [
+      "/api/sessions/:id/workspaces",
+      (req) => ({ scope: "session", id: IdParams.parse(req.params).id }),
+    ],
+  ];
+  for (const [path, ownerOf] of scopes) {
+    app.get(path, async (req) =>
+      workspaces.list(
+        checkOwner(ownerOf(req)),
+        ListQuery.parse(req.query).deleted === "true",
+      ),
+    );
+
+    app.post(path, async (req, reply) => {
+      const row = workspaces.create(
+        checkOwner(ownerOf(req)),
+        Content.parse(req.body),
+      );
+      announce();
+      return reply.code(201).send(row);
+    });
+  }
+
+  app.post("/api/sessions/:id/workspaces/temporary", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    checkOwner({ scope: "session", id });
+    const row = workspaces.createTemporary(id, TempBody.parse(req.body).name);
     announce();
     return reply.code(201).send(row);
+  });
+
+  app.get("/api/workspaces/:id", async (req) => {
+    const row = workspaces.get(IdParams.parse(req.params).id);
+    if (!row) throw new WorkspaceStoreError("Workspace not found.", 404);
+    return row;
   });
 
   app.put("/api/workspaces/:id", async (req) => {
@@ -86,7 +142,11 @@ export function registerWorkspaceRoutes(
   });
 
   app.delete("/api/workspaces/:id", async (req) => {
-    const row = workspaces.trash(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    const existing = workspaces.get(id);
+    const row = existing?.temporary
+      ? workspaces.destroyTemporary(id)
+      : workspaces.trash(id);
     announce();
     await indexer?.refresh(row.id);
     return row;
@@ -210,87 +270,54 @@ export function registerWorkspaceRoutes(
     return indexer ? ((await indexer.refresh(id)) ?? null) : null;
   });
 
-  /** The owner must exist; a project in the trash cannot be changed. */
-  const checkOwner = (kind: OwnerKind, id: string) => {
-    if (kind === "project") {
-      if (!store.getProject(id)) {
-        throw new WorkspaceStoreError("Project not found.", 404);
-      }
-    } else if (!store.getSession(id)) {
-      throw new WorkspaceStoreError("Session not found.", 404);
+  /** A path that leaves the folder or is not there is the caller's mistake. */
+  const refused = (err: unknown): never => {
+    if (err instanceof WorkspaceError) {
+      throw new WorkspaceStoreError(
+        err.message,
+        err.code === "not_found" ? 404 : 400,
+      );
     }
+    throw err;
   };
 
-  const view = (
-    workspaceId: string,
-    from: "project" | "session",
-    readOnly: boolean,
-    effective: Map<string, boolean>,
-  ) => {
-    const w = workspaces.get(workspaceId);
-    return w
-      ? {
-          workspace: w,
-          from,
-          readOnly,
-          effectiveWritable: !w.deleted && (effective.get(w.id) ?? false),
-        }
-      : undefined;
-  };
+  app.get("/api/workspaces/:id/files", async (req) => {
+    const w = live(IdParams.parse(req.params).id);
+    if (!existsSync(w.path)) {
+      return { entries: [], truncated: false, unavailable: true };
+    }
+    return { ...walkWorkspace(w.path), unavailable: false };
+  });
 
-  for (const [segment, kind] of [
-    ["projects", "project"],
-    ["sessions", "session"],
-  ] as const) {
-    app.get(`/api/${segment}/:id/workspaces`, async (req) => {
-      const { id } = IdParams.parse(req.params);
-      checkOwner(kind, id);
-      const projectId =
-        kind === "project" ? id : (store.getSession(id)?.project_id ?? null);
-      const effective = new Map(
-        workspaces
-          .forSession(kind === "session" ? id : "", projectId)
-          .map((w) => [w.id, w.effectiveWritable]),
-      );
-      const own = workspaces.attachments(kind, id).map((a) => ({
-        ...a,
-        from: kind,
-      }));
-      const inherited =
-        kind === "session" && projectId
-          ? workspaces
-              .attachments("project", projectId)
-              .map((a) => ({ ...a, from: "project" as const }))
-          : [];
-      return [...inherited, ...own].flatMap((a) => {
-        const v = view(a.workspaceId, a.from, a.readOnly, effective);
-        return v ? [v] : [];
-      });
-    });
+  app.get("/api/workspaces/:id/file", async (req) => {
+    const w = live(IdParams.parse(req.params).id);
+    const { path } = FileQuery.parse(req.query);
+    try {
+      return previewFile(w.path, path);
+    } catch (err) {
+      return refused(err);
+    }
+  });
 
-    app.put(`/api/${segment}/:id/workspaces/:workspaceId`, async (req) => {
-      const { id, workspaceId } = AttachParams.parse(req.params);
-      checkOwner(kind, id);
-      workspaces.attach(
-        kind,
-        id,
-        workspaceId,
-        AttachBody.parse(req.body ?? {}).readOnly,
-      );
-      announce();
-      return { ok: true };
-    });
-
-    app.delete(`/api/${segment}/:id/workspaces/:workspaceId`, async (req) => {
-      const { id, workspaceId } = AttachParams.parse(req.params);
-      checkOwner(kind, id);
-      if (!workspaces.detach(kind, id, workspaceId)) {
-        throw new WorkspaceStoreError("That workspace is not attached.", 404);
-      }
-      announce();
-      return { ok: true };
-    });
-  }
+  app.get("/api/workspaces/:id/file/raw", async (req, reply) => {
+    const w = live(IdParams.parse(req.params).id);
+    const { path } = FileQuery.parse(req.query);
+    let found: ReturnType<ReturnType<typeof workspaceMediaSource>>;
+    try {
+      found = workspaceMediaSource(() => [w])(w.id, path);
+    } catch (err) {
+      return refused(err);
+    }
+    const data = found?.bytes();
+    if (!found || !data) {
+      return reply.code(404).send({ error: "File not found." });
+    }
+    return reply
+      .header("content-type", found.mediaType)
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", "private, no-store")
+      .send(data);
+  });
 
   app.get("/api/workspace-grants", async () =>
     workspaces.grantsFor("workspace").map((g) => ({

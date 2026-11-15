@@ -29,7 +29,7 @@ Check that the model server is running. Check **Settings, Models**.
 The tool may be off, or not given to that agent. See [Approvals and tools](approvals-and-tools.md) and [Agents](agents.md).
 
 **The helper can't see my folder.**
-Attach the workspace to the chat or project. Tick the parts to search. See [Workspaces](workspaces.md).
+Add the workspace to the chat, the project or Global, in **Files**. Tick the parts to search. See [Workspaces](workspaces.md).
 
 **I can't switch profile.**
 Wait until the helper stops. Then try again.

@@ -44,6 +44,10 @@ export interface ExplorerRoot {
   readOnly?: string | undefined;
   broadNote?: string | undefined;
   projectId?: string | undefined;
+  /** Shown under this group of the Workspaces folder instead of at the top. */
+  group?: string | undefined;
+  /** In the trash: shown only with the deleted files. */
+  deleted?: boolean | undefined;
 }
 
 export function filesSource(scope: FileScope): ExplorerSource {

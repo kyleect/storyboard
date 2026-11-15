@@ -163,10 +163,12 @@ async function withWorkspace(
 ) {
   const c = await setup(scripts);
   const dir = folder(files);
-  const w = c.workspaces.create({ name: "Book", path: dir, writable: true });
+  const w = c.workspaces.create(
+    { scope: "global" },
+    { name: "Book", path: dir, writable: true },
+  );
   const { body } = await api(c.app, "POST", "/api/sessions", { title: "T" });
   const id = body.id as string;
-  c.workspaces.attach("session", id, w.id, false);
   return { c, dir, w, id };
 }
 
@@ -354,11 +356,18 @@ describe("workspace_search in a run", () => {
     await api(c.app, "PUT", `/api/workspaces/${w.id}/ticks`, {
       ticks: ["a.md"],
     });
-    const other = c.workspaces.create({
-      name: "Other",
-      path: folder({ "o.md": "a lighthouse elsewhere" }),
-      writable: false,
-    });
+    // Another session's own workspace is not this session's.
+    const elsewhere = (
+      await api(c.app, "POST", "/api/sessions", { title: "Other" })
+    ).body.id as string;
+    const other = c.workspaces.create(
+      { scope: "session", id: elsewhere },
+      {
+        name: "Other",
+        path: folder({ "o.md": "a lighthouse elsewhere" }),
+        writable: false,
+      },
+    );
     await api(c.app, "PUT", `/api/workspaces/${other.id}/ticks`, {
       ticks: [""],
     });

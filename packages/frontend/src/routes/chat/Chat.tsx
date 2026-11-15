@@ -73,7 +73,6 @@ import type {
 } from "./lib/transcript-types";
 import { AgentPicker } from "../../components/AgentSelects";
 import { messageAnchor, SessionErrorsPanel } from "../../components/ErrorList";
-import { AttachedWorkspaces } from "../../components/AttachedWorkspaces";
 
 function PublishStatus({
   sessionId,
@@ -566,7 +565,6 @@ export function Chat({ sessionId }: { sessionId: string }) {
             { value: "chat", label: "Chat" },
             { value: "files", label: "Files" },
             { value: "data", label: "Structured Data" },
-            { value: "workspaces", label: "Workspaces" },
             { value: "debug", label: "Debug" },
           ]}
           maw="100%"
@@ -609,15 +607,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
 
         {tab !== "chat" && tab !== "files" && tab !== "data" && (
           <ScrollArea flex={1}>
-            {tab === "debug" ? (
-              <DebugPanel sessionId={sessionId} />
-            ) : (
-              <AttachedWorkspaces
-                owner="sessions"
-                id={sessionId}
-                disabled={trashed}
-              />
-            )}
+            <DebugPanel sessionId={sessionId} />
           </ScrollArea>
         )}
 

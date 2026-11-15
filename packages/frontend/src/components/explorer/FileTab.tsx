@@ -166,15 +166,17 @@ export function FileTab({
               </ActionIcon>
             </Tooltip>
           )}
-          <Tooltip label="Versions" openDelay={400}>
-            <ActionIcon
-              color="gray"
-              aria-label={`Versions (${f.versions.length})`}
-              onClick={() => setVersions(true)}
-            >
-              <IconHistory size={16} />
-            </ActionIcon>
-          </Tooltip>
+          {f.versions.length > 0 && (
+            <Tooltip label="Versions" openDelay={400}>
+              <ActionIcon
+                color="gray"
+                aria-label={`Versions (${f.versions.length})`}
+                onClick={() => setVersions(true)}
+              >
+                <IconHistory size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
           {!f.deleted && readOnly === undefined && (
             <Tooltip label="Delete" openDelay={400}>
               <ActionIcon

@@ -1,11 +1,14 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
-import { existsSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { activeProfile } from "./profiles.js";
 
 /*
- * Workspaces and their attachments (files unification design, D22 to D26,
- * D33, D46). The disk work is in `workspace-fs.ts`.
+ * Workspaces (files unification design, D22 to D26, D46; workspaces in files
+ * design, Q1 to Q7). A workspace is owned by the profile (global), by a
+ * project or by a session, and a session uses its own, its project's and the
+ * global ones. A temporary workspace is a folder the app made for one session.
+ * The disk work is in `workspace-fs.ts`.
  */
 
 /** A refused change, with the HTTP status the route answers. */
@@ -19,11 +22,25 @@ export class WorkspaceStoreError extends Error {
   }
 }
 
+/** Where a workspace is defined, as files are: global, a project or a session. */
+export type WorkspaceOwner =
+  | { scope: "global" }
+  | { scope: "project"; id: string }
+  | { scope: "session"; id: string };
+
+export type WorkspaceScope = WorkspaceOwner["scope"];
+
 export interface WorkspaceRow {
   id: string;
   name: string;
   path: string;
+  /** Whether agents may change it; asked per write (D27). */
   writable: boolean;
+  scope: WorkspaceScope;
+  /** The project or session that owns it; null for global. */
+  ownerId: string | null;
+  /** A folder the app made for one session, deleted with it (Q4). */
+  temporary: boolean;
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
@@ -37,26 +54,14 @@ export interface WorkspaceContent {
   writable: boolean;
 }
 
-export type OwnerKind = "project" | "session";
-
-export interface Attachment {
-  workspaceId: string;
-  ownerKind: OwnerKind;
-  ownerId: string;
-  readOnly: boolean;
-}
-
-/** A workspace as one owner or session uses it. */
-export interface AttachedWorkspace extends WorkspaceRow {
-  /** Writable in the workspace and by every attachment that applies. */
-  effectiveWritable: boolean;
-}
-
 interface Row {
   id: string;
   name: string;
   path: string;
   writable: number;
+  project_id: string | null;
+  session_id: string | null;
+  temporary: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -68,6 +73,14 @@ const toRow = (r: Row): WorkspaceRow => ({
   name: r.name,
   path: r.path,
   writable: r.writable === 1,
+  scope:
+    r.session_id !== null
+      ? "session"
+      : r.project_id !== null
+        ? "project"
+        : "global",
+  ownerId: r.session_id ?? r.project_id,
+  temporary: r.temporary === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   deleted: r.deleted_at !== null,
@@ -75,24 +88,59 @@ const toRow = (r: Row): WorkspaceRow => ({
 });
 
 const COLUMNS =
-  "id, name, path, writable, created_at, updated_at, deleted_at, index_ticks";
+  "id, name, path, writable, project_id, session_id, temporary, created_at, updated_at, deleted_at, index_ticks";
+
+/** The SQL that selects the rows one owner defines. */
+const OWNED: Record<WorkspaceScope, string> = {
+  global: "project_id IS NULL AND session_id IS NULL",
+  project: "project_id = ?",
+  session: "session_id = ?",
+};
+
+const ownerArgs = (owner: WorkspaceOwner): string[] =>
+  owner.scope === "global" ? [] : [owner.id];
 
 export class WorkspaceStore {
   constructor(
     readonly db: Database,
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly newId: () => string = () => crypto.randomUUID(),
+    /**
+     * Where temporary workspaces are made: a folder in the app's data folder.
+     * Left out: none can be made.
+     */
+    private readonly tempRoot?: string,
   ) {}
 
-  /** Live workspaces by name; the trash too when asked. */
-  list(deleted = false): WorkspaceRow[] {
+  /**
+   * The workspaces one owner defines, by name; the trash when asked. A
+   * session's own and its project's and the global ones are `forSession`.
+   */
+  list(owner: WorkspaceOwner, deleted = false): WorkspaceRow[] {
     return (
       this.db
         .prepare(
           `SELECT ${COLUMNS} FROM workspaces
-           WHERE profile_id = ? AND (deleted_at IS NOT NULL) = ? ORDER BY name`,
+           WHERE profile_id = ? AND ${OWNED[owner.scope]}
+             AND (deleted_at IS NOT NULL) = ? ORDER BY name`,
         )
-        .all(activeProfile(this.db), deleted ? 1 : 0) as Row[]
+        .all(
+          activeProfile(this.db),
+          ...ownerArgs(owner),
+          deleted ? 1 : 0,
+        ) as Row[]
+    ).map(toRow);
+  }
+
+  /** Every live workspace of the profile, whoever owns it. */
+  listAll(): WorkspaceRow[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT ${COLUMNS} FROM workspaces
+           WHERE profile_id = ? AND deleted_at IS NULL ORDER BY name`,
+        )
+        .all(activeProfile(this.db)) as Row[]
     ).map(toRow);
   }
 
@@ -128,48 +176,104 @@ export class WorkspaceStore {
     return abs;
   }
 
-  private checkName(name: string, self: string | null): string {
+  /** A name is unique within one owner, the trash included (Q3). */
+  private checkName(
+    name: string,
+    owner: WorkspaceOwner,
+    self: string | null,
+  ): string {
     const clean = name.trim();
     if (clean === "") throw new WorkspaceStoreError("A name is needed.", 400);
     const other = this.db
       .prepare(
-        "SELECT id, deleted_at FROM workspaces WHERE profile_id = ? AND name = ?",
+        `SELECT id, deleted_at FROM workspaces
+         WHERE profile_id = ? AND ${OWNED[owner.scope]} AND name = ?`,
       )
-      .get(activeProfile(this.db), clean) as
+      .get(activeProfile(this.db), ...ownerArgs(owner), clean) as
       { id: string; deleted_at: string | null } | undefined;
     if (other && other.id !== self) {
       throw new WorkspaceStoreError(
         other.deleted_at !== null
           ? `A workspace in the trash is named "${clean}". Restore it or pick another name.`
-          : `A workspace named "${clean}" already exists.`,
+          : `A workspace named "${clean}" already exists here.`,
         409,
       );
     }
     return clean;
   }
 
-  create(content: WorkspaceContent): WorkspaceRow {
-    const name = this.checkName(content.name, null);
-    const path = this.checkFolder(content.path);
-    const id = this.newId();
+  private insert(
+    owner: WorkspaceOwner,
+    content: WorkspaceContent,
+    temporary: boolean,
+    id: string,
+  ): WorkspaceRow {
     const now = this.now();
     this.db
       .prepare(
-        `INSERT INTO workspaces (id, profile_id, name, path, writable, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO workspaces
+           (id, profile_id, project_id, session_id, name, path, writable, temporary, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         activeProfile(this.db),
-        name,
-        path,
+        owner.scope === "project" ? owner.id : null,
+        owner.scope === "session" ? owner.id : null,
+        content.name,
+        content.path,
         content.writable ? 1 : 0,
+        temporary ? 1 : 0,
         now,
         now,
       );
     return this.require(id);
   }
 
+  create(owner: WorkspaceOwner, content: WorkspaceContent): WorkspaceRow {
+    const name = this.checkName(content.name, owner, null);
+    const path = this.checkFolder(content.path);
+    return this.insert(
+      owner,
+      { name, path, writable: content.writable },
+      false,
+      this.newId(),
+    );
+  }
+
+  /**
+   * Makes an empty folder in the app's data folder and a workspace for it,
+   * owned by one session (Q4 A). It is writable, like any workspace that is
+   * (Q6 A); writes still ask.
+   */
+  createTemporary(sessionId: string, name: string): WorkspaceRow {
+    if (this.tempRoot === undefined) {
+      throw new WorkspaceStoreError(
+        "Temporary workspaces are not available.",
+        501,
+      );
+    }
+    const owner: WorkspaceOwner = { scope: "session", id: sessionId };
+    const clean = this.checkName(name, owner, null);
+    const id = this.newId();
+    const path = join(this.tempRoot, id);
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+    try {
+      return this.insert(
+        owner,
+        { name: clean, path, writable: true },
+        true,
+        id,
+      );
+    } catch (err) {
+      rmSync(path, { recursive: true, force: true });
+      throw err;
+    }
+  }
+
+  /**
+   * The folder of a temporary workspace is the app's, so it cannot be moved.
+   */
   update(id: string, content: WorkspaceContent): WorkspaceRow {
     const existing = this.require(id);
     if (existing.deleted) {
@@ -178,8 +282,11 @@ export class WorkspaceStore {
         409,
       );
     }
-    const name = this.checkName(content.name, id);
-    const path = this.checkFolder(content.path);
+    const owner = ownerOf(existing);
+    const name = this.checkName(content.name, owner, id);
+    const path = existing.temporary
+      ? existing.path
+      : this.checkFolder(content.path);
     this.db
       .prepare(
         `UPDATE workspaces SET name = ?, path = ?, writable = ?, updated_at = ?
@@ -224,102 +331,98 @@ export class WorkspaceStore {
     return this.require(id);
   }
 
-  attachments(kind: OwnerKind, ownerId: string): Attachment[] {
-    return (
-      this.db
-        .prepare(
-          `SELECT workspace_id, read_only FROM workspace_attachments
-           WHERE owner_kind = ? AND owner_id = ? ORDER BY created_at, workspace_id`,
-        )
-        .all(kind, ownerId) as { workspace_id: string; read_only: number }[]
-    ).map((r) => ({
-      workspaceId: r.workspace_id,
-      ownerKind: kind,
-      ownerId,
-      readOnly: r.read_only === 1,
-    }));
-  }
-
-  /** Attaches, or changes the read-only choice of an existing attachment. */
-  attach(
-    kind: OwnerKind,
-    ownerId: string,
-    workspaceId: string,
-    readOnly: boolean,
-  ) {
-    const ws = this.require(workspaceId);
-    if (ws.deleted) {
+  /**
+   * Deletes a temporary workspace and its folder, after the user said so
+   * (Q4 A). A workspace on a folder the user chose goes to the trash instead.
+   */
+  destroyTemporary(id: string): WorkspaceRow {
+    const existing = this.require(id);
+    if (!existing.temporary) {
       throw new WorkspaceStoreError(
-        "This workspace is in the trash. Restore it first.",
+        "Only a temporary workspace can be deleted. Move this one to the trash instead.",
         409,
       );
     }
-    this.db
-      .prepare(
-        `INSERT INTO workspace_attachments (workspace_id, owner_kind, owner_id, read_only, created_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(workspace_id, owner_kind, owner_id) DO UPDATE SET read_only = excluded.read_only`,
-      )
-      .run(workspaceId, kind, ownerId, readOnly ? 1 : 0, this.now());
-  }
-
-  /** False when it was not attached. */
-  detach(kind: OwnerKind, ownerId: string, workspaceId: string): boolean {
-    return (
-      this.db
-        .prepare(
-          `DELETE FROM workspace_attachments
-           WHERE workspace_id = ? AND owner_kind = ? AND owner_id = ?`,
-        )
-        .run(workspaceId, kind, ownerId).changes > 0
-    );
-  }
-
-  /** Removes an owner's attachments, when the project or session is purged. */
-  dropOwner(kind: OwnerKind, ownerId: string) {
-    this.db
-      .prepare(
-        "DELETE FROM workspace_attachments WHERE owner_kind = ? AND owner_id = ?",
-      )
-      .run(kind, ownerId);
+    const folders = this.db.transaction(() => dropWorkspaces(this.db, [id]))();
+    removeFolders(folders);
+    return existing;
   }
 
   /**
-   * The workspaces a session can use: its project's and its own, none that is
-   * in the trash. A workspace attached twice is read-only if either says so
-   * (D26, D33).
+   * A fork gets its own entry for each workspace the source session defined
+   * (Q7 A). One on a folder the user chose points at the same folder; a
+   * temporary one gets a copy of its folder in a new temporary workspace, so
+   * purging one session never removes the other's files. Ticks and "Allow for
+   * this session" choices come along; "Always allow" grants are per workspace
+   * and do not.
    */
-  forSession(sessionId: string, projectId: string | null): AttachedWorkspace[] {
-    const rows = this.db
-      .prepare(
-        `SELECT DISTINCT ${COLUMNS.split(", ")
-          .map((c) => `w.${c}`)
-          .join(", ")}
-         FROM workspaces w
-         JOIN workspace_attachments a ON a.workspace_id = w.id
-         WHERE w.profile_id = ? AND w.deleted_at IS NULL AND (
-           (a.owner_kind = 'session' AND a.owner_id = ?) OR
-           (a.owner_kind = 'project' AND a.owner_id = ?))
-         ORDER BY w.name`,
-      )
-      .all(activeProfile(this.db), sessionId, projectId ?? "") as Row[];
-    // Read-only if any attachment that applies says so.
-    const readOnly = new Set(
-      (
-        this.db
-          .prepare(
-            `SELECT DISTINCT workspace_id FROM workspace_attachments
-             WHERE read_only = 1 AND (
-               (owner_kind = 'session' AND owner_id = ?) OR
-               (owner_kind = 'project' AND owner_id = ?))`,
-          )
-          .all(sessionId, projectId ?? "") as { workspace_id: string }[]
-      ).map((r) => r.workspace_id),
-    );
-    return rows.map((r) => ({
-      ...toRow(r),
-      effectiveWritable: r.writable === 1 && !readOnly.has(r.id),
-    }));
+  copySessionWorkspaces(fromSessionId: string, toSessionId: string) {
+    const sources = (
+      this.db
+        .prepare(
+          `SELECT ${COLUMNS} FROM workspaces
+           WHERE profile_id = ? AND session_id = ? AND deleted_at IS NULL`,
+        )
+        .all(activeProfile(this.db), fromSessionId) as Row[]
+    ).map(toRow);
+    for (const w of sources) {
+      const id = this.newId();
+      let path = w.path;
+      if (w.temporary) {
+        if (this.tempRoot === undefined) continue;
+        path = join(this.tempRoot, id);
+        mkdirSync(path, { recursive: true, mode: 0o700 });
+        if (existsSync(w.path)) cpSync(w.path, path, { recursive: true });
+      }
+      const now = this.now();
+      this.db
+        .prepare(
+          `INSERT INTO workspaces
+             (id, profile_id, project_id, session_id, name, path, writable, temporary, created_at, updated_at, index_ticks)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          activeProfile(this.db),
+          toSessionId,
+          w.name,
+          path,
+          w.writable ? 1 : 0,
+          w.temporary ? 1 : 0,
+          now,
+          now,
+          JSON.stringify(w.ticks),
+        );
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO session_subject_approvals
+             (session_id, tool_name, subject_kind, subject_id, created_at)
+           SELECT ?, tool_name, subject_kind, ?, created_at
+           FROM session_subject_approvals
+           WHERE session_id = ? AND subject_kind = 'workspace' AND subject_id = ?`,
+        )
+        .run(toSessionId, id, fromSessionId, w.id);
+    }
+  }
+
+  /**
+   * The workspaces a session can use: its own, its project's and the global
+   * ones, none that is in the trash (Q1 A).
+   */
+  forSession(sessionId: string, projectId: string | null): WorkspaceRow[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT ${COLUMNS} FROM workspaces
+           WHERE profile_id = ? AND deleted_at IS NULL AND (
+             (project_id IS NULL AND session_id IS NULL) OR
+             session_id = ? OR project_id = ?)
+           ORDER BY name,
+             CASE WHEN session_id IS NOT NULL THEN 0
+                  WHEN project_id IS NOT NULL THEN 1 ELSE 2 END`,
+        )
+        .all(activeProfile(this.db), sessionId, projectId ?? "") as Row[]
+    ).map(toRow);
   }
 
   // ---- Approvals per subject (D27, D39) -----------------------------------
@@ -403,3 +506,66 @@ export class WorkspaceStore {
     );
   }
 }
+
+const ownerOf = (w: WorkspaceRow): WorkspaceOwner =>
+  w.scope === "global" || w.ownerId === null
+    ? { scope: "global" }
+    : { scope: w.scope, id: w.ownerId };
+
+/**
+ * Deletes workspaces and everything that points at them: what was indexed,
+ * "Always allow" grants and the rows themselves. Returns the folders of the
+ * temporary ones, which the caller removes once the transaction is through.
+ * A folder the user chose is never touched.
+ */
+function dropWorkspaces(db: Database, ids: readonly string[]): string[] {
+  const folders: string[] = [];
+  for (const id of ids) {
+    const row = db
+      .prepare("SELECT path, temporary FROM workspaces WHERE id = ?")
+      .get(id) as { path: string; temporary: number } | undefined;
+    if (!row) continue;
+    if (row.temporary === 1) folders.push(row.path);
+    db.prepare("DELETE FROM workspace_index_files WHERE workspace_id = ?").run(
+      id,
+    );
+    db.prepare(
+      "DELETE FROM chunks WHERE scope = 'workspace' AND owner_id = ?",
+    ).run(id);
+    db.prepare(
+      "DELETE FROM tool_subject_grants WHERE subject_kind = 'workspace' AND subject_id = ?",
+    ).run(id);
+    db.prepare(
+      "DELETE FROM session_subject_approvals WHERE subject_kind = 'workspace' AND subject_id = ?",
+    ).run(id);
+    db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+  }
+  return folders;
+}
+
+/** Best effort: a folder that is already gone is fine. */
+function removeFolders(folders: readonly string[]) {
+  for (const f of folders) rmSync(f, { recursive: true, force: true });
+}
+
+/**
+ * Removes the workspaces a project or session owns, when it is purged. Run in
+ * the purge's transaction. Returns the ids, so the index can let go of them,
+ * and the temporary folders, to remove after the transaction.
+ */
+export function purgeWorkspacesOf(
+  db: Database,
+  kind: "project" | "session",
+  ownerId: string,
+): { ids: string[]; folders: string[] } {
+  const ids = (
+    db
+      .prepare(
+        `SELECT id FROM workspaces WHERE ${kind === "project" ? "project_id" : "session_id"} = ?`,
+      )
+      .all(ownerId) as { id: string }[]
+  ).map((r) => r.id);
+  return { ids, folders: dropWorkspaces(db, ids) };
+}
+
+export { removeFolders as removeWorkspaceFolders };

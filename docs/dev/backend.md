@@ -41,7 +41,7 @@ packages/backend
     data-store.ts        global/project/agent schemas and data, versions
     mcp-store.ts         MCP server rows
     mcp-manager.ts       connects to MCP servers; their tools become harness tools
-    workspaces-store.ts  workspaces and their attachments
+    workspaces-store.ts  workspaces: owners, temporary ones, purge
     workspace-fs.ts      disk access for workspaces (path safety, stale check)
     workspace-index.ts   indexes ticked workspace files for search
     workspace-ticks.ts   the set of paths the user chose to search
@@ -153,7 +153,7 @@ before `files-rename` read a message's file changes from `entries`, with a
 | Settings         | `settings`                                                                                                     | `key`, JSON `value`. Includes the `toolApproval`, `toolAlwaysOn` and `toolsOff` values.                                                                            |
 | Conversation     | `sessions`, `messages`, `projects`                                                                             | `messages.message` holds the provider-neutral message as JSON; `seq` is insertion order. The transcript is a tree, see [Branches](#branches).                      |
 | Binary files     | `blobs`                                                                                                        | The bytes of images and audio, by content hash; see [Binary files](#binary-files-and-attachments).                                                                 |
-| Workspaces       | `workspaces`, `workspace_attachments`, `workspace_index_files`                                                 | Folders and what attaches them; see [Workspaces](#workspaces).                                                                                                     |
+| Workspaces       | `workspaces`, `workspace_index_files`                                                                          | Folders, each owned by the profile, a project or a session; see [Workspaces](#workspaces).                                                                         |
 | Runs             | `runs`, `run_messages`, `events`, `session_tool_approvals`, `tool_subject_grants`, `session_subject_approvals` | See below.                                                                                                                                                         |
 | Files            | `files`, `file_versions`, `folders`, `chunks`, `chunks_fts`, `chunk_vectors`, `search_index_state`             | Project and global files, and indexed workspace files (scope `workspace`).                                                                                         |
 | Agents           | `agents`, `agent_versions`                                                                                     |                                                                                                                                                                    |
@@ -425,16 +425,34 @@ that used them, and the message lists references. The table is dropped.
 
 ## Workspaces
 
-A workspace (`workspaces`, migration `0029`) is a name, an absolute folder, a
-`writable` flag and a trash state. `WorkspaceStore` (`workspaces-store.ts`)
-checks that the folder exists and the name is unique (a name in the trash is
-still taken). Projects and sessions attach workspaces (`workspace_attachments`),
-each attachment with its own `read_only` choice. A session uses its project's
-workspaces and its own; a workspace is writable in a session only if it is
-writable and no attachment that applies says read-only, so an attachment can
-only make it stricter. Moving a workspace to the trash hides it and keeps its
-attachments (restoring brings it back); nothing on disk is touched, and
-purging a session or project drops its attachments.
+A workspace (`workspaces`, migrations `0029` and `0038`) is a name, an absolute
+folder, a `writable` flag and a trash state. It is defined at a scope, as files
+are: `project_id` and `session_id` are both NULL for a global one, one of them
+names the owner otherwise (never both). A session uses its own workspaces, its
+project's and the global ones (`WorkspaceStore.forSession`); a workspace is
+visible where it is defined, so there is nothing to attach, and read-only is set
+on the workspace. `WorkspaceStore` (`workspaces-store.ts`) checks that the
+folder exists and that the name is unique within one owner (a name in the trash
+is still taken); a session's "scratch" and a global "scratch" can both exist,
+and references use ids, so they never clash. Moving a workspace to the trash
+hides it everywhere; nothing on disk is touched.
+
+A **temporary** workspace (`temporary = 1`, always a session's) is a folder the
+app made at `<data folder>/workspaces/<id>` (owner-only, like the rest of the
+data folder). It is writable, and writes ask as for any workspace. Its folder
+cannot be changed. It is kept while its session is in the trash and deleted when
+the session is purged, or when the user deletes it (`DELETE /api/workspaces/:id`
+deletes a temporary workspace and its folder; any other workspace goes to the
+trash). Purging a session or project deletes its workspaces' rows, what was
+indexed for them, their "Always allow" grants and, for temporary ones, the
+folder; a folder the user chose is never touched. `Store.onWorkspacesPurged`
+tells the search index to let go of them. A fork gets its own copy of each
+workspace the source session defined (`copySessionWorkspaces`): one on a chosen
+folder points at the same folder, a temporary one gets a copy of its folder.
+
+Migration `0038` converted the old attachments: a workspace attached to exactly
+one owner became that owner's, writable only if it was writable there; one
+attached to several owners or none became global and read-only.
 
 `workspace-fs.ts` is the disk side, behind core's `WorkspaceAccess`:
 
@@ -454,21 +472,22 @@ purging a session or project drops its attachments.
   a folder does not follow links.
 
 `{{workspaces}}` expands to one line per workspace the run has (name, reference,
-"can be changed" or "read-only").
+where it is defined, "can be changed" or "read-only").
 
-| Route                                                                    | Purpose                                                                           |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| `GET/POST /api/workspaces`, `PUT/DELETE /api/workspaces/:id`             | List (`?deleted=true` for the trash), create, save, move to the trash.            |
-| `POST /api/workspaces/:id/restore`                                       | Restore from the trash.                                                           |
-| `GET /api/projects/:id/workspaces`, `GET /api/sessions/:id/workspaces`   | What is attached; a session also lists its project's, with `effectiveWritable`.   |
-| `PUT/DELETE /api/{projects,sessions}/:id/workspaces/:workspaceId`        | Attach (`{ readOnly }`) or detach.                                                |
-| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`              | "Always allow" grants per tool and workspace; remove one.                         |
-| `GET /api/fs/dirs?path=`                                                 | The folders inside a folder, for the folder picker.                               |
-| `GET /api/sessions/:id/workspace-file?ref=`                              | The bytes of a workspace image or audio file, for the chat.                       |
-| `GET /api/workspaces/:id/tree?path=`                                     | One folder of the tree, each entry with its tick state (`all`, `some`, `none`).   |
-| `GET /api/workspaces/:id/index`                                          | The ticks and the index status (files, chunks, scanning, truncated, unavailable). |
-| `PUT /api/workspaces/:id/ticks`, `POST /api/workspaces/:id/ticks/toggle` | Set the ticks (`{ ticks }`) or tick or untick one path (`{ path, on }`).          |
-| `POST /api/workspaces/:id/rescan`                                        | Rescan now.                                                                       |
+| Route                                                                          | Purpose                                                                                                  |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `GET/POST /api/{global,projects/:id,sessions/:id}/workspaces`                  | The workspaces defined at that scope (`?deleted=true` for the trash); create one.                        |
+| `POST /api/sessions/:id/workspaces/temporary`                                  | Make a temporary workspace (`{ name }`).                                                                 |
+| `GET/PUT/DELETE /api/workspaces/:id`                                           | One workspace; save; move to the trash (a temporary one is deleted with its folder).                     |
+| `POST /api/workspaces/:id/restore`                                             | Restore from the trash.                                                                                  |
+| `GET /api/workspace-grants`, `DELETE /api/workspace-grants`                    | "Always allow" grants per tool and workspace; remove one.                                                |
+| `GET /api/fs/dirs?path=`                                                       | The folders inside a folder, for the folder picker.                                                      |
+| `GET /api/sessions/:id/workspace-file?ref=`                                    | The bytes of a workspace image or audio file, for the chat.                                              |
+| `GET /api/workspaces/:id/tree?path=`                                           | One folder of the tree, each entry with its tick state (`all`, `some`, `none`).                          |
+| `GET /api/workspaces/:id/file?path=`, `GET /api/workspaces/:id/file/raw?path=` | The start of a file for the Files tree (text, media or binary), and the bytes of an image or audio file. |
+| `GET /api/workspaces/:id/index`                                                | The ticks and the index status (files, chunks, scanning, truncated, unavailable).                        |
+| `PUT /api/workspaces/:id/ticks`, `POST /api/workspaces/:id/ticks/toggle`       | Set the ticks (`{ ticks }`) or tick or untick one path (`{ path, on }`).                                 |
+| `POST /api/workspaces/:id/rescan`                                              | Rescan now.                                                                                              |
 
 ### Searching a workspace
 
@@ -645,7 +664,7 @@ the `…_instruction` placeholder of each list, `{{date}}` and `{{time}}` are re
 | `{{schemas_instruction}}`                                                                                                        | The `schemasInstruction` setting. Empty if no schema is in scope.                                                                                                          |
 | `{{data}}`                                                                                                                       | One line per piece of data in scope, with its schema's name.                                                                                                               |
 | `{{agents}}`                                                                                                                     | One line per startable agent: `- (id) name: description`. Empty unless the run offers `start_subagent`.                                                                    |
-| `{{workspaces}}`                                                                                                                 | One line per attached workspace: its name and reference, and whether it can be changed.                                                                                    |
+| `{{workspaces}}`                                                                                                                 | One line per workspace the run has: its name and reference, where it is defined, and whether it can be changed.                                                            |
 | `{{files}}`                                                                                                                      | One line per file in the global, project and session scopes: `- <scope://name> (media type)`, then `: description` for a binary file that has one (cut at 120 characters). |
 | `{{tools_instruction}}`, `{{data_instruction}}`, `{{agents_instruction}}`, `{{workspaces_instruction}}`, `{{files_instruction}}` | The setting of the same name (`toolsInstruction` and so on). Empty when its list is.                                                                                       |
 | `{{date}}`                                                                                                                       | The weekday and date when the run starts, in the computer's time zone: `Friday, November 6, 2026`.                                                                         |
@@ -870,7 +889,7 @@ with their subagent messages, the runs that wrote them with their
 `run_messages`, and those runs' events with `messageId` and `parentRunId`
 rewritten (events about messages after the point are dropped). It also copies
 the model, effort, agent and project, media choices, session tool and subject
-approvals and workspace attachments. Files and data belong to the
+approvals. The session's own workspaces are copied too (see [Workspaces](#workspaces)). Files and data belong to the
 project or global scope and are shared, and blobs are shared by hash. The new
 session records `forked_from_id` and the title the source had; the session
 detail returns `forkedFrom` with `state` `live`, `trashed` or `gone`. A new
@@ -1169,7 +1188,7 @@ Sends `AppEvent`s, not stored and not replayed:
 | `profile.switched`   | The active profile changed (`{ profileId }`). Every client resets what it shows.                             |
 | `profiles.changed`   | A profile was created, renamed, trashed or restored.                                                         |
 | `mcp.changed`        | An MCP server was created, saved or deleted, or its connection or tools changed.                             |
-| `workspaces.changed` | A workspace, an attachment or a grant changed.                                                               |
+| `workspaces.changed` | A workspace or a grant changed.                                                                              |
 | `agents.changed`     | An agent was created, saved, deleted, restored or imported (includes sessions whose agent pick was cleared). |
 | `skills.changed`     | A skill changed.                                                                                             |
 | `data.changed`       | Global, project or agent schemas or data changed.                                                            |

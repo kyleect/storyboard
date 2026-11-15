@@ -64,7 +64,14 @@ async function main() {
       files: s.skillMaxFiles,
     };
   });
-  const workspaces = new WorkspaceStore(db);
+  // Temporary workspaces are folders in the data folder, owner-only like the
+  // rest of it (workspaces in files design, Q4 A).
+  const workspaces = new WorkspaceStore(
+    db,
+    undefined,
+    undefined,
+    join(boot.dataDir, "workspaces"),
+  );
   const workspaceIndexer = new WorkspaceIndexer({
     store: workspaces,
     index,
@@ -178,6 +185,11 @@ async function main() {
     },
   });
   index.onChunksAdded = () => embedder.kick();
+  // A purged project or session takes its workspaces with it; the index lets
+  // go of their folders.
+  store.onWorkspacesPurged = (ids) => {
+    for (const id of ids) void workspaceIndexer.refresh(id);
+  };
   embedder.kick();
   // Workspaces with ticks are rescanned and watched in the background: the
   // backend does not wait for them.

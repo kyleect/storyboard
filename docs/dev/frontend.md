@@ -86,7 +86,6 @@ render nothing themselves.
 | `/projects/$projectId`                                      | Project page (name, color, description, links to its pages, its chats as a table) |
 | `/projects/$projectId/files`, `/agents`, `/skills`, `/data` | A project's files, agents, skills, schemas and data                               |
 | `/files`, `/agents`, `/skills`, `/data`                     | The same for the global scope                                                     |
-| `/workspaces`                                               | Workspaces: folders, writable or read-only, trash, grants                         |
 | `/errors`                                                   | Errors console across all sessions                                                |
 | `/settings/$` (`/settings` redirects to `general/models`)   | Settings; the splat is `<area>/<section>`                                         |
 
@@ -313,15 +312,14 @@ in the query cache rather than in `useLive`.
 ## The Chat page
 
 `routes/chat/Chat.tsx` is the main screen, shown in a workbench tab. A segmented control
-at the top of the page chooses one of five views:
+at the top of the page chooses one of four views:
 
-| Tab             | Content                                                                |
-| --------------- | ---------------------------------------------------------------------- |
-| Chat            | The transcript, the composer, and the live run.                        |
-| Files           | An editor-style view of every file the session can use (see below).    |
-| Structured Data | The session's schemas and data.                                        |
-| Workspaces      | The workspaces attached to the session (and its project's, read-only). |
-| Debug           | The linear view, an event table, and each run's request.               |
+| Tab             | Content                                                             |
+| --------------- | ------------------------------------------------------------------- |
+| Chat            | The transcript, the composer, and the live run.                     |
+| Files           | An editor-style view of every file the session can use (see below). |
+| Structured Data | The session's schemas and data.                                     |
+| Debug           | The linear view, an event table, and each run's request.            |
 
 **Editing and branching.** The transcript is a tree (see
 [Branches](backend.md#branches)); the page shows one line of it. `routes/chat/components/Branching.tsx`
@@ -712,16 +710,39 @@ expanded folders, the theme colour) is saved per profile: Default keeps the old 
 
 ## Workspaces
 
-The Workspaces page (`Workspaces.tsx`) lists workspaces with their folder and a
-writable or read-only badge; a form creates or edits one (name, folder, writable)
-and a folder browser (`GET /api/fs/dirs`) picks the folder. _Move to trash_ never
-touches the folder; _Show the trash_ lists them with _Restore_. Below, _Always
-allowed_ lists the grants and removes one. `AttachedWorkspaces` attaches and
-detaches workspaces, with _Read-only here_; it is on the project page and in the
-session's Workspaces tab, where the project's are shown and cannot be detached.
-Each workspace also has a _Searched parts_ section: a lazily loaded folder tree with
-tri-state tick boxes (a ticked folder covers what is below it), a _The whole folder_
-check box, the index status, and _Rescan_.
+Workspaces are in the Files tree (`FilesExplorer`), under a top-level
+_Workspaces_ folder with one group per scope the page shows (Session, Project,
+Global), each holding that scope's workspaces. There is no Workspaces page, rail
+item or chat tab.
+
+`FilesExplorer` lists the workspaces of each scope (live and trashed; two
+queries a scope) and gives `SourceExplorer` one `ExplorerRoot` per workspace
+(`ws:<id>`, with `group` and `deleted`) beside the file roots, and the groups
+(`groups`). `nestGroups` (in `files-explorer.ts`) moves the workspace roots under
+the group folders; the synthetic nodes (`workspaces`, `wsg:<scope>`) are locked
+roots. A trashed workspace is shown only with _Show deleted files_, struck
+through; a tab of a root that is gone or hidden is not shown.
+
+`workspaceSource` (`lib/workspace-source.ts`) is an `ExplorerSource` that only
+reads. One `GET /api/workspaces/:id/files` lists the whole workspace (the files
+and the folders come from it; up to 2000 entries, shallowest first), and a file is
+`GET /api/workspaces/:id/file?path=`. An image or audio file has no blob: its
+`BlobRef.hash` is `workspace:<id>:<path>` (`workspaceBlob`), which `api.blobUrl`
+fetches from `/file/raw`. A workspace's files have no versions, so the Versions
+button is not shown for a file without any. The roots say they are read-only, so
+New file, Upload, Rename and Delete are not offered.
+
+The menu of a group has _New workspace_ (and, for Session, _New temporary
+workspace_); the menu of a workspace has _Settings_, _Rescan_ and _Move to trash_
+(_Delete_, asking first, for a temporary one) or, in the trash, _Restore_. These
+come from `nodeActions`, which also gets an `ExplorerControl` to open a tab. They
+open a tab of kind `workspace` (drawn by `customTab`; `WorkspaceTab.tsx`):
+the form (name, folder with a folder browser over `GET /api/fs/dirs`, writable;
+the folder of a temporary workspace is fixed), _Searched parts_ (a lazily loaded
+folder tree with tri-state tick boxes, a _The whole folder_ check box, the index
+status and _Rescan_) and _Always allowed_ (the grants of this workspace, with
+_Remove_). A saved `workspaces` tab of the old rail is carried over to Files
+(`LEGACY_KINDS`).
 
 The approval dialog names the workspace for such a call, and its _Allow for this
 session_ and _Always allow this tool_ buttons say they cover that workspace. A

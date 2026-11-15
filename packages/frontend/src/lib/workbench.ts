@@ -16,17 +16,22 @@ export const WORKBENCH_KINDS = [
   "skills",
   "files",
   "data",
-  "workspaces",
   "errors",
   "settings",
 ] as const;
 
 export type WorkbenchKind = (typeof WORKBENCH_KINDS)[number];
 
-export const LEGACY_KINDS = ["project-agents", "project-skills"] as const;
+export const LEGACY_KINDS = [
+  "project-agents",
+  "project-skills",
+  "workspaces",
+] as const;
 const CARRIED: Record<(typeof LEGACY_KINDS)[number], WorkbenchKind> = {
   "project-agents": "agents",
   "project-skills": "skills",
+  // Workspaces are in the Files tree now.
+  workspaces: "files",
 };
 
 type SavedKind = WorkbenchKind | (typeof LEGACY_KINDS)[number];
@@ -72,7 +77,6 @@ const GLOBAL_PAGES: Record<string, WorkbenchKind> = {
   skills: "skills",
   files: "files",
   data: "data",
-  workspaces: "workspaces",
   errors: "errors",
 };
 

@@ -95,7 +95,6 @@ At the top of a chat you can switch between:
 - **Chat**. The conversation.
 - **Files**. Files this chat can use.
 - **Structured Data**. Lists and records this chat can use.
-- **Workspaces**. Folders connected to this chat.
 - **Debug**. A plain list of everything that happened. See [troubleshooting](troubleshooting.md).
 
 ## Tidy up

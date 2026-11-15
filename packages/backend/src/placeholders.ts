@@ -294,19 +294,27 @@ export function agentsList(
 
 /**
  * What `{{workspaces}}` expands to: one line per workspace the run has, with
- * its reference and whether it can be changed. Empty for none.
+ * its reference, where it is defined and whether it can be changed. Empty for
+ * none.
  */
 export function workspacesList(
   workspaces: readonly {
     id: string;
     name: string;
-    effectiveWritable: boolean;
+    writable: boolean;
+    scope: "global" | "project" | "session";
+    temporary: boolean;
   }[],
 ): string {
+  const where = {
+    global: "global",
+    project: "this project",
+    session: "this session",
+  } as const;
   return workspaces
     .map(
       (w) =>
-        `- ${w.name}: workspace://${w.id}/ (${w.effectiveWritable ? "can be changed" : "read-only"})`,
+        `- ${w.name}: workspace://${w.id}/ (${where[w.scope]}${w.temporary ? ", temporary" : ""}, ${w.writable ? "can be changed" : "read-only"})`,
     )
     .join("\n");
 }

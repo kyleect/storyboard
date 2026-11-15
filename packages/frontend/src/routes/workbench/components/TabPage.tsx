@@ -1,7 +1,6 @@
 import {
   IconAlertTriangle,
   IconBolt,
-  IconBox,
   IconDatabase,
   IconFiles,
   IconFolder,
@@ -24,7 +23,6 @@ import {
   GlobalStructuredDataPage,
   ProjectStructuredDataPage,
 } from "../../data/StructuredDataPages";
-import { WorkspacesPage } from "../../workspaces/Workspaces";
 
 export const ICONS: Record<WorkbenchKind, ReactNode> = {
   chat: <IconMessage size={14} />,
@@ -36,7 +34,6 @@ export const ICONS: Record<WorkbenchKind, ReactNode> = {
   skills: <IconBolt size={14} />,
   files: <IconFiles size={14} />,
   data: <IconDatabase size={14} />,
-  workspaces: <IconBox size={14} />,
   errors: <IconAlertTriangle size={14} />,
   settings: <IconSettings size={14} />,
 };
@@ -46,7 +43,6 @@ export const PAGE_LABEL: Partial<Record<WorkbenchKind, string>> = {
   skills: "Skills",
   files: "Files",
   data: "Structured Data",
-  workspaces: "Workspaces",
   errors: "Errors",
   settings: "Settings",
   "project-files": "Files",
@@ -82,8 +78,6 @@ export function TabPage({ tab }: { tab: WorkbenchTab }) {
       return <GlobalFilesPage />;
     case "data":
       return <GlobalStructuredDataPage />;
-    case "workspaces":
-      return <WorkspacesPage />;
     case "errors":
       return <ErrorsPage />;
     case "settings":

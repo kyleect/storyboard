@@ -86,7 +86,11 @@ export function MessageView({
             <Badge color="gray" tt="none" variant="transparent">
               {message.name}
             </Badge>
-            {message.isError && <Badge color="red">error</Badge>}
+            {message.isError && (
+              <Badge color="red" size="sm" variant="light">
+                error
+              </Badge>
+            )}
           </Group>
           <Code block>{showResult(message.content)}</Code>
           {message.media && message.media.length > 0 && (

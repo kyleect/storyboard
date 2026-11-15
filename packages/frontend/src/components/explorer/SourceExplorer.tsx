@@ -1,7 +1,7 @@
 import { Alert, Loader, Text } from "@mantine/core";
 import { confirmAction } from "../../lib/confirm";
 import { notifications } from "@mantine/notifications";
-import { IconBook } from "@tabler/icons-react";
+import { IconBook, IconBox } from "@tabler/icons-react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { fileNameProblem, joinPath, type ProjectColor } from "@harness/core";
@@ -22,15 +22,22 @@ import {
   FILE_TAB_KINDS,
   keepTab,
   mediaTypeForName,
+  nestGroups,
   nodeValue,
   openTab,
   renameFolderInTabs,
   tabId,
+  type NodeGroup,
   type NodeRef,
   type Pending,
   type RootId,
   type TabState,
 } from "../../lib/files-explorer";
+import {
+  groupRootId,
+  READ_ONLY_HERE,
+  WORKSPACES_NODE,
+} from "../../lib/workspace-source";
 import { ExplorerShell, type ShellTab } from "./ExplorerShell";
 import { useProjectColor } from "../../hooks/useProjectColor";
 import { FileIcon, FileTree, type NodeAction } from "./FileTree";
@@ -46,6 +53,16 @@ const combineResults = (
   pending: results.some((r) => r.isPending),
 });
 
+export interface ExplorerControl {
+  open: (tab: Omit<TabState, "transient">) => void;
+  refresh: (root: RootId) => Promise<unknown>;
+}
+
+export interface CustomTab {
+  label: (tab: TabState) => string;
+  render: (tab: TabState, close: () => void) => React.ReactNode;
+}
+
 export function SourceExplorer({
   roots,
   pageRoot,
@@ -55,6 +72,8 @@ export function SourceExplorer({
   onDirtyChange,
   extraTools,
   nodeActions,
+  groups,
+  customTab,
 }: {
   roots: readonly ExplorerRoot[];
   pageRoot: RootId;
@@ -63,7 +82,12 @@ export function SourceExplorer({
   isRoot?: ((v: unknown) => boolean) | undefined;
   onDirtyChange?: ((dirty: boolean) => void) | undefined;
   extraTools?: React.ReactNode;
-  nodeActions?: ((ref: NodeRef) => NodeAction[]) | undefined;
+  nodeActions?:
+    ((ref: NodeRef, control: ExplorerControl) => NodeAction[]) | undefined;
+  /** Roots with a `group` are listed under a "Workspaces" folder, by group. */
+  groups?: readonly NodeGroup[] | undefined;
+  /** Tabs of kind "workspace", drawn by the caller. */
+  customTab?: CustomTab | undefined;
 }) {
   const queryClient = useQueryClient();
   const rootOf = (id: RootId): ExplorerRoot | undefined =>
@@ -72,18 +96,31 @@ export function SourceExplorer({
 
   const reasons = useMemo(
     () =>
-      Object.fromEntries(roots.map((r) => [r.id, r.readOnly])) as Record<
-        RootId,
-        string | undefined
-      >,
-    [roots],
+      ({
+        ...(groups
+          ? Object.fromEntries([
+              [WORKSPACES_NODE, READ_ONLY_HERE],
+              ...groups.map((g) => [groupRootId(g.id), READ_ONLY_HERE]),
+            ])
+          : {}),
+        ...Object.fromEntries(roots.map((r) => [r.id, r.readOnly])),
+      }) as Record<RootId, string | undefined>,
+    [roots, groups],
+  );
+  const tabRoots = useMemo(
+    () =>
+      new Set([
+        ...roots.map((r) => r.id),
+        ...(groups ? groups.map((g) => groupRootId(g.id)) : []),
+      ]),
+    [roots, groups],
   );
 
   const [initial] = useState(() =>
     loadViewIn(namespace, pageKey, FILE_TAB_KINDS, isRoot),
   );
-  const [tabsState, setTabsState] = useState(() => {
-    const tabs = initial.tabs.filter((t) => roots.some((r) => r.id === t.root));
+  const [savedTabs, setTabsState] = useState(() => {
+    const tabs = initial.tabs.filter((t) => tabRoots.has(t.root));
     const active = tabs.some((t) => tabId(t) === initial.active)
       ? initial.active
       : tabs[0]
@@ -95,6 +132,25 @@ export function SourceExplorer({
   const [expanded, setExpanded] = useState(initial.expanded);
   const [width, setWidth] = useState(initial.width);
   const [showDeleted, setShowDeleted] = useState(initial.showDeleted);
+  // A tab of a root that is gone, or is in the trash and hidden, has nothing
+  // to show. It is kept, so that restoring the workspace brings it back.
+  const tabsState = useMemo(() => {
+    const gone = (t: TabState) => {
+      const root = roots.find((r) => r.id === t.root);
+
+      return root
+        ? root.deleted === true && !showDeleted
+        : !tabRoots.has(t.root);
+    };
+    const tabs = savedTabs.tabs.filter((t) => !gone(t));
+
+    return {
+      tabs,
+      active: tabs.some((t) => tabId(t) === savedTabs.active)
+        ? savedTabs.active
+        : null,
+    };
+  }, [savedTabs, roots, tabRoots, showDeleted]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [renaming, setRenaming] = useState<{ value: string } | null>(null);
@@ -135,17 +191,56 @@ export function SourceExplorer({
     })),
     combine: combineResults,
   });
-  const tree = useMemo(
-    () =>
-      buildTree(
-        roots.map((root, i) => ({
-          root,
-          files: (lists.data[i] as StoredFile[] | undefined) ?? [],
-          folders: (folders.data[i] as string[] | undefined) ?? [],
-        })),
-        pending,
+  const tree = useMemo(() => {
+    const built = buildTree(
+      roots.flatMap((root, i) =>
+        root.deleted && !showDeleted
+          ? []
+          : [
+              {
+                root,
+                files: (lists.data[i] as StoredFile[] | undefined) ?? [],
+                folders: (folders.data[i] as string[] | undefined) ?? [],
+              },
+            ],
       ),
-    [roots, lists.data, folders.data, pending],
+      pending,
+    );
+
+    return groups
+      ? nestGroups(built, roots, groups, {
+          id: WORKSPACES_NODE,
+          label: "Workspaces",
+          groupId: groupRootId,
+        })
+      : built;
+  }, [roots, lists.data, folders.data, pending, groups, showDeleted]);
+  const parentsOf = useMemo(
+    () =>
+      Object.fromEntries(
+        roots.flatMap((r) =>
+          r.group
+            ? [
+                [
+                  r.id,
+                  [
+                    nodeValue({
+                      root: WORKSPACES_NODE,
+                      kind: "root",
+                      path: "",
+                    }),
+                    nodeValue({
+                      root: groupRootId(r.group),
+                      kind: "root",
+                      path: "",
+                    }),
+                  ],
+                ],
+              ]
+            : [],
+        ),
+      ) as Record<RootId, string[]>,
+    [roots],
   );
 
   const loading = lists.pending || folders.pending;
@@ -162,6 +257,7 @@ export function SourceExplorer({
   const setActive = (id: string) => setTabsState((s) => ({ ...s, active: id }));
   const open = (tab: Omit<TabState, "transient">, permanent: boolean) =>
     setTabsState((s) => openTab(s, tab, permanent));
+
   const discard = (id: string) =>
     setDrafts((d) =>
       Object.fromEntries(Object.entries(d).filter(([k]) => k !== id)),
@@ -364,7 +460,9 @@ export function SourceExplorer({
   };
 
   const activeRef: NodeRef | null = activeTab
-    ? { root: activeTab.root, kind: "file", path: activeTab.key }
+    ? activeTab.kind === "workspace"
+      ? { root: activeTab.root, kind: "root", path: "" }
+      : { root: activeTab.root, kind: "file", path: activeTab.key }
     : null;
   const activeInfo = activeRef
     ? tree.info.get(nodeValue(activeRef))
@@ -397,10 +495,16 @@ export function SourceExplorer({
         roots={roots}
         reasons={reasons}
         pageRoot={pageRoot}
+        parentsOf={parentsOf}
         initialExpanded={{
           ...Object.fromEntries(
-            roots.map((r) => [
-              nodeValue({ root: r.id, kind: "root", path: "" }),
+            [
+              ...roots.filter((r) => !r.group).map((r) => r.id),
+              ...(groups
+                ? [WORKSPACES_NODE, ...groups.map((g) => groupRootId(g.id))]
+                : []),
+            ].map((id) => [
+              nodeValue({ root: id, kind: "root", path: "" }),
               true,
             ]),
           ),
@@ -425,7 +529,15 @@ export function SourceExplorer({
         onDeleteFile={deleteFile}
         onUpload={(root, folder, files) => void upload(root, folder, files)}
         extraTools={extraTools}
-        nodeActions={nodeActions}
+        nodeActions={
+          nodeActions
+            ? (ref) =>
+                nodeActions(ref, {
+                  open: (tab) => open(tab, true),
+                  refresh: refreshRoot,
+                })
+            : undefined
+        }
       />
     </>
   );
@@ -442,6 +554,17 @@ export function SourceExplorer({
     return iconColor ? { rootColor: iconColor } : {};
   };
   const shellTabs: ShellTab[] = tabsState.tabs.map((t) => {
+    if (t.kind === "workspace") {
+      return {
+        id: tabId(t),
+        label: customTab?.label(t) ?? "Workspace",
+        title: customTab?.label(t) ?? "Workspace",
+        icon: <IconBox size={14} />,
+        transient: false,
+        dirty: false,
+      };
+    }
+
     const info = tree.info.get(
       nodeValue({ root: t.root, kind: "file", path: t.key }),
     );
@@ -467,7 +590,9 @@ export function SourceExplorer({
   });
 
   const content =
-    activeTab && sourceOf(activeTab) ? (
+    activeTab?.kind === "workspace" ? (
+      (customTab?.render(activeTab, () => close(tabId(activeTab))) ?? null)
+    ) : activeTab && sourceOf(activeTab) ? (
       activeTab.kind === "preview" ? (
         <PreviewTab
           key={tabId(activeTab)}
@@ -524,12 +649,15 @@ export function SourceExplorer({
       tabListLabel="Open files"
       resizeLabel="Resize the file tree"
       statusLeft={
-        activeTab
-          ? `${labelOf(activeTab.root)} › ${activeTab.key.split("/").join(" › ")}`
-          : "No file open"
+        activeTab?.kind === "workspace"
+          ? (customTab?.label(activeTab) ?? "")
+          : activeTab
+            ? `${labelOf(activeTab.root)} › ${activeTab.key.split("/").join(" › ")}`
+            : "No file open"
       }
       statusRight={
-        activeTab && (
+        activeTab &&
+        activeTab.kind !== "workspace" && (
           <>
             {activeIsText && cursor && (
               <Text size="xs" c="dimmed">

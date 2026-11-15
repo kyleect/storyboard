@@ -140,6 +140,8 @@ export interface FileTreeProps {
   roots: readonly Pick<Root, "id" | "label">[];
   reasons: Readonly<Record<RootId, string | undefined>>;
   pageRoot: RootId;
+  /** The nodes above a root that is not at the top, outermost first. */
+  parentsOf?: Readonly<Record<RootId, string[]>> | undefined;
   initialExpanded: Record<string, boolean>;
   onExpandedChange: (state: Record<string, boolean>) => void;
   activeValue: string | null;
@@ -184,7 +186,7 @@ export function FileTree(props: FileTreeProps) {
   useEffect(() => {
     controller.current = tree;
   });
-  const { activeValue } = props;
+  const { activeValue, parentsOf } = props;
 
   useEffect(() => {
     if (!activeValue) return;
@@ -192,6 +194,7 @@ export function FileTree(props: FileTreeProps) {
     const ctl = controller.current;
     const ref = parseNodeValue(activeValue);
     const above = [
+      ...(parentsOf?.[ref.root] ?? []),
       nodeValue({ root: ref.root, kind: "root", path: "" }),
       ...parentFolders(ref.path).map((path) =>
         nodeValue({ root: ref.root, kind: "folder", path }),
@@ -206,7 +209,7 @@ export function FileTree(props: FileTreeProps) {
     }
 
     ctl.setSelectedState([activeValue]);
-  }, [activeValue]);
+  }, [activeValue, parentsOf]);
 
   const selected = tree.selectedState[0];
   const target: NodeRef = selected

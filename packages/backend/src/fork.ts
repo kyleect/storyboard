@@ -301,12 +301,8 @@ export function forkSession(store: Store, input: ForkInput): ForkResult {
      SELECT ?, tool_name, subject_kind, subject_id, created_at
      FROM session_subject_approvals WHERE session_id = ?`,
   ).run(newSessionId, sourceId);
-  db.prepare(
-    `INSERT INTO workspace_attachments
-       (workspace_id, owner_kind, owner_id, read_only, created_at)
-     SELECT workspace_id, owner_kind, ?, read_only, created_at
-     FROM workspace_attachments WHERE owner_kind = 'session' AND owner_id = ?`,
-  ).run(newSessionId, sourceId);
+  // The session's own workspaces are copied by `WorkspaceStore`, which can
+  // copy a temporary folder too (workspaces in files design, Q7 A).
 
   return { messages: messageRows.length, runs: runRows.length };
 }

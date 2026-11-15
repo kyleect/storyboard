@@ -155,10 +155,11 @@ whether the session is in a project.
 
 ### Workspaces
 
-A workspace is a folder on the user's computer, attached to a project or a
-session (see [backend.md](backend.md#workspaces)). Its files are named by a
-reference, `workspace://<id>/path`; when only one workspace is attached a plain
-path works. The tools are offered only to a run whose session has a workspace.
+A workspace is a folder on the user's computer, defined for the profile, a
+project or a session (see [backend.md](backend.md#workspaces)); a session has
+its own, its project's and the global ones. Its files are named by a
+reference, `workspace://<id>/path`; when the session has only one workspace a
+plain path works. The tools are offered only to a run whose session has a workspace.
 Reading and listing never ask. Every tool that changes something asks, and asks
 per workspace: the prompt names it, and _Allow for this session_ and _Always
 allow this tool_ cover that tool in that workspace only.
@@ -289,8 +290,8 @@ run (see [backend.md](backend.md#which-tools-a-run-gets)):
 - A tool switched **off** in Settings is dropped.
 - A tool whose `available(run)` returns false is dropped. In the tools package:
   - `skill_load` needs a skill in scope (`hasSkills`).
-  - The workspace tools need a workspace attached to the session or its project
-    (`hasWorkspaces`).
+  - The workspace tools need a workspace the session can use: its own, its
+    project's or a global one (`hasWorkspaces`).
   - `subagent_handback` needs a child run (`isChild`).
   - `start_subagent` needs the subagent depth limit not to be reached
     (`canStartSubagent`).

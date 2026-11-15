@@ -254,8 +254,9 @@ The built-in agent whose prompt writes derived text. It can also be started as
 a subagent.
 
 **Workspace**
-A named folder on the user's computer that a project or session can attach,
-read-only or writable. Its files are named `workspace://<id>/path`. Agents read
+A named folder on the user's computer, defined globally, for a project or for a
+session, read-only or writable. A _temporary workspace_ is a folder the app
+makes for one session and deletes with it. Its files are named `workspace://<id>/path`. Agents read
 it with the workspace tools and change it only with approval, per workspace.
 
 **Ticks**

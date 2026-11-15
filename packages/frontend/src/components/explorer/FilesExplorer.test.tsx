@@ -18,6 +18,8 @@ import {
   type FileScope,
   type Project,
   type StoredFile,
+  type Workspace,
+  type WorkspaceFileEntry,
 } from "../../api";
 import { fileKeys, projectKeys } from "../../queries";
 import { FilesExplorer } from "./FilesExplorer";
@@ -127,7 +129,50 @@ function mockApi() {
     return detail(e);
   });
   vi.spyOn(api, "blobUrl").mockResolvedValue("blob:cat");
+  vi.spyOn(api, "listWorkspaces").mockImplementation(async (s, deleted) =>
+    (WORKSPACES[s.scope] ?? []).filter((w) => w.deleted === deleted),
+  );
+  vi.spyOn(api, "listWorkspaceFiles").mockImplementation(async (id) => ({
+    entries: WORKSPACE_ENTRIES[id] ?? [],
+    truncated: false,
+    unavailable: false,
+  }));
+  vi.spyOn(api, "previewWorkspaceFile").mockImplementation(async (_id, path) =>
+    path.endsWith(".png")
+      ? { kind: "media", mediaType: "image/png", size: 10 }
+      : path.endsWith(".bin")
+        ? { kind: "binary", size: 3 }
+        : {
+            kind: "text",
+            mediaType: "text/markdown",
+            text: "# Ch1",
+            truncated: false,
+            size: 5,
+          },
+  );
 }
+
+const workspace = (over: Partial<Workspace> = {}): Workspace => ({
+  id: "w1",
+  name: "Book",
+  path: "/Users/me/Book",
+  writable: false,
+  scope: "global",
+  ownerId: null,
+  temporary: false,
+  createdAt: at,
+  updatedAt: at,
+  deleted: false,
+  ticks: [],
+  ...over,
+});
+let WORKSPACES: Record<string, Workspace[]> = {};
+let WORKSPACE_ENTRIES: Record<string, WorkspaceFileEntry[]> = {};
+
+beforeEach(() => {
+  WORKSPACES = {};
+  WORKSPACE_ENTRIES = {};
+});
 
 describe("ValueView of a binary file", () => {
   it("shows an image from its bytes, with its type and size", async () => {
@@ -183,9 +228,11 @@ describe("the roots of the tree", () => {
 
   it("shows Session, Project and Global on a session page, with their files", async () => {
     show(<FilesExplorer page={session} projectId="p1" />);
-    expect(await screen.findByText("Session")).toBeTruthy();
-    expect(screen.getByText("Project")).toBeTruthy();
-    expect(screen.getByText("Global")).toBeTruthy();
+    // Each is a root of files and a group of the Workspaces folder.
+    expect(await screen.findAllByText("Session")).toHaveLength(2);
+    expect(screen.getAllByText("Project")).toHaveLength(2);
+    expect(screen.getAllByText("Global")).toHaveLength(2);
+    expect(screen.getByText("Workspaces")).toBeTruthy();
     expect(await screen.findByText("plan.txt")).toBeTruthy();
     expect(screen.getByText("rules.txt")).toBeTruthy();
     expect(screen.getByText("bible.txt")).toBeTruthy();
@@ -199,7 +246,7 @@ describe("the roots of the tree", () => {
     show(<FilesExplorer page={session} projectId={null} />);
     await screen.findByText("bible.txt");
     expect(screen.queryByText("Project")).toBeNull();
-    expect(screen.getByText("Session")).toBeTruthy();
+    expect(screen.getAllByText("Session")).toHaveLength(2);
   });
 
   it("shows only Global on the global page, and Project and Global on a project page", async () => {
@@ -211,7 +258,7 @@ describe("the roots of the tree", () => {
     first.unmount();
     show(<FilesExplorer page={project} />);
     await screen.findByText("rules.txt");
-    expect(screen.getByText("Global")).toBeTruthy();
+    expect(screen.getAllByText("Global")).toHaveLength(2);
     expect(screen.queryByText("Session")).toBeNull();
   });
 
@@ -243,8 +290,7 @@ describe("collapsing and expanding the tree", () => {
     fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
     await waitFor(() => expect(screen.queryByText("plan.txt")).toBeNull());
     expect(screen.queryByText("drafts")).toBeNull();
-    expect(screen.getByText("Session")).toBeTruthy();
-    expect(screen.getByText("Global")).toBeTruthy();
+    expect(screen.getByText("Workspaces")).toBeTruthy();
   });
 
   it("remembers a tree that was collapsed", async () => {
@@ -255,7 +301,7 @@ describe("collapsing and expanding the tree", () => {
     await waitFor(() => expect(screen.queryByText("plan.txt")).toBeNull());
     first.unmount();
     show(<FilesExplorer page={session} projectId="p1" />);
-    await screen.findByText("Session");
+    await screen.findByText("Workspaces");
     expect(screen.queryByText("plan.txt")).toBeNull();
   });
 
@@ -273,7 +319,9 @@ describe("collapsing and expanding the tree", () => {
 
   it("opens the folders below a root from the root's menu", async () => {
     show(<FilesExplorer page={session} projectId="p1" />);
-    fireEvent.contextMenu(await screen.findByText("Session"));
+    fireEvent.contextMenu(
+      (await screen.findAllByText("Session"))[0] as HTMLElement,
+    );
     fireEvent.click(await screen.findByText("Expand all"));
     expect(await screen.findByText("notes.md")).toBeTruthy();
   });
@@ -627,7 +675,7 @@ describe("Markdown", () => {
   it("offers no preview for other types", async () => {
     show(<FilesExplorer page={session} projectId="p1" />);
     fireEvent.click(await screen.findByText("plan.txt"));
-    await screen.findByRole("button", { name: /Versions/ });
+    await screen.findByLabelText("Editing plan.txt");
     expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
   });
 });
@@ -877,7 +925,7 @@ describe("uploads", () => {
       .mockResolvedValue(uploaded("voice.wav", "audio/wav"));
 
     show(<FilesExplorer page={session} projectId="p1" />);
-    const root = await screen.findByText("Global");
+    const root = (await screen.findAllByText("Global"))[0] as HTMLElement;
     const file = new File(["x"], "voice.wav", { type: "audio/wav" });
 
     fireEvent.drop(root, {
@@ -1024,5 +1072,171 @@ describe("a project's color in the Files explorer", () => {
     await waitFor(() => expect(tab("rules.txt")).toBeTruthy());
     expect(iconBg(tab("rules.txt"))).not.toContain("--mantine-color-null");
     expect(tab("rules.txt").style.getPropertyValue("--tab-color")).toBe("");
+  });
+});
+
+describe("the Workspaces folder", () => {
+  beforeEach(mockApi);
+
+  const book = workspace({ id: "w1", name: "Book" });
+  const mine = workspace({
+    id: "w2",
+    name: "scratch",
+    scope: "session",
+    ownerId: "s1",
+    temporary: true,
+    writable: true,
+  });
+  const entries: WorkspaceFileEntry[] = [
+    { path: "chapters", kind: "folder" },
+    { path: "chapters/ch1.md", kind: "file", mediaType: "text/markdown" },
+    { path: "cover.png", kind: "file", mediaType: "image/png" },
+    { path: "blob.bin", kind: "file" },
+  ];
+
+  it("lists each workspace under its group, with its folders and files", async () => {
+    WORKSPACES = { global: [book], session: [mine] };
+    WORKSPACE_ENTRIES = { w1: entries };
+    show(<FilesExplorer page={session} projectId="p1" />);
+    expect(await screen.findByText("Book")).toBeTruthy();
+    expect(screen.getByText("scratch")).toBeTruthy();
+    fireEvent.click(screen.getByText("Book"));
+    expect(await screen.findByText("chapters")).toBeTruthy();
+    expect(screen.getByText("cover.png")).toBeTruthy();
+    fireEvent.click(screen.getByText("chapters"));
+    expect(await screen.findByText("ch1.md")).toBeTruthy();
+  });
+
+  it("reads a file without letting it be changed", async () => {
+    WORKSPACES = { global: [book] };
+    WORKSPACE_ENTRIES = { w1: entries };
+    show(<FilesExplorer page={global} />);
+    fireEvent.click(await screen.findByText("Book"));
+    fireEvent.click(await screen.findByText("chapters"));
+    fireEvent.click(await screen.findByText("ch1.md"));
+    await screen.findByText(/The files of a workspace are changed by agents/);
+    expect(vi.mocked(api.previewWorkspaceFile)).toHaveBeenCalledWith(
+      "w1",
+      "chapters/ch1.md",
+    );
+    expect(screen.queryByRole("button", { name: /Versions/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("shows an image from the workspace, not from the blob store", async () => {
+    WORKSPACES = { global: [book] };
+    WORKSPACE_ENTRIES = { w1: entries };
+    show(<FilesExplorer page={global} />);
+    fireEvent.click(await screen.findByText("Book"));
+    fireEvent.click(await screen.findByText("cover.png"));
+    expect((await screen.findByAltText("Preview")).getAttribute("src")).toBe(
+      "blob:cat",
+    );
+    expect(vi.mocked(api.blobUrl)).toHaveBeenCalledWith(
+      "workspace:w1:cover.png",
+    );
+  });
+
+  it("says when a file is not text, image or audio", async () => {
+    WORKSPACES = { global: [book] };
+    WORKSPACE_ENTRIES = { w1: entries };
+    show(<FilesExplorer page={global} />);
+    fireEvent.click(await screen.findByText("Book"));
+    fireEvent.click(await screen.findByText("blob.bin"));
+    expect(await screen.findByText(/A binary file of 3 bytes/)).toBeTruthy();
+  });
+
+  it("makes a workspace from its group's menu, at that scope", async () => {
+    const create = vi
+      .spyOn(api, "createWorkspace")
+      .mockResolvedValue(workspace({ scope: "project" }));
+
+    show(<FilesExplorer page={session} projectId="p1" />);
+    const groups = await screen.findAllByText("Project");
+
+    fireEvent.contextMenu(groups[1] as HTMLElement);
+    fireEvent.click(await screen.findByText("New workspace"));
+    expect(screen.queryByText("New temporary workspace")).toBeNull();
+    fireEvent.change(await screen.findByLabelText(/Name/), {
+      target: { value: "Notes" },
+    });
+    fireEvent.change(screen.getByLabelText(/Folder/), {
+      target: { value: "/Users/me/Notes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        { scope: "project", id: "p1" },
+        { name: "Notes", path: "/Users/me/Notes", writable: false },
+      ),
+    );
+  });
+
+  it("offers a temporary workspace on the session group only", async () => {
+    const create = vi
+      .spyOn(api, "createTemporaryWorkspace")
+      .mockResolvedValue(mine);
+
+    show(<FilesExplorer page={session} projectId="p1" />);
+    fireEvent.contextMenu(
+      (await screen.findAllByText("Session"))[1] as HTMLElement,
+    );
+    fireEvent.click(await screen.findByText("New temporary workspace"));
+    fireEvent.change(await screen.findByLabelText(/Name/), {
+      target: { value: "scratch" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith("s1", "scratch"));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    fireEvent.contextMenu(
+      (await screen.findAllByText("Global"))[1] as HTMLElement,
+    );
+    await screen.findByText("New workspace");
+    expect(screen.queryByText("New temporary workspace")).toBeNull();
+  });
+
+  it("opens a workspace's settings, and moves it to the trash", async () => {
+    WORKSPACES = { global: [book] };
+    const trash = vi.spyOn(api, "trashWorkspace").mockResolvedValue(book);
+
+    vi.spyOn(api, "listWorkspaceGrants").mockResolvedValue([]);
+    show(<FilesExplorer page={global} />);
+    fireEvent.contextMenu(await screen.findByText("Book"));
+    fireEvent.click(await screen.findByText("Settings"));
+    expect(await screen.findByDisplayValue("/Users/me/Book")).toBeTruthy();
+    fireEvent.contextMenu(screen.getAllByText("Book")[0] as HTMLElement);
+    fireEvent.click(await screen.findByText("Move to trash"));
+    await waitFor(() => expect(trash).toHaveBeenCalledWith("w1"));
+  });
+
+  it("asks before deleting a temporary workspace", async () => {
+    WORKSPACES = { session: [mine] };
+    const trash = vi.spyOn(api, "trashWorkspace").mockResolvedValue(mine);
+
+    show(<FilesExplorer page={session} projectId={null} />);
+    fireEvent.contextMenu(await screen.findByText("scratch"));
+    fireEvent.click(await screen.findByText("Delete"));
+    expect(trash).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(trash).toHaveBeenCalledWith("w2"));
+  });
+
+  it("shows a workspace in the trash only with the deleted files, and restores it", async () => {
+    WORKSPACES = {
+      global: [workspace({ id: "w9", name: "Old", deleted: true })],
+    };
+    const restore = vi
+      .spyOn(api, "restoreWorkspace")
+      .mockResolvedValue(workspace({ id: "w9", name: "Old" }));
+
+    show(<FilesExplorer page={global} />);
+    await screen.findByText("Workspaces");
+    expect(screen.queryByText("Old")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show deleted files" }));
+    fireEvent.contextMenu(await screen.findByText("Old"));
+    fireEvent.click(await screen.findByText("Restore"));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith("w9"));
+    expect(vi.mocked(api.listWorkspaceFiles)).not.toHaveBeenCalledWith("w9");
   });
 });

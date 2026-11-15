@@ -857,6 +857,7 @@ export class RunManager {
         newId: this.newId,
       }),
     )();
+    this.options.workspaces?.copySessionWorkspaces(sessionId, newSessionId);
     this.options.index?.reindexSession(newSessionId);
     const created = this.store.getSession(newSessionId);
     if (!created) throw new RunError("Session not found.", 404);

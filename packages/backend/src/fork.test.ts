@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -13,7 +15,8 @@ import { RunManager } from "./runs.js";
 import { buildServer } from "./server.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { Store, type StoredMessage } from "./store.js";
-import { clearBuiltinAgents, tempDatabase } from "./test-helpers.js";
+import { clearBuiltinAgents, tempDatabase, tempDir } from "./test-helpers.js";
+import { WorkspaceStore } from "./workspaces-store.js";
 
 /* Forking a session (message editing plan, part D). */
 
@@ -33,6 +36,7 @@ const say = (text: string): ScriptStep[] => [
 async function setup(
   scripts: ScriptStep[][] = [],
   settings: Record<string, unknown> = {},
+  withTempRoot = false,
 ) {
   const t = tempDatabase();
   clearBuiltinAgents(t.db);
@@ -41,7 +45,16 @@ async function setup(
   let tick = 0;
   const now = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
   const model = new ScriptedModel(scripts);
+  const tempRoot = withTempRoot ? tempDir() : undefined;
+  if (tempRoot) cleanups.push(tempRoot.cleanup);
+  const workspaces = new WorkspaceStore(
+    t.db,
+    undefined,
+    undefined,
+    tempRoot?.dir,
+  );
   const runs = new RunManager({
+    workspaces,
     store,
     settings: () => ({
       ...readSettings(t.db, {}).effective,
@@ -67,7 +80,7 @@ async function setup(
     const off = runs.subscribe(sessionId, (e) => events.push(e));
     cleanups.push(off);
   };
-  return { t, store, runs, app, model, events, watch };
+  return { t, store, runs, app, model, events, watch, workspaces };
 }
 
 type Setup = Awaited<ReturnType<typeof setup>>;
@@ -426,6 +439,31 @@ describe("POST /api/sessions/:id/fork", () => {
     expect(c.store.listMediaChoices(forkId)).toEqual([
       { ref: "session://cat.png", keep: true },
     ]);
+  });
+
+  it("gives the copy its own workspaces: a chosen folder is shared, a temporary one is copied (Q7 A)", async () => {
+    const c = await setup([say("a1")], {}, true);
+    const id = await newSession(c);
+    await send(c, id, "q1");
+    const real = tempDir();
+    cleanups.push(real.cleanup);
+    c.workspaces.create(
+      { scope: "session", id },
+      { name: "Real", path: real.dir, writable: false },
+    );
+    const temp = c.workspaces.createTemporary(id, "Scratch");
+    writeFileSync(join(temp.path, "n.md"), "N");
+    const reply = (await view(c, id)).messages[1] as StoredMessage;
+    const forkId = (await fork(c, id, reply.id)).body.id as string;
+    const copied = c.workspaces.forSession(forkId, null);
+    expect(copied.map((w) => w.name)).toEqual(["Real", "Scratch"]);
+    const copiedTemp = copied[1];
+    if (!copiedTemp) throw new Error("Expected the temporary copy.");
+    expect(copied[0]?.path).toBe(real.dir);
+    expect(copiedTemp.path).not.toBe(temp.path);
+    expect(readFileSync(join(copiedTemp.path, "n.md"), "utf8")).toBe("N");
+    // The source keeps its own.
+    expect(c.workspaces.forSession(id, null)).toHaveLength(2);
   });
 
   it("forks a fork, remembering only the session it came from", async () => {

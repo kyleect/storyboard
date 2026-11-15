@@ -84,11 +84,6 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
-    path: "/workspaces",
-    component: Page,
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
     path: "/errors",
     component: Page,
   }),

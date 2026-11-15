@@ -377,11 +377,18 @@ export interface MediaDescriberInfo {
   empty: number;
 }
 
+export type WorkspaceScope = "global" | "project" | "session";
+
 export interface Workspace {
   id: string;
   name: string;
   path: string;
   writable: boolean;
+  /** Where it is defined: for the profile, one project or one session. */
+  scope: WorkspaceScope;
+  ownerId: string | null;
+  /** A folder the app made for one session; it goes with the session. */
+  temporary: boolean;
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
@@ -394,12 +401,32 @@ export interface WorkspaceInput {
   writable: boolean;
 }
 
-export interface WorkspaceAttachment {
-  workspace: Workspace;
-  from: "project" | "session";
-  readOnly: boolean;
-  effectiveWritable: boolean;
+export interface WorkspaceFileEntry {
+  path: string;
+  kind: "file" | "folder";
+  mediaType?: string;
+  size?: number;
+  modifiedAt?: string;
 }
+
+export interface WorkspaceFiles {
+  entries: WorkspaceFileEntry[];
+  /** There are more entries than are listed; the deepest are left out. */
+  truncated: boolean;
+  /** The folder is not on this computer right now. */
+  unavailable: boolean;
+}
+
+export type WorkspacePreview =
+  | {
+      kind: "text";
+      mediaType: string;
+      text: string;
+      truncated: boolean;
+      size: number;
+    }
+  | { kind: "media"; mediaType: string; size: number }
+  | { kind: "binary"; size: number };
 
 export interface WorkspaceGrant {
   tool: string;
@@ -441,8 +468,6 @@ export interface DirListing {
   dirs: string[];
 }
 
-export type WorkspaceOwner = "projects" | "sessions";
-
 export interface SettingsView {
   effective: Settings;
   stored: Partial<Settings>;
@@ -461,14 +486,14 @@ export type FileScope =
   | { scope: "project"; id: string }
   | { scope: "session"; id: string };
 
-const filesBase = (s: FileScope) =>
-  `${
-    s.scope === "global"
-      ? "/api/global"
-      : s.scope === "project"
-        ? `/api/projects/${s.id}`
-        : `/api/sessions/${s.id}`
-  }/files`;
+const scopeBase = (s: FileScope) =>
+  s.scope === "global"
+    ? "/api/global"
+    : s.scope === "project"
+      ? `/api/projects/${s.id}`
+      : `/api/sessions/${s.id}`;
+
+const filesBase = (s: FileScope) => `${scopeBase(s)}/files`;
 
 export interface UploadedFile {
   key: string;
@@ -823,6 +848,28 @@ export interface UnreadSession {
   projectId: string | null;
 }
 
+const WORKSPACE_BLOB = "workspace:";
+
+/**
+ * A workspace file shown in the Files tree is not in the blob store. Its image
+ * or audio is described by a blob reference whose hash names the workspace and
+ * the path, so the file views can show it like any other.
+ */
+export const workspaceBlob = (
+  id: string,
+  path: string,
+  size: number,
+): BlobRef => ({ hash: `${WORKSPACE_BLOB}${id}:${path}`, size });
+
+function parseWorkspaceBlob(hash: string): { id: string; path: string } | null {
+  if (!hash.startsWith(WORKSPACE_BLOB)) return null;
+
+  const rest = hash.slice(WORKSPACE_BLOB.length);
+  const at = rest.indexOf(":");
+
+  return at < 0 ? null : { id: rest.slice(0, at), path: rest.slice(at + 1) };
+}
+
 export const api = {
   listErrors: (filter: ErrorFilter = {}) => {
     const q = new URLSearchParams(
@@ -1017,9 +1064,15 @@ export const api = {
     );
   },
   blobUrl: async (hash: string): Promise<string> => {
-    const res = await fetch(`/api/blobs/${hash}`, {
-      headers: { authorization: `Bearer ${token ?? ""}` },
-    });
+    const inWorkspace = parseWorkspaceBlob(hash);
+    const res = await fetch(
+      inWorkspace
+        ? `/api/workspaces/${encodeURIComponent(inWorkspace.id)}/file/raw?path=${encodeURIComponent(inWorkspace.path)}`
+        : `/api/blobs/${hash}`,
+      {
+        headers: { authorization: `Bearer ${token ?? ""}` },
+      },
+    );
 
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1060,16 +1113,28 @@ export const api = {
     request<{ waiting: number }>("POST", `/api/runs/${runId}/messages`, {
       text,
     }),
-  listWorkspaces: (deleted = false) =>
-    request<Workspace[]>("GET", `/api/workspaces?deleted=${deleted}`),
-  createWorkspace: (input: WorkspaceInput) =>
-    request<Workspace>("POST", "/api/workspaces", input),
+  listWorkspaces: (scope: FileScope, deleted = false) =>
+    request<Workspace[]>(
+      "GET",
+      `${scopeBase(scope)}/workspaces?deleted=${deleted}`,
+    ),
+  createWorkspace: (scope: FileScope, input: WorkspaceInput) =>
+    request<Workspace>("POST", `${scopeBase(scope)}/workspaces`, input),
+  createTemporaryWorkspace: (sessionId: string, name: string) =>
+    request<Workspace>(
+      "POST",
+      `/api/sessions/${encodeURIComponent(sessionId)}/workspaces/temporary`,
+      { name },
+    ),
+  getWorkspace: (id: string) =>
+    request<Workspace>("GET", `/api/workspaces/${encodeURIComponent(id)}`),
   saveWorkspace: (id: string, input: WorkspaceInput) =>
     request<Workspace>(
       "PUT",
       `/api/workspaces/${encodeURIComponent(id)}`,
       input,
     ),
+  /** To the trash; a temporary workspace is deleted with its folder. */
   trashWorkspace: (id: string) =>
     request<Workspace>("DELETE", `/api/workspaces/${encodeURIComponent(id)}`),
   restoreWorkspace: (id: string) =>
@@ -1077,26 +1142,15 @@ export const api = {
       "POST",
       `/api/workspaces/${encodeURIComponent(id)}/restore`,
     ),
-  listAttachedWorkspaces: (owner: WorkspaceOwner, id: string) =>
-    request<WorkspaceAttachment[]>(
+  listWorkspaceFiles: (id: string) =>
+    request<WorkspaceFiles>(
       "GET",
-      `/api/${owner}/${encodeURIComponent(id)}/workspaces`,
+      `/api/workspaces/${encodeURIComponent(id)}/files`,
     ),
-  attachWorkspace: (
-    owner: WorkspaceOwner,
-    id: string,
-    workspaceId: string,
-    readOnly: boolean,
-  ) =>
-    request<unknown>(
-      "PUT",
-      `/api/${owner}/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`,
-      { readOnly },
-    ),
-  detachWorkspace: (owner: WorkspaceOwner, id: string, workspaceId: string) =>
-    request<unknown>(
-      "DELETE",
-      `/api/${owner}/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`,
+  previewWorkspaceFile: (id: string, path: string) =>
+    request<WorkspacePreview>(
+      "GET",
+      `/api/workspaces/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
     ),
   getWorkspaceTree: (id: string, path = "") =>
     request<WorkspaceTree>(

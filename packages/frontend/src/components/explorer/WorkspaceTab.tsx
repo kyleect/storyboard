@@ -1,12 +1,11 @@
 import {
   Alert,
-  Badge,
   Button,
   Checkbox,
   Group,
   Loader,
   Modal,
-  Paper,
+  ScrollArea,
   Stack,
   Switch,
   Text,
@@ -20,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   api,
+  type FileScope,
   type Workspace,
   type WorkspaceTreeEntry,
   type WorkspaceInput,
@@ -99,12 +99,20 @@ function FolderPicker({
   );
 }
 
+export const SCOPE_WORDS: Record<FileScope["scope"], string> = {
+  session: "this session",
+  project: "every session in this project",
+  global: "every session",
+};
+
 function WorkspaceForm({
   workspace,
+  scope,
   onDone,
   onCancel,
 }: {
   workspace: Workspace | null;
+  scope: FileScope;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -119,39 +127,45 @@ function WorkspaceForm({
     mutationFn: (input: WorkspaceInput) =>
       workspace
         ? api.saveWorkspace(workspace.id, input)
-        : api.createWorkspace(input),
+        : api.createWorkspace(scope, input),
     onSuccess: onDone,
     onError: (err: Error) => setProblem(err.message),
   });
+  const fixedFolder = workspace?.temporary === true;
 
   return (
-    <Paper p="sm">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setProblem(null);
-          save.mutate(v);
-        }}
-      >
-        <Stack gap="xs">
-          <Text fw={500}>
-            {workspace ? `Edit ${workspace.name}` : "New workspace"}
-          </Text>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        setProblem(null);
+        save.mutate(v);
+      }}
+    >
+      <Stack gap="xs">
+        <Text size="xs" c="dimmed">
+          Seen by {SCOPE_WORDS[workspace?.scope ?? scope.scope]}.
+        </Text>
+        <TextInput
+          label="Name"
+          required
+          value={v.name}
+          onChange={(e) => setV({ ...v, name: e.currentTarget.value })}
+        />
+        <Group align="flex-end" gap="xs" wrap="nowrap">
           <TextInput
-            label="Name"
+            label="Folder"
+            description={
+              fixedFolder
+                ? "The app made this folder. It is deleted with the session."
+                : "The full path of a folder on this computer."
+            }
             required
-            value={v.name}
-            onChange={(e) => setV({ ...v, name: e.currentTarget.value })}
+            flex={1}
+            disabled={fixedFolder}
+            value={v.path}
+            onChange={(e) => setV({ ...v, path: e.currentTarget.value })}
           />
-          <Group align="flex-end" gap="xs" wrap="nowrap">
-            <TextInput
-              label="Folder"
-              description="The full path of a folder on this computer."
-              required
-              flex={1}
-              value={v.path}
-              onChange={(e) => setV({ ...v, path: e.currentTarget.value })}
-            />
+          {!fixedFolder && (
             <Button
               size="xs"
               variant="default"
@@ -159,24 +173,24 @@ function WorkspaceForm({
             >
               Browse
             </Button>
-          </Group>
-          <Switch
-            label="Writable"
-            description="Agents can create, change, move and delete files here, each change asking for your approval. Off: read-only. A project or session can still attach it read-only."
-            checked={v.writable}
-            onChange={(e) => setV({ ...v, writable: e.currentTarget.checked })}
-          />
-          {problem && <Alert color="red">{problem}</Alert>}
-          <Group gap="xs">
-            <Button type="submit" size="xs" loading={save.isPending}>
-              Save
-            </Button>
-            <Button size="xs" variant="default" onClick={onCancel}>
-              Cancel
-            </Button>
-          </Group>
-        </Stack>
-      </form>
+          )}
+        </Group>
+        <Switch
+          label="Writable"
+          description="Agents can create, change, move and delete files here, each change asking for your approval. Off: read-only."
+          checked={v.writable}
+          onChange={(e) => setV({ ...v, writable: e.currentTarget.checked })}
+        />
+        {problem && <Alert color="red">{problem}</Alert>}
+        <Group gap="xs">
+          <Button type="submit" size="xs" loading={save.isPending}>
+            Save
+          </Button>
+          <Button size="xs" variant="default" onClick={onCancel}>
+            {workspace ? "Close" : "Cancel"}
+          </Button>
+        </Group>
+      </Stack>
       {picking && (
         <FolderPicker
           opened
@@ -185,7 +199,58 @@ function WorkspaceForm({
           onClose={() => setPicking(false)}
         />
       )}
-    </Paper>
+    </form>
+  );
+}
+
+function TemporaryForm({
+  sessionId,
+  onDone,
+  onCancel,
+}: {
+  sessionId: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const create = useMutation({
+    mutationFn: () => api.createTemporaryWorkspace(sessionId, name),
+    onSuccess: onDone,
+    onError: (err: Error) => setProblem(err.message),
+  });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        setProblem(null);
+        create.mutate();
+      }}
+    >
+      <Stack gap="xs">
+        <Text size="xs" c="dimmed">
+          An empty folder the app makes for this session. Agents can write in
+          it, each change asking for your approval. It is deleted with the
+          session.
+        </Text>
+        <TextInput
+          label="Name"
+          required
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+        />
+        {problem && <Alert color="red">{problem}</Alert>}
+        <Group gap="xs">
+          <Button type="submit" size="xs" loading={create.isPending}>
+            Create
+          </Button>
+          <Button size="xs" variant="default" onClick={onCancel}>
+            Cancel
+          </Button>
+        </Group>
+      </Stack>
+    </form>
   );
 }
 
@@ -340,39 +405,39 @@ function SearchedParts({ workspace }: { workspace: Workspace }) {
   );
 }
 
-function Grants() {
+function Grants({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
   const grants = useQuery({
     queryKey: workspaceKeys.grants(),
     queryFn: api.listWorkspaceGrants,
   });
   const revoke = useMutation({
-    mutationFn: (g: { tool: string; workspaceId: string }) =>
-      api.revokeWorkspaceGrant(g.tool, g.workspaceId),
+    mutationFn: (tool: string) => api.revokeWorkspaceGrant(tool, workspaceId),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: workspaceKeys.all }),
     onError: showError("Could not remove"),
   });
+  const mine = (grants.data ?? []).filter((g) => g.workspaceId === workspaceId);
 
-  if (!grants.data || grants.data.length === 0) return null;
+  if (mine.length === 0) return null;
 
   return (
     <Stack gap="xs">
-      <Title order={4}>Always allowed</Title>
+      <Title order={5}>Always allowed</Title>
       <Text size="xs" c="dimmed">
-        Tools you chose to always allow for one workspace. Remove one to be
+        Tools you chose to always allow in this workspace. Remove one to be
         asked again.
       </Text>
-      {grants.data.map((g) => (
-        <Group key={`${g.tool}/${g.workspaceId}`} justify="space-between">
+      {mine.map((g) => (
+        <Group key={g.tool} justify="space-between">
           <Text size="sm">
-            <code>{g.tool}</code> in {g.workspaceName ?? g.workspaceId}
+            <code>{g.tool}</code>
           </Text>
           <Button
             size="compact-xs"
             variant="subtle"
             color="red"
-            onClick={() => revoke.mutate(g)}
+            onClick={() => revoke.mutate(g.tool)}
           >
             Remove
           </Button>
@@ -382,115 +447,102 @@ function Grants() {
   );
 }
 
-export function WorkspacesPage() {
-  const queryClient = useQueryClient();
-  const [showDeleted, setShowDeleted] = useState(false);
-  const list = useQuery({
-    queryKey: workspaceKeys.list(showDeleted),
-    queryFn: () => api.listWorkspaces(showDeleted),
-  });
-  const [editing, setEditing] = useState<Workspace | "new" | null>(null);
-  const refresh = () =>
-    void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
-  const trash = useMutation({
-    mutationFn: (w: Workspace) => api.trashWorkspace(w.id),
-    onSuccess: refresh,
-    onError: showError("Could not move to the trash"),
-  });
-  const restore = useMutation({
-    mutationFn: (w: Workspace) => api.restoreWorkspace(w.id),
-    onSuccess: refresh,
-    onError: showError("Could not restore"),
+function Listing({ workspace }: { workspace: Workspace }) {
+  const listing = useQuery({
+    queryKey: [...workspaceKeys.contents(workspace.id), "summary"],
+    queryFn: () => api.listWorkspaceFiles(workspace.id),
   });
 
+  if (listing.data?.unavailable) {
+    return (
+      <Alert color="yellow" p="xs">
+        The folder is not there right now.
+      </Alert>
+    );
+  }
+
+  if (listing.data?.truncated) {
+    return (
+      <Alert color="yellow" p="xs">
+        The folder is large. The Files tree shows the first{" "}
+        {listing.data.entries.length} entries, the shallowest first.
+      </Alert>
+    );
+  }
+
+  return null;
+}
+
+/** A workspace's own tab in the Files tree: its settings, what is searched and what is always allowed. */
+export function WorkspaceSettings({
+  workspace,
+  onClose,
+}: {
+  workspace: Workspace;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+
   return (
-    <Stack maw={720} gap="md">
-      <Group justify="space-between">
-        <Title order={3}>Workspaces</Title>
-        {editing === null && !showDeleted && (
-          <Button size="xs" onClick={() => setEditing("new")}>
-            New workspace
-          </Button>
-        )}
-      </Group>
-      <Text size="sm" c="dimmed">
-        Folders on this computer your agents can read, and change when you allow
-        it. Attach a workspace to a project or to one session. Moving a
-        workspace to the trash does not touch the folder.
-      </Text>
-      <Checkbox
-        size="xs"
-        label="Show the trash"
-        checked={showDeleted}
-        onChange={(e) => setShowDeleted(e.currentTarget.checked)}
-      />
-      {list.isPending && <Loader size="sm" />}
-      {list.isError && <Alert color="red">{list.error.message}</Alert>}
-      {list.data?.length === 0 && editing === null && (
-        <Text size="sm" c="dimmed">
-          {showDeleted ? "The trash is empty." : "No workspaces."}
-        </Text>
-      )}
-      {list.data?.map((w) =>
-        editing !== "new" && editing?.id === w.id ? null : (
-          <Paper key={w.id} p="sm">
-            <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Stack gap={2} miw={0}>
-                <Group gap="xs">
-                  <Text fw={500}>{w.name}</Text>
-                  <Badge size="sm" color={w.writable ? "orange" : "gray"}>
-                    {w.writable ? "writable" : "read-only"}
-                  </Badge>
-                </Group>
-                <Text size="xs" c="dimmed" className={utils.breakAll}>
-                  {w.path}
-                </Text>
-              </Stack>
-              <Group gap="xs" wrap="nowrap">
-                {w.deleted ? (
-                  <Button
-                    size="compact-xs"
-                    variant="subtle"
-                    onClick={() => restore.mutate(w)}
-                  >
-                    Restore
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      size="compact-xs"
-                      variant="subtle"
-                      onClick={() => setEditing(w)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="compact-xs"
-                      variant="subtle"
-                      color="red"
-                      onClick={() => trash.mutate(w)}
-                    >
-                      Move to trash
-                    </Button>
-                  </>
-                )}
-              </Group>
-            </Group>
-            {!w.deleted && <SearchedParts workspace={w} />}
-          </Paper>
-        ),
-      )}
-      {editing !== null && (
+    <ScrollArea h="100%">
+      <Stack maw={720} gap="md" p="md">
+        <Title order={4}>{workspace.name}</Title>
+        <Listing workspace={workspace} />
         <WorkspaceForm
-          workspace={editing === "new" ? null : editing}
-          onDone={() => {
-            setEditing(null);
-            refresh();
-          }}
-          onCancel={() => setEditing(null)}
+          key={workspace.updatedAt}
+          workspace={workspace}
+          scope={{ scope: "global" }}
+          onDone={() =>
+            void queryClient.invalidateQueries({ queryKey: workspaceKeys.all })
+          }
+          onCancel={onClose}
         />
-      )}
-      <Grants />
-    </Stack>
+        <SearchedParts workspace={workspace} />
+        <Grants workspaceId={workspace.id} />
+      </Stack>
+    </ScrollArea>
+  );
+}
+
+/** The tab for a new workspace, permanent or temporary, at one scope. */
+export function NewWorkspace({
+  scope,
+  temporary,
+  onDone,
+  onClose,
+}: {
+  scope: FileScope;
+  temporary: boolean;
+  onDone: () => void;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const done = () => {
+    void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
+    onDone();
+  };
+
+  return (
+    <ScrollArea h="100%">
+      <Stack maw={720} gap="md" p="md">
+        <Title order={4}>
+          {temporary ? "New temporary workspace" : "New workspace"}
+        </Title>
+        {temporary && scope.scope === "session" ? (
+          <TemporaryForm
+            sessionId={scope.id}
+            onDone={done}
+            onCancel={onClose}
+          />
+        ) : (
+          <WorkspaceForm
+            workspace={null}
+            scope={scope}
+            onDone={done}
+            onCancel={onClose}
+          />
+        )}
+      </Stack>
+    </ScrollArea>
   );
 }
