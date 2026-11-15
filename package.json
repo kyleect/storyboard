@@ -14,7 +14,7 @@
     "format:check": "prettier --check .",
     "build:core": "tsc -b packages/core",
     "build:tools": "tsc -b packages/tools",
-    "dev:backend": "pnpm build:tools && pnpm --filter @harness/backend dev",
+    "dev:backend": "pnpm build:core && pnpm build:tools && pnpm --filter @harness/backend dev",
     "dev:frontend": "pnpm --filter @harness/frontend dev"
   },
   "devDependencies": {
