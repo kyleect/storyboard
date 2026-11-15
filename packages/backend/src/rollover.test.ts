@@ -17,9 +17,12 @@ import { AppEvents } from "./app-events.js";
 import { sessionHistory } from "./history.js";
 import {
   buildCarried,
+  carriedNotice,
   chooseCarry,
   continuedTitle,
   estimateTokens,
+  lastReasoning,
+  REASONING_CAP,
 } from "./rollover.js";
 import { RunManager } from "./runs.js";
 import { SearchIndex, transcriptText } from "./search-index.js";
@@ -1619,5 +1622,101 @@ describe("when the context size cannot be read", () => {
     });
     await settledRuns(c);
     expect(sent.body.sessionId).not.toBe(id);
+  });
+});
+
+describe("carrying the last reasoning", () => {
+  const thinking = (reasoning: string): Message => ({
+    role: "assistant",
+    content: [
+      { type: "reasoning", text: reasoning },
+      { type: "tool_call", callId: "a", name: "files_list", arguments: {} },
+    ],
+  });
+
+  it("takes the reasoning of the newest assistant message, and nothing from older ones", () => {
+    expect(
+      lastReasoning([
+        thinking("old plan"),
+        result("a"),
+        thinking("the plan: read the files, then write the summary"),
+        result("a"),
+      ]),
+    ).toBe("the plan: read the files, then write the summary");
+    // The newest assistant message has none: nothing is dug up from before.
+    expect(
+      lastReasoning([thinking("old plan"), result("a"), text("done")]),
+    ).toBe("");
+    expect(lastReasoning([user("hi")])).toBe("");
+    expect(lastReasoning([])).toBe("");
+  });
+
+  it("joins several reasoning blocks, and keeps the end of a long one", () => {
+    expect(
+      lastReasoning([
+        {
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: "first" },
+            { type: "text", text: "said" },
+            { type: "reasoning", text: "second" },
+          ],
+        },
+      ]),
+    ).toBe("first\nsecond");
+    const long = `${"a".repeat(REASONING_CAP)}THE END`;
+    const cut = lastReasoning([thinking(long)]);
+    expect(cut.startsWith("…")).toBe(true);
+    expect(cut.endsWith("THE END")).toBe(true);
+    expect(cut.length).toBe(REASONING_CAP + 1);
+  });
+
+  it("puts it in the notice after the usual text, and leaves the notice as it was without it", () => {
+    expect(carriedNotice("Plot")).toBe(carriedNotice("Plot", ""));
+    expect(carriedNotice("Plot")).not.toContain("reasoning");
+    const notice = carriedNotice("Plot", "Next I read plan.md.");
+    expect(notice.startsWith(carriedNotice("Plot"))).toBe(true);
+    expect(notice).toMatch(/Carry on from the last message below/);
+    expect(notice.endsWith("Next I read plan.md.")).toBe(true);
+  });
+
+  it("is in the carried message of the new session, from the step that was copied", async () => {
+    const c = await setup();
+    const id = seed(c, [
+      user("Summarise the plan"),
+      thinking("I will list the files, then read plan.md."),
+      result("a", "plan.md"),
+    ]);
+    const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    const [carried, ...copies] = lineText(c, res.body.id);
+    expect(carried).toMatchObject({ role: "carried" });
+    expect((carried as { content: string }).content).toMatch(
+      /I will list the files, then read plan\.md\.$/,
+    );
+    // The messages themselves are copied as they were, reasoning and all.
+    expect(copies[1]).toEqual(
+      thinking("I will list the files, then read plan.md."),
+    );
+  });
+
+  it("is left out when the last step had no reasoning, and when it is not in the copied messages", async () => {
+    const c = await setup();
+    const plain = seed(c, [user("hi"), text("hello")]);
+    const one = await api(c.app, "POST", `/api/sessions/${plain}/rollover`);
+    expect((lineText(c, one.body.id)[0] as { content: string }).content).toBe(
+      carriedNotice("Plot"),
+    );
+    // A step that was started and not finished is not copied, and neither
+    // is its reasoning.
+    const open = seed(c, [
+      user("one"),
+      text("a"),
+      user("two"),
+      thinking("an unfinished plan"),
+    ]);
+    const two = await api(c.app, "POST", `/api/sessions/${open}/rollover`);
+    expect(
+      (lineText(c, two.body.id)[0] as { content: string }).content,
+    ).not.toContain("an unfinished plan");
   });
 });

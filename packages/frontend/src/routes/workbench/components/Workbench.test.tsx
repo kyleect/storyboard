@@ -95,8 +95,12 @@ const session = (id: string, title: string, project: string | null) =>
     project_id: project,
     trashed_with_project: 0,
     agent_id: null,
+    continued_from_id: null,
+    continued_from_title: null,
+    continued_carried: null,
     usage: null,
     unread: false,
+    continuedTo: null,
   }) satisfies SessionListItem;
 
 const project = (
@@ -586,6 +590,24 @@ describe("the chats tree", () => {
     await screen.findByText("Alpha chat");
     expect(api.listSessions).toHaveBeenCalledWith("p1");
     expect(api.listSessions).not.toHaveBeenCalledWith("p2");
+  });
+
+  it("marks a chat that was continued in a new one as read only", async () => {
+    mockApi();
+    vi.spyOn(api, "listSessions").mockImplementation(async (projectId) =>
+      SESSIONS.filter((s) => s.project_id === projectId).map((s) =>
+        s.id === "s1"
+          ? {
+              ...s,
+              continuedTo: { id: "s2", title: "Beta chat", trashed: false },
+            }
+          : s,
+      ),
+    );
+    await show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Novel" }));
+    await screen.findByText("Alpha chat");
+    expect(screen.getAllByText("Read only")).toHaveLength(1);
   });
 
   it("remembers which projects are open", async () => {

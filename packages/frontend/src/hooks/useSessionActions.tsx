@@ -4,13 +4,48 @@ import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { api, type Project, type Session } from "../api";
+import { api, ApiError, type Project, type Session } from "../api";
 import { RenameForm } from "../components/RenameForm";
 import { showError } from "../lib/notify";
 import { tabsForSession } from "../lib/workbench";
 import { sessionKeys, projectKeys, trashKeys } from "../queries";
 import { dropDraft } from "../stores/drafts";
 import { closeTabsAndGo, useWorkbench } from "../stores/workbench";
+
+/** The later sessions a 409 from the trash route names, or undefined. */
+function continuedByOf(
+  err: unknown,
+): { id: string; title: string }[] | undefined {
+  if (!(err instanceof ApiError) || err.status !== 409) return undefined;
+
+  const body = err.body as
+    | { needsForce?: boolean; continuedBy?: { id: string; title: string }[] }
+    | undefined;
+
+  return body?.needsForce ? (body.continuedBy ?? []) : undefined;
+}
+
+function confirmContinuedTrash(
+  session: Session,
+  later: { id: string; title: string }[],
+  onConfirm: () => void,
+) {
+  confirmAction({
+    title: "Later sessions continue this one",
+    message: (
+      <>
+        {later.map((s) => `“${s.title}”`).join(", ")}{" "}
+        {later.length === 1 ? "continues" : "continue"} “{session.title}” and{" "}
+        {later.length === 1 ? "searches" : "search"} its history. Moving it to
+        the trash, and later deleting it, takes that history away.
+      </>
+    ),
+    confirm: "Move to trash anyway",
+    cancel: "Cancel",
+    danger: true,
+    onConfirm,
+  });
+}
 
 export function useSessionActions() {
   const queryClient = useQueryClient();
@@ -59,20 +94,37 @@ export function useSessionActions() {
       cancel: "Cancel",
       danger: true,
       onConfirm: () => {
+        const done = async () => {
+          dropDraft(session.id);
+          const closed = closeTabsAndGo(
+            tabsForSession(useWorkbench.getState().tabs, session.id),
+          );
+
+          if (!closed && params.sessionId === session.id)
+            await navigate({ to: "/" });
+
+          await refresh(session.id);
+        };
+
         api
           .trashSession(session.id)
-          .then(async () => {
-            dropDraft(session.id);
-            const closed = closeTabsAndGo(
-              tabsForSession(useWorkbench.getState().tabs, session.id),
-            );
+          .then(done)
+          .catch((err: unknown) => {
+            const later = continuedByOf(err);
 
-            if (!closed && params.sessionId === session.id)
-              await navigate({ to: "/" });
+            if (later === undefined) {
+              showError("Could not move to trash")(err);
 
-            await refresh(session.id);
-          })
-          .catch(showError("Could not move to trash"));
+              return;
+            }
+
+            confirmContinuedTrash(session, later, () => {
+              api
+                .trashSession(session.id, true)
+                .then(done)
+                .catch(showError("Could not move to trash"));
+            });
+          });
       },
     });
   };

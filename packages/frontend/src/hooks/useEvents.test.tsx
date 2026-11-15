@@ -14,7 +14,9 @@ import { useSessionEvents } from "./useSessionEvents";
 import { useLive } from "../stores/live";
 import { EditableTitle } from "../routes/project/components/EditableTitle";
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
+const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
+
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 /** Stands in for the browser's EventSource; tests push messages to it. */
 class FakeEventSource {
@@ -41,6 +43,7 @@ class FakeEventSource {
 const original = globalThis.EventSource;
 
 afterEach(() => {
+  navigate.mockClear();
   globalThis.EventSource = original;
   FakeEventSource.last = undefined;
 });
@@ -55,12 +58,17 @@ const detail: SessionDetail = {
     trashed_at: null,
     project_id: null,
     trashed_with_project: 0,
+    continued_from_id: null,
+    continued_from_title: null,
+    continued_carried: null,
     agent_id: null,
   },
   project: null,
   messages: [],
   branching: { points: [], editable: [], regenerate: null, continuations: [] },
   forkedFrom: null,
+  continuedFrom: null,
+  continuedTo: null,
   subagentUsage: null,
   lastEventId: 0,
   activeRun: null,
@@ -558,5 +566,42 @@ describe("profile.switched", () => {
       FakeEventSource.last?.push(1, { type: "profiles.changed", data: {} }),
     );
     expect(invalidate).toHaveBeenCalled();
+  });
+});
+
+describe("session.continued", () => {
+  it("opens the new session and refreshes the lists", async () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={queryClient}>
+          <Header />
+        </QueryClientProvider>
+      </MantineProvider>,
+    );
+    await screen.findByText("New session");
+    invalidate.mockClear();
+
+    act(() =>
+      FakeEventSource.last?.push(1, {
+        runId: null,
+        sessionId: "s1",
+        time: "2026-11-01T00:00:01Z",
+        type: "session.continued",
+        data: { sessionId: "s2", title: "New session (2)" },
+      }),
+    );
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: "/sessions/$sessionId",
+      params: { sessionId: "s2" },
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionKeys.lists() });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: sessionKeys.detail("s1"),
+    });
   });
 });

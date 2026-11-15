@@ -116,10 +116,40 @@ export function continuedTitle(title: string): string {
   return match ? `${match[1]} (${Number(match[2]) + 1})` : `${title} (2)`;
 }
 
-/** The notice the model reads with the carried state. */
-export function carriedNotice(title: string): string {
+/** The most of the last reasoning that is carried; the end is kept. */
+export const REASONING_CAP = 4000;
+
+/**
+ * The reasoning of the newest assistant message of these, as text: what the
+ * model was working out at the last step, for it to carry on from. Empty when
+ * that message has none. Cut to its last `REASONING_CAP` characters.
+ */
+export function lastReasoning(messages: readonly Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m?.role !== "assistant") continue;
+    const text = m.content
+      .flatMap((b) => (b.type === "reasoning" ? [b.text] : []))
+      .join("\n")
+      .trim();
+    return text.length > REASONING_CAP
+      ? `…${text.slice(-REASONING_CAP)}`
+      : text;
+  }
+  return "";
+}
+
+/**
+ * The notice the model reads with the carried state. `reasoning` is the last
+ * step's: chat templates often leave earlier reasoning out of the history, so
+ * it is given here as text for the model to carry on from.
+ */
+export function carriedNotice(title: string, reasoning = ""): string {
   const named = title.trim() === "" ? "an earlier session" : `"${title}"`;
-  return `[This session continues ${named}, which ran out of room in its context. Only its most recent messages follow. The session's files, schemas and data are carried over as they stood.]`;
+  const notice = `[This session continues ${named}, which ran out of room in its context. Only its most recent messages follow. The session's files, schemas and data are carried over as they stood.]`;
+  return reasoning === ""
+    ? notice
+    : `${notice}\n\n[Your reasoning at the last step, carried over so you can carry on from it. Carry on from the last message below.]\n\n${reasoning}`;
 }
 
 /**
@@ -131,6 +161,7 @@ export function carriedNotice(title: string): string {
 export function buildCarried(
   line: readonly Message[],
   title: string,
+  reasoning = "",
 ): CarriedMessage {
   const files = replaySessionFiles(line);
   const fileOps: FileOp[] = [
@@ -179,7 +210,7 @@ export function buildCarried(
   const toolState = latestToolStates(line);
   return {
     role: "carried",
-    content: carriedNotice(title),
+    content: carriedNotice(title, reasoning),
     files: fileOps,
     ...(dataOps.length > 0 ? { dataOps } : {}),
     ...(Object.keys(toolState).length > 0 ? { toolState } : {}),
@@ -260,6 +291,7 @@ export function rolloverSession(
     buildCarried(
       line.map((m) => m.message),
       source.title,
+      lastReasoning(copied.map((m) => m.message)),
     ),
     now,
   );

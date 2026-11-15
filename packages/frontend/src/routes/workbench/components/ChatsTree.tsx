@@ -237,6 +237,11 @@ function ChatRow({
       onContextMenu={(e) => h.onContext(e, { kind: "chat", session })}
       right={
         <Group gap={4} wrap="nowrap">
+          {session.continuedTo && (
+            <Text span size="xs" c="dimmed">
+              Read only
+            </Text>
+          )}
           <SessionRunBadge
             state={h.activity?.bySession[session.id]}
             unread={session.unread}

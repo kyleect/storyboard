@@ -198,6 +198,28 @@ function SessionsTable({ projectId }: { projectId: string | null }) {
                     </Anchor>
                     {s.unread && !s.running && <UnreadDot />}
                   </Group>
+                  {s.continued_from_title !== null && (
+                    <Text size="xs" c="dimmed">
+                      Continued from {s.continued_from_title}
+                    </Text>
+                  )}
+                  {s.continuedTo && (
+                    <Text size="xs" c="dimmed">
+                      Read only. Continued in{" "}
+                      <Anchor
+                        size="xs"
+                        renderRoot={(props) => (
+                          <Link
+                            {...props}
+                            to="/sessions/$sessionId"
+                            params={{ sessionId: s.continuedTo?.id ?? "" }}
+                          />
+                        )}
+                      >
+                        {s.continuedTo.title}
+                      </Anchor>
+                    </Text>
+                  )}
                 </Table.Td>
                 <Table.Td>{new Date(s.created_at).toLocaleString()}</Table.Td>
                 <Table.Td>
