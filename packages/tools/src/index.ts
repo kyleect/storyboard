@@ -6,6 +6,7 @@ import { copyTools } from "./copy.js";
 import { fileTools } from "./files.js";
 import { projectTools } from "./projects.js";
 import { schemaDataTools } from "./schemas-data.js";
+import { sessionTools } from "./sessions.js";
 import { skillTools } from "./skills.js";
 import { subagentTools } from "./subagents.js";
 import { workspaceTools } from "./workspaces.js";
@@ -19,6 +20,7 @@ export * from "./agents.js";
 export * from "./skills.js";
 export * from "./subagents.js";
 export * from "./schemas-data.js";
+export * from "./sessions.js";
 export * from "./workspaces.js";
 
 /** Every tool. Each session gets all of them for now (tools design 6.11). */
@@ -34,6 +36,7 @@ export const allTools: readonly Tool[] = [
   ...projectTools,
   ...agentTools,
   ...subagentTools,
+  ...sessionTools,
   ...skillTools,
   ...schemaDataTools,
   ...workspaceTools,

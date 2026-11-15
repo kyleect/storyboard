@@ -59,7 +59,7 @@ export interface FileVersion {
   /** Binary files: the bytes of this version. */
   blob?: BlobRef;
   deleted: boolean;
-  by: "user" | "model";
+  by: "user" | "model" | "carried";
   /** For a model change: the session and run that made it, when known. */
   sessionId: string | null;
   runId: string | null;

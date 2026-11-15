@@ -195,7 +195,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof RunError) {
-      return reply.code(err.statusCode).send({ error: err.message });
+      return reply
+        .code(err.statusCode)
+        .send({ error: err.message, ...err.details });
     }
     if (err instanceof FileError) {
       return reply.code(400).send({ error: err.message });
@@ -318,7 +320,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const { projectId } = z
       .object({ projectId: z.string().min(1).optional() })
       .parse(req.query);
-    return store.listSessions(projectId ?? null);
+    return withContinuedTo(store.listSessions(projectId ?? null));
   });
 
   /**
@@ -358,7 +360,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
     const running = new Set(runs.runningSessionIds(items.map((s) => s.id)));
     return {
-      items: items.map((s) => ({ ...s, running: running.has(s.id) })),
+      items: withContinuedTo(items).map((s) => ({
+        ...s,
+        running: running.has(s.id),
+      })),
       total,
     };
   });
@@ -383,10 +388,13 @@ export function buildServer(options: ServerOptions): FastifyInstance {
    * reason; the others are moved (Sessions page plan, P3).
    */
   app.post("/api/sessions/trash", async (req) => {
-    const { ids } = z
-      .object({ ids: z.array(z.string().min(1)).min(1) })
+    const { ids, force } = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1),
+        force: z.boolean().optional(),
+      })
       .parse(req.body);
-    return runs.trashSessions(ids);
+    return runs.trashSessions(ids, force ? { force } : {});
   });
 
   /** Creates a session, in a project when `projectId` is given. */
@@ -459,6 +467,32 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     };
   }
 
+  /**
+   * Adds `continuedTo` to each session: the session that continues it, or
+   * null (session rollover design, D23). A session with one is read only.
+   */
+  function withContinuedTo<T extends { id: string }>(sessions: T[]) {
+    const next = store.continuedToMany(sessions.map((s) => s.id));
+    return sessions.map((s) => ({ ...s, continuedTo: next.get(s.id) ?? null }));
+  }
+
+  /** The session this one continues, as it is now. */
+  function continuedFrom(session: SessionRow) {
+    if (session.continued_from_id === null) return null;
+    const source = store.getSession(session.continued_from_id);
+    const state: "live" | "trashed" | "gone" = !source
+      ? "gone"
+      : source.trashed_at !== null
+        ? "trashed"
+        : "live";
+    return {
+      id: session.continued_from_id,
+      title: session.continued_from_title ?? "",
+      state,
+      carried: session.continued_carried ?? 0,
+    };
+  }
+
   /** The session this one was forked from, as it is now. */
   function forkedFrom(session: SessionRow) {
     if (session.forked_from_id === null) return null;
@@ -487,6 +521,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       messages: store.listMessages(id),
       branching: branching(id, session.tip_id),
       forkedFrom: forkedFrom(session),
+      continuedFrom: continuedFrom(session),
+      continuedTo: store.continuedTo(id) ?? null,
       subagentUsage: store.subagentUsage(id),
       ...runs.snapshot(id),
     };
@@ -645,10 +681,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return store.getSession(id);
   });
 
-  /** Moves the session to the trash. 409 while a run is in progress. */
+  /**
+   * Moves the session to the trash. 409 while a run is in progress, and 409
+   * with `continuedBy` (the later sessions that lose its history) when others
+   * continue it, unless the body says `{ "force": true }`.
+   */
   app.post("/api/sessions/:id/trash", async (req) => {
     const { id } = IdParams.parse(req.params);
-    runs.trashSession(id);
+    const { force } = z
+      .object({ force: z.boolean().optional() })
+      .parse(req.body ?? {});
+    runs.trashSession(id, force ? { force } : {});
     return store.getSession(id);
   });
 
@@ -958,6 +1001,30 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       .object({ messageId: z.string(), title: Title })
       .parse(req.body);
     return reply.code(201).send(runs.fork(id, messageId, title));
+  });
+
+  /**
+   * Continues the session in a new one (201): the most recent messages, the
+   * current state of the files, schemas and data and the workspaces move to
+   * the new session, and this one becomes read only. 409 while a run is in
+   * progress or when it was continued already.
+   */
+  app.post("/api/sessions/:id/rollover", async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const session = store.getSession(id);
+    if (!session) return reply.code(404).send({ error: "Session not found." });
+    let size: number | undefined;
+    try {
+      const found = await contextSize(
+        session.model ||
+          readSettings(store.db, env).effective.model ||
+          undefined,
+      );
+      if ("contextSize" in found) size = found.contextSize;
+    } catch {
+      // llama-server could not say; the latest step alone is carried.
+    }
+    return reply.code(201).send(runs.rollOver(id, { contextSize: size }));
   });
 
   /** Shows another branch. */

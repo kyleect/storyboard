@@ -193,7 +193,7 @@ export function sessionSearch(options: SessionSearchOptions): FileSearch {
       q.signal,
     );
     const hits: SearchHit[] = found.hits.flatMap((h) =>
-      h.row.scope === "workspace"
+      h.row.scope === "workspace" || h.row.scope === "transcript"
         ? []
         : [
             {

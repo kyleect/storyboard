@@ -3,6 +3,7 @@ import type { FileAccess } from "./files.js";
 import type { Form, InputAnswer } from "./forms.js";
 import type { Review, Selection } from "./review.js";
 import type { MediaSupport } from "./media.js";
+import type { SessionHistory } from "./session-history.js";
 import type { ApprovalSubject, WorkspaceAccess } from "./workspaces.js";
 import type { DataAccess } from "./schemas-data.js";
 import type {
@@ -62,6 +63,8 @@ export interface RunFacts {
   canStartSubagent: boolean;
   /** Whether the session has a workspace attached (directly or through its project). */
   hasWorkspaces?: boolean;
+  /** Whether the session continues an earlier one (session rollover design, D17). */
+  hasEarlierSessions?: boolean;
 }
 
 /** The most the "copy limit" setting can be set to (a call's key list is bounded by it). */
@@ -340,6 +343,11 @@ export interface ToolContext {
    * D36). Left out: none.
    */
   workspaces?: WorkspaceAccess;
+  /**
+   * The sessions this one continues, searchable and readable (session
+   * rollover design, D17). Left out: it continues none.
+   */
+  history?: SessionHistory;
   /** Starting subagents (agent delegation design). */
   subagents: SubagentAccess;
   /**
@@ -668,8 +676,31 @@ export function latestToolState(
     if (m?.role === "tool" && m.name === toolName && m.state !== undefined) {
       return m.state;
     }
+    // What a rollover carried over for tools whose own messages were left
+    // behind (session rollover design, D6).
+    if (m?.role === "carried" && m.toolState && toolName in m.toolState) {
+      return m.toolState[toolName];
+    }
   }
   return undefined;
+}
+
+/**
+ * The latest state every tool saved in these messages, by tool name: what
+ * `latestToolState` finds for each one. A rollover writes it on the carried
+ * message (session rollover design, D6).
+ */
+export function latestToolStates(
+  messages: readonly Message[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const m of messages) {
+    if (m.role === "tool" && m.state !== undefined) out[m.name] = m.state;
+    else if (m.role === "carried" && m.toolState) {
+      Object.assign(out, m.toolState);
+    }
+  }
+  return out;
 }
 
 /** Cuts text to `max` characters, saying how much was left out. */

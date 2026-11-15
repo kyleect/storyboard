@@ -2,7 +2,7 @@ import { runDataSteps } from "./data-steps.js";
 import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { embedTexts, LlamaServerAdapter } from "@harness/core";
+import { embedTexts, getContextSize, LlamaServerAdapter } from "@harness/core";
 import {
   allTools,
   dataText,
@@ -29,6 +29,7 @@ import { WorkspaceIndexer } from "./workspace-index.js";
 import { WorkspaceStore } from "./workspaces-store.js";
 import { SkillStore } from "./skills-store.js";
 import { SearchIndex } from "./search-index.js";
+import { sessionHistory } from "./history.js";
 import { searchWorkspaces, sessionSearch } from "./search.js";
 import { buildServer } from "./server.js";
 import { readSettings } from "./settings.js";
@@ -112,6 +113,13 @@ async function main() {
     model: (s) => new LlamaServerAdapter({ baseUrl: s.llamaServerUrl }),
     tools: allTools,
     mediaSupport: modelMediaSupport(() => settings().llamaServerUrl),
+    contextSize: async (model) => {
+      const found = await getContextSize(
+        settings().llamaServerUrl,
+        model ?? undefined,
+      );
+      return "contextSize" in found ? found.contextSize : undefined;
+    },
     dynamicTools: () => mcp.tools,
     agents,
     skills,
@@ -143,6 +151,14 @@ async function main() {
         index,
         sessionId: session.id,
         projectId: session.project_id,
+        embeddingModel: () => settings().embeddingModel,
+        embed,
+      }),
+    history: (session) =>
+      sessionHistory({
+        store,
+        index,
+        sessionId: session.id,
         embeddingModel: () => settings().embeddingModel,
         embed,
       }),

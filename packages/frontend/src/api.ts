@@ -361,6 +361,9 @@ export interface Settings {
   mediaDescriberModel: string;
   editMode: "branch" | "in_place";
   answerAfterEdit: boolean;
+  rolloverCarryPercent: number;
+  contextFullAction: "off" | "new_session";
+  rolloverThresholdPercent: number;
 }
 
 export type DerivedState =
@@ -536,7 +539,7 @@ export interface FileVersion {
   value: string;
   blob?: BlobRef;
   deleted: boolean;
-  by: "user" | "model";
+  by: "user" | "model" | "carried";
   sessionId: string | null;
   runId: string | null;
   createdAt: string;
@@ -722,7 +725,7 @@ export interface DataVersion {
   description: string;
   value: unknown;
   deleted: boolean;
-  author: "user" | "model";
+  author: "user" | "model" | "carried";
   createdAt: string | null;
 }
 

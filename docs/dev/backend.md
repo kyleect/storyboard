@@ -236,43 +236,46 @@ resolved by precedence: **environment variable, then stored value, then
 default.** `GET /api/settings` returns the effective values, the stored values,
 and which are overridden by the environment.
 
-| Setting                 | Env variable                     | Default                   | Meaning                                                                           |
-| ----------------------- | -------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
-| `llamaServerUrl`        | `HARNESS_LLAMA_URL`              | `http://127.0.0.1:8080`   | Address of llama-server.                                                          |
-| `model`                 | `HARNESS_MODEL`                  | empty (not sent)          | Default model (router mode).                                                      |
-| `reasoningEffort`       | `HARNESS_REASONING_EFFORT`       | empty (not sent)          | Default effort; `none` turns reasoning off.                                       |
-| `port`                  | `HARNESS_PORT`                   | `4317`                    | Backend port.                                                                     |
-| `loopLimit`             | `HARNESS_LOOP_LIMIT`             | `20`                      | Most model calls per run.                                                         |
-| `copyLimit`             | `HARNESS_COPY_LIMIT`             | `20` (max 200)            | Most keys per copy/move call.                                                     |
-| `skillFileMaxMib`       | `HARNESS_SKILL_FILE_MAX_MIB`     | `20` (1–1024)             | Most MiB in one file of a skill.                                                  |
-| `skillMaxMib`           | `HARNESS_SKILL_MAX_MIB`          | `100` (1–4096)            | Most MiB in all the files of one skill.                                           |
-| `skillMaxFiles`         | `HARNESS_SKILL_MAX_FILES`        | `500` (1–10000)           | Most files in one skill.                                                          |
-| `trashRetentionDays`    | `HARNESS_TRASH_RETENTION_DAYS`   | `30`                      | Days in trash before purge at startup; `0` never.                                 |
-| `embeddingModel`        | `HARNESS_EMBEDDING_MODEL`        | empty                     | Router model for embeddings; empty means keyword search only.                     |
-| `autoRename`            | `HARNESS_AUTO_RENAME`            | `true`                    | Title a new session from its first message.                                       |
-| `autoRenameSource`      | `HARNESS_AUTO_RENAME_SOURCE`     | `model`                   | `model` or `message`.                                                             |
-| `titleModel`            | `HARNESS_TITLE_MODEL`            | empty                     | Model that writes titles; empty uses the session's model.                         |
-| `titlePrompt`           | `HARNESS_TITLE_PROMPT`           | built-in text             | System prompt of the title call.                                                  |
-| `systemPrompt`          | `HARNESS_SYSTEM_PROMPT`          | built-in text             | Global system prompt (see below).                                                 |
-| `skillsInstruction`     | `HARNESS_SKILLS_INSTRUCTION`     | built-in text             | Wording before the skill list when it is auto-inserted; `{{skills_instruction}}`. |
-| `schemasInstruction`    | `HARNESS_SCHEMAS_INSTRUCTION`    | built-in text             | The same for the schema list; `{{schemas_instruction}}`.                          |
-| `toolsInstruction`      | `HARNESS_TOOLS_INSTRUCTION`      | built-in text             | Wording for `{{tools_instruction}}`; empty when the list is.                      |
-| `dataInstruction`       | `HARNESS_DATA_INSTRUCTION`       | built-in text             | Wording for `{{data_instruction}}`; empty when the list is.                       |
-| `agentsInstruction`     | `HARNESS_AGENTS_INSTRUCTION`     | built-in text             | Wording for `{{agents_instruction}}`; empty when the list is.                     |
-| `workspacesInstruction` | `HARNESS_WORKSPACES_INSTRUCTION` | built-in text             | Wording for `{{workspaces_instruction}}`; empty when the list is.                 |
-| `filesInstruction`      | `HARNESS_FILES_INSTRUCTION`      | built-in text             | Wording for `{{files_instruction}}`; empty when the list is.                      |
-| `defaultAgentId`        | `HARNESS_DEFAULT_AGENT_ID`       | empty                     | Global default agent.                                                             |
-| `childReminders`        | `HARNESS_CHILD_REMINDERS`        | `2`                       | Reminders a subagent gets before its last text is taken as output.                |
-| `childPrompt`           | `HARNESS_CHILD_PROMPT`           | built-in text             | Line appended to a subagent's system message.                                     |
-| `subagentMessageLabel`  | `HARNESS_SUBAGENT_MESSAGE_LABEL` | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.      |
-| `subagentDepth`         | `HARNESS_SUBAGENT_DEPTH`         | `2`                       | How deep subagents nest; `0` turns subagents off.                                 |
-| `inlineMediaCap`        | `HARNESS_INLINE_MEDIA_CAP`       | `4`                       | The most kept images and audio files from earlier turns sent with a request.      |
-| `keepMediaInline`       | `HARNESS_KEEP_MEDIA_INLINE`      | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.      |
-| `mediaDescriberAgent`   | `HARNESS_MEDIA_DESCRIBER_AGENT`  | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off.     |
-| `mediaDescriberModel`   | `HARNESS_MEDIA_DESCRIBER_MODEL`  | empty                     | The router model that runs it. Empty: off, so a new install writes none.          |
-| `workspaceReadCap`      | `HARNESS_WORKSPACE_READ_CAP`     | `10000`                   | The most characters one workspace read returns (100 or more).                     |
-| `editMode`              | `HARNESS_EDIT_MODE`              | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.         |
-| `answerAfterEdit`       | `HARNESS_ANSWER_AFTER_EDIT`      | `true`                    | Whether the model replies right after an edit that made a branch.                 |
+| Setting                    | Env variable                         | Default                   | Meaning                                                                                             |
+| -------------------------- | ------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| `llamaServerUrl`           | `HARNESS_LLAMA_URL`                  | `http://127.0.0.1:8080`   | Address of llama-server.                                                                            |
+| `model`                    | `HARNESS_MODEL`                      | empty (not sent)          | Default model (router mode).                                                                        |
+| `reasoningEffort`          | `HARNESS_REASONING_EFFORT`           | empty (not sent)          | Default effort; `none` turns reasoning off.                                                         |
+| `port`                     | `HARNESS_PORT`                       | `4317`                    | Backend port.                                                                                       |
+| `loopLimit`                | `HARNESS_LOOP_LIMIT`                 | `20`                      | Most model calls per run.                                                                           |
+| `copyLimit`                | `HARNESS_COPY_LIMIT`                 | `20` (max 200)            | Most keys per copy/move call.                                                                       |
+| `skillFileMaxMib`          | `HARNESS_SKILL_FILE_MAX_MIB`         | `20` (1–1024)             | Most MiB in one file of a skill.                                                                    |
+| `skillMaxMib`              | `HARNESS_SKILL_MAX_MIB`              | `100` (1–4096)            | Most MiB in all the files of one skill.                                                             |
+| `skillMaxFiles`            | `HARNESS_SKILL_MAX_FILES`            | `500` (1–10000)           | Most files in one skill.                                                                            |
+| `trashRetentionDays`       | `HARNESS_TRASH_RETENTION_DAYS`       | `30`                      | Days in trash before purge at startup; `0` never.                                                   |
+| `embeddingModel`           | `HARNESS_EMBEDDING_MODEL`            | empty                     | Router model for embeddings; empty means keyword search only.                                       |
+| `autoRename`               | `HARNESS_AUTO_RENAME`                | `true`                    | Title a new session from its first message.                                                         |
+| `autoRenameSource`         | `HARNESS_AUTO_RENAME_SOURCE`         | `model`                   | `model` or `message`.                                                                               |
+| `titleModel`               | `HARNESS_TITLE_MODEL`                | empty                     | Model that writes titles; empty uses the session's model.                                           |
+| `titlePrompt`              | `HARNESS_TITLE_PROMPT`               | built-in text             | System prompt of the title call.                                                                    |
+| `systemPrompt`             | `HARNESS_SYSTEM_PROMPT`              | built-in text             | Global system prompt (see below).                                                                   |
+| `skillsInstruction`        | `HARNESS_SKILLS_INSTRUCTION`         | built-in text             | Wording before the skill list when it is auto-inserted; `{{skills_instruction}}`.                   |
+| `schemasInstruction`       | `HARNESS_SCHEMAS_INSTRUCTION`        | built-in text             | The same for the schema list; `{{schemas_instruction}}`.                                            |
+| `toolsInstruction`         | `HARNESS_TOOLS_INSTRUCTION`          | built-in text             | Wording for `{{tools_instruction}}`; empty when the list is.                                        |
+| `dataInstruction`          | `HARNESS_DATA_INSTRUCTION`           | built-in text             | Wording for `{{data_instruction}}`; empty when the list is.                                         |
+| `agentsInstruction`        | `HARNESS_AGENTS_INSTRUCTION`         | built-in text             | Wording for `{{agents_instruction}}`; empty when the list is.                                       |
+| `workspacesInstruction`    | `HARNESS_WORKSPACES_INSTRUCTION`     | built-in text             | Wording for `{{workspaces_instruction}}`; empty when the list is.                                   |
+| `filesInstruction`         | `HARNESS_FILES_INSTRUCTION`          | built-in text             | Wording for `{{files_instruction}}`; empty when the list is.                                        |
+| `defaultAgentId`           | `HARNESS_DEFAULT_AGENT_ID`           | empty                     | Global default agent.                                                                               |
+| `childReminders`           | `HARNESS_CHILD_REMINDERS`            | `2`                       | Reminders a subagent gets before its last text is taken as output.                                  |
+| `childPrompt`              | `HARNESS_CHILD_PROMPT`               | built-in text             | Line appended to a subagent's system message.                                                       |
+| `subagentMessageLabel`     | `HARNESS_SUBAGENT_MESSAGE_LABEL`     | built-in text             | Line put before a message the user sends to a running subagent. Empty: none.                        |
+| `subagentDepth`            | `HARNESS_SUBAGENT_DEPTH`             | `2`                       | How deep subagents nest; `0` turns subagents off.                                                   |
+| `inlineMediaCap`           | `HARNESS_INLINE_MEDIA_CAP`           | `4`                       | The most kept images and audio files from earlier turns sent with a request.                        |
+| `keepMediaInline`          | `HARNESS_KEEP_MEDIA_INLINE`          | `false`                   | Keep earlier turns' media in view when neither the user nor the agent chose.                        |
+| `mediaDescriberAgent`      | `HARNESS_MEDIA_DESCRIBER_AGENT`      | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off.                       |
+| `mediaDescriberModel`      | `HARNESS_MEDIA_DESCRIBER_MODEL`      | empty                     | The router model that runs it. Empty: off, so a new install writes none.                            |
+| `workspaceReadCap`         | `HARNESS_WORKSPACE_READ_CAP`         | `10000`                   | The most characters one workspace read returns (100 or more).                                       |
+| `editMode`                 | `HARNESS_EDIT_MODE`                  | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.                           |
+| `answerAfterEdit`          | `HARNESS_ANSWER_AFTER_EDIT`          | `true`                    | Whether the model replies right after an edit that made a branch.                                   |
+| `rolloverCarryPercent`     | `HARNESS_ROLLOVER_CARRY_PERCENT`     | `10`                      | Share of the context size copied into a session that continues a full one, in %.                    |
+| `contextFullAction`        | `HARNESS_CONTEXT_FULL_ACTION`        | `new_session`             | `new_session`: a session whose last call filled the context continues in a new one; `off`: nothing. |
+| `rolloverThresholdPercent` | `HARNESS_ROLLOVER_THRESHOLD_PERCENT` | `80`                      | Share of the context size the last call uses before the session continues, in %.                    |
 
 Settings are read **each time a run starts**, so a change applies to the next run
 and never to one in progress. Saving settings also notifies the embedder.

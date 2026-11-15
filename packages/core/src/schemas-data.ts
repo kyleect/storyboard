@@ -191,7 +191,11 @@ export interface SessionData {
 
 /** The schema and data changes a message carries, if any. */
 export function messageDataOps(message: Message): readonly DataOp[] {
-  if (message.role === "edit" || message.role === "tool") {
+  if (
+    message.role === "edit" ||
+    message.role === "tool" ||
+    message.role === "carried"
+  ) {
     return message.dataOps ?? [];
   }
   return [];

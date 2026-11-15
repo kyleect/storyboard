@@ -112,6 +112,17 @@ export function MessageView({
     );
   }
 
+  if (message.role === "carried") {
+    return (
+      <Paper p="sm" bg="var(--mantine-color-default-hover)">
+        <Text size="xs" c="dimmed">
+          Carried over from the earlier session
+        </Text>
+        <Markdown size="sm">{message.content}</Markdown>
+      </Paper>
+    );
+  }
+
   if (message.role !== "assistant") {
     return (
       <Paper p="sm">

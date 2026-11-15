@@ -1,7 +1,12 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
-import { chunkText, replaySessionFiles, type Scope } from "@harness/core";
+import {
+  chunkText,
+  Message,
+  replaySessionFiles,
+  type Scope,
+} from "@harness/core";
 import { activeProfile } from "./profiles.js";
-import { activeMessageJson } from "./transcript.js";
+import { activeLine, activeMessageJson } from "./transcript.js";
 
 /*
  * The search index over files (files and memory design,
@@ -12,11 +17,12 @@ import { activeMessageJson } from "./transcript.js";
  */
 
 /**
- * Where a chunk comes from: a scope, or a workspace (files unification
- * design, D45). A workspace chunk's owner is the workspace id and its key is
- * the path inside it.
+ * Where a chunk comes from: a scope, a workspace (files unification design,
+ * D45) or a session's transcript (session rollover design, D13). A workspace
+ * chunk's owner is the workspace id and its key is the path inside it. A
+ * transcript chunk's owner is the session and its key is the message id.
  */
-export type ChunkScope = Scope | "workspace";
+export type ChunkScope = Scope | "workspace" | "transcript";
 
 export interface ChunkRow {
   id: number;
@@ -34,6 +40,27 @@ export interface ScopeFilter {
   global: boolean;
   /** The workspaces to search; left out: none. */
   workspaceIds?: readonly string[];
+  /** The sessions whose messages to search; left out: none. */
+  transcriptSessionIds?: readonly string[];
+}
+
+/**
+ * The text of a message that is searched later (session rollover design,
+ * D10): what the user wrote, what the assistant said (not its reasoning or
+ * its tool calls) and what a tool returned. Anything else gives "".
+ */
+export function transcriptText(message: Message): string {
+  switch (message.role) {
+    case "user":
+    case "tool":
+      return message.content;
+    case "assistant":
+      return message.content
+        .flatMap((b) => (b.type === "text" ? [b.text] : []))
+        .join("\n");
+    default:
+      return "";
+  }
 }
 
 /** Float32 little-endian bytes, as sqlite-vec reads them. */
@@ -78,6 +105,12 @@ function scopeSql(
     );
     params.push(...filter.workspaceIds);
   }
+  if (filter.transcriptSessionIds && filter.transcriptSessionIds.length > 0) {
+    parts.push(
+      `(c.scope = 'transcript' AND c.owner_id IN (${filter.transcriptSessionIds.map(() => "?").join(", ")}))`,
+    );
+    params.push(...filter.transcriptSessionIds);
+  }
   return { sql: parts.length ? `(${parts.join(" OR ")})` : "0", params };
 }
 
@@ -114,6 +147,79 @@ export class SearchIndex {
       );
     })();
     if (chunks.length > 0) this.onChunksAdded();
+  }
+
+  /**
+   * Replaces one message's chunks with those of its text (session rollover
+   * design, D12, D14). A message with no searchable text has none. A large
+   * message is split into several chunks that share its key.
+   */
+  indexMessage(
+    sessionId: string,
+    messageId: string,
+    message: Message,
+    profileId: string = activeProfile(this.db),
+  ) {
+    const text = transcriptText(message);
+    this.indexFile(
+      "transcript",
+      sessionId,
+      messageId,
+      text.trim() === "" ? null : text,
+      profileId,
+    );
+  }
+
+  /**
+   * Makes the session's transcript chunks match the line it shows: those of
+   * messages that are not on it are removed, and a message on it that has no
+   * chunks yet is indexed (D11, and the sessions that existed before the
+   * index). Chunks of messages that stay are left alone, so their vectors
+   * are kept. Returns how many messages were removed and added.
+   */
+  reconcileTranscript(sessionId: string): { removed: number; added: number } {
+    const session = this.db
+      .prepare("SELECT profile_id FROM sessions WHERE id = ?")
+      .get(sessionId) as { profile_id: string } | undefined;
+    if (!session) return { removed: 0, added: 0 };
+    const line = activeLine(this.db, sessionId);
+    const onLine = new Set(line.map((m) => m.id));
+    const indexed = new Set(
+      (
+        this.db
+          .prepare(
+            "SELECT DISTINCT key FROM chunks WHERE scope = 'transcript' AND owner_id = ?",
+          )
+          .all(sessionId) as { key: string }[]
+      ).map((r) => r.key),
+    );
+    let removed = 0;
+    let added = 0;
+    const silent = this.onChunksAdded;
+    this.onChunksAdded = () => {};
+    try {
+      this.db.transaction(() => {
+        const drop = this.db.prepare(
+          "DELETE FROM chunks WHERE scope = 'transcript' AND owner_id = ? AND key = ?",
+        );
+        for (const key of indexed) {
+          if (onLine.has(key)) continue;
+          drop.run(sessionId, key);
+          removed++;
+        }
+        for (const { id, message } of line) {
+          if (indexed.has(id)) continue;
+          const parsed = Message.parse(JSON.parse(message));
+          if (transcriptText(parsed).trim() === "") continue;
+          this.indexMessage(sessionId, id, parsed, session.profile_id);
+          added++;
+        }
+      })();
+    } finally {
+      this.onChunksAdded = silent;
+    }
+    if (added > 0) this.onChunksAdded();
+    return { removed, added };
   }
 
   /**

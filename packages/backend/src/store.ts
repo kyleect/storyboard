@@ -40,13 +40,21 @@ export interface SessionRow {
   /** For a forked session: the session it was copied from, and its title then. */
   forked_from_id: string | null;
   forked_from_title: string | null;
+  /**
+   * For a session that continues an earlier one (session rollover design,
+   * D8): that session, its title then, and how many messages were carried
+   * over from it.
+   */
+  continued_from_id: string | null;
+  continued_from_title: string | null;
+  continued_carried: number | null;
 }
 
 /** The title a session gets when none is given. */
 export const DEFAULT_TITLE = "New session";
 
 const SESSION_COLUMNS =
-  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id, tip_id, seen_tip_id, forked_from_id, forked_from_title";
+  "id, title, created_at, model, reasoning_effort, trashed_at, project_id, trashed_with_project, agent_id, tip_id, seen_tip_id, forked_from_id, forked_from_title, continued_from_id, continued_from_title, continued_carried";
 
 const UNREAD_CONDITION = `EXISTS (
   SELECT 1 FROM messages m
@@ -276,7 +284,121 @@ export class Store {
       seen_tip_id: null,
       forked_from_id: null,
       forked_from_title: null,
+      continued_from_id: null,
+      continued_from_title: null,
+      continued_carried: null,
     };
+  }
+
+  /**
+   * The session that continues this one, if it still exists (in the trash
+   * or not). A session is continued at most once.
+   */
+  continuedTo(
+    sessionId: string,
+  ): { id: string; title: string; trashed: boolean } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, title, trashed_at FROM sessions
+         WHERE continued_from_id = ? AND profile_id = ?
+         ORDER BY created_at LIMIT 1`,
+      )
+      .get(sessionId, activeProfile(this.db)) as
+      { id: string; title: string; trashed_at: string | null } | undefined;
+    return row
+      ? { id: row.id, title: row.title, trashed: row.trashed_at !== null }
+      : undefined;
+  }
+
+  /** `continuedTo` for several sessions at once, by the session's id. */
+  continuedToMany(
+    sessionIds: readonly string[],
+  ): Map<string, { id: string; title: string; trashed: boolean }> {
+    const out = new Map<
+      string,
+      { id: string; title: string; trashed: boolean }
+    >();
+    if (sessionIds.length === 0) return out;
+    const rows = this.db
+      .prepare(
+        `SELECT continued_from_id AS fromId, id, title, trashed_at FROM sessions
+         WHERE continued_from_id IN (SELECT value FROM json_each(?))
+           AND profile_id = ?
+         ORDER BY created_at DESC`,
+      )
+      .all(JSON.stringify(sessionIds), activeProfile(this.db)) as {
+      fromId: string;
+      id: string;
+      title: string;
+      trashed_at: string | null;
+    }[];
+    // Oldest last, so the first successor wins, as in `continuedTo`.
+    for (const r of rows) {
+      out.set(r.fromId, {
+        id: r.id,
+        title: r.title,
+        trashed: r.trashed_at !== null,
+      });
+    }
+    return out;
+  }
+
+  /** Whether a later session continues this one: it is then read only. */
+  isContinued(sessionId: string): boolean {
+    return this.continuedTo(sessionId) !== undefined;
+  }
+
+  /**
+   * The ids of the sessions this one continues, nearest first: the session
+   * it continues, the one that session continues, and so on (session
+   * rollover design, D18). Only sessions that still exist, in the active
+   * profile; the walk stops at a purged one.
+   */
+  chainBefore(sessionId: string): string[] {
+    const ids: string[] = [];
+    const seen = new Set<string>([sessionId]);
+    let current = this.getSession(sessionId);
+    while (current?.continued_from_id) {
+      const previous = this.getSession(current.continued_from_id);
+      if (!previous || seen.has(previous.id)) break;
+      ids.push(previous.id);
+      seen.add(previous.id);
+      current = previous;
+    }
+    return ids;
+  }
+
+  /**
+   * The sessions after this one in its chain, nearest first, that still
+   * exist and are not trashed with their project. They are the ones that
+   * lose this session's history when it is purged (D19).
+   */
+  chainAfter(sessionId: string): { id: string; title: string }[] {
+    const out: { id: string; title: string }[] = [];
+    const seen = new Set<string>([sessionId]);
+    let from = sessionId;
+    for (;;) {
+      const next = this.db
+        .prepare(
+          `SELECT id, title, trashed_at, trashed_with_project FROM sessions
+           WHERE continued_from_id = ? AND profile_id = ?
+           ORDER BY created_at LIMIT 1`,
+        )
+        .get(from, activeProfile(this.db)) as
+        | {
+            id: string;
+            title: string;
+            trashed_at: string | null;
+            trashed_with_project: number;
+          }
+        | undefined;
+      if (!next || seen.has(next.id)) break;
+      seen.add(next.id);
+      from = next.id;
+      if (next.trashed_at !== null && next.trashed_with_project === 1) continue;
+      out.push({ id: next.id, title: next.title });
+    }
+    return out;
   }
 
   /**
@@ -569,7 +691,9 @@ export class Store {
         )
         .run(id);
       this.db
-        .prepare("DELETE FROM chunks WHERE scope = 'session' AND owner_id = ?")
+        .prepare(
+          "DELETE FROM chunks WHERE scope IN ('session', 'transcript') AND owner_id = ?",
+        )
         .run(id);
       this.db
         .prepare(
@@ -622,12 +746,24 @@ export class Store {
    * `before` (an ISO timestamp). Sessions trashed with their project are
    * purged with the project. Returns their ids.
    */
-  purgeTrashedSessions(before?: string): string[] {
+  purgeTrashedSessions(
+    before?: string,
+    options: { keepContinued?: boolean } = {},
+  ): string[] {
+    // A session that a kept session continues stays, so its history can be
+    // searched (session rollover design, D19). A successor trashed with its
+    // project does not count as kept. Emptying the trash overrides this.
+    const protectedSql = options.keepContinued
+      ? `AND NOT EXISTS (
+           SELECT 1 FROM sessions n
+           WHERE n.continued_from_id = sessions.id
+             AND NOT (n.trashed_at IS NOT NULL AND n.trashed_with_project = 1))`
+      : "";
     const ids = this.db
       .prepare(
         `SELECT id FROM sessions
          WHERE trashed_at IS NOT NULL AND trashed_with_project = 0
-         AND (? IS NULL OR trashed_at < ?)`,
+         AND (? IS NULL OR trashed_at < ?) ${protectedSql}`,
       )
       .all(before ?? null, before ?? null) as { id: string }[];
     for (const { id } of ids) this.purgeSession(id);

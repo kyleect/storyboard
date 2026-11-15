@@ -294,8 +294,12 @@ export function VersionsModal({
       label={(v) => (
         <Group gap={4}>
           <Text size="sm">#{v.seq}</Text>
-          <Badge color={v.by === "user" ? "blue" : "grape"}>
-            {v.by === "user" ? "You" : "Model"}
+          <Badge
+            color={
+              v.by === "user" ? "blue" : v.by === "carried" ? "gray" : "grape"
+            }
+          >
+            {v.by === "user" ? "You" : v.by === "carried" ? "Carried" : "Model"}
           </Badge>
           {v.deleted && <Badge color="red">deleted</Badge>}
         </Group>

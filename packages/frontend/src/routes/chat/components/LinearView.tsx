@@ -31,6 +31,7 @@ const COLORS: Record<LinearKind, string> = {
   assistant: "teal",
   tool: "grape",
   edit: "yellow",
+  carried: "orange",
   event: "dark",
 };
 
@@ -41,6 +42,7 @@ const LABELS: Record<LinearKind, string> = {
   assistant: "Assistant",
   tool: "Tool result",
   edit: "Edits",
+  carried: "Carried",
   event: "Events",
 };
 

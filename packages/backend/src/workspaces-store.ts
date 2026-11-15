@@ -445,6 +445,21 @@ export class WorkspaceStore {
   }
 
   /**
+   * A session that continues another takes over the workspaces the other
+   * defined, folders included (session rollover design, D7). Nothing is
+   * copied and no id changes, so approvals, ticks and the search index stay as
+   * they were, and purging the old session no longer removes the folders.
+   */
+  handOverSessionWorkspaces(fromSessionId: string, toSessionId: string) {
+    this.db
+      .prepare(
+        `UPDATE workspaces SET session_id = ?, updated_at = ?
+         WHERE profile_id = ? AND session_id = ?`,
+      )
+      .run(toSessionId, this.now(), activeProfile(this.db), fromSessionId);
+  }
+
+  /**
    * The workspaces a session can use: its own, its project's and the global
    * ones, none that is in the trash (Q1 A).
    */

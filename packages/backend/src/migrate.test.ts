@@ -807,7 +807,8 @@ describe("migration 0038 (workspaces at a scope)", () => {
   function before() {
     db = new Database(":memory:");
     db.pragma("foreign_keys = ON");
-    const all = loadMigrations(MIGRATIONS_DIR);
+    // Up to 0038, the migration this describe tests, so later ones do not move it.
+    const all = loadMigrations(MIGRATIONS_DIR).filter((m) => m.version <= 38);
     migrate(
       db,
       all.filter((m) => m.version <= 37),

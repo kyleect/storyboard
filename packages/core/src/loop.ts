@@ -33,6 +33,7 @@ import type {
   Usage,
 } from "./messages.js";
 import type { MediaSupport } from "./media.js";
+import type { SessionHistory } from "./session-history.js";
 import type { ApprovalSubject, WorkspaceAccess } from "./workspaces.js";
 import type { ChatRequest, ModelAdapter } from "./model.js";
 import { emitter, streamMessage, type RunContext } from "./run.js";
@@ -123,6 +124,14 @@ export interface LoopContext extends RunContext {
   /** The most model calls one run makes. */
   maxIterations: number;
   /**
+   * Ends the run with `rolled_over` at the end of a step when that step's
+   * model call used this many tokens or more (prompt and completion), so
+   * the caller can continue in a new session. Not for a subagent's run; no
+   * hook when the call reported no usage, and none on the last step the
+   * run may take.
+   */
+  rollover?: { thresholdTokens: number };
+  /**
    * Whether a call to this tool needs approval, for its subject when it has
    * one. Default: the tool's own.
    */
@@ -197,6 +206,8 @@ export interface LoopContext extends RunContext {
   blobs?: ToolContext["blobs"];
   /** The workspaces the session can use. Left out: none. */
   workspaces?: WorkspaceAccess;
+  /** The sessions this one continues. Left out: none. */
+  history?: SessionHistory;
   /** Searches files. Left out: the search tool fails. */
   searchFiles?: FileSearch;
   /**
@@ -274,10 +285,17 @@ export const NO_SUBAGENTS: SubagentAccess = {
 };
 
 export type LoopEnd =
-  "stop" | "iteration_limit" | "cancelled" | "failed" | "handed_back";
+  | "stop"
+  | "iteration_limit"
+  | "cancelled"
+  | "failed"
+  | "handed_back"
+  | "rolled_over";
 
 export interface LoopResult {
   reason: LoopEnd;
+  /** The model calls the run made, when `reason` is "rolled_over". */
+  steps?: number;
   usage?: Usage;
   /** Why the run failed, when `reason` is "failed". */
   error?: string;
@@ -548,6 +566,17 @@ export async function runLoop(
     if (handback !== undefined && (ctx.signal.aborted || !addUserMessages()))
       return finish({ reason: "handed_back", output: handback });
     if (ctx.signal.aborted) return finish({ reason: "cancelled" });
+    // The context is nearly full: end between steps, after the results of
+    // this step are saved, so the next session continues from a whole step.
+    if (
+      ctx.rollover &&
+      !ctx.child &&
+      step.usage &&
+      index + 1 < ctx.maxIterations &&
+      step.usage.promptTokens + step.usage.completionTokens >=
+        ctx.rollover.thresholdTokens
+    )
+      return finish({ reason: "rolled_over", steps: index + 1 });
   }
 
   /**
@@ -708,6 +737,7 @@ export async function runLoop(
       ...(ctx.mediaSupport ? { mediaSupport: ctx.mediaSupport } : {}),
       ...(ctx.blobs ? { blobs: ctx.blobs } : {}),
       ...(ctx.workspaces ? { workspaces: ctx.workspaces } : {}),
+      ...(ctx.history ? { history: ctx.history } : {}),
       update: (partial) =>
         emit({ type: "tool.update", data: { callId: call.callId, partial } }),
       state: latestToolState(transcript, tool.name),
