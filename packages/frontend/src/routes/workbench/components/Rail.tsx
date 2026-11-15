@@ -3,6 +3,7 @@ import utils from "../../../styles/utilities.module.css";
 import {
   IconAlertTriangle,
   IconBolt,
+  IconBooks,
   IconDatabase,
   IconFiles,
   IconMessages,
@@ -107,6 +108,18 @@ export function Rail({
         {PAGES.map((p) =>
           button(p, activeKind === p.kind, () => onOpen(p.kind)),
         )}
+        <Tooltip label="Documentation" position="right" key="docs" withArrow>
+          <ActionIcon
+            variant="transparent"
+            aria-label="Documentation"
+            component="a"
+            size={40}
+            target="_blank"
+            href="https://kyleect.github.io/storyboard/"
+          >
+            <IconBooks size={22} />
+          </ActionIcon>
+        </Tooltip>
       </Stack>
       <Stack gap={4} align="center">
         <ProfileSwitcher onManage={onManageProfiles} />
