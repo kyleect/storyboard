@@ -383,6 +383,11 @@ export interface Settings {
   rolloverCarryPercent: number;
   contextFullAction: "off" | "new_session";
   rolloverThresholdPercent: number;
+  rolloverHandoff: boolean;
+  rolloverHandoffPrompt: string;
+  rolloverHandoffThinkSeconds: number;
+  rolloverHandoffTotalSeconds: number;
+  rolloverHandoffMaxTokens: number;
 }
 
 export type DerivedState =

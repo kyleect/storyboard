@@ -361,8 +361,9 @@ deleted (to the Trash) and restored. See [backend.md](backend.md#branches).
 Continuing a session in a new one when its context is full, instead of
 compacting it. The latest messages, a `carried` message with the current state of
 files, schemas and data, and the workspaces move over; the old session becomes
-read only and stays searchable by the new one. See
-[backend.md](backend.md#session-rollover).
+read only and stays searchable by the new one. The session's model first writes
+a **handoff note** about everything before the copied messages, and the note
+goes into the `carried` message. See [backend.md](backend.md#session-rollover).
 
 **Carried message**
 The first message of a continued session, with the role `carried`. It holds a

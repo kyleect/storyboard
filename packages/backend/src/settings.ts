@@ -164,6 +164,31 @@ export const Settings = z.object({
    */
   contextFullAction: z.enum(["off", "new_session"]),
   rolloverThresholdPercent: z.number().int().min(1).max(99),
+  /**
+   * Whether the session's own model writes a handoff note about what came
+   * before the copied messages, when a session is continued in a new one
+   * (session rollover design). The note replaces the carried last reasoning.
+   */
+  rolloverHandoff: z.boolean(),
+  /** The instruction the model gets for the handoff note. */
+  rolloverHandoffPrompt: z.string().min(1),
+  /**
+   * Seconds after the first reasoning chunk before the model is told to stop
+   * thinking and answer. The starting value is a guess: how long the models
+   * in use think has not been measured.
+   */
+  rolloverHandoffThinkSeconds: z.number().int().min(1),
+  /**
+   * Seconds after which the whole note call is abandoned. It is the only limit
+   * that ends a call when reasoning never starts or stopping it is refused.
+   * The starting value is a guess, not a measurement.
+   */
+  rolloverHandoffTotalSeconds: z.number().int().min(1),
+  /**
+   * `max_tokens` of the note call. Whether llama-server counts reasoning
+   * tokens toward it has not been verified. The starting value is a guess.
+   */
+  rolloverHandoffMaxTokens: z.number().int().min(1),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -275,6 +300,22 @@ Today is {{date}}. The time is {{time}}.
   rolloverCarryPercent: 10,
   contextFullAction: "new_session",
   rolloverThresholdPercent: 80,
+  rolloverHandoff: true,
+  rolloverHandoffPrompt: `This session has run out of room. This is not a task from the user: do not continue the work, do not answer the user and do not call any tools. Write a handoff note for yourself in a new session.
+
+The new session will start with your note, followed by the most recent messages of this conversation word for word. Cover only what came before those recent messages, and do not repeat them.
+
+Write what you would need to carry on without looking anything up again:
+- The goal, and what the user asked for, in the user's terms. Keep the user's instructions, preferences and corrections.
+- What has been done, and what was decided and why.
+- What you found: the facts, file names, paths, identifiers, values and results from tool calls that later work depends on. Write the finding itself, not that you looked.
+- What is unfinished or open, and what was tried and did not work.
+- If the conversation starts with an earlier handoff note, carry its content forward, updated.
+
+Write plain Markdown, as short as the content allows. Reply with the note only.`,
+  rolloverHandoffThinkSeconds: 60,
+  rolloverHandoffTotalSeconds: 180,
+  rolloverHandoffMaxTokens: 8000,
 };
 
 const ENV: Record<keyof Settings, string> = {
@@ -316,6 +357,11 @@ const ENV: Record<keyof Settings, string> = {
   rolloverCarryPercent: "HARNESS_ROLLOVER_CARRY_PERCENT",
   contextFullAction: "HARNESS_CONTEXT_FULL_ACTION",
   rolloverThresholdPercent: "HARNESS_ROLLOVER_THRESHOLD_PERCENT",
+  rolloverHandoff: "HARNESS_ROLLOVER_HANDOFF",
+  rolloverHandoffPrompt: "HARNESS_ROLLOVER_HANDOFF_PROMPT",
+  rolloverHandoffThinkSeconds: "HARNESS_ROLLOVER_HANDOFF_THINK_SECONDS",
+  rolloverHandoffTotalSeconds: "HARNESS_ROLLOVER_HANDOFF_TOTAL_SECONDS",
+  rolloverHandoffMaxTokens: "HARNESS_ROLLOVER_HANDOFF_MAX_TOKENS",
 };
 
 const NUMERIC = new Set<keyof Settings>([
@@ -332,12 +378,16 @@ const NUMERIC = new Set<keyof Settings>([
   "workspaceReadCap",
   "rolloverCarryPercent",
   "rolloverThresholdPercent",
+  "rolloverHandoffThinkSeconds",
+  "rolloverHandoffTotalSeconds",
+  "rolloverHandoffMaxTokens",
 ]);
 
 const BOOLEAN = new Set<keyof Settings>([
   "autoRename",
   "keepMediaInline",
   "answerAfterEdit",
+  "rolloverHandoff",
 ]);
 
 /** "true" and "false" only; anything else is left for the schema to refuse. */
