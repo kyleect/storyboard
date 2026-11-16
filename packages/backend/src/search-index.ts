@@ -324,16 +324,88 @@ export class SearchIndex {
   /**
    * The active profile's chunks with no vector from `model`, oldest first.
    * Each profile has its own embedding model, so another profile's chunks
-   * wait until it is switched to (profiles design 4.5).
+   * wait until it is switched to (profiles design 4.5). Chunks in `exclude`
+   * are left out: the embedder has given up on them for now.
    */
-  pending(model: string, limit: number): ChunkRow[] {
+  pending(
+    model: string,
+    limit: number,
+    exclude: ReadonlySet<number> = new Set(),
+  ): ChunkRow[] {
     return this.db
       .prepare(
         `SELECT c.id, c.scope, c.owner_id AS ownerId, c.key, c.text FROM chunks c
          LEFT JOIN chunk_vectors v ON v.chunk_id = c.id AND v.model = ?
-         WHERE c.profile_id = ? AND v.chunk_id IS NULL ORDER BY c.id LIMIT ?`,
+         WHERE c.profile_id = ? AND v.chunk_id IS NULL
+         ${exclude.size > 0 ? "AND c.id NOT IN (SELECT value FROM json_each(?))" : ""}
+         ORDER BY c.id LIMIT ?`,
       )
-      .all(model, activeProfile(this.db), limit) as ChunkRow[];
+      .all(
+        model,
+        activeProfile(this.db),
+        ...(exclude.size > 0 ? [JSON.stringify([...exclude])] : []),
+        limit,
+      ) as ChunkRow[];
+  }
+
+  /**
+   * Replaces a chunk that was too big to embed by pieces of its text of at
+   * most `maxChars` characters, in the same place: they share its profile,
+   * scope, owner and key, and the later chunks of that file or message are
+   * renumbered so `seq` stays the position within it (migration 0040). The
+   * keyword index follows through its triggers and the pieces wait to be
+   * embedded. Returns how many pieces replace it: 1 means the text cannot be
+   * split (nothing changed); undefined, that the chunk is gone.
+   */
+  splitChunk(id: number, maxChars: number): number | undefined {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT profile_id AS profileId, scope, owner_id AS ownerId, key, seq, text
+           FROM chunks WHERE id = ?`,
+        )
+        .get(id) as
+        | {
+            profileId: string;
+            scope: ChunkScope;
+            ownerId: string | null;
+            key: string;
+            seq: number;
+            text: string;
+          }
+        | undefined;
+      if (!row) return undefined;
+      const pieces = chunkText(row.text, maxChars);
+      if (pieces.length < 2) return pieces.length;
+      this.db
+        .prepare(
+          `UPDATE chunks SET seq = seq + ?
+           WHERE profile_id = ? AND scope = ? AND owner_id IS ? AND key = ? AND seq > ?`,
+        )
+        .run(
+          pieces.length - 1,
+          row.profileId,
+          row.scope,
+          row.ownerId,
+          row.key,
+          row.seq,
+        );
+      const insert = this.db.prepare(
+        "INSERT INTO chunks (profile_id, scope, owner_id, key, seq, text) VALUES (?, ?, ?, ?, ?, ?)",
+      );
+      pieces.forEach((text, i) =>
+        insert.run(
+          row.profileId,
+          row.scope,
+          row.ownerId,
+          row.key,
+          row.seq + i,
+          text,
+        ),
+      );
+      this.db.prepare("DELETE FROM chunks WHERE id = ?").run(id);
+      return pieces.length;
+    })();
   }
 
   /** Stores vectors; chunks deleted meanwhile are skipped. */

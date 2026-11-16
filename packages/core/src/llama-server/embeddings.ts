@@ -15,11 +15,52 @@ export interface EmbedOptions {
 
 export class EmbeddingError extends Error {
   override name = "EmbeddingError";
+
+  /**
+   * @param status The HTTP status of llama-server's answer; undefined when no
+   * answer arrived (it could not be reached) or its body was unusable.
+   * @param type The `error.type` of the answer's body, for example
+   * "exceed_context_size_error".
+   */
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly type?: string,
+  ) {
+    super(message);
+  }
 }
 
 interface EmbeddingsBody {
   data?: { embedding?: unknown; index?: unknown }[];
-  error?: { message?: string };
+  error?: { message?: string; type?: string };
+}
+
+/*
+ * llama-server refuses an embedding input that does not fit (tools/server/
+ * server-context.cpp, master 1719dbb): above the physical batch size it
+ * answers 500 "input (N tokens) is too large to process. increase the
+ * physical batch size (current batch size: M)"; above the slot's context it
+ * answers 400, type "exceed_context_size_error", "input (N tokens) is larger
+ * than the max context size (X tokens). skipping". One input that does not
+ * fit fails the whole request.
+ */
+const OVERSIZE_MESSAGE =
+  /too large to process|larger than the max context size|exceeds the available context size/i;
+
+/** Whether llama-server refused an input for its size (see above). */
+export function isOversizeError(err: unknown): boolean {
+  return (
+    err instanceof EmbeddingError &&
+    err.status !== undefined &&
+    (err.type === "exceed_context_size_error" ||
+      OVERSIZE_MESSAGE.test(err.message))
+  );
+}
+
+/** Whether llama-server answered with an error (it was reached). */
+export function isResponseError(err: unknown): err is EmbeddingError {
+  return err instanceof EmbeddingError && err.status !== undefined;
 }
 
 /** One vector per input, in input order. Throws EmbeddingError on failure. */
@@ -49,6 +90,8 @@ export async function embedTexts(
     throw new EmbeddingError(
       body.error?.message ??
         `llama-server /v1/embeddings returned ${res.status}`,
+      res.status,
+      body.error?.type,
     );
   }
   const out: number[][] = new Array<number[]>(inputs.length);

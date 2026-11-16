@@ -1140,6 +1140,26 @@ other models are deleted and everything is embedded again. With no embedding
 model set it does nothing. Models whose names contain `nomic-embed-text` get the
 `search_document: ` / `search_query: ` task prefixes they expect.
 
+**Chunks too big for the model.** Chunks are limited in characters, the model in
+tokens, so dense text (code, JSON) can exceed llama-server's physical batch size
+(`-ub`) or a slot's context. llama-server then refuses the input with HTTP 500
+("input (N tokens) is too large to process ...") or HTTP 400
+(`exceed_context_size_error`), and one such input fails the whole request. When
+llama-server answers a batch with an error, the Embedder embeds its chunks one at
+a time. A chunk refused for its size, or refused for another reason while a tiny
+test input ("ok") still embeds, is **split**: `SearchIndex.splitChunk` replaces it
+by pieces of at most half its length, in one transaction, with the same profile,
+scope, owner and key. `seq` of the later chunks of that file or message is
+shifted so it stays the position, and the keyword index follows through its
+triggers. The pieces are pending chunks and go through the same steps, so nothing
+is dropped or truncated. A chunk of 200 characters or fewer (`MIN_CHUNK_CHARS`)
+that is still refused is logged as a warning and skipped until the next restart
+or settings change, so it cannot hold up the queue; it has no vector, but keyword
+search still finds it. None of this is a failure for the retry wait above: only a
+server that cannot be reached, or that also fails the test input, is. Splitting
+is logged at info level, skipping at warn level. The split pieces live in the
+index only: re-indexing a file chunks it at 1,500 characters again.
+
 **Transcripts.** Once a session has been continued, its messages are chunked into
 the scope `transcript` (owner: the session; key: the message id; sequence
 number: the place within the message). They are never part of `sessionSearch`.

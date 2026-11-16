@@ -176,6 +176,10 @@ async function main() {
     // Only called after work starts, below, once `app` exists.
     onError: (err, retryInMs) =>
       app.log.warn({ err: err.message, retryInMs }, "embedding failed"),
+    onChunk: (event) =>
+      event.kind === "split"
+        ? app.log.info(event, "chunk too big to embed, split")
+        : app.log.warn(event, "chunk could not be embedded, skipped"),
   });
   const app = buildServer({
     store,

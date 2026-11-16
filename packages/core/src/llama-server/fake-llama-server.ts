@@ -24,6 +24,17 @@ export interface Reply {
   frames?: Frame[];
 }
 
+/** An embeddings error with llama-server's status and `error.type`. */
+export class FakeServerError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly type: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface RecordedRequest {
   method: string;
   path: string;
@@ -46,8 +57,9 @@ export class FakeLlamaServer {
 
   /**
    * Answer POST /v1/embeddings with these vectors (OpenAI shape), or with
-   * a 400 error when the function returns an Error. Without it, embeddings
-   * requests take the next queued reply like any POST.
+   * a 400 error when the function returns an Error; a FakeServerError gives
+   * its own status and error type. Without it, embeddings requests take the
+   * next queued reply like any POST.
    */
   onEmbeddings(
     fn: (inputs: string[], model: string | undefined) => number[][] | Error,
@@ -107,13 +119,27 @@ export class FakeLlamaServer {
           const inputs =
             typeof body.input === "string" ? [body.input] : (body.input ?? []);
           const result = this.embedder(inputs, body.model);
-          res.writeHead(result instanceof Error ? 400 : 200, {
+          const status =
+            result instanceof FakeServerError
+              ? result.status
+              : result instanceof Error
+                ? 400
+                : 200;
+          res.writeHead(status, {
             "content-type": "application/json",
           });
           res.end(
             JSON.stringify(
               result instanceof Error
-                ? { error: { code: 400, message: result.message } }
+                ? {
+                    error: {
+                      code: status,
+                      message: result.message,
+                      ...(result instanceof FakeServerError
+                        ? { type: result.type }
+                        : {}),
+                    },
+                  }
                 : {
                     object: "list",
                     model: body.model ?? "test-model",

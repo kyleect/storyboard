@@ -270,12 +270,12 @@ failure.
 
 Other llama-server helpers in `llama-server/`:
 
-| Module          | Function                                                                                                                                                                                                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `models.ts`     | `listLlamaServerModels` (router `GET /models`, falling back to `/v1/models`; each model's `inputModalities` come from `architecture.input_modalities`), `mediaSupport` (whether a model reads images and audio, or `undefined` when the server did not say), `loadLlamaServerModel`. |
-| `props.ts`      | `getReasoningLevels` and `getContextSize`, read from `GET /props`.                                                                                                                                                                                                                   |
-| `embeddings.ts` | `embedTexts` via `POST /v1/embeddings`.                                                                                                                                                                                                                                              |
-| `sse.ts`        | `readSseData`, an async iterator over `data:` lines.                                                                                                                                                                                                                                 |
+| Module          | Function                                                                                                                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `models.ts`     | `listLlamaServerModels` (router `GET /models`, falling back to `/v1/models`; each model's `inputModalities` come from `architecture.input_modalities`), `mediaSupport` (whether a model reads images and audio, or `undefined` when the server did not say), `loadLlamaServerModel`.             |
+| `props.ts`      | `getReasoningLevels` and `getContextSize`, read from `GET /props`.                                                                                                                                                                                                                               |
+| `embeddings.ts` | `embedTexts` via `POST /v1/embeddings`. `EmbeddingError` carries the HTTP `status` and the body's `error.type` (both undefined when the server cannot be reached); `isOversizeError` tells a refusal for size (500 "too large to process", 400 `exceed_context_size_error`) from other failures. |
+| `sse.ts`        | `readSseData`, an async iterator over `data:` lines.                                                                                                                                                                                                                                             |
 
 ### Test doubles
 
