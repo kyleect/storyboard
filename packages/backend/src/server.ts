@@ -936,9 +936,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       }
       refs.push(ref);
     }
-    return reply
-      .code(202)
-      .send(runs.sendMessage(id, content, defined(choices), refs));
+    const started = await runs.sendMessage(id, content, defined(choices), refs);
+    return reply.code(202).send(started);
   });
 
   app.post("/api/sessions/:id/continue", async (req, reply) => {
@@ -1024,7 +1023,8 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     } catch {
       // llama-server could not say; the latest step alone is carried.
     }
-    return reply.code(201).send(runs.rollOver(id, { contextSize: size }));
+    const next = await runs.rollOver(id, { contextSize: size });
+    return reply.code(201).send(next);
   });
 
   /** Shows another branch. */

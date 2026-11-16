@@ -140,16 +140,61 @@ export function lastReasoning(messages: readonly Message[]): string {
 }
 
 /**
- * The notice the model reads with the carried state. `reasoning` is the last
- * step's: chat templates often leave earlier reasoning out of the history, so
- * it is given here as text for the model to carry on from.
+ * What the handoff note call came to, for the carried message: the note the
+ * model wrote, or that it could not be written (the call failed or its result
+ * can no longer be used). Null: no note was asked for.
  */
-export function carriedNotice(title: string, reasoning = ""): string {
+export type Handoff = { note: string } | { failed: true } | null;
+
+/**
+ * The notice the model reads with the carried state. With a handoff note, the
+ * note stands in for the last reasoning. Without one, `reasoning` is the last
+ * step's: chat templates often leave earlier reasoning out of the history, so
+ * it is given here as text for the model to carry on from. When a note was
+ * asked for and could not be written, the notice says so, because the model
+ * would otherwise have to work out why nothing covers the earlier work.
+ */
+export function carriedNotice(
+  title: string,
+  reasoning = "",
+  handoff: Handoff = null,
+): string {
   const named = title.trim() === "" ? "an earlier session" : `"${title}"`;
   const notice = `[This session continues ${named}, which ran out of room in its context. Only its most recent messages follow. The session's files, schemas and data are carried over as they stood.]`;
+  if (handoff && "note" in handoff) {
+    return `${notice}\n\n[Handoff note, written by you at the end of the earlier session. It covers what came before the messages that follow.]\n\n${handoff.note}`;
+  }
+  const failed = handoff
+    ? `${notice}\n\n[A handoff note covering what came before the messages that follow could not be written.]`
+    : notice;
   return reasoning === ""
-    ? notice
-    : `${notice}\n\n[Your reasoning at the last step, carried over so you can carry on from it. Carry on from the last message below.]\n\n${reasoning}`;
+    ? failed
+    : `${failed}\n\n[Your reasoning at the last step, carried over so you can carry on from it. Carry on from the last message below.]\n\n${reasoning}`;
+}
+
+/**
+ * Which message of the line the carried copy starts at, worked out as
+ * `rolloverSession` does, so a caller can know it before the session is made.
+ * Null: nothing to carry.
+ */
+export function carryStart(
+  line: readonly StoredMessage[],
+  contextSize: number | undefined,
+  carryPercent: number,
+): number | null {
+  return (
+    chooseCarry(line, carryBudget(contextSize, carryPercent))?.start ?? null
+  );
+}
+
+/** The tokens the copied messages may take; undefined: no known context size. */
+function carryBudget(
+  contextSize: number | undefined,
+  carryPercent: number,
+): number | undefined {
+  return contextSize === undefined
+    ? undefined
+    : Math.floor((contextSize * carryPercent) / 100);
 }
 
 /**
@@ -162,6 +207,7 @@ export function buildCarried(
   line: readonly Message[],
   title: string,
   reasoning = "",
+  handoff: Handoff = null,
 ): CarriedMessage {
   const files = replaySessionFiles(line);
   const fileOps: FileOp[] = [
@@ -210,7 +256,7 @@ export function buildCarried(
   const toolState = latestToolStates(line);
   return {
     role: "carried",
-    content: carriedNotice(title, reasoning),
+    content: carriedNotice(title, reasoning, handoff),
     files: fileOps,
     ...(dataOps.length > 0 ? { dataOps } : {}),
     ...(Object.keys(toolState).length > 0 ? { toolState } : {}),
@@ -226,6 +272,14 @@ export interface RolloverInput {
   contextSize: number | undefined;
   /** The share of the context size the copied messages may take, in percent. */
   carryPercent: number;
+  /** The handoff note outcome for this rollover; left out: none was asked for. */
+  handoff?: Handoff;
+  /**
+   * The window start the note was written for. A note is only used when the
+   * window is still where it was then; otherwise the session is told that no
+   * note could be written.
+   */
+  handoffStart?: number | null;
 }
 
 export interface RolloverResult {
@@ -255,15 +309,22 @@ export function rolloverSession(
   const source = store.getSession(sourceId);
   if (!source) throw new Error("Session not found.");
   const line = store.listMessages(sourceId, "top");
-  const budget =
-    input.contextSize === undefined
-      ? undefined
-      : Math.floor((input.contextSize * input.carryPercent) / 100);
-  const range = chooseCarry(line, budget);
+  const range = chooseCarry(
+    line,
+    carryBudget(input.contextSize, input.carryPercent),
+  );
   if (!range) throw new Error("There is nothing to carry over.");
   const copied = line
     .slice(range.start, range.end + 1)
     .filter((m) => m.message.role !== "carried");
+
+  // A note written for a different window would cover the wrong messages.
+  const handoff: Handoff =
+    input.handoff &&
+    "note" in input.handoff &&
+    input.handoffStart !== range.start
+      ? { failed: true }
+      : (input.handoff ?? null);
 
   const title = continuedTitle(source.title);
   db.prepare(
@@ -292,6 +353,7 @@ export function rolloverSession(
       line.map((m) => m.message),
       source.title,
       lastReasoning(copied.map((m) => m.message)),
+      handoff,
     ),
     now,
   );

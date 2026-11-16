@@ -19,16 +19,18 @@ import {
   buildCarried,
   carriedNotice,
   chooseCarry,
+  carryStart,
   continuedTitle,
   estimateTokens,
   lastReasoning,
   REASONING_CAP,
+  rolloverSession,
 } from "./rollover.js";
 import { RunManager } from "./runs.js";
 import { SearchIndex, transcriptText } from "./search-index.js";
 import { sessionSearch } from "./search.js";
 import { buildServer } from "./server.js";
-import { readSettings, writeSettings } from "./settings.js";
+import { DEFAULTS, readSettings, writeSettings } from "./settings.js";
 import { Store, type StoredMessage } from "./store.js";
 import { clearBuiltinAgents, tempDatabase, tempDir } from "./test-helpers.js";
 import { WorkspaceStore } from "./workspaces-store.js";
@@ -329,7 +331,13 @@ async function setup(
 ) {
   const t = tempDatabase();
   clearBuiltinAgents(t.db);
-  writeSettings(t.db, { systemPrompt: "", ...options.settings });
+  // The handoff note is a model call of its own; ScriptedModel hands out one
+  // script per call, so it is off unless a test turns it on.
+  writeSettings(t.db, {
+    systemPrompt: "",
+    rolloverHandoff: false,
+    ...options.settings,
+  });
   const store = new Store(t.db);
   const index = new SearchIndex(t.db);
   let tick = 0;
@@ -1718,5 +1726,461 @@ describe("carrying the last reasoning", () => {
     expect(
       (lineText(c, two.body.id)[0] as { content: string }).content,
     ).not.toContain("an unfinished plan");
+  });
+});
+
+describe("the handoff note in the carried notice", () => {
+  const FIRST =
+    '[This session continues "Plot", which ran out of room in its context. Only its most recent messages follow. The session\'s files, schemas and data are carried over as they stood.]';
+  const NOTE_LINE =
+    "[Handoff note, written by you at the end of the earlier session. It covers what came before the messages that follow.]";
+  const FAILED_LINE =
+    "[A handoff note covering what came before the messages that follow could not be written.]";
+  const REASONING_LINE =
+    "[Your reasoning at the last step, carried over so you can carry on from it. Carry on from the last message below.]";
+
+  it("is today's text without a note, with or without reasoning", () => {
+    expect(carriedNotice("Plot")).toBe(FIRST);
+    expect(carriedNotice("Plot", "", null)).toBe(FIRST);
+    expect(carriedNotice("Plot", "Next.", null)).toBe(
+      `${FIRST}\n\n${REASONING_LINE}\n\nNext.`,
+    );
+  });
+
+  it("holds the note and leaves the last reasoning out", () => {
+    expect(carriedNotice("Plot", "Next.", { note: "The note." })).toBe(
+      `${FIRST}\n\n${NOTE_LINE}\n\nThe note.`,
+    );
+    expect(carriedNotice("Plot", "", { note: "The note." })).toBe(
+      `${FIRST}\n\n${NOTE_LINE}\n\nThe note.`,
+    );
+  });
+
+  it("says a note could not be written, and keeps the last reasoning", () => {
+    expect(carriedNotice("Plot", "", { failed: true })).toBe(
+      `${FIRST}\n\n${FAILED_LINE}`,
+    );
+    expect(carriedNotice("Plot", "Next.", { failed: true })).toBe(
+      `${FIRST}\n\n${FAILED_LINE}\n\n${REASONING_LINE}\n\nNext.`,
+    );
+  });
+
+  it("is passed through buildCarried, which is otherwise unchanged", () => {
+    const history = [user("hi")];
+    const plain = buildCarried(history, "Plot");
+    const withNote = buildCarried(history, "Plot", "Next.", {
+      note: "The note.",
+    });
+    expect(withNote).toEqual({
+      ...plain,
+      content: carriedNotice("Plot", "Next.", { note: "The note." }),
+    });
+    expect(buildCarried(history, "Plot", "Next.").content).toBe(
+      carriedNotice("Plot", "Next."),
+    );
+  });
+});
+
+describe("carryStart", () => {
+  const big = "x".repeat(400); // 100 tokens
+  const line = lineOf([user(big), text(big), user(big), text(big)]);
+
+  it("is the start of the window chooseCarry picks, with and without a context size", () => {
+    // 10% of 1000: 100 tokens, so only the last turn fits.
+    expect(carryStart(line, 1000, 10)).toBe(chooseCarry(line, 100)?.start);
+    expect(carryStart(line, 1000, 10)).toBe(2);
+    // A large share takes everything.
+    expect(carryStart(line, 1000, 99)).toBe(0);
+    // No context size: the latest step alone.
+    expect(carryStart(line, undefined, 10)).toBe(
+      chooseCarry(line, undefined)?.start,
+    );
+  });
+
+  it("is null when there is nothing to carry", () => {
+    expect(carryStart([], 1000, 10)).toBeNull();
+  });
+});
+
+describe("rolloverSession with a handoff note", () => {
+  const big = "x".repeat(400);
+  const history = [user(big), text(big), user(big), text(big)];
+  const roll = async (handoffStart: number | null) => {
+    const c = await setup();
+    const id = seed(c, history);
+    c.t.db.transaction(() => {
+      rolloverSession(c.store, {
+        sourceId: id,
+        newSessionId: "next",
+        now: c.now(),
+        newId: c.newId,
+        contextSize: 1000,
+        carryPercent: 10,
+        handoff: { note: "THE NOTE" },
+        handoffStart,
+      });
+    })();
+    return (lineText(c, "next")[0] as { content: string }).content;
+  };
+
+  it("uses the note when the window is where it was when the note was written", async () => {
+    expect(await roll(2)).toContain("THE NOTE");
+  });
+
+  it("says no note could be written when the window moved", async () => {
+    const content = await roll(0);
+    expect(content).not.toContain("THE NOTE");
+    expect(content).toContain("could not be written");
+    expect(await roll(null)).not.toContain("THE NOTE");
+  });
+});
+
+describe("writing the handoff note at a rollover", () => {
+  const big = "x".repeat(400); // 100 tokens
+  const NOTE_PROMPT = DEFAULTS.rolloverHandoffPrompt;
+  const on = { rolloverHandoff: true };
+  /** An assistant step with reasoning, as the last copied message. */
+  const reasoned = (reasoning: string): Message => ({
+    role: "assistant",
+    content: [
+      { type: "reasoning", text: reasoning },
+      { type: "text", text: big },
+    ],
+  });
+  const carriedText = (c: Ctx, id: string) =>
+    (lineText(c, id)[0] as { content: string }).content;
+  const requestAt = (c: Ctx, i: number) => c.model.requests[i] as ChatRequest;
+  /** Waits until the note call has been asked for. */
+  const asked = (c: Ctx, n = 1) =>
+    expect.poll(() => c.model.requests.length).toBeGreaterThanOrEqual(n);
+
+  const settled = async (c: Ctx) => {
+    const running = () =>
+      (
+        c.t.db
+          .prepare("SELECT count(*) AS n FROM runs WHERE status = 'running'")
+          .get() as { n: number }
+      ).n;
+    await expect.poll(running).toBe(0);
+    await new Promise((r) => setTimeout(r, 50));
+    await expect.poll(running).toBe(0);
+  };
+  const post = async (c: Ctx, id: string, content: string) => {
+    const res = await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content,
+    });
+    expect(res.status).toBe(202);
+    await settled(c);
+    return res.body as { runId: string; sessionId: string };
+  };
+  const rolled = [
+    user(big),
+    text(big),
+    user(big),
+    calls("a"),
+    result("a", big),
+    reasoned("SECRET REASONING"),
+  ];
+
+  it("writes a note on a manual rollover, in place of the last reasoning", async () => {
+    const c = await setup([[...say("THE NOTE")]], { settings: on });
+    const id = seed(c, rolled);
+    const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(res.status).toBe(201);
+    const content = carriedText(c, res.body.id);
+    expect(content).toContain("Handoff note");
+    expect(content).toContain("THE NOTE");
+    expect(content).not.toContain("SECRET REASONING");
+    expect(content).not.toContain("Your reasoning at the last step");
+    // One call: what came before the window, then the instruction. A seeded
+    // session has no run, so no system message and no tools were recorded.
+    expect(c.model.requests).toHaveLength(1);
+    const request = requestAt(c, 0);
+    expect(request.messages).toEqual([
+      ...rolled.slice(0, 5),
+      { role: "user", content: NOTE_PROMPT },
+    ]);
+    expect(request.tools).toBeUndefined();
+    expect(request.control).toBeDefined();
+    expect(request.sampling).toEqual({ maxTokens: 8000 });
+    // The copied message itself still has its reasoning.
+    expect(lineText(c, res.body.id)[1]).toEqual(rolled[5]);
+    // The call leaves no run behind.
+    expect(c.store.listRuns(id)).toEqual([]);
+  });
+
+  it("sends the system message and tools of the session's last top-level run", async () => {
+    const c = await setup(
+      [[...say(big)], [...say(big)], [...say("THE NOTE")]],
+      { settings: on },
+    );
+    const id = (await api(c.app, "POST", "/api/sessions", {})).body.id;
+    c.watch(id);
+    await post(c, id, big);
+    await post(c, id, big);
+    const recorded = c.store.listRuns(id).at(-1);
+    expect(recorded?.system_prompt).toBe("BASE");
+    const tools = JSON.parse(recorded?.tools ?? "[]");
+    expect(tools.length).toBeGreaterThan(0);
+    const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(res.status).toBe(201);
+    const request = requestAt(c, 2);
+    expect(request.messages[0]).toEqual({ role: "system", content: "BASE" });
+    expect(request.messages.at(-1)).toEqual({
+      role: "user",
+      content: NOTE_PROMPT,
+    });
+    expect(request.tools).toEqual(tools);
+  });
+
+  it("writes it after a step that filled the context, before the run goes on", async () => {
+    const c = await setup(
+      [
+        [...say(big)],
+        [callStep("1", "current_date"), used(900)],
+        [...say("THE NOTE")],
+        [...say("All done."), used(100)],
+      ],
+      { contextSize: 1000, settings: { ...on, rolloverCarryPercent: 1 } },
+    );
+    const id = (await api(c.app, "POST", "/api/sessions", {})).body.id;
+    c.watch(id);
+    await post(c, id, big);
+    await post(c, id, "What day is it?");
+    const next = c.store.continuedTo(id)?.id as string;
+    expect(next).toBeDefined();
+    // The third request is the note, the fourth the next step.
+    expect(c.model.requests).toHaveLength(4);
+    expect(requestAt(c, 2).messages.at(-1)).toEqual({
+      role: "user",
+      content: NOTE_PROMPT,
+    });
+    expect(carriedText(c, next)).toContain("THE NOTE");
+    const fourth = requestAt(c, 3).messages.find((m) => m.role === "carried");
+    expect(fourth).toMatchObject({
+      content: expect.stringContaining("THE NOTE"),
+    });
+    expect(lineText(c, next).map((m) => m.role)).toEqual([
+      "carried",
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+  });
+
+  it("writes it before a run when the last reply filled the context, and the message goes to the new session", async () => {
+    const c = await setup(
+      [
+        [...say(big)],
+        [...say(big), used(950)],
+        [...say("THE NOTE")],
+        [...say("Carrying on.")],
+      ],
+      { contextSize: 1000, settings: { ...on, rolloverCarryPercent: 1 } },
+    );
+    const id = (await api(c.app, "POST", "/api/sessions", {})).body.id;
+    c.watch(id);
+    await post(c, id, big);
+    await post(c, id, big);
+    const sent = await post(c, id, "third");
+    expect(sent.sessionId).not.toBe(id);
+    expect(c.model.requests).toHaveLength(4);
+    expect(requestAt(c, 2).messages.at(-1)).toEqual({
+      role: "user",
+      content: NOTE_PROMPT,
+    });
+    const messages = lineText(c, sent.sessionId);
+    expect(messages[0]).toMatchObject({
+      role: "carried",
+      content: expect.stringContaining("THE NOTE"),
+    });
+    expect(messages.at(-2)).toMatchObject({ role: "user", content: "third" });
+    expect(lineText(c, id).map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+  });
+
+  it("goes on without a note when the call fails, and records why", async () => {
+    const c = await setup([[{ type: "throw", message: "boom" }]], {
+      settings: on,
+    });
+    const id = seed(c, rolled);
+    const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(res.status).toBe(201);
+    const content = carriedText(c, res.body.id);
+    expect(content).toContain("could not be written");
+    expect(content).toContain("SECRET REASONING");
+    expect(content).not.toContain("Handoff note, written");
+    const errors = (await api(c.app, "GET", `/api/errors?sessionId=${id}`))
+      .body as Json[];
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      sessionId: id,
+      source: "run",
+      kind: "run_failed",
+      runId: null,
+      message: "Could not write the handoff note: boom",
+      details: {
+        reason: "boom",
+        stopThinking: null,
+        thinkSeconds: 60,
+        totalSeconds: 180,
+        maxTokens: 8000,
+      },
+    });
+  });
+
+  const failures: [string, ScriptStep[], string][] = [
+    [
+      "empty text",
+      [{ type: "text", text: "  " }],
+      "the model returned no text",
+    ],
+    ["a tool call", [callStep("1", "current_date")], "the model called a tool"],
+    [
+      "the token limit",
+      [...say("cut"), { type: "finish", reason: "length" }],
+      "the note was cut off at the token limit",
+    ],
+  ];
+  it.each(failures)(
+    "falls back the same way on %s",
+    async (_n, script, why) => {
+      const c = await setup([script], { settings: on });
+      const id = seed(c, rolled);
+      const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+      expect(res.status).toBe(201);
+      expect(carriedText(c, res.body.id)).toContain("could not be written");
+      expect(carriedText(c, res.body.id)).toContain("SECRET REASONING");
+      const errors = (await api(c.app, "GET", `/api/errors?sessionId=${id}`))
+        .body as Json[];
+      expect(errors.map((e) => e.message)).toEqual([
+        `Could not write the handoff note: ${why}`,
+      ]);
+    },
+  );
+
+  it("asks for no note when the setting is off, and keeps the last reasoning", async () => {
+    const c = await setup([], { settings: { rolloverHandoff: false } });
+    const id = seed(c, rolled);
+    const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(res.status).toBe(201);
+    expect(c.model.requests).toHaveLength(0);
+    expect(carriedText(c, res.body.id)).toBe(
+      carriedNotice("Plot", "SECRET REASONING"),
+    );
+    expect(
+      await api(c.app, "GET", `/api/errors?sessionId=${id}`),
+    ).toMatchObject({ body: [] });
+  });
+
+  it("asks for no note when nothing comes before the copied messages", async () => {
+    const c = await setup([], { settings: on });
+    // All of it fits the window, so there is nothing before it.
+    const id = seed(c, [user("hi"), reasoned("SECRET REASONING")]);
+    const res = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(res.status).toBe(201);
+    expect(c.model.requests).toHaveLength(0);
+    expect(carriedText(c, res.body.id)).toBe(
+      carriedNotice("Plot", "SECRET REASONING"),
+    );
+  });
+
+  it("gives the second note the first one as its input", async () => {
+    const c = await setup([[...say("NOTE ONE")], [...say("NOTE TWO")]], {
+      settings: on,
+    });
+    const id = seed(c, [user(big), text(big), user(big), text(big)]);
+    const first = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(first.status).toBe(201);
+    expect(carriedText(c, first.body.id)).toContain("NOTE ONE");
+    // Only the carried message comes before what the second rollover copies.
+    const second = await api(
+      c.app,
+      "POST",
+      `/api/sessions/${first.body.id}/rollover`,
+    );
+    expect(second.status).toBe(201);
+    const request = requestAt(c, 1);
+    expect(request.messages).toHaveLength(2);
+    expect(request.messages[0]).toMatchObject({
+      role: "carried",
+      content: expect.stringContaining("NOTE ONE"),
+    });
+    expect(request.messages[1]).toEqual({ role: "user", content: NOTE_PROMPT });
+    const content = carriedText(c, second.body.id);
+    expect(content).toContain("NOTE TWO");
+    expect(content).not.toContain("NOTE ONE");
+  });
+
+  it("refuses other changes to the session while the note is written", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const c = await setup(
+      [[{ type: "wait", until: gate }, ...say("THE NOTE")]],
+      {
+        settings: on,
+      },
+    );
+    const id = seed(c, rolled);
+    const first = api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    await asked(c);
+    const message = await api(c.app, "POST", `/api/sessions/${id}/messages`, {
+      content: "meanwhile",
+    });
+    expect(message.status).toBe(409);
+    expect(message.body.error).toMatch(/being continued/);
+    const again = await api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    expect(again.status).toBe(409);
+    expect(again.body.error).toMatch(/being continued/);
+    release();
+    const done = await first;
+    expect(done.status).toBe(201);
+    expect(carriedText(c, done.body.id)).toContain("THE NOTE");
+    // Only one session was made, and one call.
+    expect(c.model.requests).toHaveLength(1);
+    expect(c.store.continuedTo(id)?.id).toBe(done.body.id);
+    // The session is free of the guard once the rollover is done.
+    expect(
+      (await api(c.app, "POST", `/api/sessions/${id}/rollover`)).status,
+    ).toBe(409);
+  });
+
+  it("makes nothing when the backend shuts down during the call", async () => {
+    const c = await setup([[{ type: "wait", until: new Promise(() => {}) }]], {
+      settings: on,
+    });
+    const id = seed(c, rolled);
+    const pending = api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    await asked(c);
+    await c.runs.shutdown();
+    expect((await pending).status).toBe(503);
+    expect(c.store.continuedTo(id)).toBeUndefined();
+    // Stopping at shutdown is not a failure of the note.
+    expect(
+      await api(c.app, "GET", `/api/errors?sessionId=${id}`),
+    ).toMatchObject({ body: [] });
+  });
+
+  it("makes nothing when the session was trashed while the note was written", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const c = await setup(
+      [[{ type: "wait", until: gate }, ...say("THE NOTE")]],
+      {
+        settings: on,
+      },
+    );
+    const id = seed(c, rolled);
+    const pending = api(c.app, "POST", `/api/sessions/${id}/rollover`);
+    await asked(c);
+    c.store.setSessionTrashed(id, c.now());
+    release();
+    expect((await pending).status).toBe(409);
+    expect(c.store.continuedTo(id)).toBeUndefined();
   });
 });

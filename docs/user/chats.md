@@ -90,6 +90,8 @@ When the room is nearly full, the chat **continues in a new chat**. The new chat
 
 You can do this yourself at any time with **Continue in a new session** under the chat. It asks you to confirm.
 
+Before the chat continues, the helper first writes itself a short note about the earlier work, so it does not have to look everything up again. This can take a little while. If it cannot write the note, the chat still continues, and its first message says so.
+
 The new chat shows **Continued from** and the earlier title at the top, and a line where the carried messages end. The earlier chat now says it was continued, with a link to the new one. It is **read only**: you can read it, fork it, rename it and move it to the trash, but not send messages or edit.
 
 Choose how this works under **Settings**, **Agents**, **Limits**. See [Settings](settings.md#limits).

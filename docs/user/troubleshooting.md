@@ -46,6 +46,14 @@ Reload the page.
 
 You can always press **Continue in a new session** yourself.
 
+## The new chat says a handoff note could not be written
+
+The chat continued, but the helper could not write its note about the earlier work in time or at all.
+
+- Look in the errors list for the earlier chat. It says why.
+- Try a lower **Stop thinking after (seconds)**, or a shorter **Longest note (tokens)**, in **Settings**, **Agents**, **Limits**.
+- Or turn **Write a handoff note** off there. Chats then continue without a note.
+
 ## Trash and restore
 
 Chats, projects and more go to the trash first. Nothing is lost right away.

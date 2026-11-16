@@ -90,6 +90,11 @@ Caps that keep things from running away.
 - **When the context is full.** **Continue in a new session** (the default) or **Do nothing**. See [Chats](chats.md#when-a-chat-gets-long).
 - **Context full at (%).** How much of the model's room one call must use before the chat continues in a new one. The default is 80.
 - **Carried over to a new session (%).** How much of the model's room the copied messages may take in the new chat. The default is 10. The latest step is always copied.
+- **Write a handoff note.** On by default. When a chat continues in a new one, the helper first writes a note about what came before the copied messages, and the new chat starts with it. Turn it off to continue without a note.
+- **Handoff note instruction.** What the helper is asked to write for the note.
+- **Stop thinking after (seconds).** How long the helper may think about the note before it is told to stop and answer. The starting value has not been tested.
+- **Give up after (seconds).** How long the whole note may take. After this the chat continues without a note. The starting value has not been tested.
+- **Longest note (tokens).** The most the helper may write for the note, thinking included. A note that is cut off is not used. The starting value has not been tested.
 
 This needs a model whose context size is known. With a model that is not loaded or does not say, a chat is not continued by itself. You can still use the button.
 

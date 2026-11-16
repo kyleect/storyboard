@@ -108,6 +108,11 @@ const effective: SettingsShape = {
   rolloverCarryPercent: 10,
   contextFullAction: "new_session",
   rolloverThresholdPercent: 80,
+  rolloverHandoff: true,
+  rolloverHandoffPrompt: "Write a note.",
+  rolloverHandoffThinkSeconds: 60,
+  rolloverHandoffTotalSeconds: 180,
+  rolloverHandoffMaxTokens: 8000,
 };
 
 const view: SettingsView = { effective, stored: {}, overriddenByEnv: {} };
@@ -336,9 +341,101 @@ describe("Settings forms", () => {
       rolloverCarryPercent: 10,
       contextFullAction: "new_session",
       rolloverThresholdPercent: 80,
+      rolloverHandoff: true,
+      rolloverHandoffPrompt: "Write a note.",
+      rolloverHandoffThinkSeconds: 60,
+      rolloverHandoffTotalSeconds: 180,
+      rolloverHandoffMaxTokens: 8000,
       skillFileMaxMib: 20,
       skillMaxMib: 100,
       skillMaxFiles: 500,
+    });
+  });
+
+  describe("the handoff note", () => {
+    const openLimits = async () => {
+      await renderSettings();
+      open("Agents");
+      open("Limits");
+      await screen.findByLabelText("Loop limit");
+    };
+    const field = (label: string | RegExp) =>
+      screen.getByLabelText(label) as HTMLInputElement | HTMLTextAreaElement;
+
+    it("shows the note settings with their values", async () => {
+      await openLimits();
+      expect((field(/Write a handoff note/) as HTMLInputElement).checked).toBe(
+        true,
+      );
+      expect(field("Handoff note instruction").value).toBe("Write a note.");
+      expect(field("Stop thinking after (seconds)").value).toBe("60");
+      expect(field("Give up after (seconds)").value).toBe("180");
+      expect(field("Longest note (tokens)").value).toBe("8000");
+    });
+
+    it("disables the other note settings while the note is off", async () => {
+      await openLimits();
+      const names = [
+        "Handoff note instruction",
+        "Stop thinking after (seconds)",
+        "Give up after (seconds)",
+        "Longest note (tokens)",
+      ];
+
+      for (const name of names) expect(field(name).disabled).toBe(false);
+
+      fireEvent.click(screen.getByLabelText(/Write a handoff note/));
+
+      for (const name of names) expect(field(name).disabled).toBe(true);
+    });
+
+    it("disables a note setting the environment overrides, with its note", async () => {
+      vi.spyOn(api, "getSettings").mockResolvedValue({
+        ...view,
+        overriddenByEnv: {
+          rolloverHandoff: "HARNESS_ROLLOVER_HANDOFF",
+          rolloverHandoffMaxTokens: "HARNESS_ROLLOVER_HANDOFF_MAX_TOKENS",
+        },
+      });
+      await openLimits();
+      expect(field(/Write a handoff note/).disabled).toBe(true);
+      expect(field("Longest note (tokens)").disabled).toBe(true);
+      expect(field("Give up after (seconds)").disabled).toBe(false);
+      expect(
+        screen.getByText(
+          "Overridden by the HARNESS_ROLLOVER_HANDOFF_MAX_TOKENS environment variable",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("refuses an empty instruction", async () => {
+      await openLimits();
+      fireEvent.change(field("Handoff note instruction"), {
+        target: { value: "  " },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      expect(await screen.findByText("Must not be empty")).toBeTruthy();
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it("sends a changed value when saving", async () => {
+      await openLimits();
+      fireEvent.change(field("Stop thinking after (seconds)"), {
+        target: { value: "30" },
+      });
+      fireEvent.change(field("Handoff note instruction"), {
+        target: { value: "Summarise." },
+      });
+      fireEvent.click(screen.getByLabelText(/Write a handoff note/));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(save.mock.calls[0]?.[0]).toMatchObject({
+        rolloverHandoff: false,
+        rolloverHandoffPrompt: "Summarise.",
+        rolloverHandoffThinkSeconds: 30,
+        rolloverHandoffTotalSeconds: 180,
+        rolloverHandoffMaxTokens: 8000,
+      });
     });
   });
 

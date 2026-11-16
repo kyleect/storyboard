@@ -52,7 +52,13 @@ import type { FileStore } from "./files-store.js";
 import { putBlob } from "./blobs.js";
 import { completePoints, isEditable, regenerableTurn } from "./branches.js";
 import { forkSession } from "./fork.js";
-import { chooseCarry, rolloverSession } from "./rollover.js";
+import { lastRecordedRun, recordedRequest, requestHandoff } from "./handoff.js";
+import {
+  carryStart,
+  chooseCarry,
+  rolloverSession,
+  type Handoff,
+} from "./rollover.js";
 import {
   getDerived,
   indexedText,
@@ -67,6 +73,7 @@ import {
   type Generation,
   type SessionRow,
   type Store,
+  type StoredMessage,
 } from "./store.js";
 import {
   alwaysAsks,
@@ -382,6 +389,13 @@ export class RunManager {
     controller: AbortController;
     done: Promise<void>;
   }>();
+  /** Sessions whose handoff note is being written, so nothing else changes them. */
+  private readonly rollingOver = new Set<string>();
+  /** Handoff note calls in progress, stopped at shutdown. */
+  private readonly handoffJobs = new Set<{
+    controller: AbortController;
+    done: Promise<unknown>;
+  }>();
   private shuttingDown = false;
   private readonly now: () => string;
   private readonly newId: () => string;
@@ -568,17 +582,25 @@ export class RunManager {
    * Adds a user message and starts a run that answers it. The choices become
    * the session's before the run starts.
    */
-  sendMessage(
+  async sendMessage(
     sessionId: string,
     content: string,
     choices: RunChoices = {},
     files: readonly string[] = [],
-  ): { runId: string; sessionId: string } {
+  ): Promise<{ runId: string; sessionId: string }> {
     this.requireIdle(sessionId);
     this.requireWritable(sessionId);
     // The last call filled the context: the session continues in a new one
-    // and the message goes there (session rollover design, D1).
-    const target = this.rollOverIfFull(sessionId);
+    // and the message goes there (session rollover design, D1). Writing the
+    // handoff note can take a while; the session refuses other changes then.
+    const target = await this.rollOverIfFull(sessionId);
+    // A rollover that was refused leaves the session where it is; what the
+    // refusal was about (shutdown, the trash) may have happened while the note
+    // was written, so the session is checked again before anything is added.
+    if (target === sessionId) {
+      this.requireIdle(sessionId);
+      this.requireWritable(sessionId);
+    }
     this.checkAgentChoice(target, choices);
     this.store.setSessionChoices(target, choices);
     // A message of files only has no text to title the session from.
@@ -602,7 +624,7 @@ export class RunManager {
    * size. Uses the size found when the session last ran; none known, none
    * rolled over. A session that cannot be rolled over stays as it is.
    */
-  private rollOverIfFull(sessionId: string): string {
+  private async rollOverIfFull(sessionId: string): Promise<string> {
     const settings = this.options.settings();
     if (settings.contextFullAction !== "new_session") return sessionId;
     const session = this.store.getSession(sessionId);
@@ -618,7 +640,7 @@ export class RunManager {
       return sessionId;
     }
     try {
-      return this.rollOver(sessionId, { contextSize: size }).id;
+      return (await this.rollOver(sessionId, { contextSize: size })).id;
     } catch (err) {
       if (err instanceof RunError) return sessionId;
       throw err;
@@ -967,17 +989,36 @@ export class RunManager {
    * as it was, read only. The session must be idle. `contextSize` is the
    * model's, when it is known; without it only the latest step is carried.
    * Does not start a run.
+   *
+   * With the handoff note on, the session's model first writes a note about
+   * what came before the copied messages, and this waits for it. The session
+   * refuses other changes meanwhile. Once the note is in, the rest has no
+   * `await`, so nothing can change the session before the new one is made.
    */
-  rollOver(
+  async rollOver(
     sessionId: string,
     options: { contextSize?: number | undefined } = {},
-  ): SessionRow {
+  ): Promise<SessionRow> {
     this.requireIdle(sessionId);
     this.requireWritable(sessionId);
     const line = this.store.listMessages(sessionId, "top");
     if (chooseCarry(line, undefined) === null) {
       throw new RunError("The session has nothing to carry over.", 409);
     }
+    const start = carryStart(
+      line,
+      options.contextSize,
+      this.options.settings().rolloverCarryPercent,
+    );
+    const handoff =
+      start === null ? null : await this.writeHandoff(sessionId, line, start);
+    // Nothing is made when the backend went down during the call, or the
+    // session was trashed or changed while the note was written.
+    if (this.shuttingDown) {
+      throw new RunError("The backend is shutting down.", 503);
+    }
+    this.requireIdle(sessionId);
+    this.requireWritable(sessionId);
     const newSessionId = this.newId();
     const now = this.now();
     this.store.db.transaction(() => {
@@ -988,6 +1029,8 @@ export class RunManager {
         newId: this.newId,
         contextSize: options.contextSize,
         carryPercent: this.options.settings().rolloverCarryPercent,
+        handoff,
+        handoffStart: start,
       });
       this.options.workspaces?.handOverSessionWorkspaces(
         sessionId,
@@ -1008,6 +1051,78 @@ export class RunManager {
       data: { sessionId: newSessionId, title: created.title },
     });
     return created;
+  }
+
+  /**
+   * The handoff note for a rollover: the session's own model writes it from
+   * everything before the copied messages, as a side call (no run, no stored
+   * events). Null: none is wanted, because the setting is off or nothing comes
+   * before the copied messages. A failure is recorded in the errors console and
+   * gives `{ failed: true }`, so the rollover goes on without a note.
+   */
+  private async writeHandoff(
+    sessionId: string,
+    line: readonly StoredMessage[],
+    start: number,
+  ): Promise<Handoff> {
+    const settings = this.options.settings();
+    if (!settings.rolloverHandoff || start === 0) return null;
+    const session = this.store.getSession(sessionId);
+    const model = session?.model || settings.model || null;
+    const reasoningEffort =
+      session?.reasoning_effort || settings.reasoningEffort || null;
+    const recorded = recordedRequest(
+      lastRecordedRun(this.store.listRuns(sessionId)),
+    );
+    const controller = new AbortController();
+    const job = { controller, done: Promise.resolve<unknown>(undefined) };
+    this.rollingOver.add(sessionId);
+    this.handoffJobs.add(job);
+    try {
+      const call = requestHandoff(
+        this.options.model(settings),
+        {
+          prompt: settings.rolloverHandoffPrompt,
+          messages: line.slice(0, start).map((m) => m.message),
+          ...recorded,
+          model,
+          reasoningEffort,
+          thinkMs: settings.rolloverHandoffThinkSeconds * 1000,
+          totalMs: settings.rolloverHandoffTotalSeconds * 1000,
+          maxTokens: settings.rolloverHandoffMaxTokens,
+        },
+        controller.signal,
+      );
+      job.done = call;
+      const result = await call;
+      if (result.ok) return { note: result.note };
+      // Stopping at shutdown is not a failure of the note.
+      if (!this.shuttingDown) {
+        try {
+          this.recordError({
+            sessionId,
+            runId: null,
+            source: "run",
+            kind: "run_failed",
+            message: `Could not write the handoff note: ${result.reason}`,
+            details: {
+              reason: result.reason,
+              stopThinking: result.stopThinking,
+              thinkSeconds: settings.rolloverHandoffThinkSeconds,
+              totalSeconds: settings.rolloverHandoffTotalSeconds,
+              maxTokens: settings.rolloverHandoffMaxTokens,
+              usage: result.usage,
+            },
+          });
+        } catch {
+          // The database failed; the rollover goes on without a record.
+        }
+      }
+      return { failed: true };
+    } finally {
+      this.rollingOver.delete(sessionId);
+      this.handoffJobs.delete(job);
+    }
   }
 
   /**
@@ -1378,7 +1493,10 @@ export class RunManager {
     // Stopped title calls fall back to the message (auto-rename plan).
     const titles = [...this.titleJobs];
     for (const job of titles) job.controller.abort();
-    await Promise.all([...runs, ...titles].map((r) => r.done));
+    // Stopped note calls end the rollover they were part of.
+    const handoffs = [...this.handoffJobs];
+    for (const job of handoffs) job.controller.abort();
+    await Promise.all([...runs, ...titles, ...handoffs].map((r) => r.done));
   }
 
   /**
@@ -1718,6 +1836,9 @@ export class RunManager {
     if (this.hasActiveRun(sessionId)) {
       throw new RunError("A run is already in progress in this session.", 409);
     }
+    if (this.rollingOver.has(sessionId)) {
+      throw new RunError("The session is being continued in a new one.", 409);
+    }
   }
 
   /** Sending or continuing counts as using the project (design Q15a). */
@@ -1753,7 +1874,7 @@ export class RunManager {
     );
     void finished.then((result) => {
       if (result?.reason === "rolled_over") {
-        this.continueInNewSession(
+        void this.continueInNewSession(
           sessionId,
           runId,
           stepsTaken + (result.steps ?? 0),
@@ -1768,20 +1889,22 @@ export class RunManager {
    * one and starts the next step there, as `continueLast` does after a tool
    * result. The steps taken count against the loop limit (design D3).
    */
-  private continueInNewSession(
+  private async continueInNewSession(
     sessionId: string,
     runId: string,
     stepsTaken: number,
-  ) {
+  ): Promise<void> {
     if (this.shuttingDown) return;
     try {
       const session = this.store.getSession(sessionId);
       const size = this.contextSizes.get(
         session?.model || this.options.settings().model || "",
       );
-      const next = this.rollOver(sessionId, { contextSize: size });
+      const next = await this.rollOver(sessionId, { contextSize: size });
       this.start(next.id, null, stepsTaken);
     } catch (err) {
+      // The backend went down while the note was written: nothing failed.
+      if (this.shuttingDown) return;
       try {
         this.recordError({
           sessionId,

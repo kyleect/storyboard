@@ -4,6 +4,7 @@ import {
   NumberInput,
   SegmentedControl,
   Stack,
+  Switch,
   Text,
   Textarea,
 } from "@mantine/core";
@@ -101,6 +102,14 @@ export function Limits({ view }: { view: SettingsView }) {
       Number.isInteger(v) && v >= 1 && v <= 99
         ? null
         : "A whole number, 1 to 99",
+    rolloverHandoffPrompt: (v) =>
+      v.trim() !== "" ? null : "Must not be empty",
+    rolloverHandoffThinkSeconds: (v) =>
+      Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
+    rolloverHandoffTotalSeconds: (v) =>
+      Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
+    rolloverHandoffMaxTokens: (v) =>
+      Number.isInteger(v) && v >= 1 ? null : "A whole number, 1 or more",
     skillFileMaxMib: (v) =>
       Number.isInteger(v) && v >= 1 && v <= 1024
         ? null
@@ -114,6 +123,8 @@ export function Limits({ view }: { view: SettingsView }) {
         ? null
         : "A whole number, 1 to 10000",
   });
+
+  const noteOff = !form.values.rolloverHandoff;
 
   return (
     <form onSubmit={form.onSubmit((values) => save.mutate(values))}>
@@ -192,6 +203,60 @@ export function Limits({ view }: { view: SettingsView }) {
           max={99}
           disabled={!!env.rolloverCarryPercent}
           {...form.getInputProps("rolloverCarryPercent")}
+        />
+        <Switch
+          label="Write a handoff note"
+          description={
+            envNote("rolloverHandoff") ??
+            "When a session continues in a new one, the model first writes a note about what came before the copied messages, and the new session starts with it. This can take a little while. If no note can be written, the session continues without one."
+          }
+          disabled={!!env.rolloverHandoff}
+          {...form.getInputProps("rolloverHandoff", { type: "checkbox" })}
+        />
+        <Textarea
+          label="Handoff note instruction"
+          description={
+            envNote("rolloverHandoffPrompt") ??
+            "What the model is asked to write. Sent as the last message of the old session."
+          }
+          autosize
+          minRows={6}
+          maxRows={16}
+          disabled={noteOff || !!env.rolloverHandoffPrompt}
+          {...form.getInputProps("rolloverHandoffPrompt")}
+        />
+        <NumberInput
+          label="Stop thinking after (seconds)"
+          description={
+            envNote("rolloverHandoffThinkSeconds") ??
+            "How long the model may think about the note before it is told to stop and answer. The starting value has not been tested."
+          }
+          allowDecimal={false}
+          min={1}
+          disabled={noteOff || !!env.rolloverHandoffThinkSeconds}
+          {...form.getInputProps("rolloverHandoffThinkSeconds")}
+        />
+        <NumberInput
+          label="Give up after (seconds)"
+          description={
+            envNote("rolloverHandoffTotalSeconds") ??
+            "How long the whole note may take. After this the session continues without a note. The starting value has not been tested."
+          }
+          allowDecimal={false}
+          min={1}
+          disabled={noteOff || !!env.rolloverHandoffTotalSeconds}
+          {...form.getInputProps("rolloverHandoffTotalSeconds")}
+        />
+        <NumberInput
+          label="Longest note (tokens)"
+          description={
+            envNote("rolloverHandoffMaxTokens") ??
+            "The most the model may write for the note, thinking included. A note that is cut off is not used. The starting value has not been tested."
+          }
+          allowDecimal={false}
+          min={1}
+          disabled={noteOff || !!env.rolloverHandoffMaxTokens}
+          {...form.getInputProps("rolloverHandoffMaxTokens")}
         />
         <NumberInput
           label="Skill file size (MiB)"
