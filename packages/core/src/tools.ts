@@ -5,6 +5,7 @@ import type { Review, Selection } from "./review.js";
 import type { MediaSupport } from "./media.js";
 import type { SessionHistory } from "./session-history.js";
 import type { ApprovalSubject, WorkspaceAccess } from "./workspaces.js";
+import type { ShellAccess } from "./shell.js";
 import type { DataAccess } from "./schemas-data.js";
 import type {
   BlobRef,
@@ -37,6 +38,7 @@ export type ApprovalDefault = "ask" | "never" | "always";
 export const TOOL_GROUPS = [
   { id: "files", label: "Files" },
   { id: "workspaces", label: "Workspaces" },
+  { id: "shell", label: "Shell" },
   { id: "structured-data", label: "Structured Data" },
   { id: "projects", label: "Projects" },
   { id: "agents", label: "Agents" },
@@ -63,6 +65,11 @@ export interface RunFacts {
   canStartSubagent: boolean;
   /** Whether the session has a workspace attached (directly or through its project). */
   hasWorkspaces?: boolean;
+  /**
+   * Whether the shell tool makes sense here: a writable workspace is
+   * attached and the platform can run it.
+   */
+  shellAvailable?: boolean;
   /** Whether the session continues an earlier one (session rollover design, D17). */
   hasEarlierSessions?: boolean;
 }
@@ -343,6 +350,10 @@ export interface ToolContext {
    * D36). Left out: none.
    */
   workspaces?: WorkspaceAccess;
+  /**
+   * Running shell commands in a workspace. Left out: the shell tool fails.
+   */
+  shell?: ShellAccess;
   /**
    * The sessions this one continues, searchable and readable (session
    * rollover design, D17). Left out: it continues none.

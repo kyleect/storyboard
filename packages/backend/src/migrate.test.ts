@@ -964,7 +964,7 @@ describe("migration 0039 (workspaces and .gitignore)", () => {
       `INSERT INTO workspaces (id, name, path, writable, created_at, updated_at)
        VALUES ('w1', 'Book', '/x', 0, 't', 't')`,
     ).run();
-    expect(migrate(db, all)).toEqual([39]);
+    expect(migrate(db, all)).toEqual([39, 40, 41]);
     expect(
       db.prepare("SELECT respect_gitignore AS r FROM workspaces").get(),
     ).toEqual({ r: 1 });

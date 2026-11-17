@@ -87,6 +87,13 @@ Caps that keep things from running away.
 - **Copy limit.** The most files one copy or move can name.
 - **Workspace read size.** The most text of one folder file a helper reads at once.
 - **Skill limits.** How big a skill, and how many files in it, can be.
+- **Command time limit (seconds).** How long a shell command runs when the helper names no limit. The default is 120.
+- **Longest command time limit (seconds).** The longest limit a helper may ask for. A longer ask is lowered to this. The default is 600.
+- **Command output size.** How much of a command's output the helper reads. A longer output keeps the start and the end. The default is 10000 characters.
+- **Shell program** and **Shell arguments.** What runs the commands. Empty means your login shell, started as a login shell so commands see the same `PATH` as a terminal. Arguments are separated by spaces.
+
+See [Shell commands](approvals-and-tools.md#shell-commands).
+
 - **When the context is full.** **Continue in a new session** (the default) or **Do nothing**. See [Chats](chats.md#when-a-chat-gets-long).
 - **Context full at (%).** How much of the model's room one call must use before the chat continues in a new one. The default is 80.
 - **Carried over to a new session (%).** How much of the model's room the copied messages may take in the new chat. The default is 10. The latest step is always copied.

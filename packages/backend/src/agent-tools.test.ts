@@ -250,7 +250,7 @@ describe("agents_list and agent_view", () => {
       description: "Editor agent",
       toolMode: "deny",
       // Tools that change something are denied unless the agent lists them
-      // (tool management design), so the workspace ones show here.
+      // (tool management design), so the workspace ones and the shell one show here.
       tools: [
         "web_search",
         "workspace_write",
@@ -260,6 +260,7 @@ describe("agents_list and agent_view", () => {
         "workspace_folder_create",
         "workspace_folder_rename",
         "workspace_folder_delete",
+        "shell_run",
       ],
     });
     expect(agents[1]).toMatchObject({ scope: "global" });

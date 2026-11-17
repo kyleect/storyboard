@@ -35,6 +35,7 @@ import type {
 import type { MediaSupport } from "./media.js";
 import type { SessionHistory } from "./session-history.js";
 import type { ApprovalSubject, WorkspaceAccess } from "./workspaces.js";
+import type { ShellAccess } from "./shell.js";
 import type { ChatRequest, ModelAdapter } from "./model.js";
 import { emitter, streamMessage, type RunContext } from "./run.js";
 import {
@@ -206,6 +207,8 @@ export interface LoopContext extends RunContext {
   blobs?: ToolContext["blobs"];
   /** The workspaces the session can use. Left out: none. */
   workspaces?: WorkspaceAccess;
+  /** Runs shell commands in a workspace. Left out: the shell tool fails. */
+  shell?: ShellAccess;
   /** The sessions this one continues. Left out: none. */
   history?: SessionHistory;
   /** Searches files. Left out: the search tool fails. */
@@ -737,6 +740,7 @@ export async function runLoop(
       ...(ctx.mediaSupport ? { mediaSupport: ctx.mediaSupport } : {}),
       ...(ctx.blobs ? { blobs: ctx.blobs } : {}),
       ...(ctx.workspaces ? { workspaces: ctx.workspaces } : {}),
+      ...(ctx.shell ? { shell: ctx.shell } : {}),
       ...(ctx.history ? { history: ctx.history } : {}),
       update: (partial) =>
         emit({ type: "tool.update", data: { callId: call.callId, partial } }),

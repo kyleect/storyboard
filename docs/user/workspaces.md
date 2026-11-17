@@ -75,6 +75,10 @@ In **Settings**, open **Searched parts**. You can tick the whole folder or only 
 
 Press **Rescan** if you added new files.
 
+## Let a helper run commands
+
+A helper can run shell commands, such as tests or a build, in a **writable** workspace on macOS or Linux. This is for coding work. See [Shell commands](approvals-and-tools.md#shell-commands).
+
 ## Use a workspace in a chat
 
 Ask your question. For example, "What do my garden club notes say about seeds?" The helper can use the workspaces of Session, Project and Global.

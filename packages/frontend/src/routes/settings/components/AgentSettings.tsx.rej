@@ -1,0 +1,29 @@
+diff a/packages/frontend/src/routes/settings/components/AgentSettings.tsx b/packages/frontend/src/routes/settings/components/AgentSettings.tsx	(rejected hunks)
+@@ -6,8 +6,9 @@ import {
+   Stack,
+   Text,
+   Textarea,
++  TextInput,
+ } from "@mantine/core";
+-import { COPY_LIMIT_MAX } from "@harness/core";
++import { COPY_LIMIT_MAX, SHELL_TIMEOUT_LIMIT_SECONDS } from "@harness/core";
+ import { type SettingsView } from "../../../api";
+ import {
+   SUBAGENT_KEYS,
+@@ -113,6 +114,16 @@ export function Limits({ view }: { view: SettingsView }) {
+       Number.isInteger(v) && v >= 1 && v <= 10000
+         ? null
+         : "A whole number, 1 to 10000",
++    shellTimeoutSeconds: (v) =>
++      Number.isInteger(v) && v >= 1 && v <= SHELL_TIMEOUT_LIMIT_SECONDS
++        ? null
++        : `A whole number, 1 to ${SHELL_TIMEOUT_LIMIT_SECONDS}`,
++    shellMaxTimeoutSeconds: (v) =>
++      Number.isInteger(v) && v >= 1 && v <= SHELL_TIMEOUT_LIMIT_SECONDS
++        ? null
++        : `A whole number, 1 to ${SHELL_TIMEOUT_LIMIT_SECONDS}`,
++    shellOutputCap: (v) =>
++      Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
+   });
+ 
+   return (

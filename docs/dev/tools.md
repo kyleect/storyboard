@@ -71,6 +71,7 @@ The groups, in display order, are defined by `TOOL_GROUPS` in core:
 | ----------------------------------- | ----------------------------------------------------------------- |
 | Files (`files`)                     | `files_*`, including `files_copy` and `files_move`                |
 | Workspaces (`workspaces`)           | `workspaces_list`, `workspace_*`                                  |
+| Shell (`shell`)                     | `shell_run`                                                       |
 | Structured Data (`structured-data`) | `schemas_list`, `schema_*`, `data_*`                              |
 | Projects (`projects`)               | `projects_list`, `project_view`, `project_create`                 |
 | Agents (`agents`)                   | `agents_list`, `agent_view`                                       |
@@ -92,7 +93,7 @@ Three more facts are declared on each tool:
   tool sets it unless its server marks it read-only. So do the workspace tools
   that change something: an agent in deny mode has them off until they are given.
 - **`available(run)`**: a function of the run's facts (`hasSkills`, `hasWorkspaces`,
-  `isChild`, `canStartSubagent`). A tool whose function returns false is not offered in
+  `shellAvailable`, `isChild`, `canStartSubagent`). A tool whose function returns false is not offered in
   that run.
 
 ## The tools
@@ -184,6 +185,26 @@ into it is refused.
 A path that leaves the folder, by `..` or by a symlink, is refused. The tool
 then asks the user, in a form, whether to allow that one path; the answer is not
 remembered, and a change still asks for its own approval.
+
+### Shell
+
+`shell_run` runs one command in a workspace folder and returns its output and
+exit code. It is in its own group, **needs review** (an agent has it only when
+given it by name) and has approval **always**: every call asks, and the prompt
+offers _Allow once_ and _Deny_ only. It is offered only where `shellAvailable`
+is true, and it refuses a read-only workspace. Its approval names the
+workspace (`approvalSubject`).
+
+| Tool        | Approval | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shell_run` | always   | Runs `command` in `cwd`, one process per call, standard input closed. `cwd` is required and is the folder's real, full path on the computer, which must be inside one of the session's workspaces (`ShellAccess.locate` finds the workspace; `workspaces_list` gives each workspace's `path` to runs that can run commands). A `workspace://` reference is not accepted. `timeout_seconds` is bounded by `ShellAccess.maxTimeoutSeconds`, and the result says when it was lowered. `description` is a note for the user. |
+
+The result's `folder` is the full path the command ran in. A command that exits non-zero, is ended by a signal or runs out of time is a
+normal result (`exitCode`, `signal`, `timedOut`, `durationMs`, `output`), not a
+tool error, so the model can read the output and decide. Output is one text in
+order of arrival; when it was cut, the middle is replaced by a note and
+`cutChars` says how much. The tool reaches the machine only through core's
+`ShellAccess`; the backend side is not part of this change.
 
 ### Projects and agents
 

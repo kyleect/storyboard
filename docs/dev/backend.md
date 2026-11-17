@@ -43,6 +43,7 @@ packages/backend
     mcp-manager.ts       connects to MCP servers; their tools become harness tools
     workspaces-store.ts  workspaces: owners, temporary ones, purge
     workspace-fs.ts      disk access for workspaces (path safety, stale check)
+    shell-runner.ts      runs shell commands in a workspace folder (the shell tool)
     workspace-index.ts   indexes ticked workspace files for search
     workspace-ticks.ts   the set of paths the user chose to search
     workspace-visibility.ts  .gitignore matching and hidden paths: what a session is shown
@@ -275,6 +276,11 @@ and which are overridden by the environment.
 | `mediaDescriberAgent`         | `HARNESS_MEDIA_DESCRIBER_AGENT`          | `builtin-media-describer` | The agent whose prompt writes the text of an image or audio file. Empty: off.                       |
 | `mediaDescriberModel`         | `HARNESS_MEDIA_DESCRIBER_MODEL`          | empty                     | The router model that runs it. Empty: off, so a new install writes none.                            |
 | `workspaceReadCap`            | `HARNESS_WORKSPACE_READ_CAP`             | `10000`                   | The most characters one workspace read returns (100 or more).                                       |
+| `shellTimeoutSeconds`         | `HARNESS_SHELL_TIMEOUT_SECONDS`          | `120`                     | How long a shell command may run when the call gives no limit, in seconds (1 to 3600).              |
+| `shellMaxTimeoutSeconds`      | `HARNESS_SHELL_MAX_TIMEOUT_SECONDS`      | `600`                     | The longest limit a shell call may ask for, in seconds (1 to 3600); a longer ask is lowered to it.  |
+| `shellOutputCap`              | `HARNESS_SHELL_OUTPUT_CAP`               | `10000`                   | The most characters of a command's output kept, the start and the end (100 or more).                |
+| `shellProgram`                | `HARNESS_SHELL_PROGRAM`                  | empty                     | The program that runs shell commands. Empty: `$SHELL`, else `/bin/sh`.                              |
+| `shellArgs`                   | `HARNESS_SHELL_ARGS`                     | empty                     | Its arguments before the command, split on spaces. Empty: `-l -c`.                                  |
 | `editMode`                    | `HARNESS_EDIT_MODE`                      | `branch`                  | What saving an edit of a message does by default: `branch` or `in_place`.                           |
 | `answerAfterEdit`             | `HARNESS_ANSWER_AFTER_EDIT`              | `true`                    | Whether the model replies right after an edit that made a branch.                                   |
 | `rolloverCarryPercent`        | `HARNESS_ROLLOVER_CARRY_PERCENT`         | `10`                      | Share of the context size copied into a session that continues a full one, in %.                    |
@@ -504,6 +510,48 @@ where it is defined, "can be changed" or "read-only").
 | `POST /api/workspaces/:id/visibility/toggle`                                   | `{ scope, scopeId?, path, visible }`: show or hide a path in one scope. The scope must see the workspace.                                                                    |
 | `POST /api/workspaces/:id/rescan`                                              | Rescan now.                                                                                                                                                                  |
 
+### Running commands
+
+`shell-runner.ts` is the process side of the shell tool, behind core's
+`ShellAccess` (`createShellAccess`; `RunManager.shellAccessFor` builds one for a
+session). The run fact `shellAvailable` is true when the platform is not
+Windows and the session has a writable workspace; the loop gets `shell` under
+the same platform rule. The tool is described in [tools.md](tools.md#shell).
+
+A call (`run`) does this:
+
+1. **Folder.** `locate` takes the `cwd` the model wrote, a full path, cleans it
+   (`.` and `..`) and finds the attached workspace that holds it (the innermost
+   when workspaces are nested); a relative path, or one inside no workspace, is
+   an error that lists the workspaces' paths. `run` then needs the workspace to
+   be there, exist on disk and be writable; `resolveIn` refuses a path
+   that leaves the folder by `..` or a symlink, and the folder must exist. Each
+   problem is a `WorkspaceError`.
+2. **Program.** `shellProgram` from Settings, else `$SHELL`, else `/bin/sh`,
+   with `shellArgs` (split on spaces), else `-l -c`; the command is the last
+   argument. A shell that cannot be started is a `ShellError`.
+3. **Process.** `spawn` in its own process group, standard input closed, and
+   the backend's environment without any variable named `HARNESS_*` (the
+   settings and the paths of the token and key do not reach a command).
+4. **Output.** Standard output and standard error are decoded per stream
+   (invalid UTF-8 becomes U+FFFD), stripped of terminal escape codes (a
+   sequence split across two chunks is held until it is whole) and put in one
+   text in order of arrival. `OutputKeeper` holds the first half of
+   `shellOutputCap` and a rolling last half and counts the rest, so memory is
+   bounded; `cutAt` is the end of the kept start.
+5. **Live output.** Text goes to `onOutput` at most every 500 ms, up to
+   `shellOutputCap` characters, then once a note that the rest is not shown
+   live. The final result is not affected.
+6. **Time and cancel.** The call's time limit and the abort signal both send
+   SIGTERM to the process group, then SIGKILL after 5 seconds. The result
+   waits for the process to exit and then up to 500 ms for the output to end,
+   so a background process that keeps the pipe open does not hold the call. A
+   process still running after that is left running.
+
+`defaultTimeoutSeconds` and `maxTimeoutSeconds` are read from Settings on each
+use, so a change applies to the next command; a default above the maximum is
+lowered to it. A backend that stops hard leaves a running command running.
+
 ### Searching a workspace
 
 The user ticks what is searched; the ticks are a JSON array of paths relative to
@@ -648,8 +696,8 @@ otherwise it is refused.
 
 ### Which tools a run gets
 
-`toolsFor(agent, run)` takes the run's facts (`hasSkills`, `isChild`,
-`canStartSubagent`) and filters all tools:
+`toolsFor(agent, run)` takes the run's facts (`hasSkills`, `hasWorkspaces`,
+`shellAvailable`, `isChild`, `canStartSubagent`) and filters all tools:
 
 1. Remove tools switched **off** for the whole harness (`toolsOff`).
 2. Remove tools whose `available(run)` returns false (for example `skill_load`

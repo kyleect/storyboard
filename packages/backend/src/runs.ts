@@ -88,6 +88,7 @@ import {
   type ReadRecord,
   type WorkspaceFsOptions,
 } from "./workspace-fs.js";
+import { createShellAccess } from "./shell-runner.js";
 import type { WorkspaceStore } from "./workspaces-store.js";
 import { allowedNames } from "./tool-grants.js";
 import { agentAccess, projectAccess } from "./tool-access.js";
@@ -1794,6 +1795,25 @@ export class RunManager {
     });
   }
 
+  /**
+   * Shell access for a session: commands run in its writable workspaces. Not
+   * offered on Windows, where the shell and its process handling were not
+   * built for (shell tool design, Q7).
+   */
+  shellAccessFor(sessionId: string, projectId: string | null) {
+    const store = this.options.workspaces;
+    if (!store || process.platform === "win32") return undefined;
+    // The same rule as the run fact `shellAvailable`: the paths of the
+    // workspaces are shown to the model only where it can run commands.
+    if (!store.forSession(sessionId, projectId).some((w) => w.writable)) {
+      return undefined;
+    }
+    return createShellAccess({
+      attached: () => store.forSession(sessionId, projectId),
+      settings: () => this.options.settings(),
+    });
+  }
+
   private toolsFor(agent: Agent | null, run: RunFacts): readonly Tool[] {
     const off = offNames(this.store.db);
     const offered = this.tools.filter(
@@ -2048,13 +2068,17 @@ export class RunManager {
         session?.project_id ?? null,
         agent?.id ?? null,
       ) ?? [];
+    const sessionWorkspaces =
+      this.options.workspaces?.forSession(
+        sessionId,
+        session?.project_id ?? null,
+      ) ?? [];
     const tools = this.toolsFor(agent, {
       hasSkills: skills.length > 0,
-      hasWorkspaces:
-        (this.options.workspaces?.forSession(
-          sessionId,
-          session?.project_id ?? null,
-        ).length ?? 0) > 0,
+      hasWorkspaces: sessionWorkspaces.length > 0,
+      shellAvailable:
+        process.platform !== "win32" &&
+        sessionWorkspaces.some((w) => w.writable),
       hasEarlierSessions:
         this.options.history !== undefined &&
         this.store.chainBefore(sessionId).length > 0,
@@ -2393,6 +2417,10 @@ export class RunManager {
           sessionId,
           session?.project_id ?? null,
         );
+        const shellAccess = this.shellAccessFor(
+          sessionId,
+          session?.project_id ?? null,
+        );
         const find = fileLookup(
           this.store,
           this.options.files,
@@ -2523,6 +2551,7 @@ export class RunManager {
               }
             : {}),
           ...(workspaceAccess ? { workspaces: workspaceAccess } : {}),
+          ...(shellAccess ? { shell: shellAccess } : {}),
           copyLimit: settings.copyLimit,
           // Steps an earlier session of the chain took in this turn count.
           maxIterations: Math.max(1, settings.loopLimit - stepsTaken),

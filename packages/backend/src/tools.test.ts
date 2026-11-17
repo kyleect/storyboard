@@ -894,6 +894,8 @@ describe("with llama-server's wire format", () => {
             n !== "skill_load" &&
             // Offered only to a session with a workspace attached.
             !n.startsWith("workspace") &&
+            // Offered only to a run that can run commands.
+            n !== "shell_run" &&
             // Offered only to a session that continues another.
             !n.startsWith("sessions_"),
         ),

@@ -14,6 +14,7 @@ import {
   trashKeys,
 } from "../queries";
 import { findLiveRun, useLive } from "../stores/live";
+import { useToolOutput } from "../stores/tool-output";
 
 export function useSessionEvents(
   sessionId: string,
@@ -208,7 +209,13 @@ export function useSessionEvents(
           }));
           break;
         }
+        case "tool.update":
+          useToolOutput
+            .getState()
+            .append(event.data.callId, event.data.partial);
+          break;
         case "tool.result":
+          useToolOutput.getState().clear(event.data.callId);
           void queryClient.invalidateQueries({
             queryKey: sessionKeys.detail(sessionId),
           });
