@@ -376,6 +376,11 @@ export interface Settings {
   inlineMediaCap: number;
   keepMediaInline: boolean;
   workspaceReadCap: number;
+  shellTimeoutSeconds: number;
+  shellMaxTimeoutSeconds: number;
+  shellOutputCap: number;
+  shellProgram: string;
+  shellArgs: string;
   mediaDescriberAgent: string;
   mediaDescriberModel: string;
   editMode: "branch" | "in_place";

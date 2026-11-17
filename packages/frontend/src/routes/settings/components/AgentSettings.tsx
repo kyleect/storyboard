@@ -7,8 +7,9 @@ import {
   Switch,
   Text,
   Textarea,
+  TextInput,
 } from "@mantine/core";
-import { COPY_LIMIT_MAX } from "@harness/core";
+import { COPY_LIMIT_MAX, SHELL_TIMEOUT_LIMIT_SECONDS } from "@harness/core";
 import { type SettingsView } from "../../../api";
 import {
   SUBAGENT_KEYS,
@@ -122,6 +123,16 @@ export function Limits({ view }: { view: SettingsView }) {
       Number.isInteger(v) && v >= 1 && v <= 10000
         ? null
         : "A whole number, 1 to 10000",
+    shellTimeoutSeconds: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= SHELL_TIMEOUT_LIMIT_SECONDS
+        ? null
+        : `A whole number, 1 to ${SHELL_TIMEOUT_LIMIT_SECONDS}`,
+    shellMaxTimeoutSeconds: (v) =>
+      Number.isInteger(v) && v >= 1 && v <= SHELL_TIMEOUT_LIMIT_SECONDS
+        ? null
+        : `A whole number, 1 to ${SHELL_TIMEOUT_LIMIT_SECONDS}`,
+    shellOutputCap: (v) =>
+      Number.isInteger(v) && v >= 100 ? null : "A whole number, 100 or more",
   });
 
   const noteOff = !form.values.rolloverHandoff;
@@ -293,6 +304,62 @@ export function Limits({ view }: { view: SettingsView }) {
           max={10000}
           disabled={!!env.skillMaxFiles}
           {...form.getInputProps("skillMaxFiles")}
+        />
+        <Text fw={600} mt="sm">
+          Shell
+        </Text>
+        <NumberInput
+          label="Command time limit (seconds)"
+          description={
+            envNote("shellTimeoutSeconds") ??
+            `How long a shell command may run when the model gives no limit, 1 to ${SHELL_TIMEOUT_LIMIT_SECONDS}. Above the longest limit, the longest limit is used.`
+          }
+          allowDecimal={false}
+          min={1}
+          max={SHELL_TIMEOUT_LIMIT_SECONDS}
+          disabled={!!env.shellTimeoutSeconds}
+          {...form.getInputProps("shellTimeoutSeconds")}
+        />
+        <NumberInput
+          label="Longest command time limit (seconds)"
+          description={
+            envNote("shellMaxTimeoutSeconds") ??
+            `The longest limit the model may ask for, 1 to ${SHELL_TIMEOUT_LIMIT_SECONDS}. A longer ask is lowered to this.`
+          }
+          allowDecimal={false}
+          min={1}
+          max={SHELL_TIMEOUT_LIMIT_SECONDS}
+          disabled={!!env.shellMaxTimeoutSeconds}
+          {...form.getInputProps("shellMaxTimeoutSeconds")}
+        />
+        <NumberInput
+          label="Command output size"
+          description={
+            envNote("shellOutputCap") ??
+            "The most characters of a command's output the model reads. Longer output keeps the start and the end and cuts the middle."
+          }
+          allowDecimal={false}
+          min={100}
+          disabled={!!env.shellOutputCap}
+          {...form.getInputProps("shellOutputCap")}
+        />
+        <TextInput
+          label="Shell program"
+          description={
+            envNote("shellProgram") ??
+            "The program that runs commands, such as /bin/zsh. Empty: your login shell."
+          }
+          disabled={!!env.shellProgram}
+          {...form.getInputProps("shellProgram")}
+        />
+        <TextInput
+          label="Shell arguments"
+          description={
+            envNote("shellArgs") ??
+            "Arguments put before the command, separated by spaces. Empty: -l -c (a login shell, so commands see the same PATH as a terminal)."
+          }
+          disabled={!!env.shellArgs}
+          {...form.getInputProps("shellArgs")}
         />
         <Button type="submit" loading={save.isPending} w="fit-content">
           Save

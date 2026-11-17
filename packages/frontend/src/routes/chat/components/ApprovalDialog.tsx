@@ -13,6 +13,8 @@ import {
 } from "@mantine/core";
 import utils from "../../../styles/utilities.module.css";
 import { useEffect, useState } from "react";
+import { readShellCall, SHELL_RUN } from "../lib/shell-call";
+import { ShellCommand } from "./ShellDisplay";
 import {
   COMMENT_CHOICES,
   pointerSteps,
@@ -121,6 +123,8 @@ function ArgumentsDialog({
 }) {
   const [comment, setComment] = useState("");
   const text = comment.trim();
+  const shell =
+    request.name === SHELL_RUN ? readShellCall(request.arguments) : undefined;
   const choices = request.alwaysAsks
     ? CHOICES.filter((c) => c.choice === "once" || c.choice === "deny")
     : request.agentSetting
@@ -136,14 +140,30 @@ function ArgumentsDialog({
     >
       <Stack gap="sm">
         {from && <FromSubagent name={from} />}
-        <Text size="sm">
-          The model wants to run <Code>{request.name}</Code>
-          {request.subject
-            ? ` in the workspace ${request.subject.label}`
-            : ""}{" "}
-          with:
-        </Text>
-        <Code block>{JSON.stringify(request.arguments, null, 2)}</Code>
+        {shell ? (
+          <>
+            <Text size="sm">The model wants to run this command:</Text>
+            <ShellCommand call={shell} where={request.subject?.label} />
+            <Text size="xs" c="dimmed">
+              {shell.timeoutSeconds !== undefined
+                ? `Time limit asked for: ${shell.timeoutSeconds} seconds (the longest allowed in Settings still applies).`
+                : "Time limit: the default in Settings."}{" "}
+              It runs on your computer with your permissions, and each command
+              asks.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text size="sm">
+              The model wants to run <Code>{request.name}</Code>
+              {request.subject
+                ? ` in the workspace ${request.subject.label}`
+                : ""}{" "}
+              with:
+            </Text>
+            <Code block>{JSON.stringify(request.arguments, null, 2)}</Code>
+          </>
+        )}
         {request.agentSetting && (
           <Text size="xs" c="dimmed">
             This agent asks before using this tool, so it cannot be always

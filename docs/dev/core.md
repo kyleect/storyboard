@@ -23,6 +23,7 @@ packages/core/src
   file-names.ts          rules for file and folder names
   file-refs.ts           file references: session://, project://, global://, workspace://
   workspaces.ts          WorkspaceAccess, the interface for workspace folders
+  shell.ts               ShellAccess, the interface for running a command in a workspace folder
   media.ts               which images and audio are inline in a request (foldMedia)
   schemas-data.ts        schemas and data: access API, replay
   schema-features.ts     the JSON Schema subset schemas may use
@@ -448,6 +449,7 @@ the transcript. Without the hook, nothing is taken.
 | `projectId`, `projectName`                                             | The session's project, if any.                                                                         |
 | `mediaSupport`, `blobs`                                                | What the model reads (images, audio); where a tool stores bytes it makes.                              |
 | `workspaces`                                                           | `WorkspaceAccess`: the workspace folders the session can use.                                          |
+| `shell`                                                                | `ShellAccess`: runs a command in a workspace folder. Absent when the backend gives the run no shell.   |
 | `sharedFiles`, `searchFiles`                                           | Project and global files; search.                                                                      |
 | `sharedData`, `schemaChecker`                                          | Global, project and agent schemas and data; JSON Schema validation.                                    |
 | `projects`, `agents`, `subagents`                                      | Access for the project, agent and subagent tools.                                                      |
@@ -482,10 +484,10 @@ const tool = defineTool({
 ```
 
 `TOOL_GROUPS` lists the groups a tool can belong to, in display order (`files`,
-`workspaces`, `structured-data`, `projects`, `agents`, `subagents`,
+`workspaces`, `shell`, `structured-data`, `projects`, `agents`, `subagents`,
 `sessions`, `skills`, `web`, `mcp`, `utilities`). `RunFacts` describes the run a
 tool would be offered in: `hasSkills`, `isChild`, `canStartSubagent` and
-`hasWorkspaces`. What these fields mean
+`hasWorkspaces`; `shellAvailable` is true when the run can run commands. What these fields mean
 for the tools a run gets is described in [tools.md](tools.md#tool-groups).
 
 `defineTool` converts the Zod schema to JSON Schema for the model and **rejects
@@ -510,24 +512,25 @@ failed.
 
 What a tool's `execute` receives:
 
-| Field                                    | Description                                                                                    |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `signal`, `sessionId`, `runId`, `callId` | Identity and cancellation.                                                                     |
-| `update(partial)`                        | Emits a `tool.update` event.                                                                   |
-| `state`                                  | The latest state this tool saved in the transcript.                                            |
-| `projectId`, `projectName`               | The session's project.                                                                         |
-| `files`                                  | `FileAccess`: files across scopes.                                                             |
-| `data`                                   | `DataAccess`: schemas and data across scopes.                                                  |
-| `projects`                               | `ProjectAccess`: list, current, create, push.                                                  |
-| `agents`                                 | `AgentAccess`: list agents, current agent.                                                     |
-| `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                                             |
-| `skills`                                 | The skills in scope with their bodies.                                                         |
-| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, `search`, write, edit, move, delete and folders.      |
-| `copyLimit`                              | Maximum keys per copy or move call.                                                            |
-| `history`                                | `SessionHistory`: search and read the sessions this one continues. Absent when there are none. |
-| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).                |
-| `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                                |
-| `approval`                               | For a tool with `review`: the review the user answered and the chosen selection.               |
+| Field                                    | Description                                                                                                                                        |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signal`, `sessionId`, `runId`, `callId` | Identity and cancellation.                                                                                                                         |
+| `update(partial)`                        | Emits a `tool.update` event.                                                                                                                       |
+| `state`                                  | The latest state this tool saved in the transcript.                                                                                                |
+| `projectId`, `projectName`               | The session's project.                                                                                                                             |
+| `files`                                  | `FileAccess`: files across scopes.                                                                                                                 |
+| `data`                                   | `DataAccess`: schemas and data across scopes.                                                                                                      |
+| `projects`                               | `ProjectAccess`: list, current, create, push.                                                                                                      |
+| `agents`                                 | `AgentAccess`: list agents, current agent.                                                                                                         |
+| `subagents`                              | `SubagentAccess`: depth, `canStart`, `start(...)`.                                                                                                 |
+| `skills`                                 | The skills in scope with their bodies.                                                                                                             |
+| `workspaces`                             | `WorkspaceAccess`: list, `locate`, read, `search`, write, edit, move, delete and folders.                                                          |
+| `shell`                                  | `ShellAccess`: `defaultTimeoutSeconds`, `maxTimeoutSeconds`, `locate(cwd)` and `run(request, { signal, onOutput })`. Absent when the run has none. |
+| `copyLimit`                              | Maximum keys per copy or move call.                                                                                                                |
+| `history`                                | `SessionHistory`: search and read the sessions this one continues. Absent when there are none.                                                     |
+| `mediaSupport`, `blobs`                  | What the model reads; stores bytes as blobs (for tools that make binary files).                                                                    |
+| `requestInput(form)`                     | Show a form and wait. At most **one** per call.                                                                                                    |
+| `approval`                               | For a tool with `review`: the review the user answered and the chosen selection.                                                                   |
 
 `Tool.approvalSubject(input, ctx)` lets a tool name what a call is about
 (`{ kind: "workspace", id, label }`). The loop asks it before `needsApproval`, puts
@@ -535,6 +538,10 @@ the subject in `tool.approval_requested` and in the `ApprovalRequest`, and passe
 it to `needsApproval(tool, subject)`. A tool without one behaves as before.
 `WorkspaceAccess` and `WorkspaceError` are in `workspaces.ts`; the error's `code`
 (`outside`, `stale`, `read_only`, …) becomes the tool's error result.
+`ShellAccess`, `ShellLocation`, `ShellRequest`, `ShellResult` and `ShellError` are in `shell.ts`. `locate` takes the folder's full path on the computer and returns the workspace that holds it, the folder inside it and the cleaned full path, or an error that lists the workspaces' paths; `WorkspaceInfo.path` is the real folder of a workspace. A
+command that exits non-zero or runs out of time is a `ShellResult`; only a shell
+that cannot be started throws a `ShellError`. `output` has no cut marker: when
+`cutChars` is above 0 the tool inserts the note at `cutAt`.
 
 Tools never reach the database directly. They use these interfaces, and the
 backend decides what is behind them.

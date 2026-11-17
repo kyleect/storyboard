@@ -1,6 +1,10 @@
 import type { Database } from "better-sqlite3-multiple-ciphers";
 import { z } from "zod";
-import { COPY_LIMIT_MAX, DEFAULT_COPY_LIMIT } from "@harness/core";
+import {
+  COPY_LIMIT_MAX,
+  DEFAULT_COPY_LIMIT,
+  SHELL_TIMEOUT_LIMIT_SECONDS,
+} from "@harness/core";
 import { SKILL_LOAD } from "@harness/tools";
 import { DEFAULT_PROFILE, activeProfile } from "./profiles.js";
 
@@ -129,6 +133,29 @@ export const Settings = z.object({
    * design, D47, D55). The agent reads the rest with offset and limit.
    */
   workspaceReadCap: z.number().int().min(100),
+  /**
+   * How long a shell command may run when the call gives no limit, in
+   * seconds. A value above `shellMaxTimeoutSeconds` is lowered to it.
+   */
+  shellTimeoutSeconds: z.number().int().min(1).max(SHELL_TIMEOUT_LIMIT_SECONDS),
+  /** The longest limit a shell call may ask for, in seconds. */
+  shellMaxTimeoutSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(SHELL_TIMEOUT_LIMIT_SECONDS),
+  /**
+   * The most characters of a command's output kept: the start and the end,
+   * with the middle cut.
+   */
+  shellOutputCap: z.number().int().min(100),
+  /** The program that runs shell commands. Empty: your login shell. */
+  shellProgram: z.string(),
+  /**
+   * Its arguments before the command, split on spaces. Empty: `-l -c`
+   * (a login shell, so it has the same `PATH` as a terminal).
+   */
+  shellArgs: z.string(),
   /**
    * The agent whose prompt writes the text of an image or audio file
    * (files unification design, D43). Empty: nothing is generated.
@@ -293,6 +320,11 @@ Today is {{date}}. The time is {{time}}.
   inlineMediaCap: 4,
   keepMediaInline: false,
   workspaceReadCap: 10_000,
+  shellTimeoutSeconds: 120,
+  shellMaxTimeoutSeconds: 600,
+  shellOutputCap: 10_000,
+  shellProgram: "",
+  shellArgs: "",
   mediaDescriberAgent: "builtin-media-describer",
   mediaDescriberModel: "",
   editMode: "branch",
@@ -350,6 +382,11 @@ const ENV: Record<keyof Settings, string> = {
   inlineMediaCap: "HARNESS_INLINE_MEDIA_CAP",
   keepMediaInline: "HARNESS_KEEP_MEDIA_INLINE",
   workspaceReadCap: "HARNESS_WORKSPACE_READ_CAP",
+  shellTimeoutSeconds: "HARNESS_SHELL_TIMEOUT_SECONDS",
+  shellMaxTimeoutSeconds: "HARNESS_SHELL_MAX_TIMEOUT_SECONDS",
+  shellOutputCap: "HARNESS_SHELL_OUTPUT_CAP",
+  shellProgram: "HARNESS_SHELL_PROGRAM",
+  shellArgs: "HARNESS_SHELL_ARGS",
   mediaDescriberAgent: "HARNESS_MEDIA_DESCRIBER_AGENT",
   mediaDescriberModel: "HARNESS_MEDIA_DESCRIBER_MODEL",
   editMode: "HARNESS_EDIT_MODE",
@@ -376,6 +413,9 @@ const NUMERIC = new Set<keyof Settings>([
   "subagentDepth",
   "inlineMediaCap",
   "workspaceReadCap",
+  "shellTimeoutSeconds",
+  "shellMaxTimeoutSeconds",
+  "shellOutputCap",
   "rolloverCarryPercent",
   "rolloverThresholdPercent",
   "rolloverHandoffThinkSeconds",

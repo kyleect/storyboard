@@ -1,6 +1,7 @@
 export * from "./messages.js";
 export * from "./media.js";
 export * from "./workspaces.js";
+export * from "./shell.js";
 export * from "./session-history.js";
 export * from "./project-colors.js";
 export * from "./events.js";

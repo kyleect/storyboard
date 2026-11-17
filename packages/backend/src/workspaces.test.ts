@@ -648,6 +648,20 @@ describe("workspace routes", () => {
     expect(listed.map((w) => w.name).sort()).toEqual(["Global", "Mine", "Own"]);
   });
 
+  it("does not show the folder paths when the run cannot run commands", async () => {
+    const c = await setup();
+    const session = await newSession(c);
+    await api(c.app, "POST", `/api/global/workspaces`, {
+      name: "Global",
+      path: folder(),
+      writable: false,
+    });
+    c.scripts.push([call("1", "workspaces_list")], done);
+    await go(c, session);
+    const listed = results(c, session)[0]?.data.workspaces as Json[];
+    expect(listed[0]).not.toHaveProperty("path");
+  });
+
   it("makes and deletes a temporary workspace", async () => {
     const c = await setup();
     const session = await newSession(c);

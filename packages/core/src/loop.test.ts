@@ -597,6 +597,89 @@ describe("a tool that always asks", () => {
   });
 });
 
+describe("a tool that always asks and names a subject", () => {
+  it("puts the subject on the request", async () => {
+    const tool = defineTool({
+      ...echoSpec,
+      approval: "always",
+      group: "shell" as const,
+      approvalSubject: () => ({ kind: "workspace", id: "w1", label: "Book" }),
+      execute: (input) => ({ data: input.text }),
+    });
+    const { events, approvals, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      { tools: [tool] },
+    );
+    await runLoop(model, request, ctx);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({
+      name: "echo",
+      alwaysAsks: true,
+      subject: { kind: "workspace", id: "w1", label: "Book" },
+    });
+    expect(
+      events.find((e) => e.type === "tool.approval_requested")?.data,
+    ).toMatchObject({ subject: { id: "w1", label: "Book" } });
+  });
+});
+
+describe("shell access", () => {
+  const shell = {
+    defaultTimeoutSeconds: 120,
+    maxTimeoutSeconds: 600,
+    locate: () => ({ error: "Not used here." }),
+    run: () =>
+      Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        durationMs: 1,
+        output: "hi",
+        cutChars: 0,
+        cutAt: 0,
+      }),
+  };
+
+  it("gives the tool the run's shell access and forwards its progress", async () => {
+    let seen: unknown;
+    const tool = defineTool({
+      ...echoSpec,
+      execute: (input, tctx) => {
+        seen = tctx.shell;
+        tctx.update("partial output");
+        return { data: input.text };
+      },
+    });
+    const { events, ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      { tools: [tool], shell },
+    );
+    await runLoop(model, request, ctx);
+    expect(seen).toBe(shell);
+    expect(events.find((e) => e.type === "tool.update")?.data).toMatchObject({
+      callId: "c1",
+      partial: "partial output",
+    });
+  });
+
+  it("leaves it out when the run has none", async () => {
+    let seen: unknown = "unset";
+    const tool = defineTool({
+      ...echoSpec,
+      execute: (input, tctx) => {
+        seen = tctx.shell;
+        return { data: input.text };
+      },
+    });
+    const { ctx, model } = setup(
+      [[call("c1", "echo", '{"text":"a"}')], [{ type: "text", text: "ok" }]],
+      { tools: [tool] },
+    );
+    await runLoop(model, request, ctx);
+    expect(seen).toBeUndefined();
+  });
+});
+
 describe("approval", () => {
   const asking = (run: () => void = () => {}): Tool =>
     defineTool({

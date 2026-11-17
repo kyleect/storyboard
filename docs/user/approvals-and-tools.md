@@ -15,6 +15,20 @@ When a helper wants to use a tool that asks, you see a box.
 
 For folders on your computer the buttons end with the workspace name.
 
+## Shell commands
+
+A helper can run a command on your computer, such as running tests. This is the one tool that always asks, and you cannot change that.
+
+- The box shows the command exactly as written, the full path of the folder it runs in with the name of the workspace, and the time limit. If the helper wrote a note about it, you see that too, marked **The model says**. The note is the helper's own words, so read the command.
+- The box has only **Allow once** and **Deny**. Allowing one command does not allow the next.
+- The command runs with your own permissions. It can read and change anything you can, not only the workspace folder. Read it before you allow it.
+- It runs in a writable workspace folder. It does not start where a workspace is read-only, and it is not offered on Windows.
+- While it runs, the chat shows what it has printed so far. When it ends, the chat shows the exit code, how long it took and its output.
+- A command that is still running when its time limit passes is stopped. The helper is told, and sees the output up to that point.
+- A helper does not get this tool unless you give it. An agent that has every tool except the unticked ones still needs this one ticked by hand. Choose it in the agent's **Tools**, under **Shell**.
+
+The time limits, the output size and the shell are in **Settings**, under **Limits**. See [Settings](settings.md#limits).
+
 ## Many at once
 
 When a helper wants to do several things, you get a review box.

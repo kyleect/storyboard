@@ -33,6 +33,12 @@ import { useState } from "react";
 import { AgentBadge } from "../../../components/AgentSelects";
 import { messageAnchor } from "../../../components/ErrorList";
 import { SessionHits, sessionHitsOf } from "./Continuation";
+import { readShellCall, readShellOutcome, SHELL_RUN } from "../lib/shell-call";
+import {
+  ShellCommand,
+  ShellLiveOutput,
+  ShellOutcomeView,
+} from "./ShellDisplay";
 
 export type DecisionComments = ReadonlyMap<
   string,
@@ -82,6 +88,11 @@ export function MessageView({
         ? sessionHitsOf(message.data)
         : undefined;
 
+    const shellOutcome =
+      message.name === SHELL_RUN && !message.isError
+        ? readShellOutcome(message.data)
+        : undefined;
+
     return (
       <Paper p="sm">
         <Stack gap="sm">
@@ -100,6 +111,8 @@ export function MessageView({
           </Group>
           {hits ? (
             <SessionHits hits={hits} />
+          ) : shellOutcome ? (
+            <ShellOutcomeView outcome={shellOutcome} />
           ) : (
             <Code block>{showResult(message.content)}</Code>
           )}
@@ -229,19 +242,33 @@ export function BlockView({
       }
 
       const decisionComment = decisionComments.get(block.callId);
+      const shell =
+        block.name === SHELL_RUN ? readShellCall(block.arguments) : undefined;
 
       return (
         <Stack gap={2}>
           <Text size="xs" c="dimmed">
             Tool call
           </Text>
-          <Code block>
-            {block.name}(
-            {typeof block.arguments === "string"
-              ? block.arguments
-              : JSON.stringify(block.arguments, null, 2)}
-            )
-          </Code>
+          {shell ? (
+            <>
+              <Badge color="gray" tt="none" variant="transparent">
+                {block.name}
+              </Badge>
+              <ShellCommand call={shell} />
+              {!asks.results.has(block.callId) && (
+                <ShellLiveOutput callId={block.callId} />
+              )}
+            </>
+          ) : (
+            <Code block>
+              {block.name}(
+              {typeof block.arguments === "string"
+                ? block.arguments
+                : JSON.stringify(block.arguments, null, 2)}
+              )
+            </Code>
+          )}
           {decisionComment && (
             <Paper p="xs" bg="var(--mantine-color-default-hover)">
               <Text size="xs" c="dimmed">

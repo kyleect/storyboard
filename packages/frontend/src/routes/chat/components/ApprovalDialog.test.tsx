@@ -289,4 +289,70 @@ describe("ApprovalDialog from a subagent", () => {
     expect(button("Allow for this session")).toBeTruthy();
     expect(button("Always allow this tool")).toBeTruthy();
   });
+
+  describe("a shell command", () => {
+    function shell(args: object) {
+      const answers: ApprovalAnswer[] = [];
+
+      render(
+        <MantineProvider>
+          <ApprovalDialog
+            request={{
+              requestId: "r1",
+              callId: "c1",
+              name: "shell_run",
+              arguments: args,
+              alwaysAsks: true,
+              subject: { kind: "workspace", id: "w1", label: "Book" },
+            }}
+            opened
+            busy={false}
+            onClose={() => {}}
+            onAnswer={(a) => answers.push(a)}
+          />
+        </MantineProvider>,
+      );
+
+      return answers;
+    }
+
+    it("shows the command as written, the workspace, and the model's note", () => {
+      shell({
+        command: "npm test\nnpm run lint",
+        cwd: "/home/kim/book/src",
+        description: "Run the checks",
+        timeout_seconds: 300,
+      });
+      expect(screen.getByTestId("shell-command").textContent).toBe(
+        "npm test\nnpm run lint",
+      );
+      expect(
+        screen.getByText("Runs in /home/kim/book/src (workspace Book)"),
+      ).toBeTruthy();
+      expect(screen.getByText("The model says: Run the checks")).toBeTruthy();
+      expect(
+        screen.getByText(/Time limit asked for: 300 seconds/),
+      ).toBeTruthy();
+      // Not the generic JSON view.
+      expect(screen.queryByText(/"command"/)).toBeNull();
+    });
+
+    it("offers only Allow once and Deny, and says the default time limit", () => {
+      const answers = shell({ command: "ls" });
+
+      expect(
+        screen.getByText(/Time limit: the default in Settings/),
+      ).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /session/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Always/ })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
+      expect(answers).toEqual([{ choice: "once" }]);
+    });
+
+    it("falls back to the generic view when the arguments are not a command", () => {
+      shell({ nope: 1 });
+      expect(screen.queryByTestId("shell-command")).toBeNull();
+      expect(screen.getByText(/"nope": 1/)).toBeTruthy();
+    });
+  });
 });

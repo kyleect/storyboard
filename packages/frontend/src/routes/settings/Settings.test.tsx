@@ -83,6 +83,11 @@ const effective: SettingsShape = {
   inlineMediaCap: 4,
   keepMediaInline: false,
   workspaceReadCap: 20000,
+  shellTimeoutSeconds: 120,
+  shellMaxTimeoutSeconds: 600,
+  shellOutputCap: 10000,
+  shellProgram: "",
+  shellArgs: "",
   mediaDescriberAgent: "",
   mediaDescriberModel: "",
   embeddingModel: "",
@@ -349,6 +354,33 @@ describe("Settings forms", () => {
       skillFileMaxMib: 20,
       skillMaxMib: 100,
       skillMaxFiles: 500,
+      shellTimeoutSeconds: 120,
+      shellMaxTimeoutSeconds: 600,
+      shellOutputCap: 10000,
+      shellProgram: "",
+      shellArgs: "",
+    });
+  });
+
+  it("saves the shell settings from the Limits tab, and refuses a limit that is too long", async () => {
+    await renderSettings();
+    open("Agents");
+    open("Limits");
+    const limit = await screen.findByLabelText("Command time limit (seconds)");
+
+    fireEvent.change(limit, { target: { value: "9999" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("A whole number, 1 to 3600")).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.change(limit, { target: { value: "300" } });
+    fireEvent.change(screen.getByLabelText("Shell program"), {
+      target: { value: "/bin/zsh" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]?.[0]).toMatchObject({
+      shellTimeoutSeconds: 300,
+      shellProgram: "/bin/zsh",
     });
   });
 

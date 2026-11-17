@@ -137,6 +137,8 @@ export const workspacesList = defineTool({
         name: w.name,
         writable: w.writable,
         reference: `workspace://${w.id}/`,
+        // A shell command sees real paths, so the model needs this one.
+        ...(ctx.shell ? { path: w.path } : {}),
       })),
     },
   }),

@@ -11,6 +11,8 @@
 export interface WorkspaceInfo {
   id: string;
   name: string;
+  /** The folder on the computer: the real path a shell command sees. */
+  path: string;
   /**
    * Whether it can be changed in this session: the workspace is writable and
    * no attachment of it (project or session) makes it read-only (D26).

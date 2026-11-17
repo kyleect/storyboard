@@ -343,6 +343,7 @@ function hasUnshown(
 const info = (w: WorkspaceRow): WorkspaceInfo => ({
   id: w.id,
   name: w.name,
+  path: w.path,
   writable: w.writable,
 });
 

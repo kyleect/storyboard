@@ -55,6 +55,7 @@ describe("allTools", () => {
       "workspace_folder_create",
       "workspace_folder_rename",
       "workspace_folder_delete",
+      "shell_run",
     ]);
   });
 
@@ -107,6 +108,7 @@ describe("allTools", () => {
         "workspace_folder_rename",
         "workspace_folder_delete",
       ],
+      shell: ["shell_run"],
       projects: ["projects_list", "project_view", "project_create"],
       agents: ["agents_list", "agent_view"],
       subagents: ["start_subagent", "subagent_handback"],
@@ -135,6 +137,7 @@ describe("allTools", () => {
       "workspace_folder_create",
       "workspace_folder_rename",
       "workspace_folder_delete",
+      "shell_run",
     ]);
     // Reading and listing never ask; changes always do, per workspace.
     for (const t of allTools.filter((t) => t.group === "workspaces")) {
@@ -173,10 +176,26 @@ describe("allTools", () => {
     const others = allTools.filter(
       (t) =>
         t.group !== "workspaces" &&
+        t.group !== "shell" &&
         t.group !== "sessions" &&
         !["skill_load", "subagent_handback", "start_subagent"].includes(t.name),
     );
     for (const t of others) expect(t.available, t.name).toBeUndefined();
+  });
+
+  it("makes the shell tool always ask, and only for a run where it can run", () => {
+    const shell = allTools.find((t) => t.name === "shell_run");
+    if (!shell?.available) throw new Error("shell_run has no available()");
+    expect(shell.group).toBe("shell");
+    // It asks on every call and no setting or agent can change that.
+    expect(shell.approval).toBe("always");
+    expect(shell.alwaysOn).toBe(false);
+    expect(shell.approvalSubject).toBeDefined();
+    const run = { hasSkills: false, isChild: false, canStartSubagent: false };
+    expect(shell.available(run)).toBe(false);
+    // A workspace alone is not enough: it must be writable and supported.
+    expect(shell.available({ ...run, hasWorkspaces: true })).toBe(false);
+    expect(shell.available({ ...run, shellAvailable: true })).toBe(true);
   });
 
   it("offers the session tools only to a session that continues another", () => {

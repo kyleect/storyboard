@@ -52,6 +52,11 @@ export const LIMIT_KEYS = [
   "skillFileMaxMib",
   "skillMaxMib",
   "skillMaxFiles",
+  "shellTimeoutSeconds",
+  "shellMaxTimeoutSeconds",
+  "shellOutputCap",
+  "shellProgram",
+  "shellArgs",
 ] as const;
 export const EDITING_KEYS = ["editMode", "answerAfterEdit"] as const;
 export const MEDIA_KEYS = ["inlineMediaCap", "keepMediaInline"] as const;
