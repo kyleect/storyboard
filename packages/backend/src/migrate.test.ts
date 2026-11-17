@@ -980,3 +980,118 @@ describe("migration 0039 (workspaces and .gitignore)", () => {
     ).toThrow();
   });
 });
+
+describe("migration 0040 (transcript chunks)", () => {
+  const chunk = (
+    scope: string,
+    owner: string | null,
+    key: string,
+    text: string,
+    profile = "default",
+  ) =>
+    db
+      .prepare(
+        "INSERT INTO chunks (scope, owner_id, key, seq, text, profile_id) VALUES (?, ?, ?, 0, ?, ?)",
+      )
+      .run(scope, owner, key, text, profile).lastInsertRowid as number;
+
+  it("keeps every chunk with its id, profile, vector and place in the full-text index", () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 40),
+    );
+    const a = chunk("global", null, "a.md", "the lighthouse keeper", "default");
+    const b = chunk("project", "p1", "b.md", "a quiet harbour", "default");
+    const c = chunk("session", "s1", "c.md", "storm over the lighthouse", "p2");
+    db.prepare("DELETE FROM chunks WHERE id = ?").run(b);
+    const d = chunk("workspace", "w1", "d.md", "harbour bells", "p2");
+    const vec = db.prepare(
+      "INSERT INTO chunk_vectors (chunk_id, model, embedding) VALUES (?, 'm', ?)",
+    );
+    vec.run(a, Buffer.from([1, 2, 3, 4]));
+    vec.run(d, Buffer.from([5, 6, 7, 8]));
+    const columns = "id, scope, owner_id, key, seq, text, profile_id";
+    const before = db
+      .prepare(`SELECT ${columns} FROM chunks ORDER BY id`)
+      .all();
+
+    migrate(
+      db,
+      all.filter((m) => m.version <= 40),
+    );
+
+    expect(
+      db.prepare(`SELECT ${columns} FROM chunks ORDER BY id`).all(),
+    ).toEqual(before);
+    expect(
+      db
+        .prepare(
+          "SELECT chunk_id, model, hex(embedding) AS e FROM chunk_vectors ORDER BY chunk_id",
+        )
+        .all(),
+    ).toEqual([
+      { chunk_id: a, model: "m", e: "01020304" },
+      { chunk_id: d, model: "m", e: "05060708" },
+    ]);
+    const found = (q: string) =>
+      db
+        .prepare(
+          "SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rowid",
+        )
+        .all(q)
+        .map((r) => (r as { rowid: number }).rowid);
+    expect(found("lighthouse")).toEqual([a, c]);
+    expect(found("harbour")).toEqual([d]);
+    // The index stays in step, and the profile index exists again.
+    db.prepare("DELETE FROM chunks WHERE id = ?").run(a);
+    expect(found("lighthouse")).toEqual([c]);
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'chunks_profile'",
+        )
+        .all(),
+    ).toHaveLength(1);
+  });
+
+  it("accepts the transcript scope and keeps the owner rule", () => {
+    db = new Database(":memory:");
+    migrate(
+      db,
+      loadMigrations(MIGRATIONS_DIR).filter((m) => m.version <= 40),
+    );
+    expect(chunk("transcript", "s1", "m1", 0, "x")).toBeGreaterThan(0);
+    expect(() => chunk("transcript", null, "m1", 0, "x")).toThrow(/CHECK/);
+    expect(() => chunk("global", "s1", "a.md", 0, "x")).toThrow(/CHECK/);
+    expect(() => chunk("elsewhere", "s1", "a.md", 0, "x")).toThrow(/CHECK/);
+  });
+});
+
+describe("migration 0041 (session continuation)", () => {
+  it("adds the link columns, empty for existing sessions", () => {
+    db = new Database(":memory:");
+    const all = loadMigrations(MIGRATIONS_DIR);
+    migrate(
+      db,
+      all.filter((m) => m.version <= 39),
+    );
+    db.prepare(
+      "INSERT INTO sessions (id, title, created_at) VALUES ('s1', 'S1', 't')",
+    ).run();
+    migrate(db, all);
+    expect(
+      db
+        .prepare(
+          "SELECT continued_from_id, continued_from_title, continued_carried FROM sessions",
+        )
+        .get(),
+    ).toEqual({
+      continued_from_id: null,
+      continued_from_title: null,
+      continued_carried: null,
+    });
+  });
+});
